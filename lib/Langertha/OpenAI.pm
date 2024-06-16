@@ -1,8 +1,18 @@
-package Langertha::Ollama;
-# ABSTRACT: Ollama API
+package Langertha::OpenAI;
+# ABSTRACT: OpenAI API
 
 use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
+
+has api_key => (
+  is => 'ro',
+  predicate => 'has_api_key',
+);
+
+sub update_request {
+  my ( $self, $request ) = @_;
+  $request->header('Authorization', 'Bearer '.$self->api_key) if $self->has_api_key;
+}
 
 with qw(
   Langertha::Role::OpenAPI
@@ -12,13 +22,12 @@ with qw(
   Langertha::Role::Tools
 );
 
-sub default_model { 'llama3' }
+sub default_model { 'gpt-3.5-turbo' }
 
-sub openapi_file { yaml => dist_file('Langertha','ollama.yaml') };
+sub openapi_file { yaml => dist_file('Langertha','openai.yaml') };
 
 sub chat {
   my ( $self, $prompt, %extra ) = @_;
-  return unless $prompt;
   return $self->generate_request( generateChat =>
     model => $self->model,
     messages => [$self->has_system_prompt ? ({
@@ -28,8 +37,9 @@ sub chat {
       role => "user",
       content => $prompt,
     }],
-    stream => JSON->false,
-    %extra,
+    $self->has_tools ? (
+      tools => [map { $_->tool_definition } @{$self->tools}]
+    ) : (),
   );
 }
 

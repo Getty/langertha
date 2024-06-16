@@ -1,9 +1,9 @@
 package Langertha::Role::OpenAPI;
+# ABSTRACT: Role for APIs with OpenAPI definition
 
 use Moose::Role;
 
 use Carp qw( croak );
-use HTTP::Request;
 use JSON::MaybeXS ();
 use JSON::PP ();
 use MIME::Base64 qw( encode_base64 );
@@ -11,6 +11,8 @@ use OpenAPI::Modern;
 use Path::Tiny;
 use URI;
 use YAML::PP;
+
+use Langertha::HTTP::Request::OpenAPI;
 
 requires qw( openapi_file );
 
@@ -36,8 +38,8 @@ sub _build_openapi {
   my $yaml = $file;
   return OpenAPI::Modern->new(
     openapi_uri => $yaml,
-    openapi_schema => YAML::PP->new(boolean => 'JSON::PP')->load_string(path($yaml)->slurp_utf8),
-    $self->has_url ? ( base_url => $self->url ) : ());
+    openapi_schema => YAML::PP->new(boolean => 'JSON::PP')->load_string(path($yaml)->slurp_utf8)
+  );
 }
 
 sub get_operation {
@@ -65,18 +67,27 @@ sub generate_request {
   my $userinfo = $uri->userinfo;
   $uri->userinfo(undef) if $userinfo;
   my $headers = [];
-  my $request = HTTP::Request->new(
+  my $request = Langertha::HTTP::Request::OpenAPI->new(
     $operation->{method}, $operation->{url}, $headers,
     scalar %args > 0 ? $self->generate_body(%args) : (),
   );
+  $request->args({ %args });
+  $request->openapi($self);
+  $request->operation($operationId);
   if ($userinfo) {
     my ( $user, $pass ) = split(/:/, $userinfo);
     if ($user and $pass) {
       $request->authorization_basic($user, $pass);
     }
   }
+  $request->header('Content-Type', 'application/json; charset=utf-8');
   $self->update_request($request) if $self->can('update_request');
   return $request;
+}
+
+sub parse_response {
+  my ( $self, $response ) = @_;
+  return $self->json->decode($response->decoded_content);
 }
 
 1;
