@@ -15,6 +15,7 @@ sub update_request {
 }
 
 with qw(
+  Langertha::Role::JSON
   Langertha::Role::OpenAPI
   Langertha::Role::Chat
   Langertha::Role::Models

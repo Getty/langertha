@@ -11,6 +11,7 @@ my @modules = qw(
   Langertha::HTTP::Request::OpenAPI
   Langertha::OpenAI
   Langertha::Ollama
+  Langertha::Ollama::Chat
   Langertha::Tool
 );
 

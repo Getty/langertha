@@ -5,6 +5,7 @@ use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
 
 with qw(
+  Langertha::Role::JSON
   Langertha::Role::OpenAPI
   Langertha::Role::Chat
   Langertha::Role::Models

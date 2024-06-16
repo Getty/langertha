@@ -14,18 +14,15 @@ use YAML::PP;
 
 use Langertha::HTTP::Request::OpenAPI;
 
-requires qw( openapi_file );
+requires qw(
+  openapi_file
+  json
+);
 
 has url => (
   is => 'ro',
   predicate => 'has_url',
 );
-
-has json => (
-  is => 'ro',
-  lazy_build => 1,
-);
-sub _build_json { JSON::MaybeXS->new( utf8 => 1, canonical => 1 ) }
 
 has openapi => (
   is => 'ro',
