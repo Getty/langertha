@@ -8,9 +8,10 @@ use Module::Runtime qw( use_module );
 
 my @modules = qw(
   Langertha
-  Langertha::HTTP::Request
+  Langertha::HTTP::Request::OpenAPI
   Langertha::OpenAI
   Langertha::Ollama
+  Langertha::Tool
 );
 
 plan(scalar @modules);

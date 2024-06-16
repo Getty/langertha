@@ -54,6 +54,6 @@ COPY --chown=${LANGERTHA_UID}:${LANGERTHA_GID} . ${LANGERTHA_PROJECT_ROOT}/src
 
 # Add project path ------------------------------------------------------------
 
-ENV PATH                 "${LANGERTHA_PROJECT_ROOT}/src/bin:${PATH}"
+ENV PATH "${LANGERTHA_PROJECT_ROOT}/src/bin:${PATH}"
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
