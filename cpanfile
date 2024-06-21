@@ -7,7 +7,8 @@ requires 'LWP::Protocol::https';
 requires 'Moose';
 requires 'MooseX::NonMoose';
 requires 'OpenAPI::Modern';
-requires 'WWW::Chain';
+requires 'WWW::Chain', '0.007';
+requires 'YAML::PP';
 requires 'YAML::XS';
 
 on test => sub {

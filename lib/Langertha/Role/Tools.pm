@@ -7,9 +7,21 @@ requires qw( json );
 
 has tools => (
   is => 'ro',
-  isa => 'ArrayRef[Langertha::Role::Tool]',
+  isa => 'ArrayRef',
   predicate => 'has_tools',
 );
+
+has tools_definition => (
+  is => 'ro',
+  isa => 'Str',
+  lazy_build => 1,
+);
+sub _build_tools_definition {
+  my ( $self ) = @_;
+  return $self->json->pretty(1)->encode([
+    map { $_->tool_definition } @{$self->tools}
+  ]);
+}
 
 sub tools_call_hashref {
   my ( $self, %hash ) = @_;
