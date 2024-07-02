@@ -3,11 +3,13 @@ package Langertha::Ollama;
 
 use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
-use WWW::Chain;
 use JSON::MaybeXS;
+
+use Langertha::Ollama::Chat;
 
 with 'Langertha::Role::'.$_ for (qw(
   JSON
+  UserAgent
   OpenAPI
   Chat
   Embedding
@@ -22,21 +24,17 @@ sub default_embedding_model { 'mxbai-embed-large' }
 
 sub openapi_file { yaml => dist_file('Langertha','ollama.yaml') };
 
-sub chat_request {
-  my ( $self, $prompt, %extra ) = @_;
-  return $self->generate_request( generateChat =>
-    model => $self->model,
-    messages => [$self->has_system_prompt ? ({
-      role => "system",
-      content => $self->system_prompt,
-    }) : (),{
-      role => "user",
-      content => $prompt,
-    }],
-    stream => JSON->false,
-    %extra,
-  );
-}
+has keep_alive => (
+  isa => 'Int',
+  is => 'ro',
+  predicate => 'has_keep_alive',
+);
+
+has json_format => (
+  isa => 'Bool',
+  is => 'ro',
+  default => sub {0},
+);
 
 sub embedding_request {
   my ( $self, $prompt, %extra ) = @_;
@@ -45,6 +43,24 @@ sub embedding_request {
     prompt => $prompt,
     %extra,
   );
+}
+
+sub chat {
+  my ( $self, $query ) = @_;
+  my $chain = $self->chat_chain( content => $query );
+  return $self->user_agent->request_chain($chain);
+}
+
+sub chat_chain {
+  my ( $self, %args ) = @_;
+  return Langertha::Ollama::Chat->new(
+    ollama => $self,
+    %args,
+  );
+}
+
+sub embedding {
+  my ( $self ) = @_;
 }
 
 1;

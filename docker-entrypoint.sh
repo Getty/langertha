@@ -2,9 +2,9 @@
 
 export IP=$( hostname -i )
 
-if [ -f ${LANGERTHA_PROJECT_ROOT}/src/banner ]; then
+if [ -f ${LANGERTHA_PROJECT_ROOT}/src/share/banner ]; then
 
-  cat ${LANGERTHA_PROJECT_ROOT}/src/banner
+  cat ${LANGERTHA_PROJECT_ROOT}/src/share/banner
 
 fi
 

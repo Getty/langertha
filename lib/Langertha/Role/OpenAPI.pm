@@ -21,6 +21,7 @@ requires qw(
 
 has url => (
   is => 'ro',
+  isa => 'Str',
   predicate => 'has_url',
 );
 
@@ -31,11 +32,11 @@ has openapi => (
 sub _build_openapi {
   my ( $self ) = @_;
   my ( $format, $file ) = $self->openapi_file;
-  # format assumed to be yaml
+  croak "".(ref $self)." can only do format yaml for the OpenAPI spec currently" unless $format eq 'yaml';
   my $yaml = $file;
   return OpenAPI::Modern->new(
     openapi_uri => $yaml,
-    openapi_schema => YAML::PP->new(boolean => 'JSON::PP')->load_string(path($yaml)->slurp_utf8)
+    openapi_schema => YAML::PP->new(boolean => 'JSON::PP')->load_string(path($yaml)->slurp_utf8),
   );
 }
 

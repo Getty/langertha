@@ -13,14 +13,21 @@ has tools => (
 
 has tools_definition => (
   is => 'ro',
-  isa => 'Str',
   lazy_build => 1,
 );
 sub _build_tools_definition {
   my ( $self ) = @_;
-  return $self->json->pretty(1)->encode([
-    map { $_->tool_definition } @{$self->tools}
-  ]);
+  return [map { $_->tool_definition } @{$self->tools}];
+}
+
+has tools_definition_json => (
+  is => 'ro',
+  isa => 'Str',
+  lazy_build => 1,
+);
+sub _build_tools_definition_json {
+  my ( $self ) = @_;
+  return $self->json->pretty(1)->encode($self->tools_definition);
 }
 
 sub tools_call_hashref {
