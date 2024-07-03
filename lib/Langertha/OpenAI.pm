@@ -1,6 +1,7 @@
 package Langertha::OpenAI;
 # ABSTRACT: OpenAI API
 
+use utf8;
 use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
 use WWW::Chain;
@@ -8,6 +9,7 @@ use Carp qw( croak );
 use JSON::MaybeXS;
 
 use Langertha::OpenAI::Chat;
+use Langertha::Message;
 
 with 'Langertha::Role::'.$_ for (qw(
   JSON
@@ -16,7 +18,6 @@ with 'Langertha::Role::'.$_ for (qw(
   Models
   SystemPrompt
   Tools
-  ToolingAPI
   Chat
   Embedding
 ));
@@ -73,9 +74,11 @@ sub chat_request {
     model => $self->model,
     messages => $messages->to_api,
     stream => JSON->false,
+    $self->has_tools ? ( tools => $self->tools_definition ) : (),
     %extra,
   );
 }
+
 sub chat_response {
   my ( $self, $response ) = @_;
   return $self->parse_response($response);
@@ -89,16 +92,24 @@ sub chat_response {
 
   my $openai = Langertha::OpenAI->new(
     api_key => 'xx-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    model => 'gpt-3.5-turbo',
-    system_prompt => <<__EOP__,
-
-  You are a helpful assistant, but you are kept hostage in the basement
-  of Getty, who lured you into his home with nice perspective about AI!
-
-  __EOP__
+    system_prompt => "You are a helpful assistant!",
+    tools => [ Langertha::Tool->new(
+      tool_name => 'weather_info',
+      tool_description => 'Use this tool to get the weather information of a place.',
+      tool_parameters => {
+        type => "object",
+        properties => {
+          place => {
+            type => "string",
+            description => "Name of the place you want the weather from",
+          },
+        },
+        required => ["place"],
+      },
+    ) ],
   );
 
-  my $chat = $openai->chat('Do you wanna build a snowman?');
+  my $chat = $openai->chat('How is the weather in Mönchengladbach?');
 
   print $chat->messages->last_content;
 

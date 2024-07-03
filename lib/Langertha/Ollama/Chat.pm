@@ -14,6 +14,8 @@ has ollama => (
   required => 1,
   handles => [qw(
     chat_request
+    json
+    tools_call
   )],
 );
 

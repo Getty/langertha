@@ -5,7 +5,7 @@ use Moose;
 
 has content => (
   is => 'ro',
-  isa => 'Str',
+  isa => 'Str|Undef',
   predicate => 'has_content',
 );
 

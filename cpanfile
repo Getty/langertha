@@ -9,7 +9,7 @@ requires 'Moose';
 requires 'MooseX::NonMoose';
 requires 'OpenAPI::Modern';
 requires 'Time::HiRes';
-requires 'WWW::Chain', '0.007';
+requires 'WWW::Chain', '0.100';
 requires 'YAML::PP';
 requires 'YAML::XS';
 
