@@ -89,10 +89,11 @@ sub chat_response {
 =head1 SYNOPSIS
 
   use Langertha::OpenAI;
+  use Langertha::Tool;
 
-  my $openai = Langertha::OpenAI->new(
-    api_key => 'xx-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    system_prompt => "You are a helpful assistant!",
+  my $openai_with_tools = Langertha::OpenAI->new(
+    api_key => $ENV{OPENAI_API_KEY},
+    system_prompt => "You are a helpful assistant! Use the tools, if necessary.",
     tools => [ Langertha::Tool->new(
       tool_name => 'weather_info',
       tool_description => 'Use this tool to get the weather information of a place.',
@@ -106,12 +107,22 @@ sub chat_response {
         },
         required => ["place"],
       },
+      tool_function => sub {
+        my ( $self, %args ) = @_;
+        return {
+          place => $args{place},
+          temperature => '11 Celsius',
+          precipitation => '3%',
+          humidity => '96%',
+          wind => '4,8 km/h',
+        };
+      },
     ) ],
   );
 
-  my $chat = $openai->chat('How is the weather in Mönchengladbach?');
+  my $chat_with_tools = $openai_with_tools->chat('How is the weather in Aachen?');
 
-  print $chat->messages->last_content;
+  print $chat_with_tools->messages->last_content;
 
 =head1 DESCRIPTION
 
