@@ -5,6 +5,9 @@ use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
 use WWW::Chain;
 use Carp qw( croak );
+use JSON::MaybeXS;
+
+use Langertha::OpenAI::Chat;
 
 with 'Langertha::Role::'.$_ for (qw(
   JSON
@@ -37,21 +40,8 @@ sub default_embedding_model { 'text-embedding-3-small' }
 
 sub openapi_file { yaml => dist_file('Langertha','openai.yaml') };
 
-sub chat_request {
-  my ( $self, $prompt, %extra ) = @_;
-  return $self->generate_request( createChatCompletion =>
-    model => $self->model,
-    messages => [$self->has_system_prompt ? ({
-      role => "system",
-      content => $self->system_prompt,
-    }) : (),{
-      role => "user",
-      content => $prompt,
-    }],
-    $self->has_tools ? (
-      tools => [map { $_->tool_definition } @{$self->tools}]
-    ) : (),
-  );
+sub embedding {
+  my ( $self, $input, %extra ) = @_;
 }
 
 sub embedding_request {
@@ -63,4 +53,57 @@ sub embedding_request {
   );
 }
 
+sub chat {
+  my ( $self, $query ) = @_;
+  my $chain = $self->chat_chain( content => $query );
+  return $self->user_agent->request_chain($chain);
+}
+
+sub chat_chain {
+  my ( $self, %args ) = @_;
+  return Langertha::OpenAI::Chat->new(
+    openai => $self,
+    %args,
+  );
+}
+
+sub chat_request {
+  my ( $self, $messages, %extra ) = @_;
+  return $self->generate_request( createChatCompletion =>
+    model => $self->model,
+    messages => $messages->to_api,
+    stream => JSON->false,
+    %extra,
+  );
+}
+sub chat_response {
+  my ( $self, $response ) = @_;
+  return $self->parse_response($response);
+}
+
 1;
+
+=head1 SYNOPSIS
+
+  use Langertha::OpenAI;
+
+  my $openai = Langertha::OpenAI->new(
+    api_key => 'xx-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    model => 'gpt-3.5-turbo',
+    system_prompt => <<__EOP__,
+
+  You are a helpful assistant, but you are kept hostage in the basement
+  of Getty, who lured you into his home with nice perspective about AI!
+
+  __EOP__
+  );
+
+  my $chat = $openai->chat('Do you wanna build a snowman?');
+
+  print $chat->messages->last_content;
+
+=head1 DESCRIPTION
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut

@@ -1,4 +1,5 @@
 Langertha-*
 .build
 *.html
+*.tar.gz
 .bash_history

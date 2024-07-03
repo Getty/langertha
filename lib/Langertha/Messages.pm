@@ -17,6 +17,13 @@ has messages => (
   },
 );
 
+# simple shortcut for accessing last chat message content
+sub last_content {
+  my ( $self ) = @_;
+  my @messages = reverse $self->all_messages;
+  return $messages[0]->content;
+}
+
 sub to_api {
   my ( $self ) = @_;
   return [map { $_->to_api } $self->all_messages];

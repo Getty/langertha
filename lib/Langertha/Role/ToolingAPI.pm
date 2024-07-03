@@ -1,5 +1,5 @@
 package Langertha::Role::ToolingAPI;
-# ABSTRACT: Role for APIs with tooling via prompt
+# ABSTRACT: Role for APIs with tooling via API
 
 use Moose::Role;
 

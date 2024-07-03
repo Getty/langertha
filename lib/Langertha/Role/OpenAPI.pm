@@ -85,6 +85,7 @@ sub generate_request {
 
 sub parse_response {
   my ( $self, $response ) = @_;
+  croak "".(ref $self)." request failed" unless $response->is_success;
   return $self->json->decode($response->decoded_content);
 }
 

@@ -5,13 +5,15 @@ use Moose;
 extends 'WWW::Chain';
 
 use Carp qw( croak );
+use JSON::MaybeXS;
+use Langertha::Message;
 
 has ollama => (
   isa => 'Langertha::Ollama',
   is => 'ro',
   required => 1,
   handles => [qw(
-    parse_response
+    chat_request
   )],
 );
 
@@ -22,7 +24,7 @@ has messages => (
 );
 sub _build_messages {
   my ( $self ) = @_;
-  return $self->base_chat_messages($self->content);
+  return $self->ollama->base_chat_messages($self->content);
 }
 
 has content => (
@@ -35,26 +37,19 @@ sub _build_content {
   croak "".(ref $self)." requires content if no messages are given";
 }
 
-sub chat_request {
-  my ( $self, $messages, %extra ) = @_;
-  return $self->generate_request( generateChat =>
-    model => $self->ollama->chat_model,
-    messages => $messages->to_api,
-    stream => JSON->false,
-    $self->ollama->json_format ? ( format => 'json' ) : (),
-    $self->ollama->has_keep_alive ? ( keep_alive => $self->ollama->keep_alive ) : (),
-    %extra,
-  );
+sub start_chain {
+  my ( $self ) = @_;
+  return $self->chat_request( $self->messages ), 'chat_response';
 }
 
 sub chat_response {
   my ( $self, $response ) = @_;
-  use DDP; p($response);
-}
-
-sub start_chain {
-  my ( $self ) = @_;
-  return $self->chat_request( $self->messages ), 'chat_response';
+  my @response = $self->ollama->chat_response($response);
+  return @response if $self->is_request($response[0]);
+  if ($response[0]->{message}) {
+    $self->messages->add_message(Langertha::Message->new($response[0]->{message}));
+  }
+  return;
 }
 
 1;
