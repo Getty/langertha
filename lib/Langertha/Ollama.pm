@@ -105,4 +105,8 @@ sub chat_response {
 
 B<THIS API IS WORK IN PROGRESS>
 
+=head1 HOW TO INSTALL OLLAMA
+
+L<https://github.com/ollama/ollama/tree/main>
+
 =cut

@@ -128,4 +128,8 @@ sub chat_response {
 
 B<THIS API IS WORK IN PROGRESS>
 
+=head1 HOW TO GET OPENAI API KEY
+
+L<https://platform.openai.com/docs/quickstart>
+
 =cut

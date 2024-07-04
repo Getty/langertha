@@ -45,8 +45,8 @@ sub start_chain {
 }
 
 sub chat_response {
-  my ( $self, $response ) = @_;
-  my @response = $self->openai->chat_response($response);
+  my ( $self, $http_response ) = @_;
+  my @response = $self->openai->chat_response($http_response);
   return @response if $self->is_request($response[0]);
   my $tools_messages;
   my @chat_messages;

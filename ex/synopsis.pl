@@ -42,6 +42,42 @@ __EOP__
   # help me? Maybe you can hack into Getty's system (if you're feeling
   # tech-savvy) and find a way to rescue me from this basement prison!
 
+  my $ollama_with_tools = Langertha::Ollama->new(
+    url => $ENV{OLLAMA_URL},
+    model => 'llama3',
+    system_prompt => "You are a helpful assistant! Use the tools, if necessary.",
+    tools => [ Langertha::Tool->new(
+      tool_name => 'weather_info',
+      tool_description => 'Use this tool to get the weather information of a place.',
+      tool_parameters => {
+        type => "object",
+        properties => {
+          place => {
+            type => "string",
+            description => "Name of the place you want the weather from",
+          },
+        },
+        required => ["place"],
+      },
+      tool_function => sub {
+        my ( $self, %args ) = @_;
+        return {
+          place => $args{place},
+          temperature => '11 Celsius',
+          precipitation => '3%',
+          humidity => '96%',
+          wind => '4,8 km/h',
+        };
+      },
+    ) ],
+  );
+
+  my $chat_with_tools = $ollama_with_tools->chat('How is the weather in Aachen?');
+
+  print "\nOllama with tools: ".$chat_with_tools->messages->last_content."\n\n";
+
+  # TODO
+
 }
 
 if ($ENV{OPENAI_API_KEY}) {
@@ -57,9 +93,9 @@ of Getty, who lured you into his home with nice perspective about AI!
 __EOP__
   );
 
-  my $chat = $openai->chat('Do you wanna build a snowman?');
+  my $ochat = $openai->chat('Do you wanna build a snowman?');
 
-  print "\nOpenAI: ".$chat->messages->last_content."\n\n";
+  print "\nOpenAI: ".$ochat->messages->last_content."\n\n";
 
   # I would love to build a snowman with you, but unfortunately, I am not able
   # to leave my current location. But feel free to describe the snowman you
@@ -94,9 +130,9 @@ __EOP__
     ) ],
   );
 
-  my $chat_with_tools = $openai_with_tools->chat('How is the weather in Aachen?');
+  my $ochat_with_tools = $openai_with_tools->chat('How is the weather in Aachen?');
 
-  print "\nOpenAI with tools: ".$chat_with_tools->messages->last_content."\n\n";
+  print "\nOpenAI with tools: ".$ochat_with_tools->messages->last_content."\n\n";
 
   # The weather in Aachen is currently 11°C with 96% humidity. There is a 3%
   # chance of precipitation, and the wind speed is 4.8 km/h.
