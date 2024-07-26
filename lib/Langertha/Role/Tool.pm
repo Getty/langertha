@@ -1,5 +1,5 @@
 package Langertha::Role::Tool;
-# ABSTRACT: Role for tools themselves
+# ABSTRACT: Role for tools themselves [WIP]
 
 use Moose::Role;
 use Carp qw( croak );

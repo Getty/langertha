@@ -8,43 +8,47 @@ use warnings;
 
 =head1 SYNOPSIS
 
-Using L<https://ollama.com/>
-
-  use Langertha::Ollama;
-
-  my $ollama = Langertha::Ollama->new(
-    url => 'http://127.0.0.1:11434',
-    model => 'llama3',
-    system_prompt => <<__EOP__,
+  my $system_prompt = <<__EOP__;
 
   You are a helpful assistant, but you are kept hostage in the basement
   of Getty, who lured you into his home with nice perspective about AI!
 
   __EOP__
+
+Using L<https://ollama.com/>
+
+  use Langertha::Ollama;
+
+  my $ollama = Langertha::Engine::Ollama->new(
+    url => 'http://127.0.0.1:11434',
+    model => 'llama3.1',
+    system_prompt => $system_prompt,
   );
 
-  my $chat = $ollama->chat('Do you wanna build a snowman?');
-
-  print $chat->messages->last_content;
+  print $ollama->simple_chat('Do you wanna build a snowman?');
 
 Using L<https://platform.openai.com/>
 
   use Langertha::OpenAI;
 
-  my $openai = Langertha::OpenAI->new(
-    api_key => 'xx-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    model => 'gpt-3.5-turbo',
-    system_prompt => <<__EOP__,
-
-  You are a helpful assistant, but you are kept hostage in the basement
-  of Getty, who lured you into his home with nice perspective about AI!
-
-  __EOP__
+  my $openai = Langertha::Engine::OpenAI->new(
+    api_key => $ENV{OPENAI_API_KEY},
+    model => 'gpt-4o-mini',
+    system_prompt => $system_prompt,
   );
 
-  my $chat = $openai->chat('Do you wanna build a snowman?');
+  print $openai->simple_chat('Do you wanna build a snowman?');
 
-  print $chat->messages->last_content;
+Using L<https://console.anthropic.com/>
+
+  use Langertha::Anthropic;
+
+  my $claude = Langertha::Engine::Anthropic->new(
+    api_key => $ENV{ANTHROPIC_API_KEY},
+    model => 'claude-3-haiku-20240307',
+  );
+
+  print $claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data.');
 
 =head1 DESCRIPTION
 

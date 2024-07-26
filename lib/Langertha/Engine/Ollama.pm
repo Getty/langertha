@@ -1,25 +1,24 @@
-package Langertha::Ollama;
+package Langertha::Engine::Ollama;
 # ABSTRACT: Ollama API
 
 use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
+use Carp qw( croak );
 use JSON::MaybeXS;
-
-use Langertha::Ollama::Chat;
 
 with 'Langertha::Role::'.$_ for (qw(
   JSON
   UserAgent
+  HTTP
   OpenAPI
+  Seed
   Chat
   Embedding
   Models
   SystemPrompt
-  Tools
-  ToolingPrompt
 ));
 
-sub default_model { 'llama3' }
+sub default_model { 'llama3.1' }
 sub default_embedding_model { 'mxbai-embed-large' }
 
 sub openapi_file { yaml => dist_file('Langertha','ollama.yaml') };
@@ -36,70 +35,49 @@ has json_format => (
   default => sub {0},
 );
 
-sub embedding {
-  my ( $self ) = @_;
-}
-
 sub embedding_request {
   my ( $self, $prompt, %extra ) = @_;
-  return $self->generate_request( generateEmbeddings =>
+  return $self->generate_request( generateEmbeddings => sub { $self->embedding_response(shift) },
     model => $self->embedding_model,
     prompt => $prompt,
     %extra,
   );
 }
 
-sub chat {
-  my ( $self, $query ) = @_;
-  my $chain = $self->chat_chain( content => $query );
-  return $self->user_agent->request_chain($chain);
-}
-
-sub chat_chain {
-  my ( $self, %args ) = @_;
-  return Langertha::Ollama::Chat->new(
-    ollama => $self,
-    %args,
-  );
+sub embedding_response {
+  my ( $self, $response ) = @_;
+  my $data = $self->parse_response($response);
+  # tracing
+  return $data;
 }
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
-  return $self->generate_request( generateChat =>
+  return $self->generate_request( generateChat => sub { $self->chat_response(shift) },
     model => $self->chat_model,
-    messages => $messages->to_api,
+    messages => $messages,
     stream => JSON->false,
     $self->json_format ? ( format => 'json' ) : (),
     $self->has_keep_alive ? ( keep_alive => $self->keep_alive ) : (),
+    options => {
+      $self->has_seed ? ( seed => $self->seed )
+        : $self->randomize_seed ? ( seed => $self->random_seed ) : (),
+    },
     %extra,
   );
 }
 
 sub chat_response {
   my ( $self, $response ) = @_;
-  return $self->parse_response($response);
+  my $data = $self->parse_response($response);
+  # tracing
+  my @messages = $data->{message};
+  return $messages[0]->{content};
 }
 
 1;
 
 =head1 SYNOPSIS
-
-  use Langertha::Ollama;
-
-  my $ollama = Langertha::Ollama->new(
-    url => 'http://127.0.0.1:11434',
-    model => 'llama3',
-    system_prompt => <<__EOP__,
-
-  You are a helpful assistant, but you are kept hostage in the basement
-  of Getty, who lured you into his home with nice perspective about AI!
-
-  __EOP__
-  );
-
-  my $chat = $ollama->chat('Do you wanna build a snowman?');
-
-  print $chat->messages->last_content;
 
 =head1 DESCRIPTION
 

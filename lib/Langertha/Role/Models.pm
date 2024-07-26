@@ -3,7 +3,9 @@ package Langertha::Role::Models;
 
 use Moose::Role;
 
-requires qw( default_model );
+requires qw(
+  default_model
+);
 
 has models => (
   is => 'ro',

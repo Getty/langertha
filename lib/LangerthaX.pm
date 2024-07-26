@@ -4,8 +4,6 @@ package LangerthaX;
 use strict;
 use warnings;
 
-
-
 1;
 
 =head1 DESCRIPTION

@@ -6,10 +6,10 @@ requires 'JSON::Streaming::Reader';
 requires 'LWP::Protocol::https';
 requires 'Module::Runtime';
 requires 'Moose';
+requires 'MooseX::ABC';
 requires 'MooseX::NonMoose';
 requires 'OpenAPI::Modern';
 requires 'Time::HiRes';
-requires 'WWW::Chain', '0.100';
 requires 'YAML::PP';
 requires 'YAML::XS';
 

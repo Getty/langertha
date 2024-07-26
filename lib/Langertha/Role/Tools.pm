@@ -1,5 +1,5 @@
 package Langertha::Role::Tools;
-# ABSTRACT: Role for APIs with tools
+# ABSTRACT: Role for APIs with tools [WIP]
 
 use Moose::Role;
 

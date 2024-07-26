@@ -1,7 +1,7 @@
 package Langertha::Tool;
-# ABSTRACT: Generic tool with coderefs
+# ABSTRACT: Generic tool with coderefs [WIP]
 
-use Moose;
+use Langertha::Moose;
 use Carp qw( croak );
 
 with qw(

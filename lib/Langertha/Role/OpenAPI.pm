@@ -12,17 +12,13 @@ use Path::Tiny;
 use URI;
 use YAML::PP;
 
-use Langertha::HTTP::Request::OpenAPI;
+use Langertha::Request::HTTP;
 
 requires qw(
   openapi_file
+  generate_http_request
+  url
   json
-);
-
-has url => (
-  is => 'ro',
-  isa => 'Str',
-  predicate => 'has_url',
 );
 
 has openapi => (
@@ -48,45 +44,13 @@ sub get_operation {
   return unless $paths eq 'paths';
   $path =~ s/~1/\//g;
   my $url = $self->url || $self->openapi->openapi_document->get('/servers/0/url');
-  $operation->{url} = URI->new($url.$path);
-  $operation->{method} = uc($method);
-  return $operation;
-}
-
-sub generate_body {
-  my ( $self, %args ) = @_;
-  return $self->json->encode({ %args });
+  return uc($method), $url.$path;
 }
 
 sub generate_request {
-  my ( $self, $operationId, %args ) = @_;
-  my $operation = $self->get_operation($operationId);
-  my $uri = $operation->{url};
-  my $userinfo = $uri->userinfo;
-  $uri->userinfo(undef) if $userinfo;
-  my $headers = [];
-  my $request = Langertha::HTTP::Request::OpenAPI->new(
-    $operation->{method}, $operation->{url}, $headers,
-    scalar %args > 0 ? $self->generate_body(%args) : (),
-  );
-  $request->args({ %args });
-  $request->openapi($self);
-  $request->operation($operationId);
-  if ($userinfo) {
-    my ( $user, $pass ) = split(/:/, $userinfo);
-    if ($user and $pass) {
-      $request->authorization_basic($user, $pass);
-    }
-  }
-  $request->header('Content-Type', 'application/json; charset=utf-8');
-  $self->update_request($request) if $self->can('update_request');
-  return $request;
-}
-
-sub parse_response {
-  my ( $self, $response ) = @_;
-  croak "".(ref $self)." request failed" unless $response->is_success;
-  return $self->json->decode($response->decoded_content);
+  my ( $self, $operationId, $response_call, %args ) = @_;
+  my ( $method, $url ) = $self->get_operation($operationId);
+  return $self->generate_http_request( $method, $url, $response_call, %args );
 }
 
 1;
