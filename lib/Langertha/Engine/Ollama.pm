@@ -48,7 +48,7 @@ sub embedding_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
   # tracing
-  return $data;
+  return $data->{embedding};
 }
 
 sub chat_request {
@@ -78,6 +78,18 @@ sub chat_response {
 1;
 
 =head1 SYNOPSIS
+
+  use Langertha::Ollama;
+
+  my $ollama = Langertha::Engine::Ollama->new(
+    url => $ENV{OLLAMA_URL},
+    model => 'llama3.1',
+    system_prompt => 'You are a helpful assistant',
+  );
+
+  print($ollama->simple_chat('Say something nice'));
+
+  my $embedding = $ollama->embedding($content);
 
 =head1 DESCRIPTION
 

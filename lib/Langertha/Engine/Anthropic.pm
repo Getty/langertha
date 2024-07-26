@@ -88,3 +88,25 @@ sub chat_response {
 }
 
 1;
+
+=head1 SYNOPSIS
+
+  use Langertha::Anthropic;
+
+  my $claude = Langertha::Engine::Anthropic->new(
+    api_key => $ENV{ANTHROPIC_API_KEY},
+    model => 'claude-3-5-sonnet-20240620',
+    max_tokens => 2048,
+  );
+
+  print($claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data types'));
+
+=head1 DESCRIPTION
+
+B<THIS API IS WORK IN PROGRESS>
+
+=head1 HOW TO GET ANTHROPIC API KEY
+
+L<https://docs.anthropic.com/en/api/getting-started>
+
+=cut

@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: Ollama tools example
+# ABSTRACT: Synopsis examples
 
 $|=1;
 

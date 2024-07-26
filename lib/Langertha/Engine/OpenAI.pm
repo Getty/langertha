@@ -54,7 +54,8 @@ sub embedding_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
   # tracing
-  return $data;
+  my @objects = @{$data->{data}};
+  return $objects[0]->{embedding};
 }
 
 sub chat_request {
@@ -82,6 +83,16 @@ sub chat_response {
 =head1 SYNOPSIS
 
   use Langertha::OpenAI;
+
+  my $openai = Langertha::Engine::OpenAI->new(
+    api_key => $ENV{OPENAI_API_KEY},
+    model => 'gpt-4o-mini',
+    system_prompt => 'You are a helpful assistant',
+  );
+
+  print($openai->simple_chat('Say something nice'));
+
+  my $embedding = $openai->embedding($content);
 
 =head1 DESCRIPTION
 

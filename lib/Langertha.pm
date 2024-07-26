@@ -15,7 +15,7 @@ use warnings;
 
   __EOP__
 
-Using L<https://ollama.com/>
+Using L<https://ollama.com/>:
 
   use Langertha::Ollama;
 
@@ -27,7 +27,7 @@ Using L<https://ollama.com/>
 
   print $ollama->simple_chat('Do you wanna build a snowman?');
 
-Using L<https://platform.openai.com/>
+Using L<https://platform.openai.com/>:
 
   use Langertha::OpenAI;
 
@@ -39,13 +39,13 @@ Using L<https://platform.openai.com/>
 
   print $openai->simple_chat('Do you wanna build a snowman?');
 
-Using L<https://console.anthropic.com/>
+Using L<https://console.anthropic.com/>:
 
   use Langertha::Anthropic;
 
   my $claude = Langertha::Engine::Anthropic->new(
     api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-3-haiku-20240307',
+    model => 'claude-3-5-sonnet-20240620',
   );
 
   print $claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data.');
