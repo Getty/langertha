@@ -58,7 +58,7 @@ sub chat_request {
   my $system = "";
   for my $message (@{$messages}) {
     if ($message->{role} eq 'system') {
-      $system .= "\n\n".$message->{content};
+      $system .= $message->{content};
     } else {
       push @msgs, $message;
     }
