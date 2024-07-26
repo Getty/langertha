@@ -8,13 +8,17 @@ requires qw(
 );
 
 has models => (
-  is => 'ro',
+  is => 'rw',
   isa => 'ArrayRef[Str]',
   lazy_build => 1,
 );
 sub _build_models {
   my ( $self ) = @_;
-  return [$self->default_model];
+  return [
+    $self->can('all_models')
+      ? $self->all_models
+      : $self->model
+  ];
 }
 
 has model => (

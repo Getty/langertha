@@ -20,6 +20,15 @@ with 'Langertha::Role::'.$_ for (qw(
   Embedding
 ));
 
+sub all_models {qw(
+  gpt-4o
+  gpt-4o-mini
+  gpt-4-turbo
+  gpt-4
+  gpt-3.5-turbo
+  gpt-3.5-turbo-instruct
+)}
+
 has api_key => (
   is => 'ro',
   lazy_build => 1,
@@ -37,7 +46,7 @@ sub update_request {
 }
 
 sub default_model { 'gpt-3.5-turbo' }
-sub default_embedding_model { 'text-embedding-3-small' }
+sub default_embedding_model { 'text-embedding-ada-002' }
 
 sub openapi_file { yaml => dist_file('Langertha','openai.yaml') };
 

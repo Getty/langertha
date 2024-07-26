@@ -75,6 +75,26 @@ sub chat_response {
   return $messages[0]->{content};
 }
 
+sub tags_request {
+  my ( $self ) = @_;
+  return $self->generate_request( getModels => sub { $self->tags_response(shift) } );
+}
+
+sub tags_response {
+  my ( $self, $response ) = @_;
+  my $data = $self->parse_response($response);
+  my @model_list = map { $_->{model} } @{$data->{models}};
+  $self->models(\@model_list);
+  return $data->{models};
+}
+
+sub simple_tags {
+  my ( $self ) = @_;
+  my $request = $self->tags_request;
+  my $response = $self->user_agent->request($request);
+  return $request->response_call->($response);
+}
+
 1;
 
 =head1 SYNOPSIS
