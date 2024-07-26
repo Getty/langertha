@@ -1,0 +1,41 @@
+#!/usr/bin/env perl
+# PODNAME: langertha_chat_ollama
+# ABSTRACT: Chat with Ollama
+
+use strict;
+use warnings;
+use Langertha::Engine::Ollama;
+use Carp qw( croak );
+use Time::HiRes qw( time );
+
+my $start = time;
+my $ollama = Langertha::Engine::Ollama->new(
+  $ENV{OLLAMA_MODEL} ? ( model => $ENV{OLLAMA_MODEL} ) : (),
+  $ENV{OLLAMA_URL} ? ( url => $ENV{OLLAMA_URL} ) : (),
+);
+print $ollama->simple_chat(join(" ",@ARGV));
+my $end = time;
+print "\nTime: ".($end - $start)." seconds";
+
+=encoding utf8
+
+=head1 SYNOPSIS
+
+  langertha_chat_ollama Some request to the AI
+
+=head1 DESCRIPTION
+
+Alternative URL can be given via OLLAMA_URL environment.
+
+=head1 SUPPORT
+
+Repository
+
+  https://github.com/Getty/langertha
+  Pull request and additional contributors are welcome
+ 
+Issue Tracker
+
+  https://github.com/Getty/langertha/issues
+
+=cut

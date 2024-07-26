@@ -1,0 +1,40 @@
+#!/usr/bin/env perl
+# PODNAME: langertha_chat_openai
+# ABSTRACT: Chat with OpenAI
+
+use strict;
+use warnings;
+use Langertha::Engine::OpenAI;
+use Carp qw( croak );
+use Time::HiRes qw( time );
+
+my $start = time;
+my $openai = Langertha::Engine::OpenAI->new(
+  $ENV{OPENAI_MODEL} ? ( model => $ENV{OPENAI_MODEL} ) : (),
+);
+print $openai->simple_chat(join(" ",@ARGV));
+my $end = time;
+print "\nTime: ".($end - $start)." seconds";
+
+=encoding utf8
+
+=head1 SYNOPSIS
+
+  langertha_chat_openai Some request to the AI
+
+=head1 DESCRIPTION
+
+Requires OPENAI_API_KEY environment to be set.
+
+=head1 SUPPORT
+
+Repository
+
+  https://github.com/Getty/langertha
+  Pull request and additional contributors are welcome
+ 
+Issue Tracker
+
+  https://github.com/Getty/langertha/issues
+
+=cut
