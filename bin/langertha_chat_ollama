@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # PODNAME: langertha_chat_ollama
-# ABSTRACT: Chat with Ollama
+# ABSTRACT: Simple chat with Ollama
 
 use strict;
 use warnings;
@@ -19,13 +19,43 @@ my $ollama = Langertha::Engine::Ollama->new(
 );
 print $ollama->simple_chat(join(" ",@ARGV));
 my $end = time;
-printf("\n -- %.3f seconds\n", ($end - $start)) unless $ENV{LANGERTHA_NO_TIME};
+printf("\n -- %.3f seconds (%s)\n", ($end - $start), $ollama->model) unless $ENV{LANGERTHA_NO_TIME};
 
 =encoding utf8
 
 =head1 SYNOPSIS
 
-  langertha_chat_ollama Some request to the AI
+  bash$ langertha_chat_ollama write a bash command that lists files older than
+  5 days
+
+  Here is the Bash command to list files older than 5 days:
+
+  ```bash
+  find . -type f -mtime +5
+  ```
+
+  Explanation:
+
+  - `find`: This is the primary command for searching through directories and
+    their contents.
+  - `.`: Specifies that we want to search from the current directory.
+  - `-type f`: Tells find to only consider files (not directories).
+  - `-mtime +5`: Specifies that we're interested in files with a last modified
+    date more than 5 days ago. The `+` is used for "greater than", and `5`
+    specifies how many days.
+
+  Example Use Case:
+
+  To list all the PDFs older than 5 days from your current directory, you can
+  use this command:
+
+  ```bash
+  find . -type f -name "*.pdf" -mtime +5
+  ```
+
+  This will list all files with a `.pdf` extension that are more than 5 days
+  old.
+   -- 5.804 seconds (llama3.1)
 
 =head1 DESCRIPTION
 

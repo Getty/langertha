@@ -15,7 +15,6 @@ with 'Langertha::Role::'.$_ for (qw(
   OpenAPI
   Models
   SystemPrompt
-  Tools
   Chat
   Embedding
 ));

@@ -11,11 +11,11 @@ with 'Langertha::Role::'.$_ for (qw(
   UserAgent
   HTTP
   OpenAPI
+  Models
   Seed
+  SystemPrompt
   Chat
   Embedding
-  Models
-  SystemPrompt
 ));
 
 sub default_model { 'llama3.1' }
