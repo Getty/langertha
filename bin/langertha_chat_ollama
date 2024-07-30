@@ -6,7 +6,11 @@ use strict;
 use warnings;
 use Langertha::Engine::Ollama;
 use Carp qw( croak );
+use POSIX qw( round );
 use Time::HiRes qw( time );
+
+binmode(STDOUT, ":utf8");
+binmode(STDERR, ":utf8");
 
 my $start = time;
 my $ollama = Langertha::Engine::Ollama->new(
@@ -15,7 +19,7 @@ my $ollama = Langertha::Engine::Ollama->new(
 );
 print $ollama->simple_chat(join(" ",@ARGV));
 my $end = time;
-print "\nTime: ".($end - $start)." seconds";
+printf("\n -- %.3f seconds\n", ($end - $start)) unless $ENV{LANGERTHA_NO_TIME};
 
 =encoding utf8
 
@@ -37,5 +41,13 @@ Repository
 Issue Tracker
 
   https://github.com/Getty/langertha/issues
+
+Discord
+
+  https://discord.gg/Y2avVYpquV
+
+IRC
+
+  irc://irc.perl.org/ai
 
 =cut

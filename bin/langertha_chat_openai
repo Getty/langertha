@@ -8,13 +8,16 @@ use Langertha::Engine::OpenAI;
 use Carp qw( croak );
 use Time::HiRes qw( time );
 
+binmode(STDOUT, ":utf8");
+binmode(STDERR, ":utf8");
+
 my $start = time;
 my $openai = Langertha::Engine::OpenAI->new(
   $ENV{OPENAI_MODEL} ? ( model => $ENV{OPENAI_MODEL} ) : (),
 );
 print $openai->simple_chat(join(" ",@ARGV));
 my $end = time;
-print "\nTime: ".($end - $start)." seconds";
+printf("\n -- %.3f seconds\n", ($end - $start)) unless $ENV{LANGERTHA_NO_TIME};
 
 =encoding utf8
 
@@ -36,5 +39,13 @@ Repository
 Issue Tracker
 
   https://github.com/Getty/langertha/issues
+
+Discord
+
+  https://discord.gg/Y2avVYpquV
+
+IRC
+
+  irc://irc.perl.org/ai
 
 =cut

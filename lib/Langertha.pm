@@ -54,4 +54,23 @@ Using L<https://console.anthropic.com/>:
 
 B<THIS API IS WORK IN PROGRESS>
 
+=head1 SUPPORT
+
+Repository
+
+  https://github.com/Getty/langertha
+  Pull request and additional contributors are welcome
+ 
+Issue Tracker
+
+  https://github.com/Getty/langertha/issues
+
+Discord
+
+  https://discord.gg/Y2avVYpquV
+
+IRC
+
+  irc://irc.perl.org/ai
+
 =cut
