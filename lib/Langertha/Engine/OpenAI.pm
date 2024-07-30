@@ -1,16 +1,13 @@
 package Langertha::Engine::OpenAI;
 # ABSTRACT: OpenAI API
 
-use utf8;
 use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
-use WWW::Chain;
 use Carp qw( croak );
 use JSON::MaybeXS;
 
 with 'Langertha::Role::'.$_ for (qw(
   JSON
-  UserAgent
   HTTP
   OpenAPI
   Models
@@ -44,8 +41,8 @@ sub update_request {
   $request->header('Authorization', 'Bearer '.$self->api_key);
 }
 
-sub default_model { 'gpt-3.5-turbo' }
-sub default_embedding_model { 'text-embedding-ada-002' }
+sub default_model { 'gpt-4o-mini' }
+sub default_embedding_model { 'text-embedding-3-large' }
 
 sub openapi_file { yaml => dist_file('Langertha','openai.yaml') };
 

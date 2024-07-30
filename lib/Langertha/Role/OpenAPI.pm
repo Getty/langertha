@@ -6,7 +6,6 @@ use Moose::Role;
 use Carp qw( croak );
 use JSON::MaybeXS ();
 use JSON::PP ();
-use MIME::Base64 qw( encode_base64 );
 use OpenAPI::Modern;
 use Path::Tiny;
 use URI;

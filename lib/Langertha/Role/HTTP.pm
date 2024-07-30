@@ -69,7 +69,7 @@ sub _build_user_agent_agent {
 }
 
 has user_agent => (
-  does => 'LWP::UserAgent',
+  isa => 'LWP::UserAgent',
   is => 'ro',
   lazy_build => 1,
 );

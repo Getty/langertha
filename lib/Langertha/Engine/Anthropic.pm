@@ -7,7 +7,6 @@ use JSON::MaybeXS;
 
 with 'Langertha::Role::'.$_ for (qw(
   JSON
-  UserAgent
   HTTP
   Models
   Chat
