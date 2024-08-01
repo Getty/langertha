@@ -30,11 +30,10 @@ sub generate_http_request {
   $uri->userinfo(undef) if $userinfo;
   my $headers = [];
   my $request = Langertha::Request::HTTP->new(
-    uc($method), $uri, $headers,
-    scalar %args > 0 ? $self->generate_body(%args) : (),
+    http => [ uc($method), $uri, $headers, ( scalar %args > 0 ? $self->generate_body(%args) : () ) ],
+    request_source => $self,
+    response_call => $response_call,
   );
-  $request->request_source($self);
-  $request->response_call($response_call);
   if ($userinfo) {
     my ( $user, $pass ) = split(/:/, $userinfo);
     if ($user and $pass) {

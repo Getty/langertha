@@ -101,6 +101,7 @@ sub chat_response {
   return $messages[0]->{content};
 }
 
+sub tags { $_[0]->tags_request }
 sub tags_request {
   my ( $self ) = @_;
   return $self->generate_request( getModels => sub { $self->tags_response(shift) } );
@@ -116,7 +117,7 @@ sub tags_response {
 
 sub simple_tags {
   my ( $self ) = @_;
-  my $request = $self->tags_request;
+  my $request = $self->tags;
   my $response = $self->user_agent->request($request);
   return $request->response_call->($response);
 }

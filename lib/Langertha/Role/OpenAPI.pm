@@ -11,8 +11,6 @@ use Path::Tiny;
 use URI;
 use YAML::PP;
 
-use Langertha::Request::HTTP;
-
 requires qw(
   openapi_file
   generate_http_request
