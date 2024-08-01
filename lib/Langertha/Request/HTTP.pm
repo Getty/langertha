@@ -5,7 +5,7 @@ use MooseX::NonMoose;
 
 extends 'HTTP::Request';
 
-has engine => (
+has request_source => (
   is => 'rw',
   does => 'Langertha::Role::HTTP',
 );
@@ -15,4 +15,4 @@ has response_call => (
   isa => 'CodeRef',
 );
 
-1;
+__PACKAGE__->meta->make_immutable;

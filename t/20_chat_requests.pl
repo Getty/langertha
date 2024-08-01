@@ -12,7 +12,7 @@ use Langertha::Engine::Anthropic;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(14);
+plan(19);
 
 my $ollama_testurl = 'http://test.url:12345';
 my $ollama = Langertha::Engine::Ollama->new(
@@ -79,5 +79,28 @@ is_deeply($anthropic_data, {
   system => 'systemprompt',
   model => 'claude-3-5-sonnet-20240620',
 }, 'Anthropic request body is correct');
+
+my $ollama_openai_testurl = 'http://test.openai.url:12345';
+my $ollama_for_openai = Langertha::Engine::Ollama->new(
+  url => $ollama_openai_testurl,
+  model => 'model',
+  system_prompt => 'systemprompt',
+);
+my $ollama_openai = $ollama_for_openai->openai;
+my $ollama_openai_request = $ollama_openai->chat('testprompt');
+is($ollama_openai_request->uri, $ollama_openai_testurl.'/v1/chat/completions', 'Ollama OpenAI request uri is correct');
+is($ollama_openai_request->method, 'POST', 'Ollama OpenAI request method is correct');
+is($ollama_openai_request->header('Authorization'), 'Bearer ollama', 'Ollama OpenAI request Authorization header is correct');
+is($ollama_openai_request->header('Content-Type'), 'application/json; charset=utf-8', 'Ollama OpenAI request JSON Content Type is set');
+my $ollama_openai_data = $json->decode($ollama_openai_request->content);
+is_deeply($ollama_openai_data, {
+  messages => [{
+    content => "systemprompt", role => "system",
+  },{
+    content => "testprompt", role => "user",
+  }],
+  model => "model",
+  stream => JSON->false,
+}, 'Ollama OpenAI request body is correct');
 
 done_testing;

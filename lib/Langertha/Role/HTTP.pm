@@ -33,7 +33,7 @@ sub generate_http_request {
     uc($method), $uri, $headers,
     scalar %args > 0 ? $self->generate_body(%args) : (),
   );
-  $request->engine($self);
+  $request->request_source($self);
   $request->response_call($response_call);
   if ($userinfo) {
     my ( $user, $pass ) = split(/:/, $userinfo);

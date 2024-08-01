@@ -86,7 +86,7 @@ sub chat_response {
   return $messages[0]->{text};
 }
 
-1;
+__PACKAGE__->meta->make_immutable;
 
 =head1 SYNOPSIS
 

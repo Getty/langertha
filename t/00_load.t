@@ -8,10 +8,10 @@ use Module::Runtime qw( use_module );
 
 my @modules = qw(
   Langertha
-  Langertha::Request::HTTP
   Langertha::Engine::OpenAI
   Langertha::Engine::Ollama
   Langertha::Engine::Anthropic
+  Langertha::Request::HTTP
   LangerthaX
 );
 

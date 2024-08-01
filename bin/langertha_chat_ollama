@@ -6,7 +6,6 @@ use strict;
 use warnings;
 use Langertha::Engine::Ollama;
 use Carp qw( croak );
-use POSIX qw( round );
 use Time::HiRes qw( time );
 
 binmode(STDOUT, ":utf8");

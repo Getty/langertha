@@ -35,8 +35,22 @@ sub _build_openapi {
   );
 }
 
+has supported_operations => (
+  is => 'ro',
+  isa => 'ArrayRef[Str]',
+  predicate => 'has_supported_operations',
+);
+sub can_operation {
+  my ( $self, $operationId ) = @_;
+  return 1 unless $self->has_supported_operations;
+  my %so = map { $_, 1 } @{$self->supported_operations};
+  return $so{$operationId};
+}
+
 sub get_operation {
   my ( $self, $operationId ) = @_;
+  croak "".(ref $self)." runs in compatibility mode and is unable to perform this OpenAPI operation"
+    unless ($self->can_operation($operationId));
   my $jpath = $self->openapi->openapi_document->get_operationId_path($operationId);
   my $operation = $self->openapi->openapi_document->get($jpath);
   my ( undef, $paths, $path, $method ) = split('/', $jpath);

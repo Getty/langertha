@@ -25,6 +25,11 @@ sub all_models {qw(
   gpt-3.5-turbo-instruct
 )}
 
+has compatibility_for_engine => (
+  is => 'ro',
+  predicate => 'has_compatibility_for_engine',
+);
+
 has api_key => (
   is => 'ro',
   lazy_build => 1,
@@ -83,7 +88,7 @@ sub chat_response {
   return $messages[0]->{content};
 }
 
-1;
+__PACKAGE__->meta->make_immutable;
 
 =head1 SYNOPSIS
 

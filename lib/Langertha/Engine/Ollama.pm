@@ -6,6 +6,8 @@ use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );
 use JSON::MaybeXS;
 
+use Langertha::Engine::OpenAI;
+
 with 'Langertha::Role::'.$_ for (qw(
   JSON
   HTTP
@@ -16,6 +18,31 @@ with 'Langertha::Role::'.$_ for (qw(
   Chat
   Embedding
 ));
+
+sub openai {
+  my ( $self, %args ) = @_;
+  my $url = $self->url || $self->openapi->openapi_document->get('/servers/0/url');
+  return Langertha::Engine::OpenAI->new(
+    url => $self->url.'/v1',
+    model => $self->model,
+    $self->embedding_model ? ( embedding_model => $self->embedding_model ) : (),
+    $self->chat_model ? ( chat_model => $self->chat_model ) : (),
+    $self->has_system_prompt ? ( system_prompt => $self->system_prompt ) : (),
+    api_key => 'ollama',
+    compatibility_for_engine => $self,
+    supported_operations => [qw(
+      createChatCompletion
+    )],
+    %args,
+  );
+}
+
+sub new_openai {
+  my ( $class, %args ) = @_;
+  my $tools = delete $args{tools} || [];
+  my $self = $class->new(%args);
+  return $self->openai( tools => $tools );
+}
 
 sub default_model { 'llama3.1' }
 sub default_embedding_model { 'mxbai-embed-large' }
@@ -94,7 +121,7 @@ sub simple_tags {
   return $request->response_call->($response);
 }
 
-1;
+__PACKAGE__->meta->make_immutable;
 
 =head1 SYNOPSIS
 
@@ -109,6 +136,9 @@ sub simple_tags {
   print($ollama->simple_chat('Say something nice'));
 
   my $embedding = $ollama->embedding($content);
+
+  # Get OpenAI compatible API access to Ollama 
+  my $ollama_openai = $ollama->openai;
 
 =head1 DESCRIPTION
 
