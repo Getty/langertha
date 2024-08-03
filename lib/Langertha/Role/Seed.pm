@@ -1,4 +1,5 @@
 package Langertha::Role::Seed;
+# ABSTRACT: Role for an engine that can set a seed
 
 use Moose::Role;
 use Carp qw( croak );

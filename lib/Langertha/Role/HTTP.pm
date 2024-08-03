@@ -1,4 +1,5 @@
 package Langertha::Role::HTTP;
+# ABSTRACT: Role for HTTP APIs
 
 use Moose::Role;
 

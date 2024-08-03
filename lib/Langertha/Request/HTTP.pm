@@ -1,4 +1,5 @@
 package Langertha::Request::HTTP;
+# ABSTRACT: A HTTP Request inside of Langertha
 
 use Moose;
 use MooseX::NonMoose;
