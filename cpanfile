@@ -5,7 +5,6 @@ requires 'JSON::PP';
 requires 'LWP::Protocol::https';
 requires 'Module::Runtime';
 requires 'Moose';
-requires 'MooseX::ABC';
 requires 'MooseX::NonMoose';
 requires 'OpenAPI::Modern';
 requires 'Path::Tiny';
