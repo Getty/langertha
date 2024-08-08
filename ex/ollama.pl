@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: Embedding examples
+# ABSTRACT: Ollama feature examples
 
 $|=1;
 

@@ -1,5 +1,5 @@
 package Langertha;
-# ABSTRACT: The clan of fierce vikings with axe and shield to AId your rAId
+# ABSTRACT: The clan of fierce vikings with 🪓 and 🛡️ to AId your rAId
 
 use strict;
 use warnings;
@@ -67,10 +67,10 @@ Issue Tracker
 
 Discord
 
-  https://discord.gg/Y2avVYpquV
+  https://discord.gg/Y2avVYpquV 🤖
 
 IRC
 
-  irc://irc.perl.org/ai
+  irc://irc.perl.org/ai 🤖
 
 =cut

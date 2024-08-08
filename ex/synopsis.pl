@@ -201,4 +201,21 @@ if ($ENV{ANTHROPIC_API_KEY}) { # This request cost around 0,02 USD !!!!!!
 
 }
 
+if ($ENV{VLLM_URL} and $ENV{VLLM_MODEL}) {
+
+  my $vllm = Langertha::Engine::OpenAI->new(
+    url => $ENV{VLLM_URL},
+    api_key => 'vllm',
+    model => $ENV{VLLM_MODEL},
+    system_prompt => $system_prompt,
+  );
+
+  my $prompt = 'Do you wanna build a snowman?';
+
+  printf("\n\n%s\n\n", $prompt);
+
+  print($vllm->simple_chat($prompt));
+
+}
+
 exit 0;
