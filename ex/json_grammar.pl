@@ -3,6 +3,9 @@
 
 $|=1;
 
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
 use utf8;
 use open ':std', ':encoding(UTF-8)';
 use strict;
@@ -107,7 +110,7 @@ __EOP__
   }
 
   my $end = time;
-  printf("\n\n --------------------- %u ----------------------- \n\n", $end - $start);
+  printf("\n -- %u seconds\n", ($end - $start));
 }
 
 {
@@ -148,7 +151,7 @@ __EOP__
   }
 
   my $end = time;
-  printf("\n\n --------------------- %u ----------------------- \n\n", $end - $start);
+  printf("\n -- %u seconds\n", ($end - $start));
 }
 
 exit 0;

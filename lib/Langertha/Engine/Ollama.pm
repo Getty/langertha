@@ -126,7 +126,7 @@ __PACKAGE__->meta->make_immutable;
 
 =head1 SYNOPSIS
 
-  use Langertha::Ollama;
+  use Langertha::Engine::Ollama;
 
   my $ollama = Langertha::Engine::Ollama->new(
     url => $ENV{OLLAMA_URL},

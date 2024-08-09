@@ -8,6 +8,7 @@ use URI;
 use LWP::UserAgent;
 
 use Langertha::Request::HTTP;
+use HTTP::Request::Common;
 
 requires qw(
   json
@@ -19,29 +20,50 @@ has url => (
   predicate => 'has_url',
 );
 
-sub generate_body {
+sub generate_json_body {
   my ( $self, %args ) = @_;
   return $self->json->encode({ %args });
+}
+
+our $boundary = 'XyXLaXyXngXyXerXyXthXyXaXyX';
+
+sub generate_multipart_body {
+  my ( $self, $req, %args ) = @_;
+  my @formdata = map { $_, $args{$_} } sort { $a cmp $b } keys %args;
+  return HTTP::Request::Common::form_data(\@formdata, $boundary, $req);
 }
 
 sub generate_http_request {
   my ( $self, $method, $url, $response_call, %args ) = @_;
   my $uri = URI->new($url);
+  my $content_type = (delete $args{content_type}||"");
   my $userinfo = $uri->userinfo;
   $uri->userinfo(undef) if $userinfo;
-  my $headers = [];
+  my $headers = [
+    ( 'Content-Type',
+      $content_type eq 'multipart/form-data'
+        ? 'multipart/form-data; boundary="'.$boundary.'"'
+      : 'application/json; charset=utf-8' )
+  ];
   my $request = Langertha::Request::HTTP->new(
-    http => [ uc($method), $uri, $headers, ( scalar %args > 0 ? $self->generate_body(%args) : () ) ],
+    http => [ uc($method), $uri, $headers, ( scalar %args > 0 ?
+      ( !$content_type or $content_type eq 'application/json' )
+        ? $self->generate_json_body(%args)
+          : ()
+      : ()
+    ) ],
     request_source => $self,
     response_call => $response_call,
   );
+  if ($content_type and $content_type eq 'multipart/form-data') {
+    $request->content($self->generate_multipart_body($request, %args));
+  }
   if ($userinfo) {
     my ( $user, $pass ) = split(/:/, $userinfo);
     if ($user and $pass) {
       $request->authorization_basic($user, $pass);
     }
   }
-  $request->header('Content-Type', 'application/json; charset=utf-8');
   $self->update_request($request) if $self->can('update_request');
   return $request;
 }

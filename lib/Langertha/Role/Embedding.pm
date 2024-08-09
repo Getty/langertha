@@ -18,7 +18,7 @@ sub _build_embedding_model {
   my ( $self ) = @_;
   croak "".(ref $self)." can't handle models!" unless $self->does('Langertha::Role::Models');
   return $self->default_embedding_model if $self->can('default_embedding_model');
-  return $self->default_model;
+  return $self->model;
 }
 
 sub embedding {

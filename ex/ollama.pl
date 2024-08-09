@@ -3,6 +3,9 @@
 
 $|=1;
 
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
 use utf8;
 use open ':std', ':encoding(UTF-8)';
 use strict;
