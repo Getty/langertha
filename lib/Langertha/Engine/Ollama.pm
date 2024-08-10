@@ -14,6 +14,8 @@ with 'Langertha::Role::'.$_ for (qw(
   OpenAPI
   Models
   Seed
+  Temperature
+  ContextSize
   SystemPrompt
   Chat
   Embedding
@@ -28,6 +30,7 @@ sub openai {
     $self->embedding_model ? ( embedding_model => $self->embedding_model ) : (),
     $self->chat_model ? ( chat_model => $self->chat_model ) : (),
     $self->has_system_prompt ? ( system_prompt => $self->system_prompt ) : (),
+    $self->has_temperature ? ( temperature => $self->temperature ) : (),
     api_key => 'ollama',
     compatibility_for_engine => $self,
     supported_operations => [qw(
@@ -86,8 +89,11 @@ sub chat_request {
     $self->json_format ? ( format => 'json' ) : (),
     $self->has_keep_alive ? ( keep_alive => $self->keep_alive ) : (),
     options => {
+      $self->has_temperature ? ( temperature => $self->temperature ) : (),
+      $self->has_context_size ? ( num_ctx => $self->get_context_size ) : (),
       $self->has_seed ? ( seed => $self->seed )
         : $self->randomize_seed ? ( seed => $self->random_seed ) : (),
+      $extra{options} ? (%{delete $extra{options}}) : (),
     },
     %extra,
   );
@@ -122,6 +128,25 @@ sub simple_tags {
   return $request->response_call->($response);
 }
 
+sub ps { $_[0]->ps_request }
+sub ps_request {
+  my ( $self ) = @_;
+  return $self->generate_request( getRunningModels => sub { $self->ps_response(shift) } );
+}
+
+sub ps_response {
+  my ( $self, $response ) = @_;
+  my $data = $self->parse_response($response);
+  return $data->{models};
+}
+
+sub simple_ps {
+  my ( $self ) = @_;
+  my $request = $self->ps;
+  my $response = $self->user_agent->request($request);
+  return $request->response_call->($response);
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 SYNOPSIS
@@ -132,6 +157,8 @@ __PACKAGE__->meta->make_immutable;
     url => $ENV{OLLAMA_URL},
     model => 'llama3.1',
     system_prompt => 'You are a helpful assistant',
+    context_size => 4096,
+    temperature => 0.5,
   );
 
   print($ollama->simple_chat('Say something nice'));

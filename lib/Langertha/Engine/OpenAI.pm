@@ -11,6 +11,7 @@ with 'Langertha::Role::'.$_ for (qw(
   HTTP
   OpenAPI
   Models
+  Temperature
   SystemPrompt
   Chat
   Embedding
@@ -74,6 +75,7 @@ sub chat_request {
   return $self->generate_request( createChatCompletion => sub { $self->chat_response(shift) },
     model => $self->chat_model,
     messages => $messages,
+    $self->has_temperature ? ( temperature => $self->temperature ) : (),
     stream => JSON->false,
     # $self->has_seed ? ( seed => $self->seed )
     #   : $self->randomize_seed ? ( seed => round(rand(100_000_000)) ) : (),
@@ -114,6 +116,7 @@ __PACKAGE__->meta->make_immutable;
     api_key => $ENV{OPENAI_API_KEY},
     model => 'gpt-4o-mini',
     system_prompt => 'You are a helpful assistant',
+    temperature => 0.5,
   );
 
   print($openai->simple_chat('Say something nice'));
