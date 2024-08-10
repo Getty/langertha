@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
-# PODNAME: langertha_whisper
 # ABSTRACT: Simple transcription with a Whisper compatible server or OpenAI
+# PODNAME: langertha_whisper
 
 use strict;
 use warnings;
@@ -32,8 +32,6 @@ my $start = time;
 print $engine->simple_transcription(path($ARGV[0]));
 my $end = time;
 printf("\n -- %.3f seconds (%s)\n", ($end - $start), (ref $engine)) unless $ENV{LANGERTHA_NO_TIME};
-
-=encoding utf8
 
 =head1 SYNOPSIS
 
