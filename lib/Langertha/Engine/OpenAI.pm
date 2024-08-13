@@ -12,6 +12,7 @@ with 'Langertha::Role::'.$_ for (qw(
   OpenAPI
   Models
   Temperature
+  ResponseSize
   SystemPrompt
   Chat
   Embedding
@@ -75,6 +76,7 @@ sub chat_request {
   return $self->generate_request( createChatCompletion => sub { $self->chat_response(shift) },
     model => $self->chat_model,
     messages => $messages,
+    $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
     stream => JSON->false,
     # $self->has_seed ? ( seed => $self->seed )

@@ -1,5 +1,5 @@
 package Langertha::Role::ContextSize;
-# ABSTRACT: Role for an engine where you can specify the context size
+# ABSTRACT: Role for an engine where you can specify the context size (in tokens)
 
 use Moose::Role;
 
