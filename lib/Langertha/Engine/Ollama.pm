@@ -55,7 +55,7 @@ sub default_embedding_model { 'mxbai-embed-large' }
 sub openapi_file { yaml => dist_file('Langertha','ollama.yaml') };
 
 has keep_alive => (
-  isa => 'Int',
+  isa => 'Str',
   is => 'ro',
   predicate => 'has_keep_alive',
 );
