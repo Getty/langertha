@@ -13,6 +13,7 @@ with 'Langertha::Role::'.$_ for (qw(
   Models
   Temperature
   ResponseSize
+  ResponseFormat
   SystemPrompt
   Chat
   Embedding
@@ -77,6 +78,7 @@ sub chat_request {
     model => $self->chat_model,
     messages => $messages,
     $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
+    $self->has_response_format ? ( response_format => $self->response_format ) : (),
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
     stream => JSON->false,
     # $self->has_seed ? ( seed => $self->seed )
