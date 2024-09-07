@@ -53,12 +53,22 @@ __EOP__
 
 {
   if ($ENV{OLLAMA_URL}) {
-    my $start = time;
 
     my $ollama = Langertha::Engine::Ollama->new(
       model => 'llama3.1:8b',
       url => $ENV{OLLAMA_URL},
     );
+
+    if ($ENV{TEST_WITHOUT_STRUCTURED_OUTPUT}) {
+      my $start = time;
+
+      my $nostructresult = $ollama->simple_chat($prompt);
+
+      print Dumper $nostructresult;
+
+      my $end = time;
+      printf("\n\n%u\n\n", $end - $start);
+    }
 
     my $structured = $ollama->openai( response_format => {
       type => "json_schema",
@@ -69,7 +79,11 @@ __EOP__
       },
     });
 
+    my $structstart = time;
+
     my $result = $structured->simple_chat($prompt.' Respond in JSON.');
+
+    my $structend = time;
 
     eval {
       my $res = JSON::MaybeXS->new->utf8->decode($result);
@@ -79,8 +93,7 @@ __EOP__
       print Dumper $result;
     }
 
-    my $end = time;
-    printf("\n\n%u\n\n", $end - $start);
+    printf("\n\n%u\n\n", $structend - $structstart);
   }
 }
 
