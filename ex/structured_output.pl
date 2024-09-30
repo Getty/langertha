@@ -54,8 +54,10 @@ __EOP__
 {
   if ($ENV{OLLAMA_URL}) {
 
+    my $model = $ENV{OLLAMA_MODEL} || 'llama3.1:8b';
+
     my $ollama = Langertha::Engine::Ollama->new(
-      model => 'llama3.1:8b',
+      model => $ENV{OLLAMA_MODEL},
       url => $ENV{OLLAMA_URL},
     );
 
