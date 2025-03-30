@@ -112,9 +112,11 @@ sub default_transcription_model { 'whisper-1' }
 
 sub openapi_file { yaml => dist_file('Langertha','openai.yaml') };
 
+sub embedding_operation_id { 'createEmbedding' }
+
 sub embedding_request {
   my ( $self, $input, %extra ) = @_;
-  return $self->generate_request( createEmbedding => sub { $self->embedding_response(shift) },
+  return $self->generate_request( $self->embedding_operation_id, sub { $self->embedding_response(shift) },
     model => $self->embedding_model,
     input => $input,
     %extra,
@@ -129,9 +131,11 @@ sub embedding_response {
   return $objects[0]->{embedding};
 }
 
+sub chat_operation_id { 'createChatCompletion' }
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
-  return $self->generate_request( createChatCompletion => sub { $self->chat_response(shift) },
+  return $self->generate_request( $self->chat_operation_id, sub { $self->chat_response(shift) },
     model => $self->chat_model,
     messages => $messages,
     $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
@@ -152,9 +156,11 @@ sub chat_response {
   return $messages[0]->{content};
 }
 
+sub transcription_operation_id { 'createTranscription' }
+
 sub transcription_request {
   my ( $self, $file, %extra ) = @_;
-  return $self->generate_request( createTranscription => sub { $self->transcription_response(shift) },
+  return $self->generate_request( $self->transcription_operation_id, sub { $self->transcription_response(shift) },
     file => [ $file ],
     $self->transcription_model ? ( model => $self->transcription_model ) : (),
     %extra,

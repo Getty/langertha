@@ -3839,7 +3839,7 @@ components:
             data:
               type: array
               items:
-                - $ref: '#/components/schemas/EmbeddingResponseData'
+                $ref: '#/components/schemas/EmbeddingResponseData'
           required:
             - id
             - object
@@ -3858,7 +3858,7 @@ components:
         results:
           type: array
           items:
-            - $ref: '#/components/schemas/ClassificationObject'
+            $ref: '#/components/schemas/ClassificationObject'
     ClassificationObject:
       type: object
       title: ClassificationObject
