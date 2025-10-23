@@ -15,6 +15,25 @@ with 'Langertha::Role::'.$_ for (qw(
   SystemPrompt
 ));
 
+sub all_models {qw(
+  claude-3-5-haiku-20241022
+  claude-3-5-sonnet-20240620
+  claude-3-5-sonnet-20241022
+  claude-3-haiku-20240307
+  claude-3-opus-20240229
+  claude-3-sonnet-20240229
+  claude-4
+  claude-4-20250514
+  claude-haiku-4
+  claude-haiku-4-5
+  claude-haiku-4-20250514
+  claude-opus-4
+  claude-opus-4-1-20250805
+  claude-opus-4-20250514
+  claude-sonnet-4-5
+  claude-sonnet-4-20250514
+)}
+
 sub default_response_size { 1024 }
 
 has api_key => (
@@ -46,7 +65,7 @@ has '+url' => (
 );
 sub has_url { 1 }
 
-sub default_model { 'claude-3-5-sonnet-20240620' }
+sub default_model { 'claude-sonnet-4-5' }
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
@@ -93,7 +112,7 @@ __PACKAGE__->meta->make_immutable;
 
   my $claude = Langertha::Engine::Anthropic->new(
     api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-3-5-sonnet-20240620',
+    model => 'claude-sonnet-4-5',
     response_size => 512,
     temperature => 0.5,
   );

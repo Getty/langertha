@@ -15,6 +15,8 @@ sub all_models {qw(
   codestral-latest
   codestral-mamba-2407
   codestral-mamba-latest
+  magistral-medium
+  magistral-small
   ministral-3b-2410
   ministral-3b-latest
   ministral-8b-2410
@@ -27,6 +29,7 @@ sub all_models {qw(
   mistral-large-pixtral-2411
   mistral-medium
   mistral-medium-2312
+  mistral-medium-3
   mistral-medium-latest
   mistral-moderation-2411
   mistral-moderation-latest
@@ -40,6 +43,7 @@ sub all_models {qw(
   mistral-small-2409
   mistral-small-2501
   mistral-small-2503
+  mistral-small-3.1
   mistral-small-latest
   mistral-tiny
   mistral-tiny-2312
@@ -57,6 +61,8 @@ sub all_models {qw(
   pixtral-12b-latest
   pixtral-large-2411
   pixtral-large-latest
+  voxtral-mini
+  voxtral-small
 )}
 
 has '+url' => (

@@ -12,6 +12,7 @@ sub all_models {qw(
   deepseek-r1-distill-qwen-32b
   distil-whisper-large-v3-en
   gemma2-9b-it
+  gpt-oss-120b
   llama-3.1-8b-instant
   llama-3.2-11b-vision-preview
   llama-3.2-1b-preview
