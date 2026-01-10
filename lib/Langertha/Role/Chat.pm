@@ -46,4 +46,28 @@ sub simple_chat {
   return $request->response_call->($response);
 }
 
+sub chat_stream {
+  my ( $self, @messages ) = @_;
+  croak "".(ref $self)." does not support streaming"
+    unless $self->can('chat_stream_request');
+  return $self->chat_stream_request($self->chat_messages(@messages));
+}
+
+sub simple_chat_stream {
+  my ( $self, $callback, @messages ) = @_;
+  croak "simple_chat_stream requires a callback as first argument"
+    unless ref $callback eq 'CODE';
+  my $request = $self->chat_stream(@messages);
+  my $chunks = $self->execute_streaming_request($request, $callback);
+  return join('', map { $_->content } @$chunks);
+}
+
+sub simple_chat_stream_iterator {
+  my ( $self, @messages ) = @_;
+  require Langertha::Stream;
+  my $request = $self->chat_stream(@messages);
+  my $chunks = $self->execute_streaming_request($request);
+  return Langertha::Stream->new(chunks => $chunks);
+}
+
 1;

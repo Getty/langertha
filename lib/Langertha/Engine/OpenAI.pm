@@ -18,6 +18,7 @@ with 'Langertha::Role::'.$_ for (qw(
   Chat
   Embedding
   Transcription
+  Streaming
 ));
 
 sub all_models {qw(
@@ -171,6 +172,43 @@ sub transcription_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
   return $data->{text};
+}
+
+sub stream_format { 'sse' }
+
+sub chat_stream_request {
+  my ( $self, $messages, %extra ) = @_;
+  return $self->generate_request( $self->chat_operation_id, sub {},
+    model => $self->chat_model,
+    messages => $messages,
+    $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
+    $self->has_response_format ? ( response_format => $self->response_format ) : (),
+    $self->has_temperature ? ( temperature => $self->temperature ) : (),
+    stream => JSON->true,
+    %extra,
+  );
+}
+
+sub parse_stream_chunk {
+  my ( $self, $data, $event ) = @_;
+
+  return undef unless $data && $data->{choices};
+
+  my $choice = $data->{choices}[0];
+  return undef unless $choice;
+
+  my $content = $choice->{delta}{content} // '';
+  my $finish_reason = $choice->{finish_reason};
+
+  require Langertha::Stream::Chunk;
+  return Langertha::Stream::Chunk->new(
+    content => $content,
+    raw => $data,
+    is_final => defined $finish_reason,
+    defined $finish_reason ? (finish_reason => $finish_reason) : (),
+    $data->{model} ? (model => $data->{model}) : (),
+    $data->{usage} ? (usage => $data->{usage}) : (),
+  );
 }
 
 __PACKAGE__->meta->make_immutable;

@@ -20,6 +20,7 @@ with 'Langertha::Role::'.$_ for (qw(
   SystemPrompt
   Chat
   Embedding
+  Streaming
 ));
 
 sub openai {
@@ -148,6 +149,48 @@ sub simple_ps {
   my $request = $self->ps;
   my $response = $self->user_agent->request($request);
   return $request->response_call->($response);
+}
+
+sub stream_format { 'ndjson' }
+
+sub chat_stream_request {
+  my ( $self, $messages, %extra ) = @_;
+  return $self->generate_request( generateChat => sub {},
+    model => $self->chat_model,
+    messages => $messages,
+    stream => JSON->true,
+    $self->json_format ? ( format => 'json' ) : (),
+    $self->has_keep_alive ? ( keep_alive => $self->keep_alive ) : (),
+    options => {
+      $self->has_temperature ? ( temperature => $self->temperature ) : (),
+      $self->has_context_size ? ( num_ctx => $self->get_context_size ) : (),
+      $self->get_response_size ? ( num_predict => $self->get_response_size ) : (),
+      $self->has_seed ? ( seed => $self->seed )
+        : $self->randomize_seed ? ( seed => $self->random_seed ) : (),
+      $extra{options} ? (%{delete $extra{options}}) : (),
+    },
+    %extra,
+  );
+}
+
+sub parse_stream_chunk {
+  my ( $self, $data ) = @_;
+
+  my $content = $data->{message}{content} // '';
+  my $is_done = $data->{done} ? 1 : 0;
+
+  require Langertha::Stream::Chunk;
+  return Langertha::Stream::Chunk->new(
+    content => $content,
+    raw => $data,
+    is_final => $is_done,
+    $data->{model} ? (model => $data->{model}) : (),
+    $is_done && $data->{done_reason} ? (finish_reason => $data->{done_reason}) : (),
+    $is_done ? (usage => {
+      $data->{eval_count} ? (completion_tokens => $data->{eval_count}) : (),
+      $data->{prompt_eval_count} ? (prompt_tokens => $data->{prompt_eval_count}) : (),
+    }) : (),
+  );
 }
 
 __PACKAGE__->meta->make_immutable;

@@ -13,6 +13,7 @@ with 'Langertha::Role::'.$_ for (qw(
   Temperature
   ResponseSize
   SystemPrompt
+  Streaming
 ));
 
 sub default_response_size { 1024 }
@@ -83,6 +84,78 @@ sub chat_response {
   # tracing
   my @messages = @{$data->{content}};
   return $messages[0]->{text};
+}
+
+sub stream_format { 'sse' }
+
+sub chat_stream_request {
+  my ( $self, $messages, %extra ) = @_;
+  my @msgs;
+  my $system = "";
+  for my $message (@{$messages}) {
+    if ($message->{role} eq 'system') {
+      $system .= "\n\n" if length $system;
+      $system .= $message->{content};
+    } else {
+      push @msgs, $message;
+    }
+  }
+  if ($system and scalar @msgs == 0) {
+    push @msgs, {
+      role => 'user',
+      content => $system,
+    };
+    $system = undef;
+  }
+  return $self->generate_http_request( POST => $self->url.'/v1/messages', sub {},
+    model => $self->chat_model,
+    messages => \@msgs,
+    max_tokens => $self->get_response_size,
+    $self->has_temperature ? ( temperature => $self->temperature ) : (),
+    $system ? ( system => $system ) : (),
+    stream => JSON->true,
+    %extra,
+  );
+}
+
+sub parse_stream_chunk {
+  my ( $self, $data, $event ) = @_;
+
+  require Langertha::Stream::Chunk;
+
+  # Anthropic uses event types: content_block_delta, message_delta, message_stop
+  my $type = $data->{type} // '';
+
+  if ($type eq 'content_block_delta') {
+    my $delta = $data->{delta} || {};
+    return Langertha::Stream::Chunk->new(
+      content => $delta->{text} // '',
+      raw => $data,
+      is_final => 0,
+    );
+  }
+
+  if ($type eq 'message_delta') {
+    my $delta = $data->{delta} || {};
+    return Langertha::Stream::Chunk->new(
+      content => '',
+      raw => $data,
+      is_final => 0,
+      $delta->{stop_reason} ? (finish_reason => $delta->{stop_reason}) : (),
+      $data->{usage} ? (usage => $data->{usage}) : (),
+    );
+  }
+
+  if ($type eq 'message_stop') {
+    return Langertha::Stream::Chunk->new(
+      content => '',
+      raw => $data,
+      is_final => 1,
+    );
+  }
+
+  # Other event types (message_start, content_block_start, etc.) - skip
+  return undef;
 }
 
 __PACKAGE__->meta->make_immutable;
