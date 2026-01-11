@@ -1,5 +1,6 @@
 
 requires 'File::ShareDir::ProjectDistDir';
+requires 'Future';
 requires 'JSON::MaybeXS';
 requires 'JSON::PP';
 requires 'LWP::Protocol::https';
@@ -13,6 +14,9 @@ requires 'Time::HiRes';
 requires 'URI';
 requires 'YAML::PP';
 requires 'YAML::XS';
+
+recommends 'IO::Async';
+recommends 'Net::Async::HTTP';
 
 on test => sub {
   requires 'Test2::Suite';

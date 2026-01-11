@@ -4,21 +4,14 @@ use warnings;
 use FindBin;
 use lib "$FindBin::Bin/../lib";
 
-# Create a custom engine class with IO::Async support
-package MyOpenAI {
-  use Moose;
-  extends 'Langertha::Engine::OpenAI';
-  with 'Langertha::Role::Async::IOAsync';
-}
+use Langertha::Engine::OpenAI;
 
-package main;
-
-my $openai = MyOpenAI->new(
+my $openai = Langertha::Engine::OpenAI->new(
   api_key => $ENV{OPENAI_API_KEY} || die("Set OPENAI_API_KEY"),
   model => 'gpt-4o-mini',
 );
 
-print "Real-time streaming with IO::Async:\n";
+print "Real-time streaming with Future:\n";
 print "-" x 50, "\n";
 
 # Real-time streaming with callback
