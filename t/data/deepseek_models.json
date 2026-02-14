@@ -1,0 +1,17 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "deepseek-chat",
+      "object": "model",
+      "created": 1704067200,
+      "owned_by": "deepseek"
+    },
+    {
+      "id": "deepseek-reasoner",
+      "object": "model",
+      "created": 1738281600,
+      "owned_by": "deepseek"
+    }
+  ]
+}
