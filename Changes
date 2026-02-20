@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.100     2026-02-20 05:33:44Z
     - Add MCP (Model Context Protocol) tool calling support
       - New Langertha::Role::Tools for engine-agnostic tool calling
       - Anthropic engine: full tool calling support (format_tools,
