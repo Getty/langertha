@@ -81,7 +81,7 @@ Langertha supports async/await syntax via Future::AsyncAwait for non-blocking op
     # Run the async function
     chat_example()->get;
 
-See `examples/async_await_example.pl` for more examples.
+See `ex/async_await.pl` for more examples.
 
 # DYNAMIC MODEL DISCOVERY
 
@@ -108,6 +108,56 @@ Langertha can dynamically fetch available models from provider APIs:
     $engine->clear_models_cache;
 
 Supported by all engines: OpenAI, Anthropic, Gemini, Groq, DeepSeek, Mistral, and Ollama.
+
+# MCP TOOL CALLING
+
+Langertha integrates with MCP (Model Context Protocol) servers via [Net::Async::MCP](https://metacpan.org/pod/Net::Async::MCP) for tool calling support. LLMs can discover and invoke tools exposed by MCP servers automatically.
+
+    use IO::Async::Loop;
+    use Net::Async::MCP;
+    use Future::AsyncAwait;
+
+    my $loop = IO::Async::Loop->new;
+
+    # Connect to an MCP server (in-process, stdio, or HTTP)
+    my $mcp = Net::Async::MCP->new(
+        command => ['npx', '@anthropic/mcp-server-web-search'],
+    );
+    $loop->add($mcp);
+    await $mcp->initialize;
+
+    # Create engine with MCP servers
+    my $engine = Langertha::Engine::Anthropic->new(
+        api_key     => $ENV{ANTHROPIC_API_KEY},
+        model       => 'claude-sonnet-4-5-20250929',
+        mcp_servers => [$mcp],
+    );
+
+    # Async tool-calling loop (automatically calls tools and feeds results back)
+    my $response = await $engine->chat_with_tools_f(
+        'Search the web for Perl MCP modules'
+    );
+    say $response;
+
+The tool-calling loop:
+
+1. Gathers available tools from all configured MCP servers
+2. Sends chat request with tool definitions to the LLM
+3. If the LLM returns tool calls, executes them via MCP
+4. Feeds tool results back to the LLM and repeats
+5. Returns the final text response
+
+Configure the maximum number of tool-calling rounds:
+
+    my $engine = Langertha::Engine::Anthropic->new(
+        api_key            => $ENV{ANTHROPIC_API_KEY},
+        mcp_servers        => [$mcp],
+        tool_max_iterations => 20,  # default: 10
+    );
+
+Currently supported engines: **Anthropic**. OpenAI, Gemini, and others coming soon.
+
+See `ex/mcp_inprocess.pl` for a complete in-process example and `ex/mcp_stdio.pl` for an interactive stdio server example.
 
 # ANTHROPIC EXTENDED PARAMETERS (FEBRUARY 2026)
 

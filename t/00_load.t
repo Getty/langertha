@@ -18,6 +18,7 @@ my @modules = qw(
   Langertha::Engine::vLLM
   Langertha::Engine::Whisper
   Langertha::Request::HTTP
+  Langertha::Role::Tools
   LangerthaX
 );
 

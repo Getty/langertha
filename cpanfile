@@ -17,9 +17,9 @@ requires 'URI';
 requires 'YAML::PP';
 requires 'YAML::XS';
 
-recommends 'IO::Async';
+requires 'Net::Async::MCP';
+
 recommends 'IO::Async::SSL';
-recommends 'Net::Async::HTTP';
 
 on test => sub {
   requires 'Test2::Suite';

@@ -1,12 +1,24 @@
 Revision history for Langertha
 
 {{$NEXT}}
-    - Add Future::AsyncAwait support for async/await syntax on all _f methods
-    - Add streaming support (synchronous callback, iterator, Future-based)
+    - Add MCP (Model Context Protocol) tool calling support
+      - New Langertha::Role::Tools for engine-agnostic tool calling
+      - Anthropic engine: full tool calling support (format_tools,
+        response_tool_calls, format_tool_results, response_text_content)
+      - Async chat_with_tools_f() method for automatic multi-round
+        tool-calling loop with configurable max iterations
+      - Requires Net::Async::MCP for MCP server communication
+    - Add Future::AsyncAwait support for async/await syntax
+      - All _f methods (simple_chat_f, simple_chat_stream_f, etc.)
+      - Streaming with real-time async callbacks
+    - Add streaming support
+      - Synchronous callback, iterator, and Future-based APIs
+      - SSE parsing for OpenAI/Anthropic/Groq/Mistral/DeepSeek
+      - NDJSON parsing for Ollama
     - Add Gemini engine (Google AI Studio)
-    - Add dynamic model listing with API-based discovery and caching
+    - Add dynamic model listing via provider APIs with caching
     - Add Anthropic extended parameters (effort, inference_geo)
-    - Comprehensive POD documentation for Langertha::Role::Chat
+    - Improve POD documentation across all modules
 
 0.008     2025-03-30 04:55:38Z
     - Add Mistral engine integration
