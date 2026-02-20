@@ -1,0 +1,40 @@
+{
+  "models": [
+    {
+      "name": "models/gemini-2.0-flash-exp",
+      "version": "001",
+      "displayName": "Gemini 2.0 Flash Experimental",
+      "description": "Fast and versatile multimodal model",
+      "inputTokenLimit": 1048576,
+      "outputTokenLimit": 8192,
+      "supportedGenerationMethods": [
+        "generateContent",
+        "streamGenerateContent"
+      ]
+    },
+    {
+      "name": "models/gemini-1.5-pro",
+      "version": "002",
+      "displayName": "Gemini 1.5 Pro",
+      "description": "Most capable model for complex tasks",
+      "inputTokenLimit": 2097152,
+      "outputTokenLimit": 8192,
+      "supportedGenerationMethods": [
+        "generateContent",
+        "streamGenerateContent"
+      ]
+    },
+    {
+      "name": "models/gemini-1.5-flash",
+      "version": "002",
+      "displayName": "Gemini 1.5 Flash",
+      "description": "Fast and efficient for most tasks",
+      "inputTokenLimit": 1048576,
+      "outputTokenLimit": 8192,
+      "supportedGenerationMethods": [
+        "generateContent",
+        "streamGenerateContent"
+      ]
+    }
+  ]
+}

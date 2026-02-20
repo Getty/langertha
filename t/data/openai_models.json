@@ -1,0 +1,35 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "gpt-4o",
+      "object": "model",
+      "created": 1715367049,
+      "owned_by": "system"
+    },
+    {
+      "id": "gpt-4o-mini",
+      "object": "model",
+      "created": 1721172741,
+      "owned_by": "system"
+    },
+    {
+      "id": "o1",
+      "object": "model",
+      "created": 1734134400,
+      "owned_by": "system"
+    },
+    {
+      "id": "o3-mini",
+      "object": "model",
+      "created": 1738281600,
+      "owned_by": "system"
+    },
+    {
+      "id": "text-embedding-3-large",
+      "object": "model",
+      "created": 1705953180,
+      "owned_by": "system"
+    }
+  ]
+}

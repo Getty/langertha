@@ -14,6 +14,8 @@ has models => (
 );
 sub _build_models {
   my ( $self ) = @_;
+  # Prefer dynamic list_models() over static all_models()
+  return $self->list_models() if $self->can('list_models');
   return [
     $self->can('all_models')
       ? $self->all_models
@@ -29,6 +31,30 @@ has model => (
 sub _build_model {
   my ( $self ) = @_;
   return $self->default_model;
+}
+
+# Cache configuration
+has models_cache_ttl => (
+  is => 'ro',
+  isa => 'Int',
+  default => sub { 3600 }, # 1 hour default
+);
+
+has _models_cache => (
+  is => 'rw',
+  isa => 'HashRef',
+  default => sub { {} },
+  traits => ['Hash'],
+  handles => {
+    _clear_models_cache => 'clear',
+  },
+);
+
+# Public method to clear the cache
+sub clear_models_cache {
+  my ($self) = @_;
+  $self->_clear_models_cache;
+  return;
 }
 
 1;

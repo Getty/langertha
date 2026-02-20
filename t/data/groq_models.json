@@ -1,0 +1,29 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "llama-3.3-70b-versatile",
+      "object": "model",
+      "created": 1733356800,
+      "owned_by": "Meta"
+    },
+    {
+      "id": "llama-3.2-90b-vision-preview",
+      "object": "model",
+      "created": 1727827200,
+      "owned_by": "Meta"
+    },
+    {
+      "id": "mixtral-8x7b-32768",
+      "object": "model",
+      "created": 1702857600,
+      "owned_by": "Mistral AI"
+    },
+    {
+      "id": "gemma2-9b-it",
+      "object": "model",
+      "created": 1719792000,
+      "owned_by": "Google"
+    }
+  ]
+}

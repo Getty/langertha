@@ -9,6 +9,8 @@ use Module::Runtime qw( use_module );
 my @modules = qw(
   Langertha
   Langertha::Engine::Anthropic
+  Langertha::Engine::DeepSeek
+  Langertha::Engine::Gemini
   Langertha::Engine::Groq
   Langertha::Engine::Mistral
   Langertha::Engine::OpenAI

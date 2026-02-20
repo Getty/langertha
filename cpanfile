@@ -1,18 +1,25 @@
 
 requires 'File::ShareDir::ProjectDistDir';
+requires 'Future';
+requires 'Future::AsyncAwait', '>= 0.66';
 requires 'JSON::MaybeXS';
 requires 'JSON::PP';
+requires 'JSON::Schema::Modern', '>= 0.617';
 requires 'LWP::Protocol::https';
 requires 'MIME::Base64';
 requires 'Module::Runtime';
 requires 'Moose';
 requires 'MooseX::NonMoose';
-requires 'OpenAPI::Modern';
+requires 'OpenAPI::Modern', '>= 0.089';  # needs v0.089+ for updated evaluator handling
 requires 'Path::Tiny';
 requires 'Time::HiRes';
 requires 'URI';
 requires 'YAML::PP';
 requires 'YAML::XS';
+
+recommends 'IO::Async';
+recommends 'IO::Async::SSL';
+recommends 'Net::Async::HTTP';
 
 on test => sub {
   requires 'Test2::Suite';

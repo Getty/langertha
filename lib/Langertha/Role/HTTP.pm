@@ -103,4 +103,18 @@ sub _build_user_agent {
   );
 }
 
+sub execute_streaming_request {
+  my ($self, $request, $chunk_callback) = @_;
+
+  croak "execute_streaming_request requires Langertha::Role::Streaming"
+    unless $self->does('Langertha::Role::Streaming');
+
+  my $response = $self->user_agent->request($request);
+
+  croak "".(ref $self)." streaming request failed: ".($response->status_line)
+    unless $response->is_success;
+
+  return $self->process_stream_data($response->decoded_content, $chunk_callback);
+}
+
 1;

@@ -1,0 +1,43 @@
+Revision history for Langertha
+
+{{$NEXT}}
+    - Add Future::AsyncAwait support for async/await syntax on all _f methods
+    - Add streaming support (synchronous callback, iterator, Future-based)
+    - Add Gemini engine (Google AI Studio)
+    - Add dynamic model listing with API-based discovery and caching
+    - Add Anthropic extended parameters (effort, inference_geo)
+    - Comprehensive POD documentation for Langertha::Role::Chat
+
+0.008     2025-03-30 04:55:38Z
+    - Add Mistral engine integration
+    - Adapt Mistral OpenAPI spec for our parser
+
+0.007     2025-01-25 19:29:51Z
+    - Add DeepSeek engine
+
+0.006     2024-09-30 14:07:25Z
+    - Add Structured Output support
+    - Add Groq engine and Groq Whisper support
+    - Add TEST_WITHOUT_STRUCTURED_OUTPUT env variable
+
+0.005     2024-08-22 13:43:31Z
+    - Fix data type on keep_alive and remove POSIX round usage
+
+0.004     2024-08-13 23:10:57Z
+    - Fix interpretation of max_tokens on Anthropic (response size, not context)
+
+0.003     2024-08-11 00:21:01Z
+    - Add context size and temperature controls
+
+0.002     2024-08-10 02:22:12Z
+    - Add Whisper Transcription API
+    - Add more engines
+    - Fix encoding issues
+
+0.001     2024-08-03 22:47:33Z
+    - Initial release
+    - Unified Perl interface for LLM APIs
+    - Engines: OpenAI, Anthropic, Ollama
+    - Role-based architecture (Chat, HTTP, Models, JSON, Embedding)
+    - OpenAPI spec-driven request generation
+    - Embedding support

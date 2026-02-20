@@ -1,0 +1,44 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "mistral-large-latest",
+      "object": "model",
+      "created": 1702857600,
+      "owned_by": "mistralai",
+      "capabilities": {
+        "completion_chat": true,
+        "completion_fim": false,
+        "function_calling": true,
+        "fine_tuning": false,
+        "vision": false
+      }
+    },
+    {
+      "id": "mistral-small-latest",
+      "object": "model",
+      "created": 1709251200,
+      "owned_by": "mistralai",
+      "capabilities": {
+        "completion_chat": true,
+        "completion_fim": false,
+        "function_calling": true,
+        "fine_tuning": false,
+        "vision": false
+      }
+    },
+    {
+      "id": "codestral-latest",
+      "object": "model",
+      "created": 1717113600,
+      "owned_by": "mistralai",
+      "capabilities": {
+        "completion_chat": true,
+        "completion_fim": true,
+        "function_calling": false,
+        "fine_tuning": false,
+        "vision": false
+      }
+    }
+  ]
+}
