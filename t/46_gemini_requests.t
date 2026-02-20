@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test Gemini engine request generation and model list
 
 use strict;
 use warnings;

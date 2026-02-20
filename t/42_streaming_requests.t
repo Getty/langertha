@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test streaming request generation for all engines
 use strict;
 use warnings;
 use Test2::Bundle::More;

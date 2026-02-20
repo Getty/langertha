@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test embedding request generation for Ollama and OpenAI
 
 use strict;
 use warnings;

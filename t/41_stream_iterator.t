@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test Langertha::Stream::Iterator (next, reset, collect, each)
 use strict;
 use warnings;
 use Test2::Bundle::More;

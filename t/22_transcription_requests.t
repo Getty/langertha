@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test Whisper transcription request generation
 
 use strict;
 use warnings;

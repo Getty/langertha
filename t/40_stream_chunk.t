@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test Langertha::Stream::Chunk attributes and defaults
 use strict;
 use warnings;
 use Test2::Bundle::More;

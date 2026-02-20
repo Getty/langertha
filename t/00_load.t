@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Verify all Langertha modules load successfully
 
 use strict;
 use warnings;

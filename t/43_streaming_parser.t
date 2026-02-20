@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test SSE and NDJSON stream chunk parsing per engine
 use strict;
 use warnings;
 use Test2::Bundle::More;

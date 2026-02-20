@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test MCP tool calling support for Anthropic engine
 
 use strict;
 use warnings;

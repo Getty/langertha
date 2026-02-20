@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test Future-based streaming method availability
 use strict;
 use warnings;
 use Test2::Bundle::More;

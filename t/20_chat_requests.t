@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test chat request generation for all engines
 
 use strict;
 use warnings;

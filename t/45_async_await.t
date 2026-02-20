@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test Future::AsyncAwait integration and async sub compilation
 use strict;
 use warnings;
 use Test2::Bundle::More;
@@ -47,56 +48,3 @@ ok($test_future->isa('Future'), 'async sub returns Future');
 is($test_future->get, 'async_works', 'async sub executed correctly');
 
 done_testing;
-
-=head1 NAME
-
-t/45_async_await.t - Test Future::AsyncAwait integration
-
-=head1 DESCRIPTION
-
-This test verifies that Langertha's async methods are properly implemented
-using Future::AsyncAwait and can be used with the async/await syntax.
-
-=head1 EXAMPLE USAGE
-
-Here's how you would use Langertha with async/await in a real application:
-
-  use Future::AsyncAwait;
-  use Langertha::Engine::OpenAI;
-
-  my $engine = Langertha::Engine::OpenAI->new(
-    api_key => $ENV{OPENAI_API_KEY},
-    model => 'gpt-4o-mini',
-  );
-
-  async sub chat_with_ai {
-    my ($engine, $message) = @_;
-
-    my $response = await $engine->simple_chat_f($message);
-    say "AI: $response";
-    return $response;
-  }
-
-  async sub stream_chat {
-    my ($engine, $message) = @_;
-
-    my ($content, $chunks) = await $engine->simple_chat_stream_realtime_f(
-      sub {
-        my ($chunk) = @_;
-        print $chunk->content;  # Print in real-time
-      },
-      $message
-    );
-
-    say "\nComplete! Received ", scalar(@$chunks), " chunks";
-    return $content;
-  }
-
-  # Run the async functions
-  chat_with_ai($engine, 'Hello!')->get;
-  stream_chat($engine, 'Tell me a story')->get;
-
-  # Or integrate with an event loop
-  $engine->_async_loop->run;
-
-=cut

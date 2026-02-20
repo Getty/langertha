@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
+# ABSTRACT: Test Ollama-specific API requests (tags, ps)
 
 use strict;
 use warnings;
