@@ -1,6 +1,6 @@
 package Langertha::Engine::DeepSeek;
 # ABSTRACT: DeepSeek API
-
+our $VERSION = '0.101';
 use Moose;
 extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
