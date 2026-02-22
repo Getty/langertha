@@ -15,8 +15,9 @@ BEGIN {
   push @available, 'groq'      if $ENV{TEST_LANGERTHA_GROQ_API_KEY};
   push @available, 'mistral'   if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};
   push @available, 'deepseek'  if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
+  push @available, 'ollama'    if $ENV{TEST_LANGERTHA_OLLAMA_URL};
   unless (@available) {
-    plan skip_all => 'No TEST_LANGERTHA_*_API_KEY env vars set';
+    plan skip_all => 'No TEST_LANGERTHA_* env vars set';
   }
   eval {
     require IO::Async::Loop;
@@ -146,6 +147,23 @@ async sub run_tests {
       ));
     };
     diag "DeepSeek error: $@" if $@;
+  }
+
+  # --- Ollama ---
+  if ($ENV{TEST_LANGERTHA_OLLAMA_URL}) {
+    require Langertha::Engine::Ollama;
+    my @ollama_models = $ENV{TEST_LANGERTHA_OLLAMA_MODELS}
+      ? split(/,/, $ENV{TEST_LANGERTHA_OLLAMA_MODELS})
+      : ($ENV{TEST_LANGERTHA_OLLAMA_MODEL} || 'qwen3:8b');
+    for my $model (@ollama_models) {
+      eval {
+        await test_engine("Ollama/$model", Langertha::Engine::Ollama->new(
+          url => $ENV{TEST_LANGERTHA_OLLAMA_URL},
+          model => $model, mcp_servers => [$mcp],
+        ));
+      };
+      diag "Ollama/$model error: $@" if $@;
+    }
   }
 }
 
