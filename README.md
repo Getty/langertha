@@ -262,6 +262,7 @@ prove -l t/
 
 # Run mock tool calling tests (no API keys needed)
 prove -l -It/lib t/64_tool_calling_ollama_mock.t
+prove -l -It/lib t/66_tool_calling_hermes.t
 
 # Run live integration tests
 TEST_LANGERTHA_OPENAI_API_KEY=...    \

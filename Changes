@@ -9,8 +9,11 @@ Revision history for Langertha
       Hermes-native tool calling via <tool_call>/<tool_response> XML tags;
       enables MCP tool calling on any model that supports the Hermes
       prompt format, even without API-level tool support
-    - Add hermes_tool_prompt attribute for customizing the Hermes tool
-      system prompt template
+    - Add hermes_call_tag, hermes_response_tag attributes for custom
+      XML tag names (default: tool_call, tool_response)
+    - Add hermes_tool_instructions attribute for customizing the
+      instruction text without changing the structural XML template
+    - Add hermes_tool_prompt attribute for full system prompt override
     - Add hermes_extract_content() method for engines to override
       response content extraction in Hermes mode
     - MCP tool calling now supported on ALL engines:
@@ -30,6 +33,8 @@ Revision history for Langertha
     - Update default models:
       - Anthropic: claude-sonnet-4-6 (short alias)
       - Gemini: gemini-2.5-flash (2.0-flash deprecated for new users)
+    - Add Hermes tool calling unit test with mock round-trip
+      (t/66_tool_calling_hermes.t)
     - Add vLLM tool calling unit test (t/65_tool_calling_vllm.t)
     - Add live integration test for all engines including Ollama, vLLM,
       and NousResearch (t/80_live_tool_calling.t) with multi-model support

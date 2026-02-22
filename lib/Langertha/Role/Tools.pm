@@ -397,7 +397,11 @@ call functions without making assumptions about argument values.
 
 =attr hermes_tool_prompt
 
-  hermes_tool_prompt => 'Custom prompt with %s placeholder for tools JSON'
+  hermes_tool_prompt => <<'PROMPT'
+  You are an assistant with access to tools.
+  <tools>%s</tools>
+  Use <tool_call>{"name": "...", "arguments": {...}}</tool_call> to call them.
+  PROMPT
 
 The full system prompt template used for Hermes tool calling. Must contain
 a C<%s> placeholder where the tools JSON will be inserted. Built

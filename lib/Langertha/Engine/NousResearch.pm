@@ -96,6 +96,16 @@ tool calling support is required.
 
   my $response = await $nous->chat_with_tools_f('Add 7 and 15');
 
+The instruction text, XML tag names, and full prompt template are
+all customizable:
+
+  my $nous = Langertha::Engine::NousResearch->new(
+    api_key                  => $ENV{NOUSRESEARCH_API_KEY},
+    hermes_tool_instructions => 'You are a helpful assistant.',
+    hermes_call_tag          => 'function_call',
+    mcp_servers              => [$mcp],
+  );
+
 See L<Langertha::Role::Tools/HERMES TOOL CALLING> for details.
 
 =head1 GETTING AN API KEY

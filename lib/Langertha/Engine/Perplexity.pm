@@ -31,6 +31,10 @@ sub transcription_request {
   croak "".(ref $_[0])." doesn't support transcription";
 }
 
+sub chat_with_tools_f {
+  croak "".(ref $_[0])." doesn't support tool calling";
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 SYNOPSIS
@@ -43,6 +47,15 @@ __PACKAGE__->meta->make_immutable;
   );
 
   print $perplexity->simple_chat('What are the latest Perl releases?');
+
+  # Streaming
+  $perplexity->simple_chat_stream(sub {
+    print shift->content;
+  }, 'Summarize recent Perl news');
+
+  # Async
+  use Future::AsyncAwait;
+  my $response = await $perplexity->simple_chat_f('What is new in Perl?');
 
 =head1 DESCRIPTION
 
@@ -65,6 +78,10 @@ B<Available Models:>
 
 B<Note:> Perplexity responses include citations and search results alongside
 the generated text. The API is OpenAI-compatible for chat completions.
+
+B<Limitations:> Perplexity does not support tool calling, embeddings,
+or transcription on the Chat Completions API. Only chat and streaming
+are available.
 
 B<THIS API IS WORK IN PROGRESS>
 
