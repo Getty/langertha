@@ -102,6 +102,9 @@ Revision history for Langertha
       env vars for AKI.IO live testing
     - Use RFC 2606 test.invalid domain for dummy URLs in unit tests
     - Add ex/hermes_tools.pl example for Hermes-native tool calling
+    - Rewrite all POD to inline style across all 37 modules —
+      =attr directly after has, =method directly after sub.
+      Add POD to 18 previously undocumented modules.
 
 0.100     2026-02-20 05:33:44Z
     - Add MCP (Model Context Protocol) tool calling support
