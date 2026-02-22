@@ -16,10 +16,16 @@ Revision history for Langertha
     - Update default models:
       - Anthropic: claude-sonnet-4-6 (short alias)
       - Gemini: gemini-2.5-flash (2.0-flash deprecated for new users)
-    - Add live integration test for all 6 cloud engines
-      (t/80_live_tool_calling.t)
+    - Add live integration test for all engines including Ollama
+      (t/80_live_tool_calling.t) with multi-model support
+    - Add mock round-trip test for Ollama tool calling
+      (t/64_tool_calling_ollama_mock.t) using fixture data
+    - Add shared Test::MockAsyncHTTP test helper (t/lib/)
+      for mocking async HTTP in engine tests
     - Normalize test API key env vars to TEST_LANGERTHA_*_API_KEY
       prefix to prevent accidental use of production keys
+    - Add TEST_LANGERTHA_OLLAMA_URL and TEST_LANGERTHA_OLLAMA_MODELS
+      env vars for Ollama live testing
 
 0.100     2026-02-20 05:33:44Z
     - Add MCP (Model Context Protocol) tool calling support

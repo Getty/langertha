@@ -157,6 +157,19 @@ Configure the maximum number of tool-calling rounds:
 
 Supported by all engines: **Anthropic**, **OpenAI**, **Gemini**, **Groq**, **Mistral**, **DeepSeek**, **Ollama**, **vLLM**.
 
+**Testing tool calling:**
+
+    # Run mock test (no API keys needed)
+    prove -l -It/lib t/64_tool_calling_ollama_mock.t
+
+    # Run live tests with API keys
+    TEST_LANGERTHA_ANTHROPIC_API_KEY=... prove -l t/80_live_tool_calling.t
+
+    # Ollama live test with multiple models
+    TEST_LANGERTHA_OLLAMA_URL=http://localhost:11434 \
+    TEST_LANGERTHA_OLLAMA_MODELS=qwen3:8b,llama3.2:3b \
+    prove -l t/80_live_tool_calling.t
+
 See `ex/mcp_inprocess.pl` for a complete in-process example and `ex/mcp_stdio.pl` for an interactive stdio server example.
 
 # ANTHROPIC EXTENDED PARAMETERS (FEBRUARY 2026)

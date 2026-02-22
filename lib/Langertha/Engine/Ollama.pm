@@ -366,7 +366,13 @@ B<Features:>
 
 =item * Dynamic model listing with caching
 
+=item * MCP tool calling support (OpenAI-compatible format)
+
 =back
+
+B<Tool Calling Note:> Not all Ollama models support tool calling. Known
+working models include B<qwen3:8b> and B<llama3.2:3b>. Models like
+mistral-small and gemma3 may not support tools.
 
 B<THIS API IS WORK IN PROGRESS>
 
@@ -389,6 +395,30 @@ Fetch models from your local Ollama instance:
 
 B<Caching:> Results are cached for 1 hour. Configure TTL via C<models_cache_ttl>
 or clear manually with C<clear_models_cache>.
+
+=head1 MCP TOOL CALLING
+
+Ollama supports MCP tool calling with models that have tool support:
+
+  use IO::Async::Loop;
+  use Net::Async::MCP;
+  use Future::AsyncAwait;
+
+  my $loop = IO::Async::Loop->new;
+  my $mcp = Net::Async::MCP->new(server => $my_mcp_server);
+  $loop->add($mcp);
+  await $mcp->initialize;
+
+  my $ollama = Langertha::Engine::Ollama->new(
+    url         => 'http://localhost:11434',
+    model       => 'qwen3:8b',
+    mcp_servers => [$mcp],
+  );
+
+  my $response = await $ollama->chat_with_tools_f('Use the add tool to compute 7+15');
+
+Ollama uses the OpenAI-compatible tool format. See L<Langertha::Role::Tools>
+for details on the tool-calling loop.
 
 =head1 HOW TO INSTALL OLLAMA
 
