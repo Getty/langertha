@@ -46,7 +46,7 @@ Using L<https://console.anthropic.com/>:
 
   my $claude = Langertha::Engine::Anthropic->new(
     api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-sonnet-4-5-20250929',
+    model => 'claude-sonnet-4-6',
   );
 
   print $claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data.');
@@ -57,7 +57,7 @@ Using L<https://aistudio.google.com/>:
 
   my $gemini = Langertha::Engine::Gemini->new(
     api_key => $ENV{GEMINI_API_KEY},
-    model => 'gemini-2.0-flash',
+    model => 'gemini-2.5-flash',
   );
 
   print $gemini->simple_chat('Explain the difference between Moose and Moo.');

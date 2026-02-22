@@ -242,6 +242,11 @@ sub response_tool_calls {
   return $msg->{tool_calls} // [];
 }
 
+sub extract_tool_call {
+  my ( $self, $tc ) = @_;
+  return ( $tc->{function}{name}, $tc->{function}{arguments} );
+}
+
 sub response_text_content {
   my ( $self, $data ) = @_;
   my $msg = $data->{message} or return '';

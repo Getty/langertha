@@ -11,14 +11,13 @@ use IO::Async::Loop;
 use Future::AsyncAwait;
 use Net::Async::MCP;
 use MCP::Server;
-use MCP::Tool;
 use Langertha::Engine::Anthropic;
 
 # --- Build a simple in-process MCP server with two tools ---
 
 my $server = MCP::Server->new(name => 'demo', version => '1.0');
 
-$server->add_tool(MCP::Tool->new(
+$server->tool(
   name        => 'add',
   description => 'Add two numbers',
   input_schema => {
@@ -29,14 +28,14 @@ $server->add_tool(MCP::Tool->new(
     },
     required => ['a', 'b'],
   },
-  handler => sub {
-    my ($args) = @_;
+  code => sub {
+    my ($self, $args) = @_;
     my $result = $args->{a} + $args->{b};
-    return MCP::Tool->text_result("$result");
+    return $self->text_result("$result");
   },
-));
+);
 
-$server->add_tool(MCP::Tool->new(
+$server->tool(
   name        => 'greet',
   description => 'Generate a greeting message for a person',
   input_schema => {
@@ -46,11 +45,11 @@ $server->add_tool(MCP::Tool->new(
     },
     required => ['name'],
   },
-  handler => sub {
-    my ($args) = @_;
-    return MCP::Tool->text_result("Hello, $args->{name}! Welcome!");
+  code => sub {
+    my ($self, $args) = @_;
+    return $self->text_result("Hello, $args->{name}! Welcome!");
   },
-));
+);
 
 # --- Set up the MCP client (in-process transport) ---
 
@@ -69,7 +68,7 @@ async sub main {
 
   my $engine = Langertha::Engine::Anthropic->new(
     api_key     => $ENV{ANTHROPIC_API_KEY} || die("Set ANTHROPIC_API_KEY"),
-    model       => 'claude-sonnet-4-5-20250929',
+    model       => 'claude-sonnet-4-6',
     mcp_servers => [$mcp],
   );
 

@@ -8,6 +8,7 @@ use Carp qw( croak );
 requires qw(
   format_tools
   response_tool_calls
+  extract_tool_call
   format_tool_results
   response_text_content
 );
@@ -63,11 +64,11 @@ async sub chat_with_tools_f {
     # Execute each tool call via the appropriate MCP server
     my @results;
     for my $tc (@$tool_calls) {
-      my $name = $tc->{name};
+      my ( $name, $input ) = $self->extract_tool_call($tc);
       my $mcp = $tool_server_map{$name}
         or die "Tool '$name' not found on any MCP server";
 
-      my $result = await $mcp->call_tool($name, $tc->{input})->else(sub {
+      my $result = await $mcp->call_tool($name, $input)->else(sub {
         my ( $error ) = @_;
         Future->done({
           content => [{ type => 'text', text => "Error calling tool '$name': $error" }],
@@ -103,7 +104,7 @@ async sub chat_with_tools_f {
   # Create engine with MCP servers
   my $engine = Langertha::Engine::Anthropic->new(
     api_key     => $ENV{ANTHROPIC_API_KEY},
-    model       => 'claude-sonnet-4-5-20250929',
+    model       => 'claude-sonnet-4-6',
     mcp_servers => [$mcp],
   );
 
@@ -148,6 +149,11 @@ Convert MCP tool definitions to the engine's native tool format.
 =item C<response_tool_calls(\%response_data)>
 
 Extract tool call objects from a parsed LLM response.
+
+=item C<extract_tool_call(\%tool_call)>
+
+Extract tool name and input from a native tool call object.
+Returns C<($name, \%input)>.
 
 =item C<format_tool_results(\%response_data, \@results)>
 

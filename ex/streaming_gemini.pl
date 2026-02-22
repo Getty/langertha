@@ -15,7 +15,7 @@ if ($ENV{GEMINI_API_KEY}) {
 
 my $gemini = Langertha::Engine::Gemini->new(
   api_key => $ENV{GEMINI_API_KEY} || die("Set GEMINI_API_KEY"),
-  model => 'gemini-2.0-flash',
+  model => 'gemini-2.5-flash',
   response_size => 1024,
 );
 

@@ -60,13 +60,7 @@ has '+url' => (
 );
 sub has_url { 1 }
 
-sub all_models {qw(
-  claude-opus-4-6-20250514
-  claude-sonnet-4-5-20250929
-  claude-haiku-4-5-20251001
-)}
-
-sub default_model { 'claude-sonnet-4-5-20250929' }
+sub default_model { 'claude-sonnet-4-6' }
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
@@ -268,6 +262,11 @@ sub response_tool_calls {
   return [grep { $_->{type} eq 'tool_use' } @{$data->{content} // []}];
 }
 
+sub extract_tool_call {
+  my ( $self, $tc ) = @_;
+  return ( $tc->{name}, $tc->{input} );
+}
+
 sub response_text_content {
   my ( $self, $data ) = @_;
   return join('', map { $_->{text} }
@@ -303,7 +302,7 @@ __PACKAGE__->meta->make_immutable;
   # Basic usage
   my $claude = Langertha::Engine::Anthropic->new(
     api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-sonnet-4-5-20250929',
+    model => 'claude-sonnet-4-6',
     response_size => 4096,
     temperature => 0.7,
   );
@@ -336,9 +335,9 @@ B<Available Models (February 2026):>
 
 =over 4
 
-=item * B<claude-opus-4-6-20250514> - Most capable model with 1M token context, strongest coding, planning, and debugging capabilities. Released February 5, 2026. Best for complex tasks, code review, and agentic workflows.
+=item * B<claude-opus-4-6> - Most capable model with 1M token context, strongest coding, planning, and debugging capabilities. Released February 5, 2026. Best for complex tasks, code review, and agentic workflows.
 
-=item * B<claude-sonnet-4-5-20250929> - Balanced performance and speed (default). Released November 24, 2025. Excellent for most general-purpose tasks.
+=item * B<claude-sonnet-4-6> - Balanced performance and speed (default). Released November 24, 2025. Excellent for most general-purpose tasks.
 
 =item * B<claude-haiku-4-5-20251001> - Fastest and most cost-efficient model. Matches Sonnet 4's performance on coding, computer use, and agent tasks while being significantly cheaper.
 
@@ -378,7 +377,7 @@ Controls the depth of thinking for reasoning models. Values: C<low>, C<medium>, 
 
   my $claude = Langertha::Engine::Anthropic->new(
     api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-opus-4-6-20250514',
+    model => 'claude-opus-4-6',
     effort => 'high',  # More thorough reasoning
   );
 
@@ -388,7 +387,7 @@ Controls data residency for inference. Values: C<us>, C<eu>.
 
   my $claude = Langertha::Engine::Anthropic->new(
     api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-sonnet-4-5-20250929',
+    model => 'claude-sonnet-4-6',
     inference_geo => 'eu',  # Process in EU region
   );
 
@@ -398,7 +397,7 @@ Dynamically fetch available models from the Anthropic API (with cursor paginatio
 
   # Get simple list of model IDs
   my $model_ids = $engine->list_models;
-  # Returns: ['claude-opus-4-6-20250514', 'claude-sonnet-4-5-20250929', ...]
+  # Returns: ['claude-opus-4-6', 'claude-sonnet-4-6', ...]
 
   # Get full model objects with metadata
   my $models = $engine->list_models(full => 1);
@@ -416,9 +415,6 @@ B<Caching:> Results are cached for 1 hour by default. Configure the TTL:
 
   # Clear the cache manually
   $engine->clear_models_cache;
-
-B<Deprecation Notice:> The C<all_models()> method returns a hardcoded list and
-is deprecated. Use C<list_models()> for up-to-date model availability.
 
 =head1 GETTING AN API KEY
 

@@ -16,7 +16,7 @@ async sub simple_example {
 
   my $engine = Langertha::Engine::Anthropic->new(
     api_key => $api_key,
-    model => 'claude-sonnet-4-5-20250929',
+    model => 'claude-sonnet-4-6',
   );
 
   say "Asking Claude a question...";
@@ -36,7 +36,7 @@ async sub streaming_example {
 
   my $engine = Langertha::Engine::Anthropic->new(
     api_key => $api_key,
-    model => 'claude-sonnet-4-5-20250929',
+    model => 'claude-sonnet-4-6',
   );
 
   say "Streaming response (watch it appear in real-time):\n";
@@ -95,7 +95,7 @@ async sub error_handling_example {
 
   my $engine = Langertha::Engine::Anthropic->new(
     api_key => 'invalid-key-for-testing',  # Intentionally invalid
-    model => 'claude-sonnet-4-5-20250929',
+    model => 'claude-sonnet-4-6',
   );
 
   say "Attempting request with invalid API key...\n";

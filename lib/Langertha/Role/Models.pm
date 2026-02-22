@@ -14,13 +14,8 @@ has models => (
 );
 sub _build_models {
   my ( $self ) = @_;
-  # Prefer dynamic list_models() over static all_models()
   return $self->list_models() if $self->can('list_models');
-  return [
-    $self->can('all_models')
-      ? $self->all_models
-      : $self->model
-  ];
+  return [ $self->model ];
 }
 
 has model => (

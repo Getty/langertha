@@ -1,10 +1,25 @@
 Revision history for Langertha
 
 {{$NEXT}}
-    - Add MCP tool calling support for OpenAI engine (inherited by Groq, vLLM)
-    - Add MCP tool calling support for Gemini engine
-    - Add MCP tool calling support for Ollama engine
-    - Add ABSTRACT comments to all test files
+    - MCP tool calling now supported on ALL engines:
+      - OpenAI (inherited by Groq, vLLM, Mistral, DeepSeek)
+      - Gemini (with Gemini-native functionDeclarations format)
+      - Ollama (OpenAI-compatible tool format)
+    - Add extract_tool_call() to Role::Tools for engine-agnostic
+      tool call parsing across all provider formats
+    - Fix Gemini tool calling: pass-through native message formats,
+      convert MCP tool results to Gemini's functionResponse object
+    - Fix Gemini chat_request to preserve native parts in messages
+      from tool result round-trips
+    - Remove hardcoded all_models() lists from all engines; model
+      discovery is now exclusively dynamic via list_models()
+    - Update default models:
+      - Anthropic: claude-sonnet-4-6 (short alias)
+      - Gemini: gemini-2.5-flash (2.0-flash deprecated for new users)
+    - Add live integration test for all 6 cloud engines
+      (t/80_live_tool_calling.t)
+    - Normalize test API key env vars to TEST_LANGERTHA_*_API_KEY
+      prefix to prevent accidental use of production keys
 
 0.100     2026-02-20 05:33:44Z
     - Add MCP (Model Context Protocol) tool calling support

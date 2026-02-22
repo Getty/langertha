@@ -1,0 +1,154 @@
+#!/usr/bin/env perl
+# ABSTRACT: Live integration test for MCP tool calling against real APIs
+
+use strict;
+use warnings;
+
+use Test2::Bundle::More;
+use JSON::MaybeXS;
+
+BEGIN {
+  my @available;
+  push @available, 'anthropic' if $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY};
+  push @available, 'openai'    if $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
+  push @available, 'gemini'    if $ENV{TEST_LANGERTHA_GEMINI_API_KEY};
+  push @available, 'groq'      if $ENV{TEST_LANGERTHA_GROQ_API_KEY};
+  push @available, 'mistral'   if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};
+  push @available, 'deepseek'  if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
+  unless (@available) {
+    plan skip_all => 'No TEST_LANGERTHA_*_API_KEY env vars set';
+  }
+  eval {
+    require IO::Async::Loop;
+    require Future::AsyncAwait;
+    require Net::Async::MCP;
+    require MCP::Server;
+    require MCP::Tool;
+    1;
+  } or plan skip_all => 'Requires IO::Async, Net::Async::MCP, and MCP modules';
+}
+
+use IO::Async::Loop;
+use Future::AsyncAwait;
+use Net::Async::MCP;
+use MCP::Server;
+use MCP::Tool;
+
+# --- Build a test MCP server with deterministic tools ---
+
+my $server = MCP::Server->new(name => 'test', version => '1.0');
+
+$server->tool(
+  name        => 'add',
+  description => 'Add two numbers together and return the result',
+  input_schema => {
+    type       => 'object',
+    properties => {
+      a => { type => 'number', description => 'First number' },
+      b => { type => 'number', description => 'Second number' },
+    },
+    required => ['a', 'b'],
+  },
+  code => sub {
+    my ($self, $args) = @_;
+    my $result = $args->{a} + $args->{b};
+    return $self->text_result("$result");
+  },
+);
+
+my $loop = IO::Async::Loop->new;
+my $mcp = Net::Async::MCP->new(server => $server);
+$loop->add($mcp);
+
+my $prompt = 'What is 7 plus 15? Use the add tool to calculate this. Answer with just the number.';
+
+async sub test_engine {
+  my ($name, $engine) = @_;
+  my $response = await $engine->chat_with_tools_f($prompt);
+  like($response, qr/22/, "$name: tool calling returned correct result (22)");
+  diag "$name response: $response";
+}
+
+async sub run_tests {
+  await $mcp->initialize;
+
+  my $tools = await $mcp->list_tools;
+  is(scalar @$tools, 1, 'MCP server has 1 tool');
+  is($tools->[0]{name}, 'add', 'tool is add');
+
+  # --- Anthropic ---
+  if ($ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY}) {
+    require Langertha::Engine::Anthropic;
+    eval {
+      await test_engine('Anthropic', Langertha::Engine::Anthropic->new(
+        api_key => $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY},
+        model => 'claude-sonnet-4-6', mcp_servers => [$mcp],
+      ));
+    };
+    diag "Anthropic error: $@" if $@;
+  }
+
+  # --- OpenAI ---
+  if ($ENV{TEST_LANGERTHA_OPENAI_API_KEY}) {
+    require Langertha::Engine::OpenAI;
+    eval {
+      await test_engine('OpenAI', Langertha::Engine::OpenAI->new(
+        api_key => $ENV{TEST_LANGERTHA_OPENAI_API_KEY},
+        model => 'gpt-4o-mini', mcp_servers => [$mcp],
+      ));
+    };
+    diag "OpenAI error: $@" if $@;
+  }
+
+  # --- Gemini ---
+  if ($ENV{TEST_LANGERTHA_GEMINI_API_KEY}) {
+    require Langertha::Engine::Gemini;
+    eval {
+      await test_engine('Gemini', Langertha::Engine::Gemini->new(
+        api_key => $ENV{TEST_LANGERTHA_GEMINI_API_KEY},
+        model => 'gemini-2.5-flash', mcp_servers => [$mcp],
+      ));
+    };
+    diag "Gemini error: $@" if $@;
+  }
+
+  # --- Groq ---
+  if ($ENV{TEST_LANGERTHA_GROQ_API_KEY}) {
+    require Langertha::Engine::Groq;
+    eval {
+      await test_engine('Groq', Langertha::Engine::Groq->new(
+        api_key => $ENV{TEST_LANGERTHA_GROQ_API_KEY},
+        model => 'llama-3.3-70b-versatile', mcp_servers => [$mcp],
+      ));
+    };
+    diag "Groq error: $@" if $@;
+  }
+
+  # --- Mistral ---
+  if ($ENV{TEST_LANGERTHA_MISTRAL_API_KEY}) {
+    require Langertha::Engine::Mistral;
+    eval {
+      await test_engine('Mistral', Langertha::Engine::Mistral->new(
+        api_key => $ENV{TEST_LANGERTHA_MISTRAL_API_KEY},
+        model => 'mistral-small-latest', mcp_servers => [$mcp],
+      ));
+    };
+    diag "Mistral error: $@" if $@;
+  }
+
+  # --- DeepSeek ---
+  if ($ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY}) {
+    require Langertha::Engine::DeepSeek;
+    eval {
+      await test_engine('DeepSeek', Langertha::Engine::DeepSeek->new(
+        api_key => $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY},
+        model => 'deepseek-chat', mcp_servers => [$mcp],
+      ));
+    };
+    diag "DeepSeek error: $@" if $@;
+  }
+}
+
+run_tests()->get;
+
+done_testing;

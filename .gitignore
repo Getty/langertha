@@ -3,3 +3,4 @@ Langertha-*
 *.html
 *.tar.gz
 .bash_history
+.env

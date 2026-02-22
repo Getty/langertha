@@ -37,7 +37,7 @@ Using [https://console.anthropic.com/](https://console.anthropic.com/):
 
     my $claude = Langertha::Engine::Anthropic->new(
         api_key => $ENV{ANTHROPIC_API_KEY},
-        model => 'claude-sonnet-4-5-20250929',
+        model => 'claude-sonnet-4-6',
     );
 
     print $claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data.');
@@ -48,7 +48,7 @@ Using [https://console.groq.com/](https://console.groq.com/):
 
     my $groq = Langertha::Engine::Groq->new(
         api_key => $ENV{GROQ_API_KEY},
-        model => 'llama3-8b-8192',
+        model => 'llama-3.3-70b-versatile',
         system_prompt => 'You are a helpful assistant',
     );
 
@@ -64,7 +64,7 @@ Langertha supports async/await syntax via Future::AsyncAwait for non-blocking op
     async sub chat_example {
         my $claude = Langertha::Engine::Anthropic->new(
             api_key => $ENV{ANTHROPIC_API_KEY},
-            model => 'claude-sonnet-4-5-20250929',
+            model => 'claude-sonnet-4-6',
         );
 
         # Non-blocking chat request
@@ -129,7 +129,7 @@ Langertha integrates with MCP (Model Context Protocol) servers via [Net::Async::
     # Create engine with MCP servers
     my $engine = Langertha::Engine::Anthropic->new(
         api_key     => $ENV{ANTHROPIC_API_KEY},
-        model       => 'claude-sonnet-4-5-20250929',
+        model       => 'claude-sonnet-4-6',
         mcp_servers => [$mcp],
     );
 
@@ -155,7 +155,7 @@ Configure the maximum number of tool-calling rounds:
         tool_max_iterations => 20,  # default: 10
     );
 
-Supported by all engines: **Anthropic**, **OpenAI**, **Gemini**, **Groq**, **Ollama**, **vLLM**.
+Supported by all engines: **Anthropic**, **OpenAI**, **Gemini**, **Groq**, **Mistral**, **DeepSeek**, **Ollama**, **vLLM**.
 
 See `ex/mcp_inprocess.pl` for a complete in-process example and `ex/mcp_stdio.pl` for an interactive stdio server example.
 
@@ -165,7 +165,7 @@ Anthropic's latest models support extended parameters:
 
     my $claude = Langertha::Engine::Anthropic->new(
         api_key => $ENV{ANTHROPIC_API_KEY},
-        model => 'claude-opus-4-6-20250514',
+        model => 'claude-opus-4-6',
         effort => 'high',          # Thinking depth: low|medium|high
         inference_geo => 'eu',     # Data residency: us|eu
     );

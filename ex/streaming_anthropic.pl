@@ -15,7 +15,7 @@ if ($ENV{ANTHROPIC_API_KEY}) {
 
 my $claude = Langertha::Engine::Anthropic->new(
   api_key => $ENV{ANTHROPIC_API_KEY} || die("Set ANTHROPIC_API_KEY"),
-  model => 'claude-sonnet-4-5-20250929',
+  model => 'claude-sonnet-4-6',
   response_size => 1024,
 );
 
@@ -62,7 +62,7 @@ printf "%s\n", "-" x 50;
 
 my $claude_extended = Langertha::Engine::Anthropic->new(
   api_key => $ENV{ANTHROPIC_API_KEY},
-  model => 'claude-sonnet-4-5-20250929',
+  model => 'claude-sonnet-4-6',
   response_size => 2048,
   effort => 'high',       # More thorough reasoning
   # inference_geo => 'eu', # Uncomment for EU data residency

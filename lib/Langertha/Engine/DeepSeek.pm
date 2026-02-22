@@ -9,12 +9,6 @@ sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
 
-sub all_models {qw(
-  deepseek-chat
-  deepseek-reasoner
-  deepseek-v3.2
-)}
-
 has '+url' => (
   lazy => 1,
   default => sub { 'https://api.deepseek.com' },

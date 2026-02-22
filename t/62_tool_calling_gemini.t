@@ -184,7 +184,7 @@ ok($gemini->can('chat_with_tools_f'), 'chat_with_tools_f available');
   ok($messages[1]{parts}[0]{functionResponse}, 'functionResponse present');
   is($messages[1]{parts}[0]{functionResponse}{name}, 'echo', 'response function name');
   is_deeply($messages[1]{parts}[0]{functionResponse}{response},
-    [{ type => 'text', text => 'Echo: hi' }], 'response content');
+    { result => 'Echo: hi' }, 'response content');
 }
 
 done_testing;

@@ -34,13 +34,7 @@ has '+url' => (
 );
 sub has_url { 1 }
 
-sub all_models {qw(
-  gemini-2.0-flash
-  gemini-1.5-pro
-  gemini-1.5-flash
-)}
-
-sub default_model { 'gemini-2.0-flash' }
+sub default_model { 'gemini-2.5-flash' }
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
@@ -54,6 +48,9 @@ sub chat_request {
       # Gemini uses systemInstruction field for system messages
       $system_instruction .= "\n\n" if $system_instruction;
       $system_instruction .= $message->{content};
+    } elsif ($message->{parts}) {
+      # Already in Gemini format (e.g. from format_tool_results)
+      push @gemini_contents, $message;
     } else {
       # Convert role: 'assistant' -> 'model' for Gemini
       my $role = $message->{role} eq 'assistant' ? 'model' : $message->{role};
@@ -300,6 +297,11 @@ sub response_tool_calls {
   return [grep { exists $_->{functionCall} } @$parts];
 }
 
+sub extract_tool_call {
+  my ( $self, $tc ) = @_;
+  return ( $tc->{functionCall}{name}, $tc->{functionCall}{args} );
+}
+
 sub response_text_content {
   my ( $self, $data ) = @_;
   my $candidates = $data->{candidates} || [];
@@ -315,10 +317,13 @@ sub format_tool_results {
     { role => 'model', parts => $candidate->{content}{parts} },
     { role => 'user', parts => [
       map {
+        my $content = $_->{result}{content};
+        # Gemini expects response as a plain object, not an array
+        my $text = join('', map { $_->{text} // '' } @$content);
         {
           functionResponse => {
             name     => $_->{tool_call}{functionCall}{name},
-            response => $_->{result}{content},
+            response => { result => $text },
           },
         }
       } @$results
@@ -337,7 +342,7 @@ __PACKAGE__->meta->make_immutable;
   # Basic usage
   my $gemini = Langertha::Engine::Gemini->new(
     api_key => $ENV{GEMINI_API_KEY},
-    model => 'gemini-2.0-flash',
+    model => 'gemini-2.5-flash',
     response_size => 4096,
     temperature => 0.7,
   );
@@ -378,11 +383,11 @@ B<Available Models:>
 
 =over 4
 
-=item * gemini-2.0-flash - Latest, fastest model with multimodal capabilities (default)
+=item * B<gemini-2.5-flash> - Fast model with thinking capabilities (default)
 
-=item * gemini-1.5-pro - Most capable model, best for complex reasoning tasks
+=item * B<gemini-2.5-pro> - Most capable model for complex reasoning tasks
 
-=item * gemini-1.5-flash - Fast and efficient model for high-volume tasks
+=item * B<gemini-2.0-flash> - Previous generation, fast and efficient
 
 =back
 
@@ -412,7 +417,7 @@ Dynamically fetch available models from the Gemini API (with token pagination):
 
   # Get simple list of model IDs
   my $model_ids = $engine->list_models;
-  # Returns: ['gemini-2.0-flash-exp', 'gemini-1.5-pro', ...]
+  # Returns: ['gemini-2.5-flash', 'gemini-2.5-pro', ...]
 
   # Get full model objects with metadata
   my $models = $engine->list_models(full => 1);
@@ -424,9 +429,6 @@ B<Note:> Model IDs have the "models/" prefix stripped for convenience.
 
 B<Caching:> Results are cached for 1 hour. Configure TTL via C<models_cache_ttl>
 or clear manually with C<clear_models_cache>.
-
-B<Deprecation Notice:> The C<all_models()> method returns a hardcoded list.
-Use C<list_models()> for current availability.
 
 B<Key Capabilities:>
 
@@ -465,7 +467,7 @@ Set the environment variable:
 
   my $gemini = Langertha::Engine::Gemini->new(
     api_key => $ENV{GEMINI_API_KEY},
-    model => 'gemini-2.0-flash',
+    model => 'gemini-2.5-flash',
   );
 
   my $answer = $gemini->simple_chat('What is the capital of France?');
@@ -510,36 +512,35 @@ Set the environment variable:
 
   my $gemini = Langertha::Engine::Gemini->new(
     api_key => $ENV{GEMINI_API_KEY},
-    model => 'gemini-2.0-flash',
+    model => 'gemini-2.5-flash',
     temperature => 0.2,      # Lower = more deterministic
     response_size => 1024,   # Limit output tokens
   );
 
 =head1 MODEL SELECTION
 
-B<gemini-2.0-flash> (Default)
+B<gemini-2.5-flash> (Default)
 
-Latest and fastest model. Best for:
+Fast model with built-in thinking capabilities. Best for:
 - General chat and conversation
-- Quick responses
+- Quick responses with reasoning
 - High-volume applications
 - Multimodal tasks
 
-B<gemini-1.5-pro>
+B<gemini-2.5-pro>
 
 Most capable model. Best for:
 - Complex reasoning and analysis
 - Long-form content generation
 - Tasks requiring deep understanding
-- Maximum context window (2M tokens)
+- Maximum accuracy on difficult problems
 
-B<gemini-1.5-flash>
+B<gemini-2.0-flash>
 
-Fast and efficient. Best for:
+Previous generation, still fast and efficient. Best for:
 - High-volume processing
 - Real-time applications
 - Cost-sensitive deployments
-- Simple to moderate complexity tasks
 
 =head1 SEE ALSO
 

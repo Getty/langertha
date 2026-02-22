@@ -13,7 +13,7 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
 my $anthropic = Langertha::Engine::Anthropic->new(
   api_key => 'test-key',
-  model => 'claude-sonnet-4-5-20250929',
+  model => 'claude-sonnet-4-6',
   system_prompt => 'You are a helpful assistant',
   response_size => 1024,
 );
@@ -79,7 +79,7 @@ is($anthropic->tool_max_iterations, 10, 'tool_max_iterations defaults to 10');
   ok($body->{tools}, 'tools field present in request body');
   is(scalar @{$body->{tools}}, 1, 'one tool in body');
   is($body->{tools}[0]{name}, 'echo', 'tool name in body');
-  is($body->{model}, 'claude-sonnet-4-5-20250929', 'model in body');
+  is($body->{model}, 'claude-sonnet-4-6', 'model in body');
   is($body->{max_tokens}, 1024, 'max_tokens in body');
   ok(!exists $body->{system}, 'no system in body when not in messages');
 }

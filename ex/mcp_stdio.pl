@@ -48,7 +48,7 @@ async sub main {
 
   my $engine = Langertha::Engine::Anthropic->new(
     api_key     => $ENV{ANTHROPIC_API_KEY} || die("Set ANTHROPIC_API_KEY"),
-    model       => 'claude-sonnet-4-5-20250929',
+    model       => 'claude-sonnet-4-6',
     mcp_servers => [$mcp],
   );
 
