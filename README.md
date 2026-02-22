@@ -1,145 +1,162 @@
-# SYNOPSIS
+```
+ __                              __   __
+|  .---.-.-----.-----.-----.----|  |_|  |--.---.-.
+|  |  _  |     |  _  |  -__|   _|   _|     |  _  |
+|__|___._|__|__|___  |_____|__| |____|__|__|___._|
+---------------|_____|----------------------------
+```
 
-    my $system_prompt = <<__EOP__;
+<p align="center">
+  <em>The clan of fierce vikings with axes and shields to AId your rAId</em>
+</p>
 
-    You are a helpful assistant, but you are kept hostage in the basement
-    of Getty, who lured you into his home with nice perspective about AI!
+<p align="center">
+  <a href="https://metacpan.org/pod/Langertha"><img src="https://img.shields.io/cpan/v/Langertha?style=flat-square&label=CPAN" alt="CPAN"></a>
+  <a href="https://github.com/Getty/langertha/actions"><img src="https://img.shields.io/github/actions/workflow/status/Getty/langertha/test.yml?style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://metacpan.org/pod/Langertha"><img src="https://img.shields.io/cpan/l/Langertha?style=flat-square" alt="License"></a>
+  <a href="https://discord.gg/Y2avVYpquV"><img src="https://img.shields.io/discord/1095536723398238308?style=flat-square&label=Discord" alt="Discord"></a>
+</p>
 
-    __EOP__
+---
 
-Using [https://ollama.com/](https://ollama.com/):
+**Langertha** is a unified Perl interface for LLM APIs. One API, many providers. Supports chat, streaming, embeddings, transcription, MCP tool calling, and dynamic model discovery.
 
-    use Langertha::Ollama;
+## Supported Providers
 
-    my $ollama = Langertha::Engine::Ollama->new(
-        url => 'http://127.0.0.1:11434',
-        model => 'llama3.1',
-        system_prompt => $system_prompt,
-    );
+| Provider | Chat | Streaming | Tools (MCP) | Embeddings | Transcription | Models API |
+|----------|:----:|:---------:|:-----------:|:----------:|:-------------:|:----------:|
+| [OpenAI](https://platform.openai.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| [Anthropic](https://console.anthropic.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [Gemini](https://ai.google.dev/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [Ollama](https://ollama.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: |
+| [Groq](https://console.groq.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: | :white_check_mark: |
+| [Mistral](https://console.mistral.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [DeepSeek](https://platform.deepseek.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
+| [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | :white_check_mark: | |
 
-    print $ollama->simple_chat('Do you wanna build a snowman?');
+## Quick Start
 
-Using [https://platform.openai.com/](https://platform.openai.com/):
+```bash
+cpanm Langertha
+```
 
-    use Langertha::OpenAI;
+```perl
+use Langertha::Engine::OpenAI;
 
-    my $openai = Langertha::Engine::OpenAI->new(
-        api_key => $ENV{OPENAI_API_KEY},
-        model => 'gpt-4o-mini',
-        system_prompt => $system_prompt,
-    );
+my $openai = Langertha::Engine::OpenAI->new(
+    api_key => $ENV{OPENAI_API_KEY},
+    model   => 'gpt-4o-mini',
+);
 
-    print $openai->simple_chat('Do you wanna build a snowman?');
+print $openai->simple_chat('Hello from Perl!');
+```
 
-Using [https://console.anthropic.com/](https://console.anthropic.com/):
+## Usage Examples
 
-    use Langertha::Anthropic;
+### Cloud APIs
 
-    my $claude = Langertha::Engine::Anthropic->new(
-        api_key => $ENV{ANTHROPIC_API_KEY},
-        model => 'claude-sonnet-4-6',
-    );
+```perl
+use Langertha::Engine::Anthropic;
 
-    print $claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data.');
+my $claude = Langertha::Engine::Anthropic->new(
+    api_key => $ENV{ANTHROPIC_API_KEY},
+    model   => 'claude-sonnet-4-6',
+);
+print $claude->simple_chat('Generate Perl Moose classes for GeoJSON.');
+```
 
-Using [https://console.groq.com/](https://console.groq.com/):
+```perl
+use Langertha::Engine::Gemini;
 
-    use Langertha::Engine::Groq;
+my $gemini = Langertha::Engine::Gemini->new(
+    api_key => $ENV{GEMINI_API_KEY},
+    model   => 'gemini-2.5-flash',
+);
+print $gemini->simple_chat('Explain quantum computing.');
+```
 
-    my $groq = Langertha::Engine::Groq->new(
-        api_key => $ENV{GROQ_API_KEY},
-        model => 'llama-3.3-70b-versatile',
-        system_prompt => 'You are a helpful assistant',
-    );
+### Local Models with Ollama
 
-    print($groq->simple_chat('Say something nice'));
+```perl
+use Langertha::Engine::Ollama;
 
-# ASYNC/AWAIT SUPPORT
+my $ollama = Langertha::Engine::Ollama->new(
+    url   => 'http://localhost:11434',
+    model => 'llama3.3',
+);
+print $ollama->simple_chat('Do you wanna build a snowman?');
+```
 
-Langertha supports async/await syntax via Future::AsyncAwait for non-blocking operations:
+### Self-hosted with vLLM
 
-    use Future::AsyncAwait;
-    use Langertha::Engine::Anthropic;
+```perl
+use Langertha::Engine::vLLM;
 
-    async sub chat_example {
-        my $claude = Langertha::Engine::Anthropic->new(
-            api_key => $ENV{ANTHROPIC_API_KEY},
-            model => 'claude-sonnet-4-6',
-        );
+my $vllm = Langertha::Engine::vLLM->new(
+    url   => $ENV{VLLM_URL},
+    model => 'meta-llama/Llama-3.3-70B-Instruct',
+);
+print $vllm->simple_chat('Hello!');
+```
 
-        # Non-blocking chat request
-        my $response = await $claude->simple_chat_f('Hello!');
-        say "Claude says: $response";
+## Streaming
 
-        # Streaming with real-time callback
-        my ($content, $chunks) = await $claude->simple_chat_stream_realtime_f(
-            sub { print shift->content },  # Prints as it streams
-            'Tell me a story'
-        );
-    }
+Real-time token streaming with callbacks, iterators, or async/await:
 
-    # Run the async function
-    chat_example()->get;
+```perl
+# Callback
+$engine->simple_chat_stream(sub {
+    print shift->content;
+}, 'Write a poem about Perl');
 
-See `ex/async_await.pl` for more examples.
+# Iterator
+my $iter = $engine->simple_chat_stream_iterator('Tell me a story');
+while (my $chunk = $iter->next) {
+    print $chunk->content;
+}
 
-# DYNAMIC MODEL DISCOVERY
+# Async/await with real-time streaming
+use Future::AsyncAwait;
 
-Langertha can dynamically fetch available models from provider APIs:
+my ($content, $chunks) = await $engine->simple_chat_stream_realtime_f(
+    sub { print shift->content },
+    'Explain monads'
+);
+```
 
-    # Get list of available models
-    my $models = $engine->list_models;
-    # Returns: ['gpt-4o', 'gpt-4o-mini', 'o1', ...]
+## MCP Tool Calling
 
-    # Get full model metadata
-    my $models = $engine->list_models(full => 1);
-    # Returns: [{id => 'gpt-4o', created => 1715367049, ...}, ...]
+Langertha integrates with [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) servers via [Net::Async::MCP](https://metacpan.org/pod/Net::Async::MCP). LLMs can discover and invoke tools automatically.
 
-    # Force refresh (bypass 1-hour cache)
-    my $models = $engine->list_models(force_refresh => 1);
+```perl
+use IO::Async::Loop;
+use Net::Async::MCP;
+use Future::AsyncAwait;
 
-    # Configure cache TTL
-    my $engine = Langertha::Engine::OpenAI->new(
-        api_key => $ENV{OPENAI_API_KEY},
-        models_cache_ttl => 1800, # 30 minutes
-    );
+my $loop = IO::Async::Loop->new;
 
-    # Clear cache manually
-    $engine->clear_models_cache;
+# Connect to an MCP server (in-process, stdio, or HTTP)
+my $mcp = Net::Async::MCP->new(
+    command => ['npx', '@anthropic/mcp-server-web-search'],
+);
+$loop->add($mcp);
+await $mcp->initialize;
 
-Supported by all engines: OpenAI, Anthropic, Gemini, Groq, DeepSeek, Mistral, and Ollama.
+# Any engine, same API
+my $engine = Langertha::Engine::Anthropic->new(
+    api_key     => $ENV{ANTHROPIC_API_KEY},
+    model       => 'claude-sonnet-4-6',
+    mcp_servers => [$mcp],
+);
 
-# MCP TOOL CALLING
+my $response = await $engine->chat_with_tools_f(
+    'Search the web for Perl MCP modules'
+);
+say $response;
+```
 
-Langertha integrates with MCP (Model Context Protocol) servers via [Net::Async::MCP](https://metacpan.org/pod/Net::Async::MCP) for tool calling support. LLMs can discover and invoke tools exposed by MCP servers automatically.
-
-    use IO::Async::Loop;
-    use Net::Async::MCP;
-    use Future::AsyncAwait;
-
-    my $loop = IO::Async::Loop->new;
-
-    # Connect to an MCP server (in-process, stdio, or HTTP)
-    my $mcp = Net::Async::MCP->new(
-        command => ['npx', '@anthropic/mcp-server-web-search'],
-    );
-    $loop->add($mcp);
-    await $mcp->initialize;
-
-    # Create engine with MCP servers
-    my $engine = Langertha::Engine::Anthropic->new(
-        api_key     => $ENV{ANTHROPIC_API_KEY},
-        model       => 'claude-sonnet-4-6',
-        mcp_servers => [$mcp],
-    );
-
-    # Async tool-calling loop (automatically calls tools and feeds results back)
-    my $response = await $engine->chat_with_tools_f(
-        'Search the web for Perl MCP modules'
-    );
-    say $response;
-
-The tool-calling loop:
+The tool-calling loop runs automatically:
 
 1. Gathers available tools from all configured MCP servers
 2. Sends chat request with tool definitions to the LLM
@@ -147,64 +164,121 @@ The tool-calling loop:
 4. Feeds tool results back to the LLM and repeats
 5. Returns the final text response
 
-Configure the maximum number of tool-calling rounds:
+Works with **all engines** that support tool calling (see table above).
 
-    my $engine = Langertha::Engine::Anthropic->new(
-        api_key            => $ENV{ANTHROPIC_API_KEY},
-        mcp_servers        => [$mcp],
-        tool_max_iterations => 20,  # default: 10
-    );
+## Async/Await
 
-Supported by all engines: **Anthropic**, **OpenAI**, **Gemini**, **Groq**, **Mistral**, **DeepSeek**, **Ollama**, **vLLM**.
+All operations have async variants via [Future::AsyncAwait](https://metacpan.org/pod/Future::AsyncAwait):
 
-**Testing tool calling:**
+```perl
+use Future::AsyncAwait;
 
-    # Run mock test (no API keys needed)
-    prove -l -It/lib t/64_tool_calling_ollama_mock.t
+async sub main {
+    my $response = await $engine->simple_chat_f('Hello!');
+    say $response;
+}
 
-    # Run live tests with API keys
-    TEST_LANGERTHA_ANTHROPIC_API_KEY=... prove -l t/80_live_tool_calling.t
+main()->get;
+```
 
-    # Ollama live test with multiple models
-    TEST_LANGERTHA_OLLAMA_URL=http://localhost:11434 \
-    TEST_LANGERTHA_OLLAMA_MODELS=qwen3:8b,llama3.2:3b \
-    prove -l t/80_live_tool_calling.t
+## Embeddings
 
-See `ex/mcp_inprocess.pl` for a complete in-process example and `ex/mcp_stdio.pl` for an interactive stdio server example.
+```perl
+use Langertha::Engine::OpenAI;
 
-# ANTHROPIC EXTENDED PARAMETERS (FEBRUARY 2026)
+my $openai = Langertha::Engine::OpenAI->new(
+    api_key => $ENV{OPENAI_API_KEY},
+);
 
-Anthropic's latest models support extended parameters:
+my $embedding = $openai->simple_embedding('Some text to embed');
+# Returns arrayref of floats
+```
 
-    my $claude = Langertha::Engine::Anthropic->new(
-        api_key => $ENV{ANTHROPIC_API_KEY},
-        model => 'claude-opus-4-6',
-        effort => 'high',          # Thinking depth: low|medium|high
-        inference_geo => 'eu',     # Data residency: us|eu
-    );
+Also supported by Ollama (e.g. `mxbai-embed-large`).
 
-- **effort**: Controls reasoning depth for complex tasks
-- **inference_geo**: Ensures data processing in specific regions
+## Transcription (Whisper)
 
-# DESCRIPTION
+```perl
+use Langertha::Engine::Whisper;
 
-**THIS API IS WORK IN PROGRESS**
+my $whisper = Langertha::Engine::Whisper->new(
+    url => $ENV{WHISPER_URL},
+);
+print $whisper->simple_transcription('recording.ogg');
+```
 
-# SUPPORT
+OpenAI and Groq also support transcription via their Whisper endpoints:
 
-Repository
+```perl
+my $openai = Langertha::Engine::OpenAI->new(
+    api_key => $ENV{OPENAI_API_KEY},
+);
+print $openai->simple_transcription('recording.ogg');
+```
 
-    https://github.com/Getty/langertha
-    Pull request and additional contributors are welcome
+## Dynamic Model Discovery
 
-Issue Tracker
+Query available models from any provider API:
 
-    https://github.com/Getty/langertha/issues
+```perl
+my $models = $engine->list_models;
+# Returns: ['gpt-4o', 'gpt-4o-mini', 'o1', ...]
 
-Discord
+my $models = $engine->list_models(full => 1);       # Full metadata
+my $models = $engine->list_models(force_refresh => 1); # Bypass cache
+```
 
-    https://discord.gg/Y2avVYpquV
+Results are cached for 1 hour (configurable via `models_cache_ttl`).
 
-IRC
+## Testing
 
-    irc://irc.perl.org/ai
+```bash
+# Run all unit tests
+prove -l t/
+
+# Run mock tool calling tests (no API keys needed)
+prove -l -It/lib t/64_tool_calling_ollama_mock.t
+
+# Run live integration tests
+TEST_LANGERTHA_OPENAI_API_KEY=...    \
+TEST_LANGERTHA_ANTHROPIC_API_KEY=... \
+TEST_LANGERTHA_GEMINI_API_KEY=...    \
+prove -l t/80_live_tool_calling.t
+
+# Ollama with multiple models
+TEST_LANGERTHA_OLLAMA_URL=http://localhost:11434     \
+TEST_LANGERTHA_OLLAMA_MODELS=qwen3:8b,llama3.2:3b   \
+prove -l t/80_live_tool_calling.t
+```
+
+## Examples
+
+See the [`ex/`](ex/) directory for runnable examples:
+
+| Example | Description |
+|---------|-------------|
+| `synopsis.pl` | Basic usage with multiple engines |
+| `streaming_callback.pl` | Real-time streaming with callbacks |
+| `streaming_iterator.pl` | Streaming with iterator pattern |
+| `streaming_future.pl` | Async streaming with Futures |
+| `async_await.pl` | Async/await patterns |
+| `mcp_inprocess.pl` | MCP tool calling with in-process server |
+| `mcp_stdio.pl` | MCP tool calling with stdio server |
+| `embedding.pl` | Text embeddings |
+| `transcription.pl` | Audio transcription with Whisper |
+| `structured_output.pl` | Structured/JSON output |
+
+## Community
+
+- **CPAN**: [Langertha on MetaCPAN](https://metacpan.org/pod/Langertha)
+- **GitHub**: [Getty/langertha](https://github.com/Getty/langertha) - Issues & PRs welcome
+- **Discord**: [Join the community](https://discord.gg/Y2avVYpquV)
+- **IRC**: `irc://irc.perl.org/ai`
+
+## License
+
+This is free software licensed under the same terms as Perl itself (Artistic License / GPL).
+
+---
+
+> **THIS API IS WORK IN PROGRESS**
