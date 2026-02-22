@@ -1,0 +1,648 @@
+# Langfuse v3 — minimal Kubernetes deployment for Langertha observability
+#
+# Deploys all required services in a single namespace.
+# Pre-creates a project with known API keys so you can send data immediately.
+#
+# Usage:
+#   kubectl apply -f langfuse-k8s.yaml
+#   kubectl -n langfuse wait --for=condition=ready pod -l app=langfuse-web --timeout=300s
+#
+# Then use with Langertha:
+#   export LANGFUSE_PUBLIC_KEY=pk-lf-langertha
+#   export LANGFUSE_SECRET_KEY=sk-lf-langertha
+#   export LANGFUSE_URL=http://localhost:3000
+#   kubectl -n langfuse port-forward svc/langfuse-web 3000:3000 &
+#   perl ex/langfuse.pl
+#
+# With Cilium Gateway API (nip.io):
+#   export LANGFUSE_URL=http://langfuse.5.9.97.19.nip.io
+#
+# Dashboard: http://langfuse.5.9.97.19.nip.io (login: langertha@test.invalid / langertha)
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: langfuse
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: langfuse-secrets
+  namespace: langfuse
+stringData:
+  DATABASE_URL: "postgresql://postgres:langfuse@postgres:5432/langfuse"
+  POSTGRES_PASSWORD: "langfuse"
+  CLICKHOUSE_PASSWORD: "langfuse"
+  REDIS_AUTH: "langfuse"
+  MINIO_ROOT_USER: "minio"
+  MINIO_ROOT_PASSWORD: "miniosecret"
+  NEXTAUTH_SECRET: "langertha-nextauth-secret-change-in-production"
+  SALT: "langertha-salt-change-in-production"
+  ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+# ============================================================
+# PostgreSQL
+# ============================================================
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: langfuse
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: langfuse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:17
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_DB
+          value: "langfuse"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: POSTGRES_PASSWORD
+        - name: TZ
+          value: "UTC"
+        - name: PGTZ
+          value: "UTC"
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "postgres"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: postgres-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: langfuse
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+
+# ============================================================
+# ClickHouse
+# ============================================================
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clickhouse-data
+  namespace: langfuse
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse
+  namespace: langfuse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+    spec:
+      containers:
+      - name: clickhouse
+        image: clickhouse/clickhouse-server
+        ports:
+        - containerPort: 8123
+        - containerPort: 9000
+        env:
+        - name: CLICKHOUSE_DB
+          value: "default"
+        - name: CLICKHOUSE_USER
+          value: "clickhouse"
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: CLICKHOUSE_PASSWORD
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/clickhouse
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 8123
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 200m
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: clickhouse-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: langfuse
+spec:
+  selector:
+    app: clickhouse
+  ports:
+  - name: http
+    port: 8123
+  - name: native
+    port: 9000
+
+# ============================================================
+# Redis
+# ============================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: langfuse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7
+        command: ["redis-server", "--requirepass", "$(REDIS_AUTH)", "--maxmemory-policy", "noeviction"]
+        ports:
+        - containerPort: 6379
+        env:
+        - name: REDIS_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: REDIS_AUTH
+        readinessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 3
+          periodSeconds: 3
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 50m
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: langfuse
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+
+# ============================================================
+# MinIO (S3-compatible storage)
+# ============================================================
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: langfuse
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: langfuse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+      - name: minio
+        image: minio/minio
+        command: ["sh", "-c", "mkdir -p /data/langfuse && minio server --address :9000 --console-address :9001 /data"]
+        ports:
+        - containerPort: 9000
+        - containerPort: 9001
+        env:
+        - name: MINIO_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: MINIO_ROOT_USER
+        - name: MINIO_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: MINIO_ROOT_PASSWORD
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 9000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: minio-data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: langfuse
+spec:
+  selector:
+    app: minio
+  ports:
+  - name: api
+    port: 9000
+  - name: console
+    port: 9001
+
+# ============================================================
+# Langfuse Worker
+# ============================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: langfuse-worker
+  namespace: langfuse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: langfuse-worker
+  template:
+    metadata:
+      labels:
+        app: langfuse-worker
+    spec:
+      containers:
+      - name: worker
+        image: langfuse/langfuse-worker:3
+        ports:
+        - containerPort: 3030
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: DATABASE_URL
+        - name: NEXTAUTH_URL
+          value: "http://langfuse-web:3000"
+        - name: SALT
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: SALT
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: ENCRYPTION_KEY
+        - name: CLICKHOUSE_MIGRATION_URL
+          value: "clickhouse://clickhouse:9000"
+        - name: CLICKHOUSE_URL
+          value: "http://clickhouse:8123"
+        - name: CLICKHOUSE_USER
+          value: "clickhouse"
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: CLICKHOUSE_PASSWORD
+        - name: CLICKHOUSE_CLUSTER_ENABLED
+          value: "false"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: REDIS_AUTH
+        - name: LANGFUSE_S3_EVENT_UPLOAD_BUCKET
+          value: "langfuse"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_REGION
+          value: "auto"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID
+          value: "minio"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: MINIO_ROOT_PASSWORD
+        - name: LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT
+          value: "http://minio:9000"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE
+          value: "true"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_PREFIX
+          value: "events/"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_BUCKET
+          value: "langfuse"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_REGION
+          value: "auto"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID
+          value: "minio"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: MINIO_ROOT_PASSWORD
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT
+          value: "http://minio:9000"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE
+          value: "true"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_PREFIX
+          value: "media/"
+        - name: LANGFUSE_S3_BATCH_EXPORT_ENABLED
+          value: "false"
+        - name: TELEMETRY_ENABLED
+          value: "false"
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 200m
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: langfuse-worker
+  namespace: langfuse
+spec:
+  selector:
+    app: langfuse-worker
+  ports:
+  - port: 3030
+
+# ============================================================
+# Langfuse Web (with pre-configured project + API keys)
+# ============================================================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: langfuse-web
+  namespace: langfuse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: langfuse-web
+  template:
+    metadata:
+      labels:
+        app: langfuse-web
+    spec:
+      containers:
+      - name: web
+        image: langfuse/langfuse:3
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: DATABASE_URL
+        - name: NEXTAUTH_URL
+          value: "http://langfuse.5.9.97.19.nip.io"
+        - name: NEXTAUTH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: NEXTAUTH_SECRET
+        - name: SALT
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: SALT
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: ENCRYPTION_KEY
+        - name: CLICKHOUSE_MIGRATION_URL
+          value: "clickhouse://clickhouse:9000"
+        - name: CLICKHOUSE_URL
+          value: "http://clickhouse:8123"
+        - name: CLICKHOUSE_USER
+          value: "clickhouse"
+        - name: CLICKHOUSE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: CLICKHOUSE_PASSWORD
+        - name: CLICKHOUSE_CLUSTER_ENABLED
+          value: "false"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: REDIS_AUTH
+        - name: LANGFUSE_S3_EVENT_UPLOAD_BUCKET
+          value: "langfuse"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_REGION
+          value: "auto"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID
+          value: "minio"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: MINIO_ROOT_PASSWORD
+        - name: LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT
+          value: "http://minio:9000"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE
+          value: "true"
+        - name: LANGFUSE_S3_EVENT_UPLOAD_PREFIX
+          value: "events/"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_BUCKET
+          value: "langfuse"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_REGION
+          value: "auto"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID
+          value: "minio"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: MINIO_ROOT_PASSWORD
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT
+          value: "http://minio:9000"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE
+          value: "true"
+        - name: LANGFUSE_S3_MEDIA_UPLOAD_PREFIX
+          value: "media/"
+        - name: LANGFUSE_S3_BATCH_EXPORT_ENABLED
+          value: "false"
+        - name: TELEMETRY_ENABLED
+          value: "false"
+        # Pre-create project with known API keys — no UI setup needed
+        - name: LANGFUSE_INIT_ORG_ID
+          value: "langertha-org"
+        - name: LANGFUSE_INIT_ORG_NAME
+          value: "Langertha"
+        - name: LANGFUSE_INIT_PROJECT_ID
+          value: "langertha-project"
+        - name: LANGFUSE_INIT_PROJECT_NAME
+          value: "Langertha Dev"
+        - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+          value: "pk-lf-langertha"
+        - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+          value: "sk-lf-langertha"
+        - name: LANGFUSE_INIT_USER_EMAIL
+          value: "langertha@test.invalid"
+        - name: LANGFUSE_INIT_USER_NAME
+          value: "Langertha"
+        - name: LANGFUSE_INIT_USER_PASSWORD
+          value: "langertha"
+        readinessProbe:
+          httpGet:
+            path: /api/public/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 200m
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: langfuse-web
+  namespace: langfuse
+spec:
+  selector:
+    app: langfuse-web
+  ports:
+  - port: 3000
+    targetPort: 3000
+
+# ============================================================
+# Cilium Gateway API — HTTPRoute for langfuse.5.9.97.19.nip.io
+# ============================================================
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: langfuse
+  namespace: langfuse
+spec:
+  parentRefs:
+  - name: cilium-gateway
+    namespace: kube-system
+  hostnames:
+  - "langfuse.5.9.97.19.nip.io"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: langfuse-web
+      port: 3000
+
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-langfuse-gateway
+  namespace: kube-system
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: langfuse
+  to:
+  - group: ""
+    kind: Gateway

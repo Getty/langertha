@@ -17,6 +17,7 @@ BEGIN {
   push @available, 'deepseek'    if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
   # Perplexity does not support tool calling
   push @available, 'nousresearch' if $ENV{TEST_LANGERTHA_NOUSRESEARCH_API_KEY};
+  push @available, 'aki'        if $ENV{TEST_LANGERTHA_AKI_API_KEY};
   push @available, 'ollama'      if $ENV{TEST_LANGERTHA_OLLAMA_URL};
   push @available, 'vllm'      if $ENV{TEST_LANGERTHA_VLLM_URL} && $ENV{TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER};
   unless (@available) {
@@ -183,6 +184,20 @@ async sub run_tests {
       ));
     };
     diag "vLLM/$model error: $@" if $@;
+  }
+
+  # --- AKI.IO (via OpenAI-compatible API) ---
+  if ($ENV{TEST_LANGERTHA_AKI_API_KEY}) {
+    require Langertha::Engine::AKIOpenAI;
+    # Pick a chat model from available endpoints
+    my $aki_model = $ENV{TEST_LANGERTHA_AKI_MODEL} || 'llama3_8b_chat';
+    eval {
+      await test_engine("AKI/$aki_model", Langertha::Engine::AKIOpenAI->new(
+        api_key => $ENV{TEST_LANGERTHA_AKI_API_KEY},
+        model => $aki_model, mcp_servers => [$mcp],
+      ));
+    };
+    diag "AKI/$aki_model error: $@" if $@;
   }
 
   # --- Ollama ---

@@ -1,6 +1,50 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - Add Langertha::Response: metadata container wrapping LLM text content
+      with id, model, finish_reason, usage (token counts), timing, and created
+      fields. Uses overload stringification for backward compatibility —
+      existing code treating responses as strings continues to work.
+    - All chat_response methods now return Langertha::Response objects:
+      - Role::OpenAICompatible: extracts id, model, created, finish_reason, usage
+      - Engine::Anthropic: extracts id, model, stop_reason, input/output_tokens
+      - Engine::Gemini: extracts modelVersion, finishReason, usageMetadata
+        (normalized to prompt_tokens/completion_tokens/total_tokens)
+      - Engine::Ollama: extracts model, done_reason, eval counts, timing fields
+      - Engine::AKI: extracts model_name, total_duration
+    - Add Langertha::Raider: autonomous agent with conversation history and
+      MCP tool calling. Features mission (system prompt), persistent history
+      across raids, cumulative metrics (raids, iterations, tool_calls, time_ms),
+      clear_history and reset methods. Supports Hermes tool calling.
+      Auto-instruments raids with Langfuse traces and per-iteration
+      generation events when Langfuse is enabled on the engine.
+    - Add Langertha::Role::Langfuse: observability integration with Langfuse
+      REST API. Composed into Role::Chat — every engine has Langfuse support
+      built in. Auto-instruments simple_chat with trace and generation events.
+      Batched ingestion via POST /api/public/ingestion with Basic Auth.
+      Disabled by default — active when langfuse_public_key and
+      langfuse_secret_key are set (via constructor or LANGFUSE_PUBLIC_KEY /
+      LANGFUSE_SECRET_KEY / LANGFUSE_URL env vars).
+    - Add ex/response.pl: Response metadata showcase (tokens, model, timing)
+    - Add ex/raider.pl: autonomous file explorer agent example
+    - Add ex/langfuse.pl: Langfuse observability example
+    - Add ex/langfuse-k8s.yaml: Kubernetes manifest for self-hosted Langfuse
+      with pre-configured project and API keys (zero setup)
+    - Add t/70_response.t: Response unit tests across all engine formats
+    - Add t/72_langfuse.t: Langfuse integration tests with mock HTTP
+    - Add t/82_live_raider.t: live Raider integration test
+    - Add Langertha::Role::OpenAICompatible: extracted OpenAI API format
+      methods into a reusable role. Engines that use the OpenAI-compatible
+      API format now compose this role instead of duplicating methods.
+      Engine::OpenAI and all subclasses continue to work unchanged.
+    - Add Langertha::Engine::OllamaOpenAI: first-class engine for Ollama's
+      OpenAI-compatible /v1 endpoint. Ollama's openai() method now returns
+      this engine instead of a raw Engine::OpenAI instance.
+    - Add Langertha::Engine::AKI for AKI.IO native API
+      (chat completions with key-in-body auth, synchronous mode,
+      dynamic endpoint listing via list_models and endpoint_details)
+    - Add Langertha::Engine::AKIOpenAI for AKI.IO via OpenAI-compatible API
+      (chat, streaming, tool calling via Role::OpenAICompatible)
     - Add Langertha::Engine::NousResearch for Nous Research Inference API
       with Hermes-native tool calling via <tool_call> XML tags
     - Add Langertha::Engine::Perplexity for Perplexity Sonar API
@@ -48,6 +92,14 @@ Revision history for Langertha
       env vars for Ollama live testing
     - Add TEST_LANGERTHA_VLLM_URL, TEST_LANGERTHA_VLLM_MODEL, and
       TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER env vars for vLLM live testing
+    - Add AKI.IO native API unit test (t/25_aki_requests.t) with mock
+      response parsing for chat, list_models, and endpoint_details
+    - Add AKI.IO live integration test (t/81_live_aki.t) for
+      list_models, endpoint_details, and simple_chat
+    - Add AKI.IO to live tool calling test (t/80_live_tool_calling.t)
+      via OpenAI-compatible API
+    - Add TEST_LANGERTHA_AKI_API_KEY and TEST_LANGERTHA_AKI_MODEL
+      env vars for AKI.IO live testing
     - Use RFC 2606 test.invalid domain for dummy URLs in unit tests
     - Add ex/hermes_tools.pl example for Hermes-native tool calling
 

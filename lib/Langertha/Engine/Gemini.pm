@@ -106,14 +106,34 @@ sub chat_response {
 
   # Gemini response format: candidates[0].content.parts[0].text
   my $candidates = $data->{candidates} || [];
-  return '' unless @$candidates;
+  my $text = '';
+  my $finish_reason;
+  if (@$candidates) {
+    my $candidate = $candidates->[0];
+    my $content = $candidate->{content} || {};
+    my $parts = $content->{parts} || [];
+    $text = $parts->[0]->{text} || '' if @$parts;
+    $finish_reason = $candidate->{finishReason};
+  }
 
-  my $candidate = $candidates->[0];
-  my $content = $candidate->{content} || {};
-  my $parts = $content->{parts} || [];
+  # Normalize Gemini usage metadata
+  my $usage;
+  if (my $um = $data->{usageMetadata}) {
+    $usage = {
+      prompt_tokens     => $um->{promptTokenCount},
+      completion_tokens => $um->{candidatesTokenCount},
+      total_tokens      => $um->{totalTokenCount},
+    };
+  }
 
-  return '' unless @$parts;
-  return $parts->[0]->{text} || '';
+  require Langertha::Response;
+  return Langertha::Response->new(
+    content       => $text,
+    raw           => $data,
+    $data->{modelVersion} ? ( model => $data->{modelVersion} ) : (),
+    defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
+    $usage ? ( usage => $usage ) : (),
+  );
 }
 
 sub stream_format { 'sse' }

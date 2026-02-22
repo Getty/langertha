@@ -198,6 +198,8 @@ sub _process_stream_buffer {
   return \@chunks;
 }
 
+with 'Langertha::Role::Langfuse';
+
 1;
 
 =head1 SYNOPSIS

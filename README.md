@@ -19,22 +19,23 @@
 
 ---
 
-**Langertha** is a unified Perl interface for LLM APIs. One API, many providers. Supports chat, streaming, embeddings, transcription, MCP tool calling, and dynamic model discovery.
+**Langertha** is a unified Perl interface for LLM APIs. One API, many providers. Supports chat, streaming, embeddings, transcription, MCP tool calling, autonomous agents, observability, and dynamic model discovery.
 
 ## Supported Providers
 
 | Provider | Chat | Streaming | Tools (MCP) | Embeddings | Transcription | Models API |
 |----------|:----:|:---------:|:-----------:|:----------:|:-------------:|:----------:|
-| [OpenAI](https://platform.openai.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
-| [Anthropic](https://console.anthropic.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [Gemini](https://ai.google.dev/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [OpenAI](https://platform.openai.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| [Anthropic](https://console.anthropic.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [Gemini](https://ai.google.dev/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [Ollama](https://ollama.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: |
-| [Groq](https://console.groq.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: | :white_check_mark: |
-| [Mistral](https://console.mistral.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [DeepSeek](https://platform.deepseek.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [Perplexity](https://docs.perplexity.ai/) | :white_check_mark: | :white_check_mark: | | | | |
-| [Nous Research](https://nousresearch.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [Groq](https://console.groq.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: | :white_check_mark: |
+| [Mistral](https://console.mistral.ai/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [DeepSeek](https://platform.deepseek.com/) :cn: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [Perplexity](https://docs.perplexity.ai/) :us: | :white_check_mark: | :white_check_mark: | | | | |
+| [Nous Research](https://nousresearch.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
+| [AKI.IO](https://aki.io/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | :white_check_mark: | |
 
 ## Quick Start
@@ -88,6 +89,25 @@ my $ollama = Langertha::Engine::Ollama->new(
     model => 'llama3.3',
 );
 print $ollama->simple_chat('Do you wanna build a snowman?');
+```
+
+### AKI.IO :eu: European AI Infrastructure
+
+[AKI.IO](https://aki.io/) is a **European AI model hub** based in Germany. All inference
+runs on EU-based infrastructure, making it a strong choice for GDPR-compliant
+and data-sovereignty-sensitive applications. No data leaves the EU.
+
+```perl
+use Langertha::Engine::AKI;
+
+my $aki = Langertha::Engine::AKI->new(
+    api_key => $ENV{AKI_API_KEY},
+    model   => 'llama3_8b_chat',
+);
+print $aki->simple_chat('Hello!');
+
+# Or use the OpenAI-compatible API for streaming & tool calling
+my $aki_openai = $aki->openai;
 ```
 
 ### Self-hosted with vLLM
@@ -189,6 +209,72 @@ my $ollama = Langertha::Engine::Ollama->new(
 ```
 
 Tools are injected into the system prompt and `<tool_call>` tags are parsed from the model's text output. The tool prompt template is customizable via `hermes_tool_prompt`.
+
+## Response Metadata
+
+`simple_chat` returns `Langertha::Response` objects with full metadata — token usage, model, finish reason, timing. Backward-compatible: stringifies to the text content, so existing code works unchanged.
+
+```perl
+my $r = $engine->simple_chat('Hello!');
+print $r;                    # prints the text (stringification)
+say $r->model;               # gpt-4o-mini
+say $r->prompt_tokens;       # 12
+say $r->completion_tokens;   # 8
+say $r->total_tokens;        # 20
+say $r->finish_reason;       # stop
+```
+
+Works across all engines. Each provider's token counts and metadata are normalized automatically.
+
+## Raider — Autonomous Agent
+
+`Langertha::Raider` is a stateful agent with conversation history and MCP tool calling. It maintains context across multiple interactions ("raids").
+
+```perl
+use Langertha::Raider;
+
+my $raider = Langertha::Raider->new(
+    engine  => $engine,    # any engine with mcp_servers
+    mission => 'You are a code explorer.',
+);
+
+# First raid — tools are called automatically, history is saved
+my $r1 = await $raider->raid_f('What files are in lib/?');
+say $r1;
+
+# Second raid — has context from the first conversation
+my $r2 = await $raider->raid_f('Read the main module.');
+say $r2;
+
+# Metrics across all raids
+say $raider->metrics->{tool_calls};  # cumulative
+$raider->clear_history;              # start fresh
+```
+
+Key features: persistent history, mission (system prompt), cumulative metrics (raids, iterations, tool_calls, time_ms), Hermes tool calling support. Langfuse observability is automatic when enabled on the engine.
+
+## Observability with Langfuse
+
+Every engine has [Langfuse](https://langfuse.com/) observability built in. Just set env vars — zero code changes:
+
+```bash
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_URL=http://localhost:3000   # optional, defaults to cloud
+```
+
+```perl
+my $engine = Langertha::Engine::OpenAI->new(
+    api_key => $ENV{OPENAI_API_KEY},
+);
+
+$engine->simple_chat('Hello!');  # auto-traced
+$engine->langfuse_flush;         # send events to Langfuse
+```
+
+`simple_chat` calls are auto-instrumented with traces and generations (including token usage and timing). Raider raids are also traced with per-iteration generation events.
+
+Disabled by default — active only when both keys are set. A Kubernetes manifest for self-hosted Langfuse is included: `kubectl apply -f ex/langfuse-k8s.yaml`
 
 ## Async/Await
 
@@ -293,6 +379,7 @@ See the [`ex/`](ex/) directory for runnable examples:
 | Example | Description |
 |---------|-------------|
 | `synopsis.pl` | Basic usage with multiple engines |
+| `response.pl` | Response metadata (tokens, model, timing) |
 | `streaming_callback.pl` | Real-time streaming with callbacks |
 | `streaming_iterator.pl` | Streaming with iterator pattern |
 | `streaming_future.pl` | Async streaming with Futures |
@@ -300,6 +387,9 @@ See the [`ex/`](ex/) directory for runnable examples:
 | `mcp_inprocess.pl` | MCP tool calling with in-process server |
 | `mcp_stdio.pl` | MCP tool calling with stdio server |
 | `hermes_tools.pl` | Hermes-native tool calling with NousResearch |
+| `raider.pl` | Autonomous agent with MCP tools and history |
+| `langfuse.pl` | Langfuse observability tracing |
+| `langfuse-k8s.yaml` | Kubernetes manifest for self-hosted Langfuse |
 | `embedding.pl` | Text embeddings |
 | `transcription.pl` | Audio transcription with Whisper |
 | `structured_output.pl` | Structured/JSON output |

@@ -7,6 +7,7 @@ use warnings;
 use Test2::Bundle::More;
 use JSON::MaybeXS;
 
+use Langertha::Engine::AKI;
 use Langertha::Engine::Anthropic;
 use Langertha::Engine::Groq;
 use Langertha::Engine::Ollama;
@@ -14,7 +15,7 @@ use Langertha::Engine::OpenAI;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(24);
+plan(32);
 
 my $ollama_testurl = 'http://test.url:12345';
 my $ollama = Langertha::Engine::Ollama->new(
@@ -136,5 +137,27 @@ is_deeply($groq_data, {
   model => "gemma2-9b-it",
   stream => JSON->false,
 }, 'Groq request body is correct');
+
+my $aki = Langertha::Engine::AKI->new(
+  api_key => 'akikey',
+  model => 'llama3_8b_chat',
+  system_prompt => 'systemprompt',
+  temperature => 0.5,
+);
+my $aki_request = $aki->chat('testprompt');
+is($aki_request->uri, 'https://aki.io/api/call/llama3_8b_chat', 'Aki request uri is correct');
+is($aki_request->method, 'POST', 'Aki request method is correct');
+is($aki_request->header('Content-Type'), 'application/json; charset=utf-8', 'Aki request JSON Content Type is set');
+my $aki_data = $json->decode($aki_request->content);
+# chat_context is a JSON string per AKI API convention
+is($aki_data->{key}, 'akikey', 'Aki request has key in body');
+is($aki_data->{temperature}, 0.5, 'Aki request has temperature');
+is($aki_data->{wait_for_result}, JSON->true, 'Aki request has wait_for_result');
+ok(!ref $aki_data->{chat_context}, 'Aki chat_context is a JSON string');
+is_deeply($json->decode($aki_data->{chat_context}), [{
+  content => "systemprompt", role => "system",
+},{
+  content => "testprompt", role => "user",
+}], 'Aki chat_context decodes correctly');
 
 done_testing;

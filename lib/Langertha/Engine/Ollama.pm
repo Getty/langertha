@@ -6,7 +6,7 @@ use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );
 use JSON::MaybeXS;
 
-use Langertha::Engine::OpenAI;
+use Langertha::Engine::OllamaOpenAI;
 
 with 'Langertha::Role::'.$_ for (qw(
   JSON
@@ -25,20 +25,13 @@ with 'Langertha::Role::'.$_ for (qw(
 
 sub openai {
   my ( $self, %args ) = @_;
-  my $url = $self->url || $self->openapi->openapi_document->get('/servers/0/url');
-  return Langertha::Engine::OpenAI->new(
+  return Langertha::Engine::OllamaOpenAI->new(
     url => $self->url.'/v1',
     model => $self->model,
     $self->embedding_model ? ( embedding_model => $self->embedding_model ) : (),
     $self->chat_model ? ( chat_model => $self->chat_model ) : (),
     $self->has_system_prompt ? ( system_prompt => $self->system_prompt ) : (),
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    api_key => 'ollama',
-    compatibility_for_engine => $self,
-    supported_operations => [qw(
-      createChatCompletion
-      createEmbedding
-    )],
     %args,
   );
 }
@@ -106,9 +99,29 @@ sub chat_request {
 sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
-  # tracing
-  my @messages = $data->{message};
-  return $messages[0]->{content};
+  my $msg = $data->{message};
+
+  my $usage = {};
+  $usage->{prompt_tokens}     = $data->{prompt_eval_count} if $data->{prompt_eval_count};
+  $usage->{completion_tokens} = $data->{eval_count}        if $data->{eval_count};
+  $usage = undef unless %$usage;
+
+  my $timing = {};
+  for my $k (qw( total_duration load_duration prompt_eval_duration eval_duration )) {
+    $timing->{$k} = $data->{$k} if $data->{$k};
+  }
+  $timing = undef unless %$timing;
+
+  require Langertha::Response;
+  return Langertha::Response->new(
+    content       => $msg->{content} // '',
+    raw           => $data,
+    $data->{model} ? ( model => $data->{model} ) : (),
+    defined $data->{done_reason} ? ( finish_reason => $data->{done_reason} ) : (),
+    $usage ? ( usage => $usage ) : (),
+    $timing ? ( timing => $timing ) : (),
+    $data->{created_at} ? ( created => $data->{created_at} ) : (),
+  );
 }
 
 sub tags { $_[0]->tags_request }
