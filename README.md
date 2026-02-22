@@ -155,7 +155,7 @@ Configure the maximum number of tool-calling rounds:
         tool_max_iterations => 20,  # default: 10
     );
 
-Currently supported engines: **Anthropic**, **OpenAI**, **Groq**, **vLLM**. Gemini and Ollama coming soon.
+Supported by all engines: **Anthropic**, **OpenAI**, **Gemini**, **Groq**, **Ollama**, **vLLM**.
 
 See `ex/mcp_inprocess.pl` for a complete in-process example and `ex/mcp_stdio.pl` for an interactive stdio server example.
 

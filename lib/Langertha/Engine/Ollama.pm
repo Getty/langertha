@@ -219,6 +219,52 @@ sub parse_stream_chunk {
   );
 }
 
+# Tool calling support (MCP)
+# Ollama uses the same tool format as OpenAI
+
+sub format_tools {
+  my ( $self, $mcp_tools ) = @_;
+  return [map {
+    {
+      type     => 'function',
+      function => {
+        name        => $_->{name},
+        description => $_->{description},
+        parameters  => $_->{inputSchema},
+      },
+    }
+  } @$mcp_tools];
+}
+
+sub response_tool_calls {
+  my ( $self, $data ) = @_;
+  my $msg = $data->{message} or return [];
+  return $msg->{tool_calls} // [];
+}
+
+sub response_text_content {
+  my ( $self, $data ) = @_;
+  my $msg = $data->{message} or return '';
+  return $msg->{content} // '';
+}
+
+sub format_tool_results {
+  my ( $self, $data, $results ) = @_;
+  return (
+    { role => 'assistant', content => $data->{message}{content},
+      tool_calls => $data->{message}{tool_calls} },
+    map {
+      my $r = $_;
+      {
+        role    => 'tool',
+        content => $self->json->encode($r->{result}{content}),
+      }
+    } @$results
+  );
+}
+
+with 'Langertha::Role::Tools';
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 SYNOPSIS

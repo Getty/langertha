@@ -2,6 +2,8 @@ Revision history for Langertha
 
 {{$NEXT}}
     - Add MCP tool calling support for OpenAI engine (inherited by Groq, vLLM)
+    - Add MCP tool calling support for Gemini engine
+    - Add MCP tool calling support for Ollama engine
     - Add ABSTRACT comments to all test files
 
 0.100     2026-02-20 05:33:44Z
