@@ -14,8 +14,10 @@ my @modules = qw(
   Langertha::Engine::Gemini
   Langertha::Engine::Groq
   Langertha::Engine::Mistral
+  Langertha::Engine::NousResearch
   Langertha::Engine::OpenAI
   Langertha::Engine::Ollama
+  Langertha::Engine::Perplexity
   Langertha::Engine::vLLM
   Langertha::Engine::Whisper
   Langertha::Request::HTTP

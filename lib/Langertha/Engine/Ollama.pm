@@ -420,6 +420,21 @@ Ollama supports MCP tool calling with models that have tool support:
 Ollama uses the OpenAI-compatible tool format. See L<Langertha::Role::Tools>
 for details on the tool-calling loop.
 
+For models that do not have API-level tool support but understand the
+Hermes prompt format (e.g. NousResearch Hermes models), you can enable
+Hermes-native tool calling:
+
+  my $ollama = Langertha::Engine::Ollama->new(
+    url          => 'http://localhost:11434',
+    model        => 'hermes3',
+    hermes_tools => 1,
+    mcp_servers  => [$mcp],
+  );
+
+This injects tool definitions into the system prompt as C<E<lt>toolsE<gt>>
+XML and parses C<E<lt>tool_callE<gt>> tags from the model's text output.
+See L<Langertha::Role::Tools/HERMES TOOL CALLING> for details.
+
 =head1 HOW TO INSTALL OLLAMA
 
 L<https://github.com/ollama/ollama/tree/main>

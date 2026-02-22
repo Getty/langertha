@@ -32,6 +32,8 @@
 | [Groq](https://console.groq.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: | :white_check_mark: |
 | [Mistral](https://console.mistral.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [DeepSeek](https://platform.deepseek.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [Perplexity](https://docs.perplexity.ai/) | :white_check_mark: | :white_check_mark: | | | | |
+| [Nous Research](https://nousresearch.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
 | [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | :white_check_mark: | |
 
@@ -166,6 +168,28 @@ The tool-calling loop runs automatically:
 
 Works with **all engines** that support tool calling (see table above).
 
+### Hermes-Native Tool Calling
+
+For models that support the [Hermes tool calling format](https://nousresearch.com/) (via `<tool_call>` XML tags) but lack API-level tool support, enable `hermes_tools`:
+
+```perl
+# NousResearch has hermes_tools enabled by default
+my $nous = Langertha::Engine::NousResearch->new(
+    api_key     => $ENV{NOUSRESEARCH_API_KEY},
+    mcp_servers => [$mcp],
+);
+
+# Any OpenAI-compatible API or Ollama model can opt in
+my $ollama = Langertha::Engine::Ollama->new(
+    url          => 'http://localhost:11434',
+    model        => 'hermes3',
+    hermes_tools => 1,
+    mcp_servers  => [$mcp],
+);
+```
+
+Tools are injected into the system prompt and `<tool_call>` tags are parsed from the model's text output. The tool prompt template is customizable via `hermes_tool_prompt`.
+
 ## Async/Await
 
 All operations have async variants via [Future::AsyncAwait](https://metacpan.org/pod/Future::AsyncAwait):
@@ -250,6 +274,10 @@ TEST_LANGERTHA_OLLAMA_URL=http://localhost:11434     \
 TEST_LANGERTHA_OLLAMA_MODELS=qwen3:8b,llama3.2:3b   \
 prove -l t/80_live_tool_calling.t
 
+# NousResearch (Hermes-native tool calling via <tool_call> tags)
+TEST_LANGERTHA_NOUSRESEARCH_API_KEY=... \
+prove -l t/80_live_tool_calling.t
+
 # vLLM (requires --enable-auto-tool-choice and --tool-call-parser on server)
 TEST_LANGERTHA_VLLM_URL=http://localhost:8000/v1              \
 TEST_LANGERTHA_VLLM_MODEL=Qwen/Qwen2.5-3B-Instruct           \
@@ -270,6 +298,7 @@ See the [`ex/`](ex/) directory for runnable examples:
 | `async_await.pl` | Async/await patterns |
 | `mcp_inprocess.pl` | MCP tool calling with in-process server |
 | `mcp_stdio.pl` | MCP tool calling with stdio server |
+| `hermes_tools.pl` | Hermes-native tool calling with NousResearch |
 | `embedding.pl` | Text embeddings |
 | `transcription.pl` | Audio transcription with Whisper |
 | `structured_output.pl` | Structured/JSON output |

@@ -14,8 +14,10 @@ BEGIN {
   push @available, 'gemini'    if $ENV{TEST_LANGERTHA_GEMINI_API_KEY};
   push @available, 'groq'      if $ENV{TEST_LANGERTHA_GROQ_API_KEY};
   push @available, 'mistral'   if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};
-  push @available, 'deepseek'  if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
-  push @available, 'ollama'    if $ENV{TEST_LANGERTHA_OLLAMA_URL};
+  push @available, 'deepseek'    if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
+  # Perplexity does not support tool calling
+  push @available, 'nousresearch' if $ENV{TEST_LANGERTHA_NOUSRESEARCH_API_KEY};
+  push @available, 'ollama'      if $ENV{TEST_LANGERTHA_OLLAMA_URL};
   push @available, 'vllm'      if $ENV{TEST_LANGERTHA_VLLM_URL} && $ENV{TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER};
   unless (@available) {
     plan skip_all => 'No TEST_LANGERTHA_* env vars set';
@@ -148,6 +150,22 @@ async sub run_tests {
       ));
     };
     diag "DeepSeek error: $@" if $@;
+  }
+
+  # --- Perplexity ---
+  # Note: Perplexity does not support tool calling as of Feb 2026
+  # Skipped in tool calling test
+
+  # --- NousResearch ---
+  if ($ENV{TEST_LANGERTHA_NOUSRESEARCH_API_KEY}) {
+    require Langertha::Engine::NousResearch;
+    eval {
+      await test_engine('NousResearch', Langertha::Engine::NousResearch->new(
+        api_key => $ENV{TEST_LANGERTHA_NOUSRESEARCH_API_KEY},
+        model => 'Hermes-3-Llama-3.1-70B', mcp_servers => [$mcp],
+      ));
+    };
+    diag "NousResearch error: $@" if $@;
   }
 
   # --- vLLM ---
