@@ -14,17 +14,101 @@ requires qw(
   response_text_content
 );
 
+=head1 SYNOPSIS
+
+    use IO::Async::Loop;
+    use Net::Async::MCP;
+    use Future::AsyncAwait;
+
+    my $loop = IO::Async::Loop->new;
+
+    # Set up an MCP server with tools
+    my $mcp = Net::Async::MCP->new(server => $my_mcp_server);
+    $loop->add($mcp);
+    await $mcp->initialize;
+
+    # Create engine with MCP servers
+    my $engine = Langertha::Engine::Anthropic->new(
+        api_key     => $ENV{ANTHROPIC_API_KEY},
+        model       => 'claude-sonnet-4-6',
+        mcp_servers => [$mcp],
+    );
+
+    # Async tool-calling chat loop
+    my $response = await $engine->chat_with_tools_f(
+        'Use the available tools to answer my question'
+    );
+
+    # Hermes-native tool calling (for models without native tool support)
+    my $engine = Langertha::Engine::NousResearch->new(
+        api_key      => $ENV{NOUSRESEARCH_API_KEY},
+        hermes_tools => 1,
+        mcp_servers  => [$mcp],
+    );
+
+=head1 DESCRIPTION
+
+This role adds MCP (Model Context Protocol) tool calling support to Langertha
+engines. It provides the L</chat_with_tools_f> method which implements the full
+async tool-calling loop:
+
+=over 4
+
+=item 1. Gather available tools from all configured MCP servers
+
+=item 2. Send a chat request with tool definitions to the LLM
+
+=item 3. If the LLM returns tool calls, execute them via MCP
+
+=item 4. Feed tool results back to the LLM and repeat
+
+=item 5. When the LLM returns final text, return it
+
+=back
+
+Engines composing this role must implement five methods to handle
+engine-specific tool format conversion: C<format_tools>,
+C<response_tool_calls>, C<extract_tool_call>, C<format_tool_results>, and
+C<response_text_content>.
+
+For models and APIs that do not support a native C<tools> parameter (such as
+Nous Research Hermes models), set C<hermes_tools =E<gt> 1> to enable
+Hermes-native tool calling via XML tags. When enabled, tools are injected into
+the system prompt as C<E<lt>toolsE<gt>> XML and C<E<lt>tool_callE<gt>> tags are
+parsed from the model's text output instead.
+
+=cut
+
 has mcp_servers => (
   is => 'ro',
   isa => 'ArrayRef',
   default => sub { [] },
 );
 
+=attr mcp_servers
+
+    mcp_servers => [$mcp1, $mcp2]
+
+ArrayRef of L<Net::Async::MCP> instances to use as tool providers. Defaults to
+an empty ArrayRef. At least one server must be configured before calling
+L</chat_with_tools_f>.
+
+=cut
+
 has tool_max_iterations => (
   is => 'ro',
   isa => 'Int',
   default => 10,
 );
+
+=attr tool_max_iterations
+
+    tool_max_iterations => 20
+
+Maximum number of tool-calling round trips before aborting with an error.
+Defaults to C<10>. Increase for complex multi-step tool workflows.
+
+=cut
 
 # --- Hermes-native tool calling support ---
 # When enabled, tools are injected into the system prompt as <tools> XML
@@ -37,17 +121,46 @@ has hermes_tools => (
   default => 0,
 );
 
+=attr hermes_tools
+
+    hermes_tools => 1
+
+Enable Hermes-native tool calling via C<E<lt>tool_callE<gt>> XML tags. When
+true, tools are injected into the system prompt and parsed from the model's text
+output instead of using the API's native tool parameter. Defaults to C<0>
+(disabled).
+
+=cut
+
 has hermes_call_tag => (
   is => 'ro',
   isa => 'Str',
   default => 'tool_call',
 );
 
+=attr hermes_call_tag
+
+    hermes_call_tag => 'function_call'
+
+The XML tag name used for tool calls in the model's output. Both the prompt
+template and the response parser use this tag. Defaults to C<tool_call>.
+
+=cut
+
 has hermes_response_tag => (
   is => 'ro',
   isa => 'Str',
   default => 'tool_response',
 );
+
+=attr hermes_response_tag
+
+    hermes_response_tag => 'function_response'
+
+The XML tag name used when sending tool results back to the model. Defaults to
+C<tool_response>.
+
+=cut
 
 has hermes_tool_instructions => (
   is => 'ro',
@@ -61,6 +174,17 @@ sub _build_hermes_tool_instructions {
     . " functions to assist with the user query. Don't make assumptions"
     . " about what values to plug into functions.";
 }
+
+=attr hermes_tool_instructions
+
+    hermes_tool_instructions => 'You are a helpful assistant that can call functions.'
+
+The instruction text prepended to the Hermes tool system prompt. Customize this
+to change the model's behavior without altering the structural XML template. The
+default instructs the model to call functions without making assumptions about
+argument values.
+
+=cut
 
 has hermes_tool_prompt => (
   is => 'ro',
@@ -88,12 +212,31 @@ For each function call, return a JSON object with function name and arguments wi
 PROMPT
 }
 
+=attr hermes_tool_prompt
+
+The full system prompt template used for Hermes tool calling. Must contain a
+C<%s> placeholder where the tools JSON will be inserted. Built automatically
+from L</hermes_tool_instructions> and L</hermes_call_tag>. Override this only
+if you need full control over the prompt structure.
+
+=cut
+
 # Override this for engines with non-OpenAI response formats (e.g. Ollama native)
 sub hermes_extract_content {
   my ( $self, $data ) = @_;
   return undef unless $data && $data->{choices} && @{$data->{choices}};
   return $data->{choices}[0]{message}{content};
 }
+
+=method hermes_extract_content
+
+    my $content = $self->hermes_extract_content($data);
+
+Extracts raw text content from a parsed LLM response for Hermes tool call
+parsing. Defaults to OpenAI response format (C<choices[0].message.content>).
+Override this method in engines with non-OpenAI response structures.
+
+=cut
 
 async sub chat_with_tools_f {
   my ( $self, @messages ) = @_;
@@ -193,6 +336,18 @@ async sub chat_with_tools_f {
   die "Tool calling loop exceeded ".$self->tool_max_iterations." iterations";
 }
 
+=method chat_with_tools_f
+
+    my $response = await $engine->chat_with_tools_f(@messages);
+
+Async tool-calling chat loop. Accepts the same message arguments as
+L<Langertha::Role::Chat/simple_chat>. Gathers tools from all L</mcp_servers>,
+sends the request, executes any tool calls returned by the LLM, and repeats
+until the LLM returns a final text response or L</tool_max_iterations> is
+exceeded. Returns a L<Future> that resolves to the final text response.
+
+=cut
+
 # --- Hermes helper methods ---
 
 sub _hermes_parse_tool_calls {
@@ -242,188 +397,22 @@ sub _hermes_build_tool_results {
   return @messages;
 }
 
-1;
+=seealso
 
-=head1 SYNOPSIS
+=over
 
-  use IO::Async::Loop;
-  use Net::Async::MCP;
-  use Future::AsyncAwait;
+=item * L<Langertha> - Main Langertha documentation
 
-  my $loop = IO::Async::Loop->new;
+=item * L<Langertha::Role::Chat> - Chat role required by this role
 
-  # Set up an MCP server with tools
-  my $mcp = Net::Async::MCP->new(server => $my_mcp_server);
-  $loop->add($mcp);
-  await $mcp->initialize;
+=item * L<Net::Async::MCP> - MCP client used as tool provider
 
-  # Create engine with MCP servers
-  my $engine = Langertha::Engine::Anthropic->new(
-    api_key     => $ENV{ANTHROPIC_API_KEY},
-    model       => 'claude-sonnet-4-6',
-    mcp_servers => [$mcp],
-  );
+=item * L<Langertha::Engine::Anthropic> - Engine with native tool support
 
-  # Async tool-calling chat loop
-  my $response = await $engine->chat_with_tools_f(
-    'Use the available tools to answer my question'
-  );
-
-=head1 DESCRIPTION
-
-This role adds MCP (Model Context Protocol) tool calling support to
-Langertha engines. It provides the C<chat_with_tools_f> method which
-implements the full async tool-calling loop:
-
-=over 4
-
-=item 1. Gather available tools from all configured MCP servers
-
-=item 2. Send chat request with tool definitions to the LLM
-
-=item 3. If the LLM returns tool calls, execute them via MCP
-
-=item 4. Feed tool results back to the LLM and repeat
-
-=item 5. When the LLM returns final text, return it
+=item * L<Langertha::Engine::NousResearch> - Engine using Hermes tool calling
 
 =back
-
-Engines that compose this role must implement five methods to handle
-the engine-specific tool format conversion. See L</REQUIRED METHODS>.
-
-=head1 HERMES TOOL CALLING
-
-For models and APIs that do not support a native C<tools> parameter
-(such as Nous Research Hermes models), set C<hermes_tools =E<gt> 1>
-to enable Hermes-native tool calling via XML tags:
-
-  my $engine = Langertha::Engine::NousResearch->new(
-    api_key       => $ENV{NOUSRESEARCH_API_KEY},
-    hermes_tools  => 1,
-    mcp_servers   => [$mcp],
-  );
-
-When enabled, tools are injected into the system prompt as
-C<E<lt>toolsE<gt>> XML and C<E<lt>tool_callE<gt>> tags are parsed from
-the model's text output. The engine's native tool methods (C<format_tools>,
-C<response_tool_calls>, etc.) are bypassed.
-
-The XML tag names, the system prompt template, and the response content
-extraction can all be customized:
-
-  my $engine = Langertha::Engine::OpenAI->new(
-    url                => 'https://my-custom-api.com/v1',
-    api_key            => $ENV{API_KEY},
-    model              => 'my-model',
-    hermes_tools       => 1,
-    hermes_call_tag    => 'function_call',     # default: tool_call
-    hermes_response_tag => 'function_response', # default: tool_response
-    mcp_servers        => [$mcp],
-  );
-
-=head1 REQUIRED METHODS
-
-Engines composing this role must implement:
-
-=over 4
-
-=item C<format_tools(\@mcp_tools)>
-
-Convert MCP tool definitions to the engine's native tool format.
-
-=item C<response_tool_calls(\%response_data)>
-
-Extract tool call objects from a parsed LLM response.
-
-=item C<extract_tool_call(\%tool_call)>
-
-Extract tool name and input from a native tool call object.
-Returns C<($name, \%input)>.
-
-=item C<format_tool_results(\%response_data, \@results)>
-
-Format tool execution results as messages to append to the conversation.
-
-=item C<response_text_content(\%response_data)>
-
-Extract the final text content from a parsed LLM response.
-
-=back
-
-=attr mcp_servers
-
-  mcp_servers => [$mcp1, $mcp2]
-
-ArrayRef of L<Net::Async::MCP> instances to use as tool providers.
-
-=attr tool_max_iterations
-
-  tool_max_iterations => 20
-
-Maximum number of tool-calling round trips before aborting. Defaults to 10.
-
-=attr hermes_tools
-
-  hermes_tools => 1
-
-Enable Hermes-native tool calling via C<E<lt>tool_callE<gt>> XML tags.
-When true, tools are injected into the system prompt and parsed from
-the model's text output. Defaults to false.
-
-=attr hermes_call_tag
-
-  hermes_call_tag => 'function_call'
-
-The XML tag name used for tool calls in the model's output.
-Defaults to C<tool_call>. The prompt template and response parser
-both use this tag.
-
-=attr hermes_response_tag
-
-  hermes_response_tag => 'function_response'
-
-The XML tag name used when sending tool results back to the model.
-Defaults to C<tool_response>.
-
-=attr hermes_tool_instructions
-
-  hermes_tool_instructions => 'You are a helpful assistant that can call functions.'
-
-The instruction text prepended to the Hermes tool system prompt.
-Change this to customize the model's behavior without touching
-the structural XML template. The default instructs the model to
-call functions without making assumptions about argument values.
-
-=attr hermes_tool_prompt
-
-  hermes_tool_prompt => <<'PROMPT'
-  You are an assistant with access to tools.
-  <tools>%s</tools>
-  Use <tool_call>{"name": "...", "arguments": {...}}</tool_call> to call them.
-  PROMPT
-
-The full system prompt template used for Hermes tool calling. Must contain
-a C<%s> placeholder where the tools JSON will be inserted. Built
-automatically from C<hermes_tool_instructions> and C<hermes_call_tag>.
-Override this only if you need full control over the prompt structure.
-
-=method chat_with_tools_f
-
-  my $response = await $engine->chat_with_tools_f(@messages);
-
-Async tool-calling chat loop. Accepts the same message arguments as
-C<simple_chat>. Returns a L<Future> that resolves to the final text
-response after all tool calls have been executed.
-
-=method hermes_extract_content
-
-  my $content = $self->hermes_extract_content($data);
-
-Extract raw text content from a parsed LLM response for Hermes tool
-call parsing. Defaults to OpenAI format (C<choices[0].message.content>).
-Override this in engines with non-OpenAI response formats.
-
-=seealso L<Net::Async::MCP>, L<Langertha::Role::Chat>
 
 =cut
+
+1;

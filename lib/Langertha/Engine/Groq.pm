@@ -6,6 +6,40 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAI';
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::Groq;
+
+    my $groq = Langertha::Engine::Groq->new(
+        api_key      => $ENV{GROQ_API_KEY},
+        model        => 'llama-3.3-70b-versatile',
+        system_prompt => 'You are a helpful assistant',
+    );
+
+    print $groq->simple_chat('Say something nice');
+
+    # Audio transcription
+    my $text = $groq->transcription('/path/to/audio.mp3');
+
+=head1 DESCRIPTION
+
+Provides access to Groq's ultra-fast LLM inference via their GroqCloud API.
+Extends L<Langertha::Engine::OpenAI> with Groq's endpoint
+(C<https://api.groq.com/openai/v1>) and API key handling.
+
+Popular models: C<llama-3.3-70b-versatile>, C<llama-3-groq-70b-tool-use>,
+C<deepseek-r1-distill-llama-70b>, C<qwen-2.5-coder-32b>. Audio transcription
+uses C<whisper-large-v3> by default. No default chat model is set; C<model>
+must be specified explicitly.
+
+Dynamic model listing via C<list_models()> is inherited from
+L<Langertha::Engine::OpenAI>. Get your API key at
+L<https://console.groq.com/keys> and set C<LANGERTHA_GROQ_API_KEY>.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 sub _build_api_key {
   my ( $self ) = @_;
   return $ENV{LANGERTHA_GROQ_API_KEY}
@@ -26,81 +60,9 @@ sub _build_supported_operations {[qw(
   createTranscription
 )]}
 
-1;
+=seealso
 
-=head1 SYNOPSIS
-
-  use Langertha::Engine::Groq;
-
-  my $groq = Langertha::Engine::Groq->new(
-    api_key => $ENV{GROQ_API_KEY},
-    model => 'llama-3.3-70b-versatile',
-    system_prompt => 'You are a helpful assistant',
-  );
-
-  print($groq->simple_chat('Say something nice'));
-
-  # Audio transcription
-  my $text = $groq->transcription('/path/to/audio.mp3');
-
-=head1 DESCRIPTION
-
-This module provides access to Groq's ultra-fast LLM inference via their API.
-Groq's LPU (Language Processing Unit) provides extremely fast inference speeds.
-
-B<Popular Models (February 2026):>
-
-=over 4
-
-=item * B<llama-3.3-70b-versatile> - Meta's Llama 3.3 70B model. Excellent general-purpose model with strong reasoning capabilities.
-
-=item * B<llama-3-groq-70b-tool-use> - Llama 3 optimized for tool use and function calling.
-
-=item * B<deepseek-r1-distill-llama-70b> - DeepSeek R1 reasoning model distilled into Llama architecture. Best for complex reasoning tasks.
-
-=item * B<qwen-2.5-coder-32b> - Qwen 2.5 specialized for coding tasks.
-
-=item * B<llama-4-scout-17b-16e-instruct> - Meta's Llama 4 Scout vision model for image understanding.
-
-=item * B<whisper-large-v3> - OpenAI Whisper for audio transcription (default transcription model).
-
-=item * B<whisper-large-v3-turbo> - Faster Whisper variant for audio transcription.
-
-=back
-
-B<Features:>
-
-=over 4
-
-=item * Ultra-fast inference with Groq's LPU technology
-
-=item * Chat completions
-
-=item * Audio transcription (Whisper models)
-
-=item * Tool use and function calling
-
-=item * Vision models for image understanding
-
-=item * Reasoning models with chain-of-thought
-
-=item * Dynamic model discovery via API (inherited from OpenAI)
-
-=back
-
-B<Note:> Groq inherits from L<Langertha::Engine::OpenAI>, so it supports
-C<list_models()> for dynamic model discovery. See L<Langertha::Engine::OpenAI>
-for documentation on model listing, caching, and other features.
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 HOW TO GET GROQ API KEY
-
-L<https://console.groq.com/keys>
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://console.groq.com/docs/models> - Official Groq models documentation
 
@@ -111,3 +73,5 @@ L<https://console.groq.com/keys>
 =back
 
 =cut
+
+1;

@@ -9,11 +9,40 @@ has response_size => (
   predicate => 'has_response_size',
 );
 
+=attr response_size
+
+Maximum number of tokens to generate in the response. Optional. When not set,
+the engine uses its own C<default_response_size> if available, or omits the
+parameter from the request.
+
+=cut
+
 sub get_response_size {
   my ( $self ) = @_;
   return $self->response_size if $self->has_response_size;
   return $self->default_response_size if $self->can('default_response_size');
   return;
 }
+
+=method get_response_size
+
+    my $size = $engine->get_response_size;
+
+Returns the effective response size: the explicit C<response_size> if set,
+otherwise the engine's C<default_response_size>, otherwise C<undef>.
+
+=cut
+
+=seealso
+
+=over
+
+=item * L<Langertha> - Main Langertha documentation
+
+=item * L<Langertha::Role::ContextSize> - Limit total context tokens
+
+=back
+
+=cut
 
 1;

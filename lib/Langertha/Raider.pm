@@ -6,10 +6,104 @@ use Future::AsyncAwait;
 use Time::HiRes qw( gettimeofday tv_interval );
 use Carp qw( croak );
 
+=head1 SYNOPSIS
+
+    use IO::Async::Loop;
+    use Future::AsyncAwait;
+    use Net::Async::MCP;
+    use MCP::Server;
+    use Langertha::Engine::Anthropic;
+    use Langertha::Raider;
+
+    # Set up MCP server with tools
+    my $server = MCP::Server->new(name => 'demo', version => '1.0');
+    $server->tool(
+        name => 'list_files',
+        description => 'List files in a directory',
+        input_schema => {
+            type => 'object',
+            properties => { path => { type => 'string' } },
+            required => ['path'],
+        },
+        code => sub { $_[0]->text_result(join("\n", glob("$_[1]->{path}/*"))) },
+    );
+
+    my $loop = IO::Async::Loop->new;
+    my $mcp = Net::Async::MCP->new(server => $server);
+    $loop->add($mcp);
+
+    async sub main {
+        await $mcp->initialize;
+
+        my $engine = Langertha::Engine::Anthropic->new(
+            api_key     => $ENV{ANTHROPIC_API_KEY},
+            mcp_servers => [$mcp],
+        );
+
+        my $raider = Langertha::Raider->new(
+            engine  => $engine,
+            mission => 'You are a code explorer. Investigate files thoroughly.',
+        );
+
+        # First raid — uses tools, builds history
+        my $r1 = await $raider->raid_f('What files are in the current directory?');
+        say $r1;
+
+        # Second raid — has context from first conversation
+        my $r2 = await $raider->raid_f('Tell me more about the first file you found.');
+        say $r2;
+
+        # Check metrics
+        my $m = $raider->metrics;
+        say "Raids: $m->{raids}, Tool calls: $m->{tool_calls}, Time: $m->{time_ms}ms";
+
+        # Reset for a fresh conversation
+        $raider->clear_history;
+    }
+
+    main()->get;
+
+=head1 DESCRIPTION
+
+Langertha::Raider is an autonomous agent that wraps a Langertha engine
+with MCP tools. It maintains conversation history across multiple
+interactions (raids), enabling multi-turn conversations where the LLM
+can reference prior context.
+
+B<Key features:>
+
+=over 4
+
+=item * Conversation history persisted across raids
+
+=item * Mission (system prompt) separate from engine's system_prompt
+
+=item * Automatic MCP tool calling loop
+
+=item * Cumulative metrics tracking
+
+=item * Hermes tool calling support (inherited from engine)
+
+=back
+
+B<History management:> Only user messages and final assistant text
+responses are persisted in history. Intermediate tool-call messages
+(assistant tool requests and tool results) are NOT persisted, preventing
+token bloat across long conversations.
+
+=cut
+
 has engine => (
   is => 'ro',
   required => 1,
 );
+
+=attr engine
+
+Required. A Langertha engine instance with MCP servers configured.
+The engine must compose L<Langertha::Role::Tools>.
+
+=cut
 
 has mission => (
   is => 'ro',
@@ -17,17 +111,39 @@ has mission => (
   predicate => 'has_mission',
 );
 
+=attr mission
+
+Optional system prompt for the Raider. This is separate from the
+engine's own C<system_prompt> — the Raider's mission takes precedence
+and is prepended to every conversation.
+
+=cut
+
 has history => (
   is => 'rw',
   isa => 'ArrayRef',
   default => sub { [] },
 );
 
+=attr history
+
+ArrayRef of message hashes representing the conversation history.
+Automatically managed by C<raid>/C<raid_f>. Can be inspected or
+manually set.
+
+=cut
+
 has max_iterations => (
   is => 'ro',
   isa => 'Int',
   default => 10,
 );
+
+=attr max_iterations
+
+Maximum number of tool-calling round trips per raid. Defaults to C<10>.
+
+=cut
 
 has metrics => (
   is => 'rw',
@@ -37,11 +153,32 @@ has metrics => (
   } },
 );
 
+=attr metrics
+
+HashRef of cumulative metrics across all raids:
+
+    {
+        raids      => 3,       # Number of completed raids
+        iterations => 7,       # Total LLM round trips
+        tool_calls => 12,      # Total tool invocations
+        time_ms    => 4500.2,  # Total wall-clock time in milliseconds
+    }
+
+=cut
+
 sub clear_history {
   my ( $self ) = @_;
   $self->history([]);
   return $self;
 }
+
+=method clear_history
+
+    $raider->clear_history;
+
+Clears conversation history while preserving metrics.
+
+=cut
 
 sub reset {
   my ( $self ) = @_;
@@ -52,10 +189,27 @@ sub reset {
   return $self;
 }
 
+=method reset
+
+    $raider->reset;
+
+Clears both conversation history and metrics.
+
+=cut
+
 sub raid {
   my ( $self, @messages ) = @_;
   return $self->raid_f(@messages)->get;
 }
+
+=method raid
+
+    my $response = $raider->raid(@messages);
+
+Synchronous wrapper around C<raid_f>. Sends messages, runs the tool
+loop, and returns the final text response. Updates history and metrics.
+
+=cut
 
 async sub raid_f {
   my ( $self, @messages ) = @_;
@@ -237,152 +391,16 @@ async sub raid_f {
   die "Raider tool loop exceeded ".$self->max_iterations." iterations";
 }
 
-__PACKAGE__->meta->make_immutable;
-
-1;
-
-=head1 SYNOPSIS
-
-  use IO::Async::Loop;
-  use Future::AsyncAwait;
-  use Net::Async::MCP;
-  use MCP::Server;
-  use Langertha::Engine::Anthropic;
-  use Langertha::Raider;
-
-  # Set up MCP server with tools
-  my $server = MCP::Server->new(name => 'demo', version => '1.0');
-  $server->tool(
-    name => 'list_files',
-    description => 'List files in a directory',
-    input_schema => {
-      type => 'object',
-      properties => { path => { type => 'string' } },
-      required => ['path'],
-    },
-    code => sub { $_[0]->text_result(join("\n", glob("$_[1]->{path}/*"))) },
-  );
-
-  my $loop = IO::Async::Loop->new;
-  my $mcp = Net::Async::MCP->new(server => $server);
-  $loop->add($mcp);
-
-  async sub main {
-    await $mcp->initialize;
-
-    my $engine = Langertha::Engine::Anthropic->new(
-      api_key     => $ENV{ANTHROPIC_API_KEY},
-      mcp_servers => [$mcp],
-    );
-
-    my $raider = Langertha::Raider->new(
-      engine  => $engine,
-      mission => 'You are a code explorer. Investigate files thoroughly.',
-    );
-
-    # First raid — uses tools, builds history
-    my $r1 = await $raider->raid_f('What files are in the current directory?');
-    say $r1;
-
-    # Second raid — has context from first conversation
-    my $r2 = await $raider->raid_f('Tell me more about the first file you found.');
-    say $r2;
-
-    # Check metrics
-    my $m = $raider->metrics;
-    say "Raids: $m->{raids}, Tool calls: $m->{tool_calls}, Time: $m->{time_ms}ms";
-
-    # Reset for a fresh conversation
-    $raider->clear_history;
-  }
-
-  main()->get;
-
-=head1 DESCRIPTION
-
-Langertha::Raider is an autonomous agent that wraps a Langertha engine
-with MCP tools. It maintains conversation history across multiple
-interactions (raids), enabling multi-turn conversations where the LLM
-can reference prior context.
-
-B<Key features:>
-
-=over 4
-
-=item * Conversation history persisted across raids
-
-=item * Mission (system prompt) separate from engine's system_prompt
-
-=item * Automatic MCP tool calling loop
-
-=item * Cumulative metrics tracking
-
-=item * Hermes tool calling support (inherited from engine)
-
-=back
-
-B<History management:> Only user messages and final assistant text
-responses are persisted in history. Intermediate tool-call messages
-(assistant tool requests and tool results) are NOT persisted, preventing
-token bloat across long conversations.
-
-=attr engine
-
-Required. A Langertha engine instance with MCP servers configured.
-The engine must compose L<Langertha::Role::Tools>.
-
-=attr mission
-
-Optional system prompt for the Raider. This is separate from the
-engine's own C<system_prompt> — the Raider's mission takes precedence
-and is prepended to every conversation.
-
-=attr history
-
-ArrayRef of message hashes representing the conversation history.
-Automatically managed by C<raid>/C<raid_f>. Can be inspected or
-manually set.
-
-=attr max_iterations
-
-Maximum number of tool-calling round trips per raid. Defaults to 10.
-
-=attr metrics
-
-HashRef of cumulative metrics across all raids:
-
-  {
-    raids      => 3,       # Number of completed raids
-    iterations => 7,       # Total LLM round trips
-    tool_calls => 12,      # Total tool invocations
-    time_ms    => 4500.2,  # Total wall-clock time in milliseconds
-  }
-
-=method raid
-
-  my $response = $raider->raid(@messages);
-
-Synchronous wrapper around C<raid_f>. Sends messages, runs the tool
-loop, and returns the final text response. Updates history and metrics.
-
 =method raid_f
 
-  my $response = await $raider->raid_f(@messages);
+    my $response = await $raider->raid_f(@messages);
 
 Async tool-calling conversation. Accepts the same message arguments as
 C<simple_chat> (strings become user messages, hashrefs pass through).
 Returns a L<Future> resolving to the final text response.
 
-=method clear_history
-
-  $raider->clear_history;
-
-Clears conversation history while preserving metrics.
-
-=method reset
-
-  $raider->reset;
-
-Clears both conversation history and metrics.
-
 =cut
+
+__PACKAGE__->meta->make_immutable;
+
+1;

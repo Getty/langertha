@@ -22,10 +22,66 @@ with 'Langertha::Role::'.$_ for (qw(
 
 with 'Langertha::Role::Tools';
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::OpenAI;
+
+    my $openai = Langertha::Engine::OpenAI->new(
+        api_key      => $ENV{OPENAI_API_KEY},
+        model        => 'gpt-4o-mini',
+        system_prompt => 'You are a helpful assistant',
+        temperature  => 0.7,
+    );
+
+    my $response = $openai->simple_chat('Say something nice');
+    print $response;
+
+    # Embeddings
+    my $embedding = $openai->embedding('Some text to embed');
+
+    # Transcription (Whisper)
+    my $text = $openai->transcription('/path/to/audio.mp3');
+
+    # Async with Future::AsyncAwait
+    use Future::AsyncAwait;
+
+    async sub ask_gpt {
+        my $response = await $openai->simple_chat_f('What is Perl?');
+        say $response;
+    }
+
+=head1 DESCRIPTION
+
+Provides access to OpenAI's APIs, including GPT models, embeddings, and
+Whisper transcription. Composes L<Langertha::Role::OpenAICompatible> for the
+standard OpenAI API format.
+
+Popular models: C<gpt-4o-mini> (default, fast), C<gpt-4o> (most capable),
+C<o1>/C<o3-mini> (reasoning), C<text-embedding-3-large> (embeddings),
+C<whisper-1> (transcription).
+
+Dynamic model listing is supported via L<Langertha::Role::Models/list_models>.
+Results are cached for C<models_cache_ttl> seconds (default: 3600).
+
+Get your API key at L<https://platform.openai.com/> and set
+C<LANGERTHA_OPENAI_API_KEY> in your environment.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 has compatibility_for_engine => (
   is => 'ro',
   predicate => 'has_compatibility_for_engine',
 );
+
+=attr compatibility_for_engine
+
+Optional identifier of the engine this instance is acting as a compatibility
+shim for. Used internally when one engine is accessed via another's OpenAI
+endpoint.
+
+=cut
 
 sub _build_api_key {
   my ( $self ) = @_;
@@ -37,133 +93,26 @@ sub default_model { 'gpt-4o-mini' }
 
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::OpenAI;
-
-  # Basic chat
-  my $openai = Langertha::Engine::OpenAI->new(
-    api_key => $ENV{OPENAI_API_KEY},
-    model => 'gpt-4o-mini',
-    system_prompt => 'You are a helpful assistant',
-    temperature => 0.7,
-  );
-
-  my $response = $openai->simple_chat('Say something nice');
-  print $response;
-
-  # Embeddings
-  my $embedding = $openai->embedding('Some text to embed');
-
-  # Transcription (Whisper)
-  my $text = $openai->transcription('/path/to/audio.mp3');
-
-  # Async with Future::AsyncAwait
-  use Future::AsyncAwait;
-
-  async sub ask_gpt {
-    my $response = await $openai->simple_chat_f('What is Perl?');
-    say $response;
-  }
-
-=head1 DESCRIPTION
-
-This module provides access to OpenAI's APIs, including GPT models,
-embeddings, and Whisper transcription. It composes
-L<Langertha::Role::OpenAICompatible> for the OpenAI API format methods.
-
-B<Popular Models:>
-
-=over 4
-
-=item * gpt-4o-mini - Fast, cost-effective (default for chat)
-
-=item * gpt-4o - Most capable GPT-4 model
-
-=item * o1 - Advanced reasoning model
-
-=item * o3-mini - Fast reasoning model
-
-=item * text-embedding-3-large - Embeddings (default)
-
-=item * whisper-1 - Audio transcription (default)
-
-=back
-
-B<Features:>
-
-=over 4
-
-=item * Chat completions with streaming
-
-=item * Text embeddings
-
-=item * Audio transcription (Whisper)
-
-=item * Response format control (JSON mode)
-
-=item * Temperature and response size control
-
-=item * System prompts
-
-=item * Async/await support via Future::AsyncAwait
-
-=item * Dynamic model discovery via API
-
-=back
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 LISTING AVAILABLE MODELS
-
-You can dynamically fetch the list of available models from the OpenAI API:
-
-  # Get simple list of model IDs
-  my $model_ids = $engine->list_models;
-  # Returns: ['gpt-4o', 'gpt-4o-mini', 'o1', ...]
-
-  # Get full model objects with metadata
-  my $models = $engine->list_models(full => 1);
-  # Returns: [{id => 'gpt-4o', created => 1715367049, ...}, ...]
-
-  # Force refresh (bypass cache)
-  my $models = $engine->list_models(force_refresh => 1);
-
-B<Caching:> Results are cached for 1 hour by default. Configure the TTL:
-
-  my $engine = Langertha::Engine::OpenAI->new(
-    api_key => $ENV{OPENAI_API_KEY},
-    models_cache_ttl => 1800, # 30 minutes
-  );
-
-  # Clear the cache manually
-  $engine->clear_models_cache;
-
-=head1 GETTING AN API KEY
-
-Sign up at L<https://platform.openai.com/> and generate an API key.
-
-Set the environment variable:
-
-  export OPENAI_API_KEY=your-key-here
-  # Or use LANGERTHA_OPENAI_API_KEY
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://platform.openai.com/docs> - Official OpenAI documentation
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 
-=item * L<Langertha::Role::Chat> - Chat interface
+=item * L<Langertha::Role::Tools> - MCP tool calling interface
 
-=item * L<Langertha::Role::Embedding> - Embedding interface
+=item * L<Langertha::Engine::DeepSeek> - DeepSeek (extends this engine)
 
-=item * L<Langertha::Role::Transcription> - Transcription interface
+=item * L<Langertha::Engine::Groq> - Groq (extends this engine)
+
+=item * L<Langertha::Engine::Mistral> - Mistral (extends this engine)
 
 =item * L<Langertha> - Main Langertha documentation
 
 =back
 
 =cut
+
+1;

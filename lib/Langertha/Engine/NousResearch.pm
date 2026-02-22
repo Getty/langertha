@@ -5,6 +5,49 @@ use Moose;
 extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::NousResearch;
+
+    my $nous = Langertha::Engine::NousResearch->new(
+        api_key => $ENV{NOUSRESEARCH_API_KEY},
+        model   => 'Hermes-3-Llama-3.1-70B',
+    );
+
+    print $nous->simple_chat('Explain the Hermes prompt format');
+
+    # MCP tool calling (hermes_tools enabled by default)
+    use Future::AsyncAwait;
+
+    my $nous = Langertha::Engine::NousResearch->new(
+        api_key     => $ENV{NOUSRESEARCH_API_KEY},
+        model       => 'Hermes-3-Llama-3.1-70B',
+        mcp_servers => [$mcp],
+    );
+
+    my $response = await $nous->chat_with_tools_f('Add 7 and 15');
+
+=head1 DESCRIPTION
+
+Provides access to Nous Research's inference API. Extends
+L<Langertha::Engine::OpenAI> with Nous's endpoint
+(C<https://inference-api.nousresearch.com/v1>) and Hermes tool calling.
+
+Available models: C<Hermes-3-Llama-3.1-70B> (default), C<Hermes-3-Llama-3.1-405B>,
+C<Hermes-4-70B>, C<Hermes-4-405B>, C<DeepHermes-3-Mistral-24B-Preview>.
+
+C<hermes_tools> is enabled by default. Tool descriptions are injected into
+the system prompt as C<< <tools> >> XML, and C<< <tool_call> >> tags are
+parsed from the model output. No server-side tool calling support required.
+See L<Langertha::Role::Tools> for customization options.
+
+Get your API key at L<https://portal.nousresearch.com/> and set
+C<LANGERTHA_NOUSRESEARCH_API_KEY>.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
@@ -36,90 +79,9 @@ sub transcription_request {
 
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::NousResearch;
-
-  my $nous = Langertha::Engine::NousResearch->new(
-    api_key => $ENV{NOUSRESEARCH_API_KEY},
-    model   => 'Hermes-3-Llama-3.1-70B',
-  );
-
-  print $nous->simple_chat('Explain the Hermes prompt format');
-
-=head1 DESCRIPTION
-
-This module provides access to Nous Research's inference API. Nous Research
-develops open-source language models with a focus on function calling,
-structured output, and agentic capabilities.
-
-B<Available Models:>
-
-=over 4
-
-=item * B<Hermes-3-Llama-3.1-70B> - Hermes 3 based on Llama 3.1 70B (default)
-
-=item * B<Hermes-3-Llama-3.1-405B> - Hermes 3 based on Llama 3.1 405B
-
-=item * B<Hermes-4-70B> - Latest Hermes 4 generation, 70B parameters
-
-=item * B<Hermes-4-405B> - Latest Hermes 4 generation, 405B parameters
-
-=item * B<DeepHermes-3-Mistral-24B-Preview> - DeepHermes 3 based on Mistral 24B
-
-=back
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 MCP TOOL CALLING
-
-Hermes models support tool calling natively via XML tags in their output.
-This engine has C<hermes_tools> enabled by default, which automatically
-injects tool descriptions into the system prompt and parses
-C<E<lt>tool_callE<gt>> tags from the model's response. No server-side
-tool calling support is required.
-
-  use IO::Async::Loop;
-  use Net::Async::MCP;
-  use Future::AsyncAwait;
-
-  my $loop = IO::Async::Loop->new;
-  my $mcp = Net::Async::MCP->new(server => $my_mcp_server);
-  $loop->add($mcp);
-  await $mcp->initialize;
-
-  my $nous = Langertha::Engine::NousResearch->new(
-    api_key     => $ENV{NOUSRESEARCH_API_KEY},
-    model       => 'Hermes-3-Llama-3.1-70B',
-    mcp_servers => [$mcp],
-  );
-
-  my $response = await $nous->chat_with_tools_f('Add 7 and 15');
-
-The instruction text, XML tag names, and full prompt template are
-all customizable:
-
-  my $nous = Langertha::Engine::NousResearch->new(
-    api_key                  => $ENV{NOUSRESEARCH_API_KEY},
-    hermes_tool_instructions => 'You are a helpful assistant.',
-    hermes_call_tag          => 'function_call',
-    mcp_servers              => [$mcp],
-  );
-
-See L<Langertha::Role::Tools/HERMES TOOL CALLING> for details.
-
-=head1 GETTING AN API KEY
-
-L<https://portal.nousresearch.com/>
-
-Set the environment variable:
-
-  export NOUSRESEARCH_API_KEY=your-key-here
-  # Or use LANGERTHA_NOUSRESEARCH_API_KEY
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://nousresearch.com/> - Nous Research homepage
 
@@ -134,3 +96,5 @@ Set the environment variable:
 =back
 
 =cut
+
+1;

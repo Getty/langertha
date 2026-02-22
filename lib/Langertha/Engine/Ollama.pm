@@ -23,6 +23,49 @@ with 'Langertha::Role::'.$_ for (qw(
   Streaming
 ));
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::Ollama;
+
+    my $ollama = Langertha::Engine::Ollama->new(
+        url          => $ENV{OLLAMA_URL},
+        model        => 'llama3.3',
+        system_prompt => 'You are a helpful assistant',
+        context_size => 2048,
+        temperature  => 0.5,
+    );
+
+    print $ollama->simple_chat('Say something nice');
+
+    my $embedding = $ollama->embedding($content);
+
+    # Get OpenAI-compatible API access to Ollama
+    my $ollama_openai = $ollama->openai;
+
+    # List available models
+    my $models = $ollama->simple_tags;
+
+    # Show running models
+    my $running = $ollama->simple_ps;
+
+=head1 DESCRIPTION
+
+Provides access to Ollama, which runs large language models locally. Ollama
+supports many popular open-source models including C<llama3.3> (default),
+C<qwen2.5>, C<deepseek-coder-v2>, C<mixtral>, and C<mxbai-embed-large>
+(default embedding model).
+
+Supports chat, embeddings, streaming, MCP tool calling (OpenAI-compatible
+format), and an OpenAI-compatible API via L</openai>. Not all models support
+tool calling; known working models include C<qwen3:8b> and C<llama3.2:3b>.
+
+For Hermes-format tool calling in models without API-level tool support, set
+C<hermes_tools => 1>. See L<Langertha::Role::Tools> for details.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 sub openai {
   my ( $self, %args ) = @_;
   return Langertha::Engine::OllamaOpenAI->new(
@@ -36,12 +79,38 @@ sub openai {
   );
 }
 
+=method openai
+
+    my $oai = $ollama->openai;
+    my $oai = $ollama->openai(model => 'different_model');
+
+Returns a L<Langertha::Engine::OllamaOpenAI> instance configured for Ollama's
+C</v1> OpenAI-compatible endpoint, inheriting the current model, embedding
+model, system prompt, and temperature settings. Supports streaming, embeddings,
+and MCP tool calling.
+
+=cut
+
 sub new_openai {
   my ( $class, %args ) = @_;
   my $tools = delete $args{tools} || [];
   my $self = $class->new(%args);
   return $self->openai( tools => $tools );
 }
+
+=method new_openai
+
+    my $oai = Langertha::Engine::Ollama->new_openai(
+        url   => 'http://localhost:11434',
+        model => 'llama3.3',
+        tools => \@mcp_tools,
+    );
+
+Class method. Constructs a native Ollama engine and immediately returns an
+L<Langertha::Engine::OllamaOpenAI> instance from its C<openai()> method.
+The optional C<tools> list is passed to C<openai()>.
+
+=cut
 
 sub default_model { 'llama3.3' }
 sub default_embedding_model { 'mxbai-embed-large' }
@@ -54,11 +123,26 @@ has keep_alive => (
   predicate => 'has_keep_alive',
 );
 
+=attr keep_alive
+
+Controls how long Ollama keeps the model loaded in memory after a request.
+Accepts duration strings such as C<5m> or C<-1> (keep forever). When not set,
+Ollama uses its own default (currently C<5m>).
+
+=cut
+
 has json_format => (
   isa => 'Bool',
   is => 'ro',
   default => sub {0},
 );
+
+=attr json_format
+
+When set to a true value, passes C<format => 'json'> to the Ollama API,
+requesting JSON-formatted output from the model. Defaults to C<0>.
+
+=cut
 
 sub embedding_request {
   my ( $self, $prompt, %extra ) = @_;
@@ -130,6 +214,15 @@ sub tags_request {
   return $self->generate_request( getModels => sub { $self->tags_response(shift) } );
 }
 
+=method tags
+
+    my $request = $ollama->tags;
+
+Returns an HTTP request object for the Ollama C<GET /api/tags> endpoint.
+Execute it with C<simple_tags> or pass it to an async HTTP client.
+
+=cut
+
 sub tags_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
@@ -145,11 +238,30 @@ sub simple_tags {
   return $request->response_call->($response);
 }
 
+=method simple_tags
+
+    my $models = $ollama->simple_tags;
+    # Returns: [{name => 'llama3.3', model => 'llama3.3', ...}, ...]
+
+Synchronously fetches and returns the list of locally available models from
+the Ollama C</api/tags> endpoint. Also updates the engine's C<models> list.
+
+=cut
+
 sub ps { $_[0]->ps_request }
 sub ps_request {
   my ( $self ) = @_;
   return $self->generate_request( getRunningModels => sub { $self->ps_response(shift) } );
 }
+
+=method ps
+
+    my $request = $ollama->ps;
+
+Returns an HTTP request object for the Ollama C<GET /api/ps> endpoint which
+lists currently loaded (running) models.
+
+=cut
 
 sub ps_response {
   my ( $self, $response ) = @_;
@@ -163,6 +275,16 @@ sub simple_ps {
   my $response = $self->user_agent->request($request);
   return $request->response_call->($response);
 }
+
+=method simple_ps
+
+    my $running = $ollama->simple_ps;
+    # Returns: [{name => 'llama3.3', ...}, ...]
+
+Synchronously fetches and returns the list of models currently loaded in
+Ollama's memory from the C</api/ps> endpoint.
+
+=cut
 
 # Dynamic model listing (wrapper around simple_tags with caching)
 sub list_models {
@@ -189,6 +311,19 @@ sub list_models {
 
   return $opts{full} ? $models : \@model_ids;
 }
+
+=method list_models
+
+    my $model_ids = $ollama->list_models;
+    my $models    = $ollama->list_models(full => 1);
+    my $models    = $ollama->list_models(force_refresh => 1);
+
+Fetches locally available models from Ollama via L</simple_tags> with caching.
+Returns an ArrayRef of model name strings by default, or full model objects
+when C<full => 1> is passed. Results are cached for C<models_cache_ttl>
+seconds (default: 3600).
+
+=cut
 
 sub stream_format { 'ndjson' }
 
@@ -285,192 +420,22 @@ with 'Langertha::Role::Tools';
 
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::Ollama;
-
-  my $ollama = Langertha::Engine::Ollama->new(
-    url => $ENV{OLLAMA_URL},
-    model => 'llama3.3',
-    system_prompt => 'You are a helpful assistant',
-    context_size => 2048,
-    temperature => 0.5,
-  );
-
-  print($ollama->simple_chat('Say something nice'));
-
-  my $embedding = $ollama->embedding($content);
-
-  # Get OpenAI compatible API access to Ollama
-  my $ollama_openai = $ollama->openai;
-
-  # List available models
-  my $models = $ollama->simple_tags;
-
-  # Show running models
-  my $running = $ollama->simple_ps;
-
-=head1 DESCRIPTION
-
-This module provides access to Ollama, which runs large language models locally.
-Ollama supports many popular open-source models with various sizes and capabilities.
-
-B<Popular Models (February 2026):>
-
-=over 4
-
-=item * B<llama3.3> - Meta's Llama 3.3 70B with 128k context (default). Excellent general-purpose model with broad tool support.
-
-=item * B<llama3.2> - Meta's Llama 3.2 includes small models (1B, 3B) for efficient local inference.
-
-=item * B<qwen3> - Latest Qwen 3 generation with enhanced reasoning. Qwen3-30B recommended for most teams (delivers 90%+ flagship power at lower cost).
-
-=item * B<qwen2.5> - Qwen 2.5 family (up to 72B) with strong multilingual support and 128k context. Excellent for general tasks.
-
-=item * B<qwen2.5-coder> - Qwen 2.5 specialized for code generation and programming tasks.
-
-=item * B<deepseek-coder-v2> - DeepSeek's coding-specialized model. Excellent for software development.
-
-=item * B<mixtral> - Mistral's mixture-of-experts model (8x22B). Cost-effective performance.
-
-=item * B<mistral> - Mistral models including latest Mistral 3 family (3B, 8B, 14B).
-
-=item * B<codestral> - Mistral's code-specialized model.
-
-=item * B<mxbai-embed-large> - Embedding model (default for embeddings).
-
-=back
-
-B<Model Selection Tips:>
-
-=over 4
-
-=item * For general tasks: qwen2.5-72b or llama3.3
-
-=item * For coding: deepseek-coder-v2 or qwen2.5-coder
-
-=item * For reasoning: llama3.3 or qwen3
-
-=item * For cost-effective performance: mixtral-8x22b
-
-=item * For low-resource systems: llama3.2-3b or qwen3-30b
-
-=back
-
-B<Features:>
-
-=over 4
-
-=item * Run models completely locally
-
-=item * No API key required
-
-=item * Chat completions with streaming
-
-=item * Embeddings
-
-=item * Custom models and quantization
-
-=item * OpenAI-compatible API access via openai() method
-
-=item * JSON format output support
-
-=item * Keep-alive model loading control
-
-=item * Dynamic model listing with caching
-
-=item * MCP tool calling support (OpenAI-compatible format)
-
-=back
-
-B<Tool Calling Note:> Not all Ollama models support tool calling. Known
-working models include B<qwen3:8b> and B<llama3.2:3b>. Models like
-mistral-small and gemma3 may not support tools.
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 LISTING AVAILABLE MODELS
-
-Fetch models from your local Ollama instance:
-
-  # Get simple list of model names
-  my $model_ids = $ollama->list_models;
-  # Returns: ['llama3.3', 'qwen2.5', ...]
-
-  # Get full model objects with metadata
-  my $models = $ollama->list_models(full => 1);
-
-  # Force refresh (bypass cache)
-  my $models = $ollama->list_models(force_refresh => 1);
-
-  # Or use the original method
-  my $tags = $ollama->simple_tags;
-
-B<Caching:> Results are cached for 1 hour. Configure TTL via C<models_cache_ttl>
-or clear manually with C<clear_models_cache>.
-
-=head1 MCP TOOL CALLING
-
-Ollama supports MCP tool calling with models that have tool support:
-
-  use IO::Async::Loop;
-  use Net::Async::MCP;
-  use Future::AsyncAwait;
-
-  my $loop = IO::Async::Loop->new;
-  my $mcp = Net::Async::MCP->new(server => $my_mcp_server);
-  $loop->add($mcp);
-  await $mcp->initialize;
-
-  my $ollama = Langertha::Engine::Ollama->new(
-    url         => 'http://localhost:11434',
-    model       => 'qwen3:8b',
-    mcp_servers => [$mcp],
-  );
-
-  my $response = await $ollama->chat_with_tools_f('Use the add tool to compute 7+15');
-
-Ollama uses the OpenAI-compatible tool format. See L<Langertha::Role::Tools>
-for details on the tool-calling loop.
-
-For models that do not have API-level tool support but understand the
-Hermes prompt format (e.g. NousResearch Hermes models), you can enable
-Hermes-native tool calling:
-
-  my $ollama = Langertha::Engine::Ollama->new(
-    url          => 'http://localhost:11434',
-    model        => 'hermes3',
-    hermes_tools => 1,
-    mcp_servers  => [$mcp],
-  );
-
-This injects tool definitions into the system prompt as C<E<lt>toolsE<gt>>
-XML and parses C<E<lt>tool_callE<gt>> tags from the model's text output.
-See L<Langertha::Role::Tools/HERMES TOOL CALLING> for details.
-
-=head1 HOW TO INSTALL OLLAMA
-
-L<https://github.com/ollama/ollama/tree/main>
-
-To pull a model:
-
-  ollama pull llama3.3
-  ollama pull qwen3
-
-To list available models from Ollama library:
-
-  ollama list
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://ollama.com/library> - Ollama model library
 
-=item * L<Langertha::Engine::OpenAI> - OpenAI compatibility layer
+=item * L<https://github.com/ollama/ollama> - Ollama project
+
+=item * L<Langertha::Engine::OllamaOpenAI> - OpenAI-compatible Ollama access
+
+=item * L<Langertha::Role::Tools> - MCP tool calling interface
 
 =item * L<Langertha> - Main Langertha documentation
 
 =back
 
 =cut
+
+1;

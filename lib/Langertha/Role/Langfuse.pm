@@ -6,17 +6,114 @@ use Time::HiRes qw( gettimeofday tv_interval );
 use Carp qw( croak );
 use MIME::Base64 qw( encode_base64 );
 
+=head1 SYNOPSIS
+
+Langfuse is built into every Langertha engine. Just set the env vars:
+
+    export LANGFUSE_PUBLIC_KEY=pk-lf-...
+    export LANGFUSE_SECRET_KEY=sk-lf-...
+    export LANGFUSE_URL=http://localhost:3000   # optional, defaults to cloud
+
+Then use any engine as normal — C<simple_chat> is auto-traced:
+
+    use Langertha::Engine::OpenAI;
+
+    my $engine = Langertha::Engine::OpenAI->new(
+        api_key => $ENV{OPENAI_API_KEY},
+        model   => 'gpt-4o-mini',
+    );
+
+    my $response = $engine->simple_chat('Hello!');
+    $engine->langfuse_flush;  # send events to Langfuse
+
+Or pass keys explicitly:
+
+    my $engine = Langertha::Engine::Anthropic->new(
+        api_key             => $ENV{ANTHROPIC_API_KEY},
+        langfuse_public_key => 'pk-lf-...',
+        langfuse_secret_key => 'sk-lf-...',
+        langfuse_url        => 'http://localhost:3000',
+    );
+
+Manual traces for custom workflows:
+
+    my $trace_id = $engine->langfuse_trace(
+        name  => 'my-workflow',
+        input => { query => 'custom input' },
+    );
+
+    $engine->langfuse_generation(
+        trace_id => $trace_id,
+        name     => 'step-1',
+        model    => 'gpt-4o',
+        input    => 'prompt text',
+        output   => 'response text',
+        usage    => { input => 10, output => 5, total => 15 },
+    );
+
+    $engine->langfuse_flush;
+
+=head1 DESCRIPTION
+
+This role integrates Langertha engines with L<Langfuse|https://langfuse.com/>,
+an open-source observability platform for LLM applications. It is composed
+into L<Langertha::Role::Chat>, so B<every engine has Langfuse support built in>.
+
+B<Features:>
+
+=over 4
+
+=item * Zero-config via environment variables
+
+=item * Auto-instrumentation of C<simple_chat> calls
+
+=item * Manual trace and generation event creation
+
+=item * Batched event ingestion via Langfuse REST API
+
+=item * Basic Auth using public/secret key pair
+
+=item * Disabled by default — only active when both keys are set
+
+=back
+
+B<Langfuse concepts:>
+
+=over 4
+
+=item * B<Trace> — Top-level unit of work (a request, a conversation turn)
+
+=item * B<Generation> — A single LLM call within a trace (with model, usage, timing)
+
+=back
+
+=cut
+
 has langfuse_public_key => (
   is => 'ro',
   isa => 'Str',
   predicate => 'has_langfuse_public_key',
 );
 
+=attr langfuse_public_key
+
+Your Langfuse project public key. Auto-populated from C<LANGFUSE_PUBLIC_KEY>
+environment variable if not passed.
+
+=cut
+
 has langfuse_secret_key => (
   is => 'ro',
   isa => 'Str',
   predicate => 'has_langfuse_secret_key',
 );
+
+=attr langfuse_secret_key
+
+Your Langfuse project secret key. Auto-populated from C<LANGFUSE_SECRET_KEY>
+environment variable if not passed.
+
+=cut
 
 has langfuse_url => (
   is => 'ro',
@@ -25,12 +122,28 @@ has langfuse_url => (
   default => sub { $ENV{LANGFUSE_URL} || 'https://cloud.langfuse.com' },
 );
 
+=attr langfuse_url
+
+Langfuse API URL. Defaults to C<LANGFUSE_URL> env var, or
+C<https://cloud.langfuse.com> if not set. Set this to your
+self-hosted instance URL (e.g. C<http://localhost:3000>).
+
+=cut
+
 has langfuse_enabled => (
   is => 'ro',
   isa => 'Bool',
   lazy => 1,
   builder => '_build_langfuse_enabled',
 );
+
+=attr langfuse_enabled
+
+Bool indicating whether Langfuse integration is active. Lazy — defaults
+to true when both public and secret keys are available (from constructor
+or environment variables).
+
+=cut
 
 sub _build_langfuse_enabled {
   my ( $self ) = @_;
@@ -96,6 +209,19 @@ sub langfuse_trace {
   return $id;
 }
 
+=method langfuse_trace
+
+    my $trace_id = $engine->langfuse_trace(
+        name     => 'my-trace',
+        input    => { ... },
+        output   => '...',
+        metadata => { ... },
+    );
+
+Creates a trace event. Returns the trace ID for linking generations.
+
+=cut
+
 sub langfuse_generation {
   my ( $self, %opts ) = @_;
   return unless $self->langfuse_enabled;
@@ -121,6 +247,23 @@ sub langfuse_generation {
   };
   return $id;
 }
+
+=method langfuse_generation
+
+    $engine->langfuse_generation(
+        trace_id   => $trace_id,
+        name       => 'chat',
+        model      => 'gpt-4o',
+        input      => '...',
+        output     => '...',
+        usage      => { input => 10, output => 5, total => 15 },
+        start_time => $iso_timestamp,
+        end_time   => $iso_timestamp,
+    );
+
+Creates a generation event linked to a trace. C<trace_id> is required.
+
+=cut
 
 sub langfuse_flush {
   my ( $self ) = @_;
@@ -156,7 +299,17 @@ sub langfuse_flush {
   return $response;
 }
 
-# --- Auto-instrumentation via around modifier ---
+=method langfuse_flush
+
+    $engine->langfuse_flush;
+
+Sends all batched events to the Langfuse ingestion API. Clears the batch
+after sending. Warns on HTTP errors but does not die.
+
+=cut
+
+# Auto-instrumentation: wraps simple_chat to record a trace and generation
+# for every call when Langfuse is enabled.
 
 around simple_chat => sub {
   my ( $orig, $self, @messages ) = @_;
@@ -200,89 +353,6 @@ around simple_chat => sub {
   return $response;
 };
 
-1;
-
-=head1 SYNOPSIS
-
-Langfuse is built into every Langertha engine. Just set the env vars:
-
-  export LANGFUSE_PUBLIC_KEY=pk-lf-...
-  export LANGFUSE_SECRET_KEY=sk-lf-...
-  export LANGFUSE_URL=http://localhost:3000   # optional, defaults to cloud
-
-Then use any engine as normal — C<simple_chat> is auto-traced:
-
-  use Langertha::Engine::OpenAI;
-
-  my $engine = Langertha::Engine::OpenAI->new(
-    api_key => $ENV{OPENAI_API_KEY},
-    model   => 'gpt-4o-mini',
-  );
-
-  my $response = $engine->simple_chat('Hello!');
-  $engine->langfuse_flush;  # send events to Langfuse
-
-Or pass keys explicitly:
-
-  my $engine = Langertha::Engine::Anthropic->new(
-    api_key             => $ENV{ANTHROPIC_API_KEY},
-    langfuse_public_key => 'pk-lf-...',
-    langfuse_secret_key => 'sk-lf-...',
-    langfuse_url        => 'http://localhost:3000',
-  );
-
-Manual traces for custom workflows:
-
-  my $trace_id = $engine->langfuse_trace(
-    name  => 'my-workflow',
-    input => { query => 'custom input' },
-  );
-
-  $engine->langfuse_generation(
-    trace_id => $trace_id,
-    name     => 'step-1',
-    model    => 'gpt-4o',
-    input    => 'prompt text',
-    output   => 'response text',
-    usage    => { input => 10, output => 5, total => 15 },
-  );
-
-  $engine->langfuse_flush;
-
-=head1 DESCRIPTION
-
-This role integrates Langertha engines with L<Langfuse|https://langfuse.com/>,
-an open-source observability platform for LLM applications. It is composed
-into L<Langertha::Role::Chat>, so B<every engine has Langfuse support built in>.
-
-B<Features:>
-
-=over 4
-
-=item * Zero-config via environment variables
-
-=item * Auto-instrumentation of C<simple_chat> calls
-
-=item * Manual trace and generation event creation
-
-=item * Batched event ingestion via Langfuse REST API
-
-=item * Basic Auth using public/secret key pair
-
-=item * Disabled by default — only active when both keys are set
-
-=back
-
-B<Langfuse concepts:>
-
-=over 4
-
-=item * B<Trace> — Top-level unit of work (a request, a conversation turn)
-
-=item * B<Generation> — A single LLM call within a trace (with model, usage, timing)
-
-=back
-
 =head1 ENVIRONMENT VARIABLES
 
 =over 4
@@ -295,71 +365,16 @@ B<Langfuse concepts:>
 
 =back
 
-=attr langfuse_public_key
-
-Your Langfuse project public key. Auto-populated from C<LANGFUSE_PUBLIC_KEY>
-environment variable if not passed.
-
-=attr langfuse_secret_key
-
-Your Langfuse project secret key. Auto-populated from C<LANGFUSE_SECRET_KEY>
-environment variable if not passed.
-
-=attr langfuse_url
-
-Langfuse API URL. Defaults to C<LANGFUSE_URL> env var, or
-C<https://cloud.langfuse.com> if not set. Set this to your
-self-hosted instance URL (e.g. C<http://localhost:3000>).
-
-=attr langfuse_enabled
-
-Bool indicating whether Langfuse integration is active. Lazy — defaults
-to true when both public and secret keys are available (from constructor
-or environment variables).
-
-=method langfuse_trace
-
-  my $trace_id = $engine->langfuse_trace(
-    name     => 'my-trace',
-    input    => { ... },
-    output   => '...',
-    metadata => { ... },
-  );
-
-Creates a trace event. Returns the trace ID for linking generations.
-
-=method langfuse_generation
-
-  $engine->langfuse_generation(
-    trace_id   => $trace_id,
-    name       => 'chat',
-    model      => 'gpt-4o',
-    input      => '...',
-    output     => '...',
-    usage      => { input => 10, output => 5, total => 15 },
-    start_time => $iso_timestamp,
-    end_time   => $iso_timestamp,
-  );
-
-Creates a generation event linked to a trace.
-
-=method langfuse_flush
-
-  $engine->langfuse_flush;
-
-Sends all batched events to the Langfuse ingestion API. Clears the batch
-after sending. Warns on HTTP errors but does not die.
-
 =head1 SELF-HOSTING LANGFUSE
 
 A ready-to-use Kubernetes manifest is included in the distribution:
 
-  kubectl apply -f ex/langfuse-k8s.yaml
-  kubectl -n langfuse port-forward svc/langfuse-web 3000:3000 &
+    kubectl apply -f ex/langfuse-k8s.yaml
+    kubectl -n langfuse port-forward svc/langfuse-web 3000:3000 &
 
-  export LANGFUSE_PUBLIC_KEY=pk-lf-langertha
-  export LANGFUSE_SECRET_KEY=sk-lf-langertha
-  export LANGFUSE_URL=http://localhost:3000
+    export LANGFUSE_PUBLIC_KEY=pk-lf-langertha
+    export LANGFUSE_SECRET_KEY=sk-lf-langertha
+    export LANGFUSE_URL=http://localhost:3000
 
 The manifest pre-creates a project with known API keys so you can send
 data immediately without going through the web UI.
@@ -371,6 +386,16 @@ Dashboard: C<http://localhost:3000> (login: C<langertha@test.invalid> / C<langer
 For Langfuse Cloud, sign up at L<https://langfuse.com/> and generate
 API keys in your project settings.
 
-=seealso L<https://langfuse.com/docs>, L<Langertha>
+=seealso
+
+=over
+
+=item * L<https://langfuse.com/docs> - Langfuse documentation
+
+=item * L<Langertha> - Main Langertha documentation
+
+=back
 
 =cut
+
+1;

@@ -18,6 +18,14 @@ sub _build_models {
   return [ $self->model ];
 }
 
+=attr models
+
+ArrayRef of available model name strings. Lazily populated by calling
+C<list_models> if the engine supports it, otherwise contains only the
+currently selected C<model>.
+
+=cut
+
 has model => (
   is => 'ro',
   isa => 'Str',
@@ -28,12 +36,25 @@ sub _build_model {
   return $self->default_model;
 }
 
+=attr model
+
+The model name to use for requests. Defaults to the engine's C<default_model>.
+Engines that require this role must implement C<default_model>.
+
+=cut
+
 # Cache configuration
 has models_cache_ttl => (
   is => 'ro',
   isa => 'Int',
   default => sub { 3600 }, # 1 hour default
 );
+
+=attr models_cache_ttl
+
+Time-to-live in seconds for the models list cache. Defaults to C<3600> (one hour).
+
+=cut
 
 has _models_cache => (
   is => 'rw',
@@ -51,5 +72,30 @@ sub clear_models_cache {
   $self->_clear_models_cache;
   return;
 }
+
+=method clear_models_cache
+
+    $engine->clear_models_cache;
+
+Clears the internal models list cache, forcing a fresh fetch on the next
+access to C<models>.
+
+=cut
+
+=seealso
+
+=over
+
+=item * L<Langertha> - Main Langertha documentation
+
+=item * L<Langertha::Role::Chat> - Uses C<model> via C<chat_model>
+
+=item * L<Langertha::Role::Embedding> - Uses C<model> via C<embedding_model>
+
+=item * L<Langertha::Role::Transcription> - Uses C<model> via C<transcription_model>
+
+=back
+
+=cut
 
 1;

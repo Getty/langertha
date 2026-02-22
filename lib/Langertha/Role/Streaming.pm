@@ -12,6 +12,30 @@ requires qw(
 use Langertha::Stream;
 use Langertha::Stream::Chunk;
 
+=head1 SYNOPSIS
+
+    # Synchronous streaming via Role::HTTP
+    my $chunks = $engine->execute_streaming_request($request, sub {
+        my ($chunk) = @_;
+        print $chunk->content;
+    });
+
+    # Streaming with iterator
+    my $stream = $engine->simple_chat_stream_iterator('Tell me a story');
+    while (my $chunk = $stream->next) {
+        print $chunk->content;
+    }
+
+=head1 DESCRIPTION
+
+Provides stream parsing for server-sent events (SSE) and newline-delimited JSON
+(NDJSON) streaming responses from LLM APIs. Engines composing this role must
+implement C<parse_stream_chunk> and C<stream_format>. Works together with
+L<Langertha::Role::HTTP> for synchronous streaming and L<Langertha::Role::Chat>
+for the higher-level streaming API.
+
+=cut
+
 sub parse_sse_line {
   my ($self, $line) = @_;
 
@@ -32,6 +56,16 @@ sub parse_sse_line {
   return undef;
 }
 
+=method parse_sse_line
+
+    my $parsed = $engine->parse_sse_line($line);
+
+Parses a single Server-Sent Events line. Returns C<undef> for empty lines and
+SSE comments. Returns a HashRef with C<type> set to C<'done'>, C<'data'>, or
+C<'event'>. Data lines have their JSON decoded under the C<data> key.
+
+=cut
+
 sub parse_ndjson_line {
   my ($self, $line) = @_;
 
@@ -40,6 +74,15 @@ sub parse_ndjson_line {
   my $data = $self->json->decode($line);
   return { type => 'data', data => $data };
 }
+
+=method parse_ndjson_line
+
+    my $parsed = $engine->parse_ndjson_line($line);
+
+Parses a single newline-delimited JSON line. Returns C<undef> for empty lines.
+Returns a HashRef with C<type =E<gt> 'data'> and the decoded C<data>.
+
+=cut
 
 sub process_stream_data {
   my ($self, $data, $chunk_callback) = @_;
@@ -90,5 +133,35 @@ sub process_stream_data {
 
   return \@chunks;
 }
+
+=method process_stream_data
+
+    my $chunks = $engine->process_stream_data($raw_body, $chunk_callback);
+    my $chunks = $engine->process_stream_data($raw_body);
+
+Parses a complete streaming response body according to the engine's
+C<stream_format> (C<'sse'> or C<'ndjson'>). Calls C<parse_stream_chunk> on
+each data event and optionally calls C<$chunk_callback> with each resulting
+L<Langertha::Stream::Chunk>. Returns an ArrayRef of all chunks.
+
+=cut
+
+=seealso
+
+=over
+
+=item * L<Langertha> - Main Langertha documentation
+
+=item * L<Langertha::Role::Chat> - Chat streaming methods
+
+=item * L<Langertha::Role::HTTP> - HTTP execution of streaming requests
+
+=item * L<Langertha::Stream> - Stream iterator object
+
+=item * L<Langertha::Stream::Chunk> - Individual stream chunk
+
+=back
+
+=cut
 
 1;

@@ -33,6 +33,13 @@ sub _build_openapi {
   );
 }
 
+=attr openapi
+
+The L<OpenAPI::Modern> instance loaded from the engine's C<openapi_file>. Built
+lazily on first use. Only YAML format OpenAPI specs are currently supported.
+
+=cut
+
 has supported_operations => (
   is => 'ro',
   isa => 'ArrayRef[Str]',
@@ -43,12 +50,30 @@ sub _build_supported_operations {
   return [];
 }
 
+=attr supported_operations
+
+ArrayRef of C<operationId> strings that this engine instance supports. When
+non-empty, only listed operations are permitted; all others croak. Defaults to
+an empty ArrayRef (all operations allowed). Used to restrict engines that run in
+a limited compatibility mode.
+
+=cut
+
 sub can_operation {
   my ( $self, $operationId ) = @_;
   return 1 unless scalar @{$self->supported_operations} > 0;
   my %so = map { $_, 1 } @{$self->supported_operations};
   return $so{$operationId};
 }
+
+=method can_operation
+
+    if ($engine->can_operation('createChatCompletion')) { ... }
+
+Returns true if the given C<$operationId> is supported by this engine. Always
+returns true when C<supported_operations> is empty (unrestricted mode).
+
+=cut
 
 sub get_operation {
   my ( $self, $operationId ) = @_;
@@ -68,11 +93,45 @@ sub get_operation {
   return ( uc($method), $url.$path, $content_type );
 }
 
+=method get_operation
+
+    my ($method, $url, $content_type) = $engine->get_operation($operationId);
+
+Looks up an operation by C<$operationId> in the OpenAPI spec and returns the
+HTTP method, full URL, and content type as a three-element list. Croaks if the
+operation is not in C<supported_operations>.
+
+=cut
+
 sub generate_request {
   my ( $self, $operationId, $response_call, %args ) = @_;
   my ( $method, $url, $content_type ) = $self->get_operation($operationId);
   $args{content_type} = $content_type if defined $content_type;
   return $self->generate_http_request( $method, $url, $response_call, %args );
 }
+
+=method generate_request
+
+    my $request = $engine->generate_request($operationId, $response_call, %args);
+
+Generates an HTTP request for the named OpenAPI C<$operationId>. Resolves the
+method, URL, and content type from the spec, then delegates to
+L<Langertha::Role::HTTP/generate_http_request>.
+
+=cut
+
+=seealso
+
+=over
+
+=item * L<Langertha> - Main Langertha documentation
+
+=item * L<Langertha::Role::HTTP> - HTTP request building
+
+=item * L<OpenAPI::Modern> - OpenAPI spec handling
+
+=back
+
+=cut
 
 1;

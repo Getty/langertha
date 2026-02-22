@@ -5,6 +5,37 @@ use Moose;
 extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::DeepSeek;
+
+    my $deepseek = Langertha::Engine::DeepSeek->new(
+        api_key      => $ENV{DEEPSEEK_API_KEY},
+        model        => 'deepseek-chat',
+        system_prompt => 'You are a helpful assistant',
+        temperature  => 0.5,
+    );
+
+    print $deepseek->simple_chat('Say something nice');
+
+=head1 DESCRIPTION
+
+Provides access to DeepSeek's models via their API. Extends
+L<Langertha::Engine::OpenAI> with DeepSeek's endpoint
+(C<https://api.deepseek.com>) and API key handling.
+
+Available models: C<deepseek-chat> (default, general-purpose),
+C<deepseek-reasoner> (chain-of-thought reasoning), and C<deepseek-v3.2>
+(thinking integrated with tool use). Embeddings and transcription are not
+supported. Dynamic model listing via C<list_models()> is inherited.
+
+Get your API key at L<https://platform.deepseek.com/> and set
+C<LANGERTHA_DEEPSEEK_API_KEY> in your environment.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
@@ -33,50 +64,9 @@ sub transcription_request {
 
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::DeepSeek;
-
-  my $deepseek = Langertha::Engine::DeepSeek->new(
-    api_key => $ENV{DEEPSEEK_API_KEY},
-    model => 'deepseek-chat',
-    system_prompt => 'You are a helpful assistant',
-    temperature => 0.5,
-  );
-
-  print($deepseek->simple_chat('Say something nice'));
-
-=head1 DESCRIPTION
-
-This module provides access to DeepSeek's models via their API.
-
-B<Available Models (February 2026):>
-
-=over 4
-
-=item * B<deepseek-chat> - Fast, general-purpose chat model (default). Excellent for most tasks with strong multilingual support.
-
-=item * B<deepseek-reasoner> - Advanced reasoning model with chain-of-thought capabilities. Best for complex problem-solving and logic tasks.
-
-=item * B<deepseek-v3.2> - Latest version with integrated thinking directly into tool-use. Supports tool-use in both thinking and non-thinking modes. Features updated chat template and "thinking with tools" capability.
-
-=back
-
-B<Note:> DeepSeek V4 is expected to launch mid-February 2026 with context windows exceeding 1 million tokens and enhanced codebase processing capabilities.
-
-B<Dynamic Model Listing:> DeepSeek inherits from L<Langertha::Engine::OpenAI>,
-so it supports C<list_models()> for dynamic model discovery. See
-L<Langertha::Engine::OpenAI> for documentation on model listing and caching.
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 HOW TO GET DEEPSEEK API KEY
-
-L<https://platform.deepseek.com/>
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://api-docs.deepseek.com/> - Official DeepSeek API documentation
 
@@ -87,3 +77,5 @@ L<https://platform.deepseek.com/>
 =back
 
 =cut
+
+1;

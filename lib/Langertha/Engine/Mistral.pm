@@ -7,6 +7,41 @@ use Carp qw( croak );
 
 use File::ShareDir::ProjectDistDir qw( :all );
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::Mistral;
+
+    my $mistral = Langertha::Engine::Mistral->new(
+        api_key      => $ENV{MISTRAL_API_KEY},
+        model        => 'mistral-large-latest',
+        system_prompt => 'You are a helpful assistant',
+        temperature  => 0.5,
+    );
+
+    print $mistral->simple_chat('Say something nice');
+
+    my $embedding = $mistral->embedding($content);
+
+=head1 DESCRIPTION
+
+Provides access to Mistral AI's models via their API. Extends
+L<Langertha::Engine::OpenAI> with Mistral's endpoint
+(C<https://api.mistral.ai>) and its OpenAPI spec.
+
+Popular models: C<mistral-small-latest> (default, fast), C<mistral-large-latest>
+(most capable, 675B parameters), C<codestral-latest> (code generation),
+C<devstral-latest> (development workflows), C<pixtral-large-latest> (vision).
+Supports chat and embeddings; transcription is not available.
+
+Dynamic model listing via C<list_models()> is inherited from
+L<Langertha::Engine::OpenAI>. Get your API key at
+L<https://docs.mistral.ai/getting-started/quickstart/> and set
+C<LANGERTHA_MISTRAL_API_KEY>.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 has '+url' => (
   lazy => 1,
   default => sub { 'https://api.mistral.ai' },
@@ -33,65 +68,9 @@ sub transcription_request {
 
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::Mistral;
-
-  my $mistral = Langertha::Engine::Mistral->new(
-    api_key => $ENV{MISTRAL_API_KEY},
-    model => 'mistral-large-latest',
-    system_prompt => 'You are a helpful assistant',
-    temperature => 0.5,
-  );
-
-  print($mistral->simple_chat('Say something nice'));
-
-  my $embedding = $mistral->embedding($content);
-
-=head1 DESCRIPTION
-
-This module provides access to Mistral AI's models via their API.
-
-B<Popular Models (February 2026):>
-
-=over 4
-
-=item * B<mistral-large-latest> - Points to Mistral Large 3, the most capable model (675B total parameters, 41B active). Best for complex reasoning, multimodal tasks, and agentic workflows with 256k context window.
-
-=item * B<mistral-large-3> - Mistral Large 3, one of the best permissive open-weight models. 41B active and 675B total parameters. Excellent multilingual support.
-
-=item * B<mistral-medium-latest> - Balanced performance for general tasks.
-
-=item * B<mistral-small-latest> - Fast, cost-effective option (default).
-
-=item * B<codestral-latest> - Specialized for code generation and completion.
-
-=item * B<devstral-latest> - Optimized for development workflows.
-
-=item * B<ministral-8b-latest> - Efficient small model (8B parameters).
-
-=item * B<pixtral-large-latest> - Vision-capable multimodal model.
-
-=item * B<voxtral-mini-latest> - Audio transcription with diarization support.
-
-=back
-
-The Mistral 3 family includes powerful dense models (3B, 8B, 14B) and Mistral Large 3,
-offering state-of-the-art performance across reasoning, coding, and multilingual tasks.
-
-B<Dynamic Model Listing:> Mistral inherits from L<Langertha::Engine::OpenAI>,
-so it supports C<list_models()> for dynamic model discovery. See
-L<Langertha::Engine::OpenAI> for documentation on model listing and caching.
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 HOW TO GET MISTRAL API KEY
-
-L<https://docs.mistral.ai/getting-started/quickstart/>
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://mistral.ai/models> - Official Mistral models documentation
 
@@ -102,3 +81,5 @@ L<https://docs.mistral.ai/getting-started/quickstart/>
 =back
 
 =cut
+
+1;

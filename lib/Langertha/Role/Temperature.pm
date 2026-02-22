@@ -9,4 +9,24 @@ has temperature => (
   predicate => 'has_temperature',
 );
 
+=attr temperature
+
+Sampling temperature as a number. Higher values (e.g. C<0.9>) make output more
+random; lower values (e.g. C<0.1>) make it more focused and deterministic. When
+not set, the engine's API default is used.
+
+=cut
+
+=seealso
+
+=over
+
+=item * L<Langertha> - Main Langertha documentation
+
+=item * L<Langertha::Role::Seed> - Seed for reproducible outputs
+
+=back
+
+=cut
+
 1;

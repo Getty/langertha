@@ -5,6 +5,46 @@ use Moose;
 extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::Perplexity;
+
+    my $perplexity = Langertha::Engine::Perplexity->new(
+        api_key => $ENV{PERPLEXITY_API_KEY},
+        model   => 'sonar-pro',
+    );
+
+    print $perplexity->simple_chat('What are the latest Perl releases?');
+
+    # Streaming
+    $perplexity->simple_chat_stream(sub {
+        print shift->content;
+    }, 'Summarize recent Perl news');
+
+    # Async with Future::AsyncAwait
+    use Future::AsyncAwait;
+    my $response = await $perplexity->simple_chat_f('What is new in Perl?');
+
+=head1 DESCRIPTION
+
+Provides access to Perplexity's Sonar API. Extends L<Langertha::Engine::OpenAI>
+with Perplexity's endpoint (C<https://api.perplexity.ai>). Perplexity models
+are search-augmented LLMs with real-time web access; responses include
+citations alongside generated text.
+
+Available models: C<sonar> (default, fast), C<sonar-pro> (deeper analysis),
+C<sonar-reasoning> (chain-of-thought), C<sonar-reasoning-pro> (most capable).
+
+Limitations: tool calling, embeddings, and transcription are not supported.
+Only chat and streaming are available.
+
+Get your API key at L<https://www.perplexity.ai/settings/api> and set
+C<LANGERTHA_PERPLEXITY_API_KEY>.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
@@ -37,66 +77,9 @@ sub chat_with_tools_f {
 
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::Perplexity;
-
-  my $perplexity = Langertha::Engine::Perplexity->new(
-    api_key => $ENV{PERPLEXITY_API_KEY},
-    model   => 'sonar-pro',
-  );
-
-  print $perplexity->simple_chat('What are the latest Perl releases?');
-
-  # Streaming
-  $perplexity->simple_chat_stream(sub {
-    print shift->content;
-  }, 'Summarize recent Perl news');
-
-  # Async
-  use Future::AsyncAwait;
-  my $response = await $perplexity->simple_chat_f('What is new in Perl?');
-
-=head1 DESCRIPTION
-
-This module provides access to Perplexity's Sonar API. Perplexity models
-are search-augmented LLMs that can access real-time web information.
-
-B<Available Models:>
-
-=over 4
-
-=item * B<sonar> - Fast, lightweight search model (default)
-
-=item * B<sonar-pro> - Advanced search model with deeper analysis
-
-=item * B<sonar-reasoning> - Search with chain-of-thought reasoning
-
-=item * B<sonar-reasoning-pro> - Most capable reasoning and search model
-
-=back
-
-B<Note:> Perplexity responses include citations and search results alongside
-the generated text. The API is OpenAI-compatible for chat completions.
-
-B<Limitations:> Perplexity does not support tool calling, embeddings,
-or transcription on the Chat Completions API. Only chat and streaming
-are available.
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 GETTING AN API KEY
-
-L<https://www.perplexity.ai/settings/api>
-
-Set the environment variable:
-
-  export PERPLEXITY_API_KEY=your-key-here
-  # Or use LANGERTHA_PERPLEXITY_API_KEY
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://docs.perplexity.ai/> - Official Perplexity API documentation
 
@@ -107,3 +90,5 @@ Set the environment variable:
 =back
 
 =cut
+
+1;

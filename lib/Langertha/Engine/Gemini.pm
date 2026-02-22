@@ -16,6 +16,52 @@ with 'Langertha::Role::'.$_ for (qw(
   Streaming
 ));
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::Gemini;
+
+    my $gemini = Langertha::Engine::Gemini->new(
+        api_key      => $ENV{GEMINI_API_KEY},
+        model        => 'gemini-2.5-flash',
+        response_size => 4096,
+        temperature  => 0.7,
+    );
+
+    # Simple chat
+    my $response = $gemini->simple_chat('Explain quantum computing in simple terms');
+    print $response;
+
+    # Streaming
+    $gemini->simple_chat_stream(sub {
+        my ($chunk) = @_;
+        print $chunk->content;
+    }, 'Write a poem about Perl');
+
+    # Async with Future::AsyncAwait
+    use Future::AsyncAwait;
+
+    async sub ask_gemini {
+        my $response = await $gemini->simple_chat_f(
+            'What are the benefits of functional programming?'
+        );
+        say $response;
+    }
+
+=head1 DESCRIPTION
+
+Provides access to Google's Gemini models via the Generative Language API.
+Gemini models support multimodal input (text, code, images) and long context
+windows.
+
+Available models include C<gemini-2.5-flash> (fast with thinking, default),
+C<gemini-2.5-pro> (most capable), and C<gemini-2.0-flash> (previous
+generation). The default API endpoint is
+C<https://generativelanguage.googleapis.com>.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 sub default_response_size { 2048 }
 
 has api_key => (
@@ -27,6 +73,14 @@ sub _build_api_key {
   return $ENV{LANGERTHA_GEMINI_API_KEY}
     || croak "".(ref $self)." requires LANGERTHA_GEMINI_API_KEY or api_key set";
 }
+
+=attr api_key
+
+The Google Generative Language API key. If not provided, reads from
+C<LANGERTHA_GEMINI_API_KEY> environment variable. Get your key at
+L<https://aistudio.google.com/app/apikey>. Required.
+
+=cut
 
 has '+url' => (
   lazy => 1,
@@ -294,6 +348,19 @@ sub list_models {
   return $opts{full} ? $models : \@model_ids;
 }
 
+=method list_models
+
+    my $model_ids = $engine->list_models;
+    my $models    = $engine->list_models(full => 1);
+    my $models    = $engine->list_models(force_refresh => 1);
+
+Fetches available models from the Gemini API using token pagination. Returns
+an ArrayRef of model ID strings (with the C<models/> prefix stripped) by
+default, or full model objects when C<full => 1> is passed. Results are cached
+for C<models_cache_ttl> seconds (default: 3600).
+
+=cut
+
 # Tool calling support (MCP)
 
 sub format_tools {
@@ -355,216 +422,9 @@ with 'Langertha::Role::Tools';
 
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::Gemini;
-
-  # Basic usage
-  my $gemini = Langertha::Engine::Gemini->new(
-    api_key => $ENV{GEMINI_API_KEY},
-    model => 'gemini-2.5-flash',
-    response_size => 4096,
-    temperature => 0.7,
-  );
-
-  # Simple chat
-  my $response = $gemini->simple_chat('Explain quantum computing in simple terms');
-  print $response;
-
-  # Streaming
-  $gemini->simple_chat_stream(sub {
-    my ($chunk) = @_;
-    print $chunk->content;
-  }, 'Write a poem about Perl');
-
-  # Async with Future::AsyncAwait
-  use Future::AsyncAwait;
-
-  async sub ask_gemini {
-    my $response = await $gemini->simple_chat_f('What are the benefits of functional programming?');
-    say $response;
-  }
-
-  async sub stream_gemini {
-    my ($content, $chunks) = await $gemini->simple_chat_stream_realtime_f(
-      sub { print shift->content },
-      'Tell me about neural networks'
-    );
-    say "\nReceived ", scalar(@$chunks), " chunks";
-  }
-
-=head1 DESCRIPTION
-
-This module provides access to Google's Gemini models via their Generative Language API.
-Gemini is Google's family of multimodal AI models capable of understanding and generating
-text, code, images, audio, and video.
-
-B<Available Models:>
-
-=over 4
-
-=item * B<gemini-2.5-flash> - Fast model with thinking capabilities (default)
-
-=item * B<gemini-2.5-pro> - Most capable model for complex reasoning tasks
-
-=item * B<gemini-2.0-flash> - Previous generation, fast and efficient
-
-=back
-
-B<Features:>
-
-=over 4
-
-=item * Streaming support (SSE-based)
-
-=item * System prompts (via systemInstruction)
-
-=item * Temperature control (0.0 - 2.0)
-
-=item * Response size limits (maxOutputTokens)
-
-=item * Async/await support via Future::AsyncAwait
-
-=item * Multimodal capabilities (text, code, images)
-
-=item * Dynamic model discovery via API
-
-=back
-
-=head1 LISTING AVAILABLE MODELS
-
-Dynamically fetch available models from the Gemini API (with token pagination):
-
-  # Get simple list of model IDs
-  my $model_ids = $engine->list_models;
-  # Returns: ['gemini-2.5-flash', 'gemini-2.5-pro', ...]
-
-  # Get full model objects with metadata
-  my $models = $engine->list_models(full => 1);
-
-  # Force refresh (bypass cache)
-  my $models = $engine->list_models(force_refresh => 1);
-
-B<Note:> Model IDs have the "models/" prefix stripped for convenience.
-
-B<Caching:> Results are cached for 1 hour. Configure TTL via C<models_cache_ttl>
-or clear manually with C<clear_models_cache>.
-
-B<Key Capabilities:>
-
-Gemini models support:
-
-=over 4
-
-=item * Long context windows (up to 2M tokens for Gemini 1.5 Pro)
-
-=item * Multimodal understanding (text, images, video, audio)
-
-=item * Function calling and tool use
-
-=item * Code generation and understanding
-
-=item * JSON mode for structured outputs
-
-=back
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 GETTING AN API KEY
-
-Get your API key from L<https://aistudio.google.com/app/apikey>
-
-You can use Gemini for free with rate limits, or upgrade to paid tiers for higher usage.
-
-Set the environment variable:
-
-  export GEMINI_API_KEY=your-key-here
-  # Or use LANGERTHA_GEMINI_API_KEY
-
-=head1 EXAMPLES
-
-=head2 Basic Chat
-
-  my $gemini = Langertha::Engine::Gemini->new(
-    api_key => $ENV{GEMINI_API_KEY},
-    model => 'gemini-2.5-flash',
-  );
-
-  my $answer = $gemini->simple_chat('What is the capital of France?');
-  print $answer;
-
-=head2 With System Prompt
-
-  my $gemini = Langertha::Engine::Gemini->new(
-    api_key => $ENV{GEMINI_API_KEY},
-    model => 'gemini-1.5-pro',
-    system_prompt => 'You are a helpful coding assistant specializing in Perl',
-  );
-
-  my $code = $gemini->simple_chat('Write a function to parse JSON');
-  print $code;
-
-=head2 Streaming Response
-
-  $gemini->simple_chat_stream(sub {
-    my ($chunk) = @_;
-    print $chunk->content;
-    STDOUT->flush;
-  }, 'Write a short story about a robot learning to paint');
-
-=head2 Async/Await Pattern
-
-  use Future::AsyncAwait;
-
-  async sub multi_question {
-    my ($gemini) = @_;
-
-    my $q1 = await $gemini->simple_chat_f('What is Perl?');
-    say "Answer 1: $q1\n";
-
-    my $q2 = await $gemini->simple_chat_f('What is Moose?');
-    say "Answer 2: $q2\n";
-  }
-
-  multi_question($gemini)->get;
-
-=head2 Controlled Generation
-
-  my $gemini = Langertha::Engine::Gemini->new(
-    api_key => $ENV{GEMINI_API_KEY},
-    model => 'gemini-2.5-flash',
-    temperature => 0.2,      # Lower = more deterministic
-    response_size => 1024,   # Limit output tokens
-  );
-
-=head1 MODEL SELECTION
-
-B<gemini-2.5-flash> (Default)
-
-Fast model with built-in thinking capabilities. Best for:
-- General chat and conversation
-- Quick responses with reasoning
-- High-volume applications
-- Multimodal tasks
-
-B<gemini-2.5-pro>
-
-Most capable model. Best for:
-- Complex reasoning and analysis
-- Long-form content generation
-- Tasks requiring deep understanding
-- Maximum accuracy on difficult problems
-
-B<gemini-2.0-flash>
-
-Previous generation, still fast and efficient. Best for:
-- High-volume processing
-- Real-time applications
-- Cost-sensitive deployments
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://ai.google.dev/gemini-api/docs> - Official Gemini API documentation
 
@@ -572,8 +432,12 @@ Previous generation, still fast and efficient. Best for:
 
 =item * L<Langertha::Role::Chat> - Chat interface methods
 
+=item * L<Langertha::Role::Tools> - MCP tool calling interface
+
 =item * L<Langertha> - Main Langertha documentation
 
 =back
 
 =cut
+
+1;

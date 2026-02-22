@@ -14,6 +14,40 @@ with 'Langertha::Role::'.$_ for (qw(
   Chat
 ));
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::AKI;
+
+    my $aki = Langertha::Engine::AKI->new(
+        api_key => $ENV{AKI_API_KEY},
+        model   => 'llama3_8b_chat',
+    );
+
+    print $aki->simple_chat('Hello from Perl!');
+
+    # Get OpenAI-compatible API access
+    my $aki_openai = $aki->openai;
+    print $aki_openai->simple_chat('Hello via OpenAI format!');
+
+=head1 DESCRIPTION
+
+Provides access to AKI.IO's native API for running LLM inference. AKI.IO is
+a European AI model hub based in Germany; all inference runs on EU infrastructure,
+fully GDPR-compliant with no data leaving the EU.
+
+The native API sends the API key as a C<key> field in the JSON request body
+(not as an HTTP header). Supports synchronous chat, temperature and sampling
+controls, dynamic endpoint listing, and OpenAI-compatible access via L</openai>.
+
+Streaming is not yet supported in the native API. For streaming, use the
+OpenAI-compatible endpoint via C<< $aki->openai >>.
+
+Get your API key at L<https://aki.io/> and set C<LANGERTHA_AKI_API_KEY>.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 has api_key => (
   is => 'ro',
   lazy_build => 1,
@@ -23,6 +57,14 @@ sub _build_api_key {
   return $ENV{LANGERTHA_AKI_API_KEY}
     || croak "".(ref $self)." requires LANGERTHA_AKI_API_KEY or api_key set";
 }
+
+=attr api_key
+
+The AKI.IO API key. If not provided, reads from C<LANGERTHA_AKI_API_KEY>
+environment variable. Sent as a C<key> field in the JSON request body
+(not as an HTTP header). Required.
+
+=cut
 
 has '+url' => (
   lazy => 1,
@@ -38,17 +80,43 @@ has top_k => (
   predicate => 'has_top_k',
 );
 
+=attr top_k
+
+    top_k => 40
+
+Top-K sampling parameter. Controls the number of highest-probability tokens
+to consider at each generation step.
+
+=cut
+
 has top_p => (
   is => 'ro',
   isa => 'Num',
   predicate => 'has_top_p',
 );
 
+=attr top_p
+
+    top_p => 0.9
+
+Top-P (nucleus) sampling parameter. Controls the cumulative probability
+threshold for token selection.
+
+=cut
+
 has max_gen_tokens => (
   is => 'ro',
   isa => 'Int',
   predicate => 'has_max_gen_tokens',
 );
+
+=attr max_gen_tokens
+
+    max_gen_tokens => 1000
+
+Maximum number of tokens to generate in the response.
+
+=cut
 
 # Dynamic model listing
 
@@ -92,6 +160,17 @@ sub list_models {
   return $endpoints;
 }
 
+=method list_models
+
+    my $endpoints = $aki->list_models;
+    my $endpoints = $aki->list_models(force_refresh => 1);
+
+Fetches available endpoint names from the AKI.IO C<GET /api/endpoints> API.
+Returns an ArrayRef of endpoint names. Results are cached for C<models_cache_ttl>
+seconds (default: 3600).
+
+=cut
+
 sub endpoint_details_request {
   my ($self, $endpoint_name) = @_;
   return $self->generate_http_request(
@@ -112,6 +191,17 @@ sub endpoint_details {
   return $request->response_call->($response);
 }
 
+=method endpoint_details
+
+    my $details = $aki->endpoint_details('llama3_8b_chat');
+    # Returns hashref with name, title, description, workers, parameter_description, etc.
+
+Fetches detailed information about a specific endpoint from the AKI.IO
+C<GET /api/endpoints/{name}> API. Returns worker info, model metadata,
+and parameter descriptions.
+
+=cut
+
 # Chat
 
 sub chat_request {
@@ -131,6 +221,17 @@ sub chat_request {
   );
 }
 
+=method chat_request
+
+    my $request = $aki->chat_request($messages, %extra);
+
+Generates a native AKI.IO chat request. Posts to C</api/call/{model}> with
+messages encoded as JSON in the C<chat_context> field. Includes C<key>,
+C<temperature>, C<top_k>, C<top_p>, C<max_gen_tokens>, and
+C<wait_for_result> parameters as configured. Returns an HTTP request object.
+
+=cut
+
 sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
@@ -145,6 +246,16 @@ sub chat_response {
   );
 }
 
+=method chat_response
+
+    my $response = $aki->chat_response($http_response);
+
+Parses a native AKI.IO chat response. Dies with an API error message if
+C<success> is false. Returns a L<Langertha::Response> with C<content>,
+C<model>, C<timing>, and C<raw>.
+
+=cut
+
 sub openai {
   my ( $self, %args ) = @_;
   require Langertha::Engine::AKIOpenAI;
@@ -157,144 +268,31 @@ sub openai {
   );
 }
 
+=method openai
+
+    my $oai = $aki->openai;
+    my $oai = $aki->openai(model => 'different_model');
+
+Returns a L<Langertha::Engine::AKIOpenAI> instance configured with the same
+API key, model, system prompt, and temperature. Supports streaming and MCP
+tool calling.
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::AKI;
+=over
 
-  my $aki = Langertha::Engine::AKI->new(
-    api_key => $ENV{AKI_API_KEY},
-    model   => 'llama3_8b_chat',
-  );
+=item * L<Langertha::Engine::AKIOpenAI> - OpenAI-compatible AKI.IO access
 
-  print $aki->simple_chat('Hello from Perl!');
+=item * L<https://aki.io/docs> - AKI.IO API documentation
 
-  # Get OpenAI-compatible API access
-  my $aki_openai = $aki->openai;
-  print $aki_openai->simple_chat('Hello via OpenAI format!');
-
-=head1 DESCRIPTION
-
-This module provides access to AKI.IO's native API for running LLM inference.
-
-B<AKI.IO is a European AI model hub based in Germany.> All inference runs
-on EU-based infrastructure, fully compliant with GDPR and European data
-protection regulations. No data leaves the EU. This makes AKI.IO an ideal
-choice for applications with data sovereignty requirements.
-
-AKI.IO hosts open-source models and provides both a native API and an
-OpenAI-compatible API.
-
-B<Native API features:>
-
-=over 4
-
-=item * Chat completions
-
-=item * Synchronous responses (C<wait_for_result>)
-
-=item * Temperature, top_k, top_p, max_gen_tokens controls
-
-=item * Dynamic endpoint/model listing via C<list_models()>
-
-=item * Endpoint details via C<endpoint_details()>
-
-=item * OpenAI-compatible API access via C<openai()> method
+=item * L<Langertha> - Main Langertha documentation
 
 =back
 
-B<Auth:> API key is sent as a C<key> field in the JSON request body
-(not as an HTTP header).
-
-B<Streaming:> The native API uses job-based polling for streaming,
-which is not yet implemented. For streaming, use the OpenAI-compatible
-endpoint via C<< $aki->openai >>.
-
-B<THIS API IS WORK IN PROGRESS>
-
-=attr api_key
-
-The AKI.IO API key. If not provided at construction time, reads from
-the C<LANGERTHA_AKI_API_KEY> environment variable. Required.
-
-Unlike OpenAI-compatible engines, the AKI native API sends the key as
-a C<key> field in the JSON request body rather than as an HTTP header.
-
-=attr top_k
-
-  top_k => 40
-
-Top-K sampling parameter. Controls the number of highest-probability
-tokens to consider for each generation step.
-
-=attr top_p
-
-  top_p => 0.9
-
-Top-P (nucleus) sampling parameter. Controls the cumulative probability
-threshold for token selection.
-
-=attr max_gen_tokens
-
-  max_gen_tokens => 1000
-
-Maximum number of tokens to generate in the response.
-
-=method list_models
-
-  my $endpoints = $aki->list_models;
-  # Returns: ['llama3_8b_chat', 'flux_schnell', ...]
-
-  my $endpoints = $aki->list_models(force_refresh => 1);  # Bypass cache
-
-Fetches available endpoint names from the AKI.IO C<GET /api/endpoints> API.
-Results are cached for 1 hour (configurable via C<models_cache_ttl>).
-
-=method endpoint_details
-
-  my $details = $aki->endpoint_details('llama3_8b_chat');
-  # Returns hashref with name, title, description, workers, parameter_description, etc.
-
-Fetches detailed information about a specific endpoint from the AKI.IO
-C<GET /api/endpoints/{name}> API. Returns worker info, model metadata,
-and parameter descriptions.
-
-=method chat_request
-
-  my $request = $aki->chat_request($messages, %extra);
-
-Generates a native AKI.IO chat request. Posts to C</api/call/{model}>
-with the messages encoded as JSON in the C<chat_context> field. Includes
-C<key>, C<temperature>, C<top_k>, C<top_p>, C<max_gen_tokens>, and
-C<wait_for_result> parameters as set. Returns an HTTP request object.
-
-=method chat_response
-
-  my $response = $aki->chat_response($http_response);
-
-Parses a native AKI.IO chat response. Dies with an API error message if
-C<success> is false. Returns a L<Langertha::Response> with C<content>,
-C<model>, C<timing>, and C<raw>.
-
-=method openai
-
-  my $oai = $aki->openai;
-  my $oai = $aki->openai(model => 'different_model');
-
-Returns a L<Langertha::Engine::AKIOpenAI> instance configured with
-the same API key, model, and settings. Supports all OpenAI-compatible
-features including streaming and tool calling.
-
-=head1 GETTING AN API KEY
-
-Sign up at L<https://aki.io/> and generate an API key.
-
-Set the environment variable:
-
-  export AKI_API_KEY=your-key-here
-  # Or use LANGERTHA_AKI_API_KEY
-
-=seealso L<Langertha::Engine::AKIOpenAI>, L<https://aki.io/docs>, L<Langertha>
-
 =cut
+
+1;

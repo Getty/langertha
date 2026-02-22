@@ -16,6 +16,49 @@ with 'Langertha::Role::'.$_ for (qw(
   Streaming
 ));
 
+=head1 SYNOPSIS
+
+    use Langertha::Engine::Anthropic;
+
+    my $claude = Langertha::Engine::Anthropic->new(
+        api_key      => $ENV{ANTHROPIC_API_KEY},
+        model        => 'claude-sonnet-4-6',
+        response_size => 4096,
+        temperature  => 0.7,
+    );
+
+    # Simple chat
+    my $response = $claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data types');
+    print $response;
+
+    # Streaming
+    $claude->simple_chat_stream(sub {
+        my ($chunk) = @_;
+        print $chunk->content;
+    }, 'Tell me about Perl');
+
+    # Async with Future::AsyncAwait
+    use Future::AsyncAwait;
+
+    async sub ask_claude {
+        my $response = await $claude->simple_chat_f('What is the meaning of life?');
+        say $response;
+    }
+
+=head1 DESCRIPTION
+
+Provides access to Anthropic's Claude models via their API. Claude is a
+family of large language models known for helpfulness, harmlessness, and
+honesty.
+
+Available models include C<claude-opus-4-6> (most capable), C<claude-sonnet-4-6>
+(balanced, default), and C<claude-haiku-4-5-20251001> (fastest). The default
+API endpoint is C<https://api.anthropic.com>.
+
+B<THIS API IS WORK IN PROGRESS>
+
+=cut
+
 sub default_response_size { 1024 }
 
 has api_key => (
@@ -28,24 +71,62 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_ANTHROPIC_API_KEY or api_key set";
 }
 
+=attr api_key
+
+The Anthropic API key. If not provided, reads from C<LANGERTHA_ANTHROPIC_API_KEY>
+environment variable. Get your key at L<https://console.anthropic.com/>. Required.
+
+=cut
+
 has api_version => (
   is => 'ro',
   lazy_build => 1,
 );
 sub _build_api_version { '2023-06-01' }
 
-# New parameters (February 2026)
+=attr api_version
+
+The Anthropic API version header sent with every request. Defaults to
+C<2023-06-01>.
+
+=cut
+
 has effort => (
   is => 'ro',
   isa => 'Str',
   predicate => 'has_effort',
 );
 
+=attr effort
+
+Controls the depth of thinking for reasoning models. Values: C<low>, C<medium>,
+C<high>. When set, passed as the C<effort> parameter in the API request.
+
+    my $claude = Langertha::Engine::Anthropic->new(
+        api_key => $ENV{ANTHROPIC_API_KEY},
+        model   => 'claude-opus-4-6',
+        effort  => 'high',
+    );
+
+=cut
+
 has inference_geo => (
   is => 'ro',
   isa => 'Str',
   predicate => 'has_inference_geo',
 );
+
+=attr inference_geo
+
+Controls data residency for inference. Values: C<us>, C<eu>. When set, passed
+as the C<inference_geo> parameter to keep processing in the specified region.
+
+    my $claude = Langertha::Engine::Anthropic->new(
+        api_key       => $ENV{ANTHROPIC_API_KEY},
+        inference_geo => 'eu',
+    );
+
+=cut
 
 sub update_request {
   my ( $self, $request ) = @_;
@@ -251,6 +332,19 @@ sub list_models {
   return $opts{full} ? $models : \@model_ids;
 }
 
+=method list_models
+
+    my $model_ids = $engine->list_models;
+    my $models    = $engine->list_models(full => 1);
+    my $models    = $engine->list_models(force_refresh => 1);
+
+Fetches available models from the Anthropic API using cursor pagination.
+Returns an ArrayRef of model ID strings by default, or full model objects
+when C<full => 1> is passed. Results are cached for C<models_cache_ttl>
+seconds (default: 3600). Pass C<force_refresh => 1> to bypass the cache.
+
+=cut
+
 # Tool calling support (MCP)
 
 sub format_tools {
@@ -302,146 +396,20 @@ with 'Langertha::Role::Tools';
 
 __PACKAGE__->meta->make_immutable;
 
-=head1 SYNOPSIS
+=seealso
 
-  use Langertha::Engine::Anthropic;
-
-  # Basic usage
-  my $claude = Langertha::Engine::Anthropic->new(
-    api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-sonnet-4-6',
-    response_size => 4096,
-    temperature => 0.7,
-  );
-
-  # Simple chat
-  my $response = $claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data types');
-  print $response;
-
-  # Streaming
-  $claude->simple_chat_stream(sub {
-    my ($chunk) = @_;
-    print $chunk->content;
-  }, 'Tell me about Perl');
-
-  # Async with Future::AsyncAwait
-  use Future::AsyncAwait;
-
-  async sub ask_claude {
-    my $response = await $claude->simple_chat_f('What is the meaning of life?');
-    say $response;
-  }
-
-=head1 DESCRIPTION
-
-This module provides access to Anthropic's Claude models via their API.
-Claude is a family of large language models known for their helpfulness,
-harmlessness, and honesty.
-
-B<Available Models (February 2026):>
-
-=over 4
-
-=item * B<claude-opus-4-6> - Most capable model with 1M token context, strongest coding, planning, and debugging capabilities. Released February 5, 2026. Best for complex tasks, code review, and agentic workflows.
-
-=item * B<claude-sonnet-4-6> - Balanced performance and speed (default). Released November 24, 2025. Excellent for most general-purpose tasks.
-
-=item * B<claude-haiku-4-5-20251001> - Fastest and most cost-efficient model. Matches Sonnet 4's performance on coding, computer use, and agent tasks while being significantly cheaper.
-
-=back
-
-The Claude model family is organized by capability: Haiku (fastest/cheapest), Sonnet (balanced), and Opus (most capable/expensive).
-
-B<Features:>
-
-=over 4
-
-=item * Streaming support (SSE-based)
-
-=item * System prompts
-
-=item * Temperature control
-
-=item * Response size limits (max_tokens)
-
-=item * Async/await support via Future::AsyncAwait
-
-=item * Dynamic model discovery via API
-
-=item * Advanced parameters: effort (thinking depth), inference_geo (data residency)
-
-=back
-
-B<THIS API IS WORK IN PROGRESS>
-
-=head1 NEW PARAMETERS (FEBRUARY 2026)
-
-Anthropic has introduced new parameters for enhanced control:
-
-=head2 effort
-
-Controls the depth of thinking for reasoning models. Values: C<low>, C<medium>, C<high>.
-
-  my $claude = Langertha::Engine::Anthropic->new(
-    api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-opus-4-6',
-    effort => 'high',  # More thorough reasoning
-  );
-
-=head2 inference_geo
-
-Controls data residency for inference. Values: C<us>, C<eu>.
-
-  my $claude = Langertha::Engine::Anthropic->new(
-    api_key => $ENV{ANTHROPIC_API_KEY},
-    model => 'claude-sonnet-4-6',
-    inference_geo => 'eu',  # Process in EU region
-  );
-
-=head1 LISTING AVAILABLE MODELS
-
-Dynamically fetch available models from the Anthropic API (with cursor pagination):
-
-  # Get simple list of model IDs
-  my $model_ids = $engine->list_models;
-  # Returns: ['claude-opus-4-6', 'claude-sonnet-4-6', ...]
-
-  # Get full model objects with metadata
-  my $models = $engine->list_models(full => 1);
-  # Returns: [{id => '...', display_name => '...', created_at => '...'}, ...]
-
-  # Force refresh (bypass cache)
-  my $models = $engine->list_models(force_refresh => 1);
-
-B<Caching:> Results are cached for 1 hour by default. Configure the TTL:
-
-  my $engine = Langertha::Engine::Anthropic->new(
-    api_key => $ENV{ANTHROPIC_API_KEY},
-    models_cache_ttl => 1800, # 30 minutes
-  );
-
-  # Clear the cache manually
-  $engine->clear_models_cache;
-
-=head1 GETTING AN API KEY
-
-Sign up at L<https://console.anthropic.com/> and generate an API key.
-
-Set the environment variable:
-
-  export ANTHROPIC_API_KEY=your-key-here
-  # Or use LANGERTHA_ANTHROPIC_API_KEY
-
-=head1 SEE ALSO
-
-=over 4
+=over
 
 =item * L<https://docs.anthropic.com/> - Official Anthropic documentation
 
 =item * L<Langertha::Role::Chat> - Chat interface methods
+
+=item * L<Langertha::Role::Tools> - MCP tool calling interface
 
 =item * L<Langertha> - Main Langertha documentation
 
 =back
 
 =cut
+
+1;
