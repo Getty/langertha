@@ -301,6 +301,54 @@ sub parse_stream_chunk {
   );
 }
 
+# Tool calling support (MCP)
+
+sub format_tools {
+  my ( $self, $mcp_tools ) = @_;
+  return [map {
+    {
+      type     => 'function',
+      function => {
+        name        => $_->{name},
+        description => $_->{description},
+        parameters  => $_->{inputSchema},
+      },
+    }
+  } @$mcp_tools];
+}
+
+sub response_tool_calls {
+  my ( $self, $data ) = @_;
+  my $choice = $data->{choices}[0] or return [];
+  my $msg = $choice->{message} or return [];
+  return $msg->{tool_calls} // [];
+}
+
+sub response_text_content {
+  my ( $self, $data ) = @_;
+  my $choice = $data->{choices}[0] or return '';
+  return $choice->{message}{content} // '';
+}
+
+sub format_tool_results {
+  my ( $self, $data, $results ) = @_;
+  my $choice = $data->{choices}[0];
+  return (
+    { role => 'assistant', content => $choice->{message}{content},
+      tool_calls => $choice->{message}{tool_calls} },
+    map {
+      my $r = $_;
+      {
+        role         => 'tool',
+        tool_call_id => $r->{tool_call}{id},
+        content      => $self->json->encode($r->{result}{content}),
+      }
+    } @$results
+  );
+}
+
+with 'Langertha::Role::Tools';
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 SYNOPSIS
