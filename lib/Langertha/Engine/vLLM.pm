@@ -1,6 +1,6 @@
 package Langertha::Engine::vLLM;
 # ABSTRACT: vLLM inference server
-our $VERSION = '0.101';
+our $VERSION = '0.201';
 use Moose;
 use Carp qw( croak );
 

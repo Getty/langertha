@@ -1,6 +1,6 @@
 package Langertha::Raider;
 # ABSTRACT: Autonomous agent with conversation history and MCP tools
-our $VERSION = '0.101';
+our $VERSION = '0.201';
 use Moose;
 use Future::AsyncAwait;
 use Time::HiRes qw( gettimeofday tv_interval );
