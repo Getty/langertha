@@ -80,7 +80,7 @@ async sub run_tests {
   );
 
   my $ollama = Langertha::Engine::Ollama->new(
-    url         => 'http://mock-ollama:11434',
+    url         => 'http://test.invalid:11434',
     model       => 'qwen3:8b',
     mcp_servers => [$mcp],
     _async_http => $mock_http,

@@ -16,6 +16,7 @@ BEGIN {
   push @available, 'mistral'   if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};
   push @available, 'deepseek'  if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
   push @available, 'ollama'    if $ENV{TEST_LANGERTHA_OLLAMA_URL};
+  push @available, 'vllm'      if $ENV{TEST_LANGERTHA_VLLM_URL} && $ENV{TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER};
   unless (@available) {
     plan skip_all => 'No TEST_LANGERTHA_* env vars set';
   }
@@ -147,6 +148,23 @@ async sub run_tests {
       ));
     };
     diag "DeepSeek error: $@" if $@;
+  }
+
+  # --- vLLM ---
+  # Requires server started with: --enable-auto-tool-choice --tool-call-parser <parser>
+  # Set TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER to indicate tool calling is available
+  if ($ENV{TEST_LANGERTHA_VLLM_URL} && $ENV{TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER}) {
+    require Langertha::Engine::vLLM;
+    my $model = $ENV{TEST_LANGERTHA_VLLM_MODEL}
+      or die "TEST_LANGERTHA_VLLM_MODEL required when TEST_LANGERTHA_VLLM_URL is set";
+    diag "vLLM tool_call_parser: $ENV{TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER}";
+    eval {
+      await test_engine("vLLM/$model", Langertha::Engine::vLLM->new(
+        url => $ENV{TEST_LANGERTHA_VLLM_URL},
+        model => $model, mcp_servers => [$mcp],
+      ));
+    };
+    diag "vLLM/$model error: $@" if $@;
   }
 
   # --- Ollama ---

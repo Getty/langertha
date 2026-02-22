@@ -249,6 +249,12 @@ prove -l t/80_live_tool_calling.t
 TEST_LANGERTHA_OLLAMA_URL=http://localhost:11434     \
 TEST_LANGERTHA_OLLAMA_MODELS=qwen3:8b,llama3.2:3b   \
 prove -l t/80_live_tool_calling.t
+
+# vLLM (requires --enable-auto-tool-choice and --tool-call-parser on server)
+TEST_LANGERTHA_VLLM_URL=http://localhost:8000/v1              \
+TEST_LANGERTHA_VLLM_MODEL=Qwen/Qwen2.5-3B-Instruct           \
+TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER=hermes                   \
+prove -l t/80_live_tool_calling.t
 ```
 
 ## Examples

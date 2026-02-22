@@ -16,7 +16,8 @@ Revision history for Langertha
     - Update default models:
       - Anthropic: claude-sonnet-4-6 (short alias)
       - Gemini: gemini-2.5-flash (2.0-flash deprecated for new users)
-    - Add live integration test for all engines including Ollama
+    - Add vLLM tool calling unit test (t/65_tool_calling_vllm.t)
+    - Add live integration test for all engines including Ollama and vLLM
       (t/80_live_tool_calling.t) with multi-model support
     - Add mock round-trip test for Ollama tool calling
       (t/64_tool_calling_ollama_mock.t) using fixture data
@@ -26,6 +27,9 @@ Revision history for Langertha
       prefix to prevent accidental use of production keys
     - Add TEST_LANGERTHA_OLLAMA_URL and TEST_LANGERTHA_OLLAMA_MODELS
       env vars for Ollama live testing
+    - Add TEST_LANGERTHA_VLLM_URL, TEST_LANGERTHA_VLLM_MODEL, and
+      TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER env vars for vLLM live testing
+    - Use RFC 2606 test.invalid domain for dummy URLs in unit tests
 
 0.100     2026-02-20 05:33:44Z
     - Add MCP (Model Context Protocol) tool calling support

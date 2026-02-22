@@ -247,7 +247,7 @@ is($openai->tool_max_iterations, 10, 'tool_max_iterations defaults to 10');
 {
   use Langertha::Engine::vLLM;
   my $vllm = Langertha::Engine::vLLM->new(
-    url => 'http://localhost:8000',
+    url => 'http://test.invalid:8000',
     model => 'some-model',
   );
   ok($vllm->can('format_tools'), 'vLLM has format_tools');

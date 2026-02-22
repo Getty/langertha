@@ -10,7 +10,7 @@ use JSON::MaybeXS;
 use Langertha::Engine::Ollama;
 
 my $ollama = Langertha::Engine::Ollama->new(
-  url => 'http://localhost:11434',
+  url => 'http://test.invalid:11434',
   model => 'llama3.3',
 );
 
