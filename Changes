@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.200     2026-02-22 21:53:36Z
     - Add Langertha::Response: metadata container wrapping LLM text content
       with id, model, finish_reason, usage (token counts), timing, and created
       fields. Uses overload stringification for backward compatibility —
