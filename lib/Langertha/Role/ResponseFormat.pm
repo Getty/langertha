@@ -21,9 +21,9 @@ C<{ type => 'json_object' }> or a JSON Schema definition. Optional.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
 =item * L<Langertha::Role::Chat> - Chat functionality that uses response format
+
+=item * L<Langertha::Role::OpenAICompatible> - OpenAI-compatible engines that support this role
 
 =back
 

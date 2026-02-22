@@ -285,11 +285,11 @@ __PACKAGE__->meta->make_immutable;
 
 =over
 
-=item * L<Langertha::Engine::AKIOpenAI> - OpenAI-compatible AKI.IO access
+=item * L<Langertha::Engine::AKIOpenAI> - OpenAI-compatible AKI.IO access via L</openai>
 
 =item * L<https://aki.io/docs> - AKI.IO API documentation
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::Chat> - Chat interface methods
 
 =back
 

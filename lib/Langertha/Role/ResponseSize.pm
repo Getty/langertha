@@ -37,9 +37,9 @@ otherwise the engine's C<default_response_size>, otherwise C<undef>.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
 =item * L<Langertha::Role::ContextSize> - Limit total context tokens
+
+=item * L<Langertha::Role::Temperature> - Sampling temperature
 
 =back
 

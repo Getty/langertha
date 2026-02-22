@@ -401,9 +401,9 @@ sub _hermes_build_tool_results {
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::Chat> - Chat role this is built on top of
 
-=item * L<Langertha::Role::Chat> - Chat role required by this role
+=item * L<Langertha::Raider> - Autonomous agent with persistent history using tools
 
 =item * L<Net::Async::MCP> - MCP client used as tool provider
 

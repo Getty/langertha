@@ -27,8 +27,6 @@ sub _build__json { JSON::MaybeXS->new( utf8 => 1, canonical => 1 ) }
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
 =item * L<Langertha::Role::HTTP> - HTTP role that requires this
 
 =item * L<JSON::MaybeXS> - The JSON backend used

@@ -55,7 +55,7 @@ sub _build_supported_operations {[qw(
 
 =item * L<Langertha::Engine::Groq> - Groq's hosted Whisper transcription
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::Transcription> - Transcription role
 
 =back
 

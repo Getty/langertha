@@ -124,9 +124,9 @@ L<Langertha::Role::HTTP/generate_http_request>.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::HTTP> - HTTP request building (required by this role)
 
-=item * L<Langertha::Role::HTTP> - HTTP request building
+=item * L<Langertha::Role::Models> - Model management (typically composed alongside this role)
 
 =item * L<OpenAPI::Modern> - OpenAPI spec handling
 

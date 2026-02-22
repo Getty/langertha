@@ -68,9 +68,7 @@ sub BUILDARGS {
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
-=item * L<Langertha::Role::HTTP> - Creates instances of this class
+=item * L<Langertha::Role::HTTP> - Creates instances of this class via C<generate_http_request>
 
 =item * L<Langertha::Role::Chat> - Dispatches the request and calls C<response_call>
 

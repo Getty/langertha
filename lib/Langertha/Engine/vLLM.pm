@@ -70,9 +70,11 @@ sub _build_supported_operations {[qw(
 
 =item * L<Langertha::Engine::OpenAI> - Parent engine (OpenAI-compatible API)
 
+=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
+
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Engine::OllamaOpenAI> - Another self-hosted OpenAI-compatible engine
 
 =back
 

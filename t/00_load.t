@@ -15,6 +15,7 @@ my @modules = qw(
   Langertha::Engine::DeepSeek
   Langertha::Engine::Gemini
   Langertha::Engine::Groq
+  Langertha::Engine::MiniMax
   Langertha::Engine::Mistral
   Langertha::Engine::NousResearch
   Langertha::Engine::OpenAI

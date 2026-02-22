@@ -76,7 +76,9 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<Langertha::Engine::OpenAI> - Parent class
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
+
+=item * L<Langertha::Engine::DeepSeek> - Another OpenAI-compatible engine
 
 =back
 

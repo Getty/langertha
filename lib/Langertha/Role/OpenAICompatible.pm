@@ -488,17 +488,21 @@ tool calls), then one C<role =E<gt> 'tool'> message per result.
 
 =item * L<Langertha::Engine::OpenAI> - OpenAI engine
 
-=item * L<Langertha::Engine::OllamaOpenAI> - Ollama OpenAI-compatible engine
-
-=item * L<Langertha::Engine::AKIOpenAI> - AKI.IO OpenAI-compatible engine
-
 =item * L<Langertha::Engine::DeepSeek> - DeepSeek engine
 
 =item * L<Langertha::Engine::Groq> - Groq engine
 
 =item * L<Langertha::Engine::Mistral> - Mistral engine
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Engine::vLLM> - vLLM inference server
+
+=item * L<Langertha::Engine::NousResearch> - Nous Research Hermes engine
+
+=item * L<Langertha::Engine::Perplexity> - Perplexity Sonar engine
+
+=item * L<Langertha::Engine::OllamaOpenAI> - Ollama OpenAI-compatible engine
+
+=item * L<Langertha::Engine::AKIOpenAI> - AKI.IO OpenAI-compatible engine
 
 =back
 

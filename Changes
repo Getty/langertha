@@ -1,6 +1,13 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - Add Langertha::Engine::MiniMax for MiniMax AI API
+      (chat, streaming, tool calling via OpenAI-compatible API)
+    - Rewrite all POD to inline style across all modules —
+      =attr directly after has, =method directly after sub.
+      Add POD to all previously undocumented modules.
+    - Improve =seealso cross-links: remove redundant main module
+      links, add meaningful related module references
 
 0.200     2026-02-22 21:53:36Z
     - Add Langertha::Response: metadata container wrapping LLM text content

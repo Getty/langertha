@@ -386,13 +386,13 @@ with 'Langertha::Role::Langfuse';
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::Langfuse> - Observability integration (composed by this role)
+
+=item * L<Langertha::Role::SystemPrompt> - System prompt injection
 
 =item * L<Langertha::Role::Streaming> - Stream parsing (SSE / NDJSON)
 
 =item * L<Langertha::Role::Tools> - Tool calling on top of chat
-
-=item * L<Langertha::Role::SystemPrompt> - System prompt injection
 
 =item * L<Langertha::Role::Models> - Model selection
 

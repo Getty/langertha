@@ -86,7 +86,7 @@ access to C<models>.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::OpenAPI> - Typically composed alongside this role
 
 =item * L<Langertha::Role::Chat> - Uses C<model> via C<chat_model>
 

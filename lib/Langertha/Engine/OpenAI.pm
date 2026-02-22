@@ -99,7 +99,7 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<https://platform.openai.com/docs> - Official OpenAI documentation
 
-=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
+=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role composed by this engine
 
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
 
@@ -109,7 +109,11 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<Langertha::Engine::Mistral> - Mistral (extends this engine)
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Engine::vLLM> - vLLM inference server (extends this engine)
+
+=item * L<Langertha::Engine::NousResearch> - Nous Research (extends this engine)
+
+=item * L<Langertha::Engine::Perplexity> - Perplexity Sonar (extends this engine)
 
 =back
 

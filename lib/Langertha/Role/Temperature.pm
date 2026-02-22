@@ -21,9 +21,9 @@ not set, the engine's API default is used.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
 =item * L<Langertha::Role::Seed> - Seed for reproducible outputs
+
+=item * L<Langertha::Role::ResponseSize> - Limit response token count
 
 =back
 

@@ -178,6 +178,20 @@ otherwise sums prompt and completion tokens.
 
 =cut
 
+=seealso
+
+=over
+
+=item * L<Langertha::Stream::Chunk> - Single chunk from a streaming response
+
+=item * L<Langertha::Role::Chat> - Chat role that produces response objects
+
+=item * L<Langertha::Role::OpenAICompatible> - Parses responses into this class
+
+=back
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
 1;

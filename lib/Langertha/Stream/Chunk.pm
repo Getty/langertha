@@ -109,8 +109,6 @@ chunk. Keys vary by provider. Use C<has_usage> to check availability.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
 =item * L<Langertha::Stream> - Iterator that holds chunks
 
 =item * L<Langertha::Response> - Non-streaming response object

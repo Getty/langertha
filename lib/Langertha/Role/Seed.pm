@@ -46,9 +46,9 @@ Returns a random unsigned integer suitable for use as a seed value.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
 =item * L<Langertha::Role::Temperature> - Sampling temperature
+
+=item * L<Langertha::Engine::Ollama> - Engine that composes this role
 
 =back
 

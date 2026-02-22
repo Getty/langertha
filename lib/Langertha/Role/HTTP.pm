@@ -205,15 +205,13 @@ provided it is called with each chunk as it is parsed.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
-=item * L<Langertha::Role::JSON> - JSON encoding/decoding
+=item * L<Langertha::Role::JSON> - JSON encoding/decoding (required by this role)
 
 =item * L<Langertha::Role::Streaming> - Stream processing
 
 =item * L<Langertha::Role::OpenAPI> - OpenAPI request generation
 
-=item * L<Langertha::Request::HTTP> - HTTP request object
+=item * L<Langertha::Request::HTTP> - HTTP request object created by this role
 
 =back
 

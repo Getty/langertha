@@ -401,6 +401,20 @@ Returns a L<Future> resolving to the final text response.
 
 =cut
 
+=seealso
+
+=over
+
+=item * L<Langertha::Role::Tools> - Lower-level single-turn tool calling
+
+=item * L<Langertha::Role::Langfuse> - Observability integration (used by Raider)
+
+=item * L<Langertha::Role::SystemPrompt> - Engine-level system prompt (Raider uses C<mission> instead)
+
+=back
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
 1;

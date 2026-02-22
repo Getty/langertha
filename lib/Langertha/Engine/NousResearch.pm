@@ -87,11 +87,11 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<https://portal.nousresearch.com/api-docs> - API documentation
 
-=item * L<Langertha::Role::Tools> - Tool calling with Hermes support
+=item * L<Langertha::Role::Tools> - Tool calling with Hermes support (C<hermes_tools> enabled by default)
 
 =item * L<Langertha::Engine::OpenAI> - Parent class
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 
 =back
 

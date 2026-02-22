@@ -63,11 +63,9 @@ Blocks until the request completes.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
-=item * L<Langertha::Role::Models> - Model selection
-
 =item * L<Langertha::Role::HTTP> - HTTP transport layer
+
+=item * L<Langertha::Role::Models> - Model selection (provides C<embedding_model>)
 
 =back
 

@@ -67,13 +67,13 @@ C<language> can be passed as C<%extra> key/value pairs.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
-=item * L<Langertha::Role::Models> - Model selection
-
 =item * L<Langertha::Role::HTTP> - HTTP transport layer
 
-=item * L<Langertha::Engine::Whisper> - Whisper transcription engine
+=item * L<Langertha::Role::Models> - Model selection (provides C<transcription_model>)
+
+=item * L<Langertha::Engine::Whisper> - Whisper-compatible transcription server
+
+=item * L<Langertha::Engine::Groq> - Groq's hosted Whisper transcription
 
 =back
 

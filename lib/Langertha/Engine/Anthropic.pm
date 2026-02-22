@@ -406,7 +406,9 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::Streaming> - Streaming support (SSE format)
+
+=item * L<Langertha::Engine::Gemini> - Another non-OpenAI-compatible engine
 
 =back
 

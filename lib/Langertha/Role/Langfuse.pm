@@ -392,7 +392,9 @@ API keys in your project settings.
 
 =item * L<https://langfuse.com/docs> - Langfuse documentation
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::Chat> - Chat role that composes this role
+
+=item * L<Langertha::Raider> - Autonomous agent with Langfuse tracing support
 
 =back
 

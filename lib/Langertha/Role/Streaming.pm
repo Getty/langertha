@@ -150,9 +150,7 @@ L<Langertha::Stream::Chunk>. Returns an ArrayRef of all chunks.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
-=item * L<Langertha::Role::Chat> - Chat streaming methods
+=item * L<Langertha::Role::Chat> - Chat streaming methods (uses this role)
 
 =item * L<Langertha::Role::HTTP> - HTTP execution of streaming requests
 

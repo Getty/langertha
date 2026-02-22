@@ -37,9 +37,9 @@ otherwise the engine's C<default_context_size>, otherwise C<undef>.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::ResponseSize> - Limit response token count
 
-=item * L<Langertha::Role::ResponseSize> - Limit response tokens
+=item * L<Langertha::Engine::Ollama> - Engine that composes this role
 
 =back
 

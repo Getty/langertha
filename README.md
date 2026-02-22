@@ -32,6 +32,7 @@
 | [Groq](https://console.groq.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: | :white_check_mark: |
 | [Mistral](https://console.mistral.ai/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [DeepSeek](https://platform.deepseek.com/) :cn: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [MiniMax](https://www.minimax.io/) :cn: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [Perplexity](https://docs.perplexity.ai/) :us: | :white_check_mark: | :white_check_mark: | | | | |
 | [Nous Research](https://nousresearch.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |

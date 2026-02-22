@@ -90,6 +90,8 @@ B<THIS API IS WORK IN PROGRESS.>
 
 =item * L<Langertha::Engine::DeepSeek> - DeepSeek models
 
+=item * L<Langertha::Engine::MiniMax> - MiniMax AI models (M2.5, M2.1)
+
 =item * L<Langertha::Engine::Gemini> - Google Gemini models (Flash, Pro)
 
 =item * L<Langertha::Engine::vLLM> - vLLM inference server

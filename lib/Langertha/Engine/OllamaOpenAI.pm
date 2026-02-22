@@ -87,11 +87,9 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<Langertha::Engine::Ollama> - Native Ollama API (with keep_alive, seed, context_size)
 
-=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
+=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role composed by this engine
 
 =item * L<https://github.com/ollama/ollama> - Ollama project
-
-=item * L<Langertha> - Main Langertha documentation
 
 =back
 

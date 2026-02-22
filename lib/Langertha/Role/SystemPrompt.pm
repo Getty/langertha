@@ -20,9 +20,9 @@ the conversation as a C<system> role message by L<Langertha::Role::Chat/chat_mes
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::Chat> - Chat role that injects the system prompt into messages
 
-=item * L<Langertha::Role::Chat> - Chat role that injects this into messages
+=item * L<Langertha::Raider> - Autonomous agent with its own C<mission> prompt
 
 =back
 

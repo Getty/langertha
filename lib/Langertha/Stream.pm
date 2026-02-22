@@ -158,11 +158,11 @@ Resets the cursor to the beginning so the stream can be iterated again.
 
 =over
 
-=item * L<Langertha> - Main Langertha documentation
-
 =item * L<Langertha::Stream::Chunk> - A single streaming chunk
 
-=item * L<Langertha::Role::Chat> - Provides C<simple_chat_stream_iterator>
+=item * L<Langertha::Role::Chat> - Provides C<simple_chat_stream_iterator> that returns this object
+
+=item * L<Langertha::Role::Streaming> - Stream parsing (SSE / NDJSON)
 
 =back
 

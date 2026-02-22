@@ -99,11 +99,9 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<Langertha::Engine::AKI> - Native AKI.IO API (with top_k, top_p, max_gen_tokens)
 
-=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
+=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role composed by this engine
 
 =item * L<https://aki.io/docs> - AKI.IO API documentation
-
-=item * L<Langertha> - Main Langertha documentation
 
 =back
 

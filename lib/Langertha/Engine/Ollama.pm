@@ -428,11 +428,13 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<https://github.com/ollama/ollama> - Ollama project
 
-=item * L<Langertha::Engine::OllamaOpenAI> - OpenAI-compatible Ollama access
+=item * L<Langertha::Engine::OllamaOpenAI> - OpenAI-compatible Ollama access via L</openai>
 
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
 
-=item * L<Langertha> - Main Langertha documentation
+=item * L<Langertha::Role::Seed> - Seed for reproducible outputs (composed by this engine)
+
+=item * L<Langertha::Role::ContextSize> - Context window size (composed by this engine)
 
 =back
 
