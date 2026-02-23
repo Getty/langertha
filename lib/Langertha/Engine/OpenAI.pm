@@ -103,17 +103,17 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
 
-=item * L<Langertha::Engine::DeepSeek> - DeepSeek (extends this engine)
+=item * L<Langertha::Engine::DeepSeek> - DeepSeek (via OpenAICompatible role)
 
-=item * L<Langertha::Engine::Groq> - Groq (extends this engine)
+=item * L<Langertha::Engine::Groq> - Groq (via OpenAICompatible role)
 
-=item * L<Langertha::Engine::Mistral> - Mistral (extends this engine)
+=item * L<Langertha::Engine::Mistral> - Mistral (via OpenAICompatible role)
 
-=item * L<Langertha::Engine::vLLM> - vLLM inference server (extends this engine)
+=item * L<Langertha::Engine::vLLM> - vLLM inference server (via OpenAICompatible role)
 
-=item * L<Langertha::Engine::NousResearch> - Nous Research (extends this engine)
+=item * L<Langertha::Engine::NousResearch> - Nous Research (via OpenAICompatible role)
 
-=item * L<Langertha::Engine::Perplexity> - Perplexity Sonar (extends this engine)
+=item * L<Langertha::Engine::Perplexity> - Perplexity Sonar (via OpenAICompatible role)
 
 =back
 

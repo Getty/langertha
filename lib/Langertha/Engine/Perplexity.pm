@@ -2,8 +2,20 @@ package Langertha::Engine::Perplexity;
 # ABSTRACT: Perplexity Sonar API
 our $VERSION = '0.201';
 use Moose;
-extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
+
+with 'Langertha::Role::'.$_ for (qw(
+  JSON
+  HTTP
+  OpenAICompatible
+  OpenAPI
+  Models
+  Temperature
+  ResponseSize
+  SystemPrompt
+  Streaming
+  Chat
+));
 
 =head1 SYNOPSIS
 
@@ -27,10 +39,11 @@ use Carp qw( croak );
 
 =head1 DESCRIPTION
 
-Provides access to Perplexity's Sonar API. Extends L<Langertha::Engine::OpenAI>
-with Perplexity's endpoint (C<https://api.perplexity.ai>). Perplexity models
-are search-augmented LLMs with real-time web access; responses include
-citations alongside generated text.
+Provides access to Perplexity's Sonar API. Composes
+L<Langertha::Role::OpenAICompatible> with Perplexity's endpoint
+(C<https://api.perplexity.ai>). Perplexity models are search-augmented
+LLMs with real-time web access; responses include citations alongside
+generated text.
 
 Available models: C<sonar> (default, fast), C<sonar-pro> (deeper analysis),
 C<sonar-reasoning> (chain-of-thought), C<sonar-reasoning-pro> (most capable).
@@ -63,18 +76,6 @@ sub _build_api_key {
 
 sub default_model { 'sonar' }
 
-sub embedding_request {
-  croak "".(ref $_[0])." doesn't support embedding";
-}
-
-sub transcription_request {
-  croak "".(ref $_[0])." doesn't support transcription";
-}
-
-sub chat_with_tools_f {
-  croak "".(ref $_[0])." doesn't support tool calling";
-}
-
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -82,8 +83,6 @@ __PACKAGE__->meta->make_immutable;
 =over
 
 =item * L<https://docs.perplexity.ai/> - Official Perplexity API documentation
-
-=item * L<Langertha::Engine::OpenAI> - Parent class
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

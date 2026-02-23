@@ -18,6 +18,13 @@ Revision history for Langertha
     - Raider: add langfuse_trace_name, langfuse_user_id, langfuse_session_id,
       langfuse_tags, langfuse_release, langfuse_version, langfuse_metadata
       attributes for customizing Langfuse trace creation
+    - Refactor all OpenAI-compatible engines to compose
+      Langertha::Role::OpenAICompatible directly instead of extending
+      Langertha::Engine::OpenAI. Each engine now only includes the roles
+      it actually supports (e.g. DeepSeek gets Chat but not Embedding).
+      Removes all "doesn't support X" croak overrides. Affected engines:
+      DeepSeek, Groq, Mistral, MiniMax, NousResearch, Perplexity, vLLM,
+      AKIOpenAI, OllamaOpenAI.
     - Add Raider context compression — when prompt token usage exceeds
       a configurable threshold (max_context_tokens * context_compress_threshold),
       history is automatically summarized via LLM before the next raid.

@@ -88,9 +88,6 @@ sub default_model { 'llama3_8b_chat' }
 
 sub _build_supported_operations {[qw( createChatCompletion )]}
 
-sub embedding_request { croak "".(ref $_[0])." doesn't support embedding" }
-sub transcription_request { croak "".(ref $_[0])." doesn't support transcription" }
-
 __PACKAGE__->meta->make_immutable;
 
 =seealso

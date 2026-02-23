@@ -2,8 +2,23 @@ package Langertha::Engine::DeepSeek;
 # ABSTRACT: DeepSeek API
 our $VERSION = '0.201';
 use Moose;
-extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
+
+with 'Langertha::Role::'.$_ for (qw(
+  JSON
+  HTTP
+  OpenAICompatible
+  OpenAPI
+  Models
+  Temperature
+  ResponseSize
+  ResponseFormat
+  SystemPrompt
+  Streaming
+  Chat
+));
+
+with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
@@ -20,14 +35,14 @@ use Carp qw( croak );
 
 =head1 DESCRIPTION
 
-Provides access to DeepSeek's models via their API. Extends
-L<Langertha::Engine::OpenAI> with DeepSeek's endpoint
+Provides access to DeepSeek's models via their API. Composes
+L<Langertha::Role::OpenAICompatible> with DeepSeek's endpoint
 (C<https://api.deepseek.com>) and API key handling.
 
 Available models: C<deepseek-chat> (default, general-purpose),
 C<deepseek-reasoner> (chain-of-thought reasoning), and C<deepseek-v3.2>
 (thinking integrated with tool use). Embeddings and transcription are not
-supported. Dynamic model listing via C<list_models()> is inherited.
+supported. Dynamic model listing via C<list_models()>.
 
 Get your API key at L<https://platform.deepseek.com/> and set
 C<LANGERTHA_DEEPSEEK_API_KEY> in your environment.
@@ -54,14 +69,6 @@ sub _build_api_key {
 
 sub default_model { 'deepseek-chat' }
 
-sub embedding_request {
-  croak "".(ref $_[0])." doesn't support embedding";
-}
-
-sub transcription_request {
-  croak "".(ref $_[0])." doesn't support transcription";
-}
-
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -69,8 +76,6 @@ __PACKAGE__->meta->make_immutable;
 =over
 
 =item * L<https://api-docs.deepseek.com/> - Official DeepSeek API documentation
-
-=item * L<Langertha::Engine::OpenAI> - Parent class
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

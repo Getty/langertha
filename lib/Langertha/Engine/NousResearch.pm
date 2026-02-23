@@ -2,8 +2,22 @@ package Langertha::Engine::NousResearch;
 # ABSTRACT: Nous Research Inference API
 our $VERSION = '0.201';
 use Moose;
-extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
+
+with 'Langertha::Role::'.$_ for (qw(
+  JSON
+  HTTP
+  OpenAICompatible
+  OpenAPI
+  Models
+  Temperature
+  ResponseSize
+  SystemPrompt
+  Streaming
+  Chat
+));
+
+with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
@@ -29,8 +43,8 @@ use Carp qw( croak );
 
 =head1 DESCRIPTION
 
-Provides access to Nous Research's inference API. Extends
-L<Langertha::Engine::OpenAI> with Nous's endpoint
+Provides access to Nous Research's inference API. Composes
+L<Langertha::Role::OpenAICompatible> with Nous's endpoint
 (C<https://inference-api.nousresearch.com/v1>) and Hermes tool calling.
 
 Available models: C<Hermes-3-Llama-3.1-70B> (default), C<Hermes-3-Llama-3.1-405B>,
@@ -69,14 +83,6 @@ sub default_model { 'Hermes-3-Llama-3.1-70B' }
 # Hermes models use <tool_call> XML tags for tool calling
 has '+hermes_tools' => ( default => 1 );
 
-sub embedding_request {
-  croak "".(ref $_[0])." doesn't support embedding";
-}
-
-sub transcription_request {
-  croak "".(ref $_[0])." doesn't support transcription";
-}
-
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -88,8 +94,6 @@ __PACKAGE__->meta->make_immutable;
 =item * L<https://portal.nousresearch.com/api-docs> - API documentation
 
 =item * L<Langertha::Role::Tools> - Tool calling with Hermes support (C<hermes_tools> enabled by default)
-
-=item * L<Langertha::Engine::OpenAI> - Parent class
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

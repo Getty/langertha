@@ -77,8 +77,6 @@ sub default_embedding_model { 'mxbai-embed-large' }
 
 sub _build_supported_operations {[qw( createChatCompletion createEmbedding )]}
 
-sub transcription_request { croak "".(ref $_[0])." doesn't support transcription" }
-
 __PACKAGE__->meta->make_immutable;
 
 =seealso

@@ -28,8 +28,8 @@ my $vllm = Langertha::Engine::vLLM->new(
 # Test: api_key defaults to 'vllm'
 is($vllm->api_key, 'vllm', 'api_key defaults to vllm');
 
-# Test: inherits from OpenAI
-isa_ok($vllm, 'Langertha::Engine::OpenAI');
+# Test: composes OpenAICompatible
+ok($vllm->does('Langertha::Role::OpenAICompatible'), 'vLLM composes OpenAICompatible');
 
 # Test: tool calling methods available
 ok($vllm->can('format_tools'), 'has format_tools');

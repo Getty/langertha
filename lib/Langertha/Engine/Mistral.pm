@@ -2,10 +2,26 @@ package Langertha::Engine::Mistral;
 # ABSTRACT: Mistral API
 our $VERSION = '0.201';
 use Moose;
-extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
 
 use File::ShareDir::ProjectDistDir qw( :all );
+
+with 'Langertha::Role::'.$_ for (qw(
+  JSON
+  HTTP
+  OpenAICompatible
+  OpenAPI
+  Models
+  Temperature
+  ResponseSize
+  ResponseFormat
+  SystemPrompt
+  Streaming
+  Chat
+  Embedding
+));
+
+with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
@@ -24,17 +40,16 @@ use File::ShareDir::ProjectDistDir qw( :all );
 
 =head1 DESCRIPTION
 
-Provides access to Mistral AI's models via their API. Extends
-L<Langertha::Engine::OpenAI> with Mistral's endpoint
+Provides access to Mistral AI's models via their API. Composes
+L<Langertha::Role::OpenAICompatible> with Mistral's endpoint
 (C<https://api.mistral.ai>) and its OpenAPI spec.
 
 Popular models: C<mistral-small-latest> (default, fast), C<mistral-large-latest>
 (most capable, 675B parameters), C<codestral-latest> (code generation),
 C<devstral-latest> (development workflows), C<pixtral-large-latest> (vision).
-Supports chat and embeddings; transcription is not available.
+Supports chat, embeddings, and tool calling; transcription is not available.
 
-Dynamic model listing via C<list_models()> is inherited from
-L<Langertha::Engine::OpenAI>. Get your API key at
+Dynamic model listing via C<list_models()>. Get your API key at
 L<https://docs.mistral.ai/getting-started/quickstart/> and set
 C<LANGERTHA_MISTRAL_API_KEY>.
 
@@ -62,10 +77,6 @@ sub chat_operation_id { 'chat_completion_v1_chat_completions_post' }
 
 sub embedding_operation_id { 'embeddings_v1_embeddings_post' }
 
-sub transcription_request {
-  croak "".(ref $_[0])." doesn't support transcription";
-}
-
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -73,8 +84,6 @@ __PACKAGE__->meta->make_immutable;
 =over
 
 =item * L<https://mistral.ai/models> - Official Mistral models documentation
-
-=item * L<Langertha::Engine::OpenAI> - Parent class
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

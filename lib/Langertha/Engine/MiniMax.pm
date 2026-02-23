@@ -2,8 +2,22 @@ package Langertha::Engine::MiniMax;
 # ABSTRACT: MiniMax API
 our $VERSION = '0.201';
 use Moose;
-extends 'Langertha::Engine::OpenAI';
 use Carp qw( croak );
+
+with 'Langertha::Role::'.$_ for (qw(
+  JSON
+  HTTP
+  OpenAICompatible
+  OpenAPI
+  Models
+  Temperature
+  ResponseSize
+  SystemPrompt
+  Streaming
+  Chat
+));
+
+with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
@@ -27,8 +41,8 @@ use Carp qw( croak );
 =head1 DESCRIPTION
 
 Provides access to L<MiniMax|https://www.minimax.io/> models via their
-OpenAI-compatible API. Extends L<Langertha::Engine::OpenAI> with MiniMax's
-endpoint (C<https://api.minimax.io/v1>) and API key handling.
+OpenAI-compatible API. Composes L<Langertha::Role::OpenAICompatible> with
+MiniMax's endpoint (C<https://api.minimax.io/v1>) and API key handling.
 
 MiniMax is a Chinese AI company based in Shanghai, offering large language
 models with strong coding, reasoning, and agentic capabilities.
@@ -89,14 +103,6 @@ sub _build_api_key {
 
 sub default_model { 'MiniMax-M2.5' }
 
-sub embedding_request {
-  croak "".(ref $_[0])." doesn't support embedding";
-}
-
-sub transcription_request {
-  croak "".(ref $_[0])." doesn't support transcription";
-}
-
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -104,8 +110,6 @@ __PACKAGE__->meta->make_immutable;
 =over
 
 =item * L<https://platform.minimax.io/docs/> - Official MiniMax API documentation
-
-=item * L<Langertha::Engine::OpenAI> - Parent class
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

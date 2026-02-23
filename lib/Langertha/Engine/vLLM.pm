@@ -4,7 +4,20 @@ our $VERSION = '0.201';
 use Moose;
 use Carp qw( croak );
 
-extends 'Langertha::Engine::OpenAI';
+with 'Langertha::Role::'.$_ for (qw(
+  JSON
+  HTTP
+  OpenAICompatible
+  OpenAPI
+  Models
+  Temperature
+  ResponseSize
+  SystemPrompt
+  Streaming
+  Chat
+));
+
+with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
@@ -32,8 +45,8 @@ extends 'Langertha::Engine::OpenAI';
 =head1 DESCRIPTION
 
 Provides access to vLLM, a high-throughput inference engine for large
-language models. Extends L<Langertha::Engine::OpenAI> since vLLM exposes
-an OpenAI-compatible API.
+language models. Composes L<Langertha::Role::OpenAICompatible> since vLLM
+exposes an OpenAI-compatible API.
 
 Both C<url> and C<model> are required. The URL must include the C</v1>
 path prefix (e.g., C<http://localhost:8000/v1>). The API key defaults to
@@ -62,13 +75,13 @@ sub _build_supported_operations {[qw(
   createCompletion
 )]}
 
+__PACKAGE__->meta->make_immutable;
+
 =seealso
 
 =over
 
 =item * L<https://docs.vllm.ai/> - vLLM documentation
-
-=item * L<Langertha::Engine::OpenAI> - Parent engine (OpenAI-compatible API)
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

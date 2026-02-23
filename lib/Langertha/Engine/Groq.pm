@@ -4,7 +4,22 @@ our $VERSION = '0.201';
 use Moose;
 use Carp qw( croak );
 
-extends 'Langertha::Engine::OpenAI';
+with 'Langertha::Role::'.$_ for (qw(
+  JSON
+  HTTP
+  OpenAICompatible
+  OpenAPI
+  Models
+  Temperature
+  ResponseSize
+  ResponseFormat
+  SystemPrompt
+  Streaming
+  Chat
+  Transcription
+));
+
+with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
@@ -24,7 +39,7 @@ extends 'Langertha::Engine::OpenAI';
 =head1 DESCRIPTION
 
 Provides access to Groq's ultra-fast LLM inference via their GroqCloud API.
-Extends L<Langertha::Engine::OpenAI> with Groq's endpoint
+Composes L<Langertha::Role::OpenAICompatible> with Groq's endpoint
 (C<https://api.groq.com/openai/v1>) and API key handling.
 
 Popular models: C<llama-3.3-70b-versatile>, C<llama-3-groq-70b-tool-use>,
@@ -32,8 +47,7 @@ C<deepseek-r1-distill-llama-70b>, C<qwen-2.5-coder-32b>. Audio transcription
 uses C<whisper-large-v3> by default. No default chat model is set; C<model>
 must be specified explicitly.
 
-Dynamic model listing via C<list_models()> is inherited from
-L<Langertha::Engine::OpenAI>. Get your API key at
+Dynamic model listing via C<list_models()>. Get your API key at
 L<https://console.groq.com/keys> and set C<LANGERTHA_GROQ_API_KEY>.
 
 B<THIS API IS WORK IN PROGRESS>
@@ -60,13 +74,13 @@ sub _build_supported_operations {[qw(
   createTranscription
 )]}
 
+__PACKAGE__->meta->make_immutable;
+
 =seealso
 
 =over
 
 =item * L<https://console.groq.com/docs/models> - Official Groq models documentation
-
-=item * L<Langertha::Engine::OpenAI> - Parent class
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

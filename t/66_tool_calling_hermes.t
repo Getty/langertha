@@ -25,7 +25,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
     model   => 'Hermes-3-Llama-3.1-70B',
   );
 
-  isa_ok($nous, 'Langertha::Engine::OpenAI');
+  ok($nous->does('Langertha::Role::OpenAICompatible'), 'NousResearch composes OpenAICompatible');
   is($nous->hermes_tools, 1, 'NousResearch: hermes_tools defaults to 1');
   is($nous->default_model, 'Hermes-3-Llama-3.1-70B', 'default model');
   ok($nous->can('chat_with_tools_f'), 'has chat_with_tools_f');
