@@ -1,6 +1,19 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - Add Response.thinking attribute for chain-of-thought reasoning:
+      - Native extraction: DeepSeek/OpenAI-compatible reasoning_content,
+        Anthropic thinking blocks, Gemini thought parts — automatically
+        populated on Response.thinking, no configuration needed
+      - Think tag filter: <think> tag stripping enabled by default on
+        all engines. Handles both closed (<think>...</think>) and
+        unclosed (<think>...) tags. Configurable tag name via
+        think_tag (default: 'think'). Disable with
+        think_tag_filter => 0. Filtering applied across all text
+        paths: simple_chat, streaming, tool calling, and Raider.
+    - Add NousResearch reasoning attribute — enables chain-of-thought
+      reasoning for Hermes 4 and DeepHermes 3 models by prepending
+      the standard Nous reasoning system prompt
     - Langfuse cascading traces — Raider now creates proper hierarchical
       Trace → Span (iteration) → Generation (llm-call) / Span (tool)
       structure instead of flat trace → generation. Iteration spans group

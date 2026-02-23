@@ -177,15 +177,19 @@ sub chat_request {
 sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
-  my @messages = @{$data->{content}};
+  my @blocks = @{$data->{content}};
+  my $text = join('', map { $_->{text} // '' } grep { $_->{type} eq 'text' } @blocks);
+  my @thinking = map { $_->{thinking} // '' } grep { $_->{type} eq 'thinking' } @blocks;
+  my $thinking = @thinking ? join("\n", @thinking) : undef;
   require Langertha::Response;
   return Langertha::Response->new(
-    content       => $messages[0]->{text} // '',
+    content       => $text,
     raw           => $data,
     $data->{id} ? ( id => $data->{id} ) : (),
     $data->{model} ? ( model => $data->{model} ) : (),
     defined $data->{stop_reason} ? ( finish_reason => $data->{stop_reason} ) : (),
     $data->{usage} ? ( usage => $data->{usage} ) : (),
+    defined $thinking ? ( thinking => $thinking ) : (),
   );
 }
 

@@ -255,15 +255,17 @@ sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
   my $choice = $data->{choices}[0];
+  my $msg = $choice->{message} || {};
   require Langertha::Response;
   return Langertha::Response->new(
-    content       => $choice->{message}{content} // '',
+    content       => $msg->{content} // '',
     raw           => $data,
     $data->{id} ? ( id => $data->{id} ) : (),
     $data->{model} ? ( model => $data->{model} ) : (),
     defined $choice->{finish_reason} ? ( finish_reason => $choice->{finish_reason} ) : (),
     $data->{usage} ? ( usage => $data->{usage} ) : (),
     $data->{created} ? ( created => $data->{created} ) : (),
+    defined $msg->{reasoning_content} ? ( thinking => $msg->{reasoning_content} ) : (),
   );
 }
 

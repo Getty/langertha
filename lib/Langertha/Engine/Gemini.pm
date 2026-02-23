@@ -158,15 +158,27 @@ sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
 
-  # Gemini response format: candidates[0].content.parts[0].text
+  # Gemini response format: candidates[0].content.parts[].text
   my $candidates = $data->{candidates} || [];
   my $text = '';
   my $finish_reason;
+  my $thinking;
   if (@$candidates) {
     my $candidate = $candidates->[0];
     my $content = $candidate->{content} || {};
     my $parts = $content->{parts} || [];
-    $text = $parts->[0]->{text} || '' if @$parts;
+    my @text_parts;
+    my @thought_parts;
+    for my $part (@$parts) {
+      next unless exists $part->{text};
+      if ($part->{thought}) {
+        push @thought_parts, $part->{text};
+      } else {
+        push @text_parts, $part->{text};
+      }
+    }
+    $text = join('', @text_parts);
+    $thinking = join("\n", @thought_parts) if @thought_parts;
     $finish_reason = $candidate->{finishReason};
   }
 
@@ -187,6 +199,7 @@ sub chat_response {
     $data->{modelVersion} ? ( model => $data->{modelVersion} ) : (),
     defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
     $usage ? ( usage => $usage ) : (),
+    defined $thinking ? ( thinking => $thinking ) : (),
   );
 }
 

@@ -295,10 +295,13 @@ async sub chat_with_tools_f {
 
     # No tool calls means the LLM is done — return final text
     unless (@$tool_calls) {
-      if ($self->hermes_tools) {
-        return $self->_hermes_text_content($data);
+      my $text = $self->hermes_tools
+        ? $self->_hermes_text_content($data)
+        : $self->response_text_content($data);
+      if ($self->think_tag_filter) {
+        ($text) = $self->filter_think_content($text);
       }
-      return $self->response_text_content($data);
+      return $text;
     }
 
     # Execute each tool call via the appropriate MCP server

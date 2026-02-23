@@ -135,6 +135,41 @@ Unix timestamp of when the response was created.
 
 =cut
 
+has thinking => (
+  is => 'ro',
+  isa => 'Maybe[Str]',
+  predicate => 'has_thinking',
+);
+
+=attr thinking
+
+Chain-of-thought reasoning content. Populated automatically from native API
+fields (DeepSeek C<reasoning_content>, Anthropic C<thinking> blocks, Gemini
+C<thought> parts) or from C<E<lt>thinkE<gt>> tag filtering when
+L<Langertha::Role::ThinkTag/think_tag_filter> is enabled.
+
+=cut
+
+sub clone_with {
+  my ( $self, %overrides ) = @_;
+  my %args = (content => $self->content);
+  for my $attr (qw( raw id model finish_reason usage timing created thinking )) {
+    my $pred = "has_$attr";
+    $args{$attr} = $self->$attr if $self->$pred;
+  }
+  return (ref $self)->new(%args, %overrides);
+}
+
+=method clone_with
+
+    my $new = $response->clone_with(content => $filtered, thinking => $thought);
+
+Returns a new Response with the same attributes as the original, except for
+the overrides provided. Used by L<Langertha::Role::ThinkTag> to produce a
+filtered response while preserving metadata.
+
+=cut
+
 sub prompt_tokens {
   my ( $self ) = @_;
   my $u = $self->usage or return undef;

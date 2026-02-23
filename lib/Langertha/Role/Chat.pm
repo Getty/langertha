@@ -380,6 +380,7 @@ sub _process_stream_buffer {
   return \@chunks;
 }
 
+with 'Langertha::Role::ThinkTag';
 with 'Langertha::Role::Langfuse';
 
 =seealso

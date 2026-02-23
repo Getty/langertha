@@ -227,6 +227,47 @@ say $r->finish_reason;       # stop
 
 Works across all engines. Each provider's token counts and metadata are normalized automatically.
 
+## Chain-of-Thought Reasoning
+
+Reasoning models produce chain-of-thought thinking alongside their answers. Langertha extracts this automatically — the response content is always clean, and thinking is available separately:
+
+```perl
+my $r = $engine->simple_chat('Solve this step by step...');
+say $r;                  # clean answer
+say $r->thinking;        # chain-of-thought reasoning (if any)
+say $r->has_thinking;    # check if thinking was produced
+```
+
+**Native API extraction** works automatically for providers that return reasoning as a separate field:
+
+| Provider | Reasoning Field | Models |
+|----------|----------------|--------|
+| DeepSeek | `reasoning_content` | deepseek-reasoner |
+| Anthropic | `thinking` content blocks | claude with extended thinking |
+| Gemini | `thought` parts | gemini-2.5-flash/pro |
+| OpenAI | `reasoning_content` | o1, o3, o4-mini |
+
+**Think tag filtering** handles open-source reasoning models that embed `<think>...</think>` tags inline (DeepSeek R1 via Ollama/vLLM, QwQ, Hermes with reasoning). The filter is enabled by default on all engines and strips tags automatically. Handles both closed and unclosed tags (when models stop mid-thought).
+
+```perl
+# NousResearch with reasoning enabled
+my $nous = Langertha::Engine::NousResearch->new(
+    api_key   => $ENV{NOUSRESEARCH_API_KEY},
+    model     => 'DeepHermes-3-Mistral-24B-Preview',
+    reasoning => 1,   # enables chain-of-thought system prompt
+);
+my $r = $nous->simple_chat('Explain why the sky is blue');
+say $r;               # clean answer
+say $r->thinking;     # <think> content extracted automatically
+
+# Custom tag name for models using different tags
+my $engine = Langertha::Engine::vLLM->new(
+    url       => $vllm_url,
+    model     => 'my-model',
+    think_tag => 'reasoning',   # default: 'think'
+);
+```
+
 ## Raider — Autonomous Agent
 
 `Langertha::Raider` is a stateful agent with conversation history and MCP tool calling. It maintains context across multiple interactions ("raids").

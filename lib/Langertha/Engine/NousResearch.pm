@@ -30,6 +30,17 @@ with 'Langertha::Role::Tools';
 
     print $nous->simple_chat('Explain the Hermes prompt format');
 
+    # Chain-of-thought reasoning (DeepHermes 3 / Hermes 4)
+    my $nous = Langertha::Engine::NousResearch->new(
+        api_key   => $ENV{NOUSRESEARCH_API_KEY},
+        model     => 'DeepHermes-3-Mistral-24B-Preview',
+        reasoning => 1,
+    );
+
+    my $response = $nous->simple_chat('Solve this step by step...');
+    say $response;                  # clean answer
+    say $response->thinking;        # chain-of-thought reasoning
+
     # MCP tool calling (hermes_tools enabled by default)
     use Future::AsyncAwait;
 
@@ -82,6 +93,46 @@ sub default_model { 'Hermes-3-Llama-3.1-70B' }
 
 # Hermes models use <tool_call> XML tags for tool calling
 has '+hermes_tools' => ( default => 1 );
+
+has reasoning => (
+  is => 'ro',
+  isa => 'Bool',
+  default => 0,
+);
+
+=attr reasoning
+
+    reasoning => 1
+
+Enable chain-of-thought reasoning for Hermes 4 and DeepHermes 3 models.
+Prepends the standard Nous reasoning system prompt that instructs the model
+to use C<E<lt>thinkE<gt>> tags. The thinking content is automatically
+extracted into L<Langertha::Response/thinking> by L<Langertha::Role::ThinkTag>.
+
+With DeepHermes 3, reasoning output appears inline as C<E<lt>thinkE<gt>> tags
+(handled by the think tag filter). With Hermes 4 (without response prefill),
+reasoning appears in the C<reasoning_content> response field (handled by
+native extraction).
+
+Defaults to C<0> (disabled).
+
+=cut
+
+my $_reasoning_prompt = 'You are a deep thinking AI, you may use extremely '
+  . 'long chains of thought to deeply consider the problem and deliberate '
+  . 'with yourself via systematic reasoning processes to help come to a '
+  . 'correct solution prior to answering. You should enclose your thoughts '
+  . 'and internal monologue inside <think> </think> tags, and then provide '
+  . 'your solution or response to the problem.';
+
+around chat_messages => sub {
+  my ( $orig, $self, @messages ) = @_;
+  my $msgs = $self->$orig(@messages);
+  return $msgs unless $self->reasoning;
+  # Prepend reasoning prompt as first system message
+  unshift @$msgs, { role => 'system', content => $_reasoning_prompt };
+  return $msgs;
+};
 
 __PACKAGE__->meta->make_immutable;
 

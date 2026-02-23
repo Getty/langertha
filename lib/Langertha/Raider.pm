@@ -717,6 +717,9 @@ async sub raid_f {
       } else {
         $text = $engine->response_text_content($data);
       }
+      if ($engine->think_tag_filter) {
+        ($text) = $engine->filter_think_content($text);
+      }
 
       my $iter_t1 = $langfuse ? $engine->_langfuse_timestamp : undef;
 
