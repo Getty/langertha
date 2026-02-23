@@ -14,8 +14,9 @@ BEGIN {
   push @available, 'anthropic' if $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY};
   push @available, 'openai'    if $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
   push @available, 'deepseek'  if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
+  push @available, 'minimax'   if $ENV{TEST_LANGERTHA_MINIMAX_API_KEY};
   unless (@available) {
-    plan skip_all => 'No TEST_LANGERTHA_*_API_KEY env vars set (need anthropic, openai, or deepseek)';
+    plan skip_all => 'No TEST_LANGERTHA_*_API_KEY env vars set (need anthropic, openai, deepseek, or minimax)';
   }
   eval {
     require IO::Async::Loop;
@@ -130,6 +131,13 @@ async sub test_raider {
     "$name: history grew after raid 2");
   is($raider->metrics->{raids}, 2, "$name: metrics show 2 raids");
 
+  # --- Langfuse flush ---
+  if ($engine->can('langfuse_enabled') && $engine->langfuse_enabled) {
+    my $batch_size = scalar @{$engine->_langfuse_batch};
+    $engine->langfuse_flush;
+    diag "$name: flushed $batch_size Langfuse events";
+  }
+
   # --- clear_history ---
   $raider->clear_history;
   is(scalar @{$raider->history}, 0, "$name: clear_history empties history");
@@ -177,6 +185,17 @@ async sub run_tests {
       ));
     };
     diag "DeepSeek error: $@" if $@;
+  }
+
+  if ($ENV{TEST_LANGERTHA_MINIMAX_API_KEY}) {
+    require Langertha::Engine::MiniMax;
+    eval {
+      await test_raider('MiniMax', Langertha::Engine::MiniMax->new(
+        api_key => $ENV{TEST_LANGERTHA_MINIMAX_API_KEY},
+        mcp_servers => [$mcp],
+      ));
+    };
+    diag "MiniMax error: $@" if $@;
   }
 }
 

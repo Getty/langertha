@@ -33,12 +33,36 @@ endpoint (C<https://api.minimax.io/v1>) and API key handling.
 MiniMax is a Chinese AI company based in Shanghai, offering large language
 models with strong coding, reasoning, and agentic capabilities.
 
-Available models: C<MiniMax-M2.5> (latest flagship), C<MiniMax-M2.5-highspeed>
-(lower latency), C<MiniMax-M2.1>, C<MiniMax-M2.1-highspeed>, C<MiniMax-M2>.
-Dynamic model listing via C<list_models()> is inherited.
+B<Available text models:>
 
-Supports chat, streaming, and tool calling. Embeddings and transcription
-are not supported.
+=over 4
+
+=item * C<MiniMax-M2.5> — Latest flagship. 1M context window, $0.30/1M input,
+$1.20/1M output. SOTA coding (80.2% SWE-Bench Verified), agentic tool use,
+and search.
+
+=item * C<MiniMax-M2.5-highspeed> — Same M2.5 performance with lower latency.
+205K context window.
+
+=item * C<MiniMax-M2.1> — 230B total parameters, 10B activated per inference.
+Strong multilingual coding and reasoning.
+
+=item * C<MiniMax-M2.1-highspeed> — Same M2.1 performance with lower latency.
+
+=item * C<MiniMax-M2> — 200K context, 128K max output. Function calling and
+agentic capabilities.
+
+=back
+
+See L<https://platform.minimax.io/docs/guides/models-intro> for the full
+model catalog including audio, video, and music models.
+
+Supports chat, streaming, and tool calling. Embeddings, transcription, and
+dynamic model listing (C</v1/models>) are not supported.
+
+B<Coding Plan:> MiniMax offers a Coding Plan subscription with web search
+and image understanding APIs for coding workflows. See
+L<https://platform.minimax.io/docs/coding-plan/intro>.
 
 Get your API key at L<https://platform.minimax.io/> and set
 C<LANGERTHA_MINIMAX_API_KEY> in your environment.

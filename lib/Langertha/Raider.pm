@@ -84,6 +84,8 @@ B<Key features:>
 
 =item * Hermes tool calling support (inherited from engine)
 
+=item * Mid-raid context injection via C<inject()> and C<on_iteration>
+
 =back
 
 B<History management:> Only user messages and final assistant text
@@ -145,6 +147,114 @@ Maximum number of tool-calling round trips per raid. Defaults to C<10>.
 
 =cut
 
+has max_context_tokens => (
+  is => 'ro',
+  isa => 'Int',
+  predicate => 'has_max_context_tokens',
+);
+
+=attr max_context_tokens
+
+Optional. Enables auto-compression when set. When prompt token usage
+exceeds C<context_compress_threshold * max_context_tokens>, the working
+history is summarized via LLM before the next raid.
+
+=cut
+
+has context_compress_threshold => (
+  is => 'ro',
+  isa => 'Num',
+  default => 0.75,
+);
+
+=attr context_compress_threshold
+
+Fraction of C<max_context_tokens> that triggers compression. Defaults
+to C<0.75> (75%).
+
+=cut
+
+has compression_prompt => (
+  is => 'ro',
+  isa => 'Str',
+  lazy => 1,
+  default => sub {
+    'You are a conversation summarizer. Summarize the following conversation '
+    . 'between a user and an AI assistant. Preserve all key facts, decisions, '
+    . 'action items, file names, code references, and important context. '
+    . 'Be concise but complete. The summary will replace the conversation '
+    . 'history, so the assistant must be able to continue naturally.'
+  },
+);
+
+=attr compression_prompt
+
+System prompt used for history summarization. Customizable. The default
+instructs the LLM to preserve key facts, decisions, and context.
+
+=cut
+
+has compression_engine => (
+  is => 'ro',
+  predicate => 'has_compression_engine',
+);
+
+=attr compression_engine
+
+Optional separate engine for compression (e.g. a cheaper model).
+Falls back to C<engine> when not set.
+
+=cut
+
+has session_history => (
+  is => 'ro',
+  isa => 'ArrayRef',
+  default => sub { [] },
+);
+
+=attr session_history
+
+Full chronological archive of ALL messages including tool calls and
+results. Never auto-compressed. Persists across C<clear_history> and
+C<reset>. Only cleared manually via C<< $raider->session_history([]) >>.
+
+=cut
+
+has _last_prompt_tokens => (
+  is => 'rw',
+  isa => 'Int',
+  predicate => 'has_last_prompt_tokens',
+);
+
+has _injections => (
+  is => 'ro',
+  isa => 'ArrayRef',
+  default => sub { [] },
+);
+
+has on_iteration => (
+  is => 'rw',
+  isa => 'CodeRef',
+  predicate => 'has_on_iteration',
+);
+
+=attr on_iteration
+
+Optional CodeRef called before each LLM call (iterations 2+). Receives
+C<($raider, $iteration)> and returns an arrayref of messages to inject,
+or undef/empty to skip.
+
+    my $raider = Langertha::Raider->new(
+        engine => $engine,
+        on_iteration => sub {
+            my ($raider, $iteration) = @_;
+            return ['Check the error log'] if $iteration == 3;
+            return;
+        },
+    );
+
+=cut
+
 has metrics => (
   is => 'rw',
   isa => 'HashRef',
@@ -166,9 +276,96 @@ HashRef of cumulative metrics across all raids:
 
 =cut
 
+has langfuse_trace_name => (
+  is => 'ro',
+  isa => 'Str',
+  default => 'raid',
+);
+
+=attr langfuse_trace_name
+
+Name for the Langfuse trace created per raid. Defaults to C<'raid'>.
+
+=cut
+
+has langfuse_user_id => (
+  is => 'ro',
+  isa => 'Str',
+  predicate => 'has_langfuse_user_id',
+);
+
+=attr langfuse_user_id
+
+Optional user ID passed to the Langfuse trace.
+
+=cut
+
+has langfuse_session_id => (
+  is => 'ro',
+  isa => 'Str',
+  predicate => 'has_langfuse_session_id',
+);
+
+=attr langfuse_session_id
+
+Optional session ID passed to the Langfuse trace. Use this to group
+multiple raids into a single Langfuse session.
+
+=cut
+
+has langfuse_tags => (
+  is => 'ro',
+  isa => 'ArrayRef[Str]',
+  predicate => 'has_langfuse_tags',
+);
+
+=attr langfuse_tags
+
+Optional tags (ArrayRef[Str]) passed to the Langfuse trace.
+
+=cut
+
+has langfuse_release => (
+  is => 'ro',
+  isa => 'Str',
+  predicate => 'has_langfuse_release',
+);
+
+=attr langfuse_release
+
+Optional release identifier passed to the Langfuse trace.
+
+=cut
+
+has langfuse_version => (
+  is => 'ro',
+  isa => 'Str',
+  predicate => 'has_langfuse_version',
+);
+
+=attr langfuse_version
+
+Optional version string passed to the Langfuse trace.
+
+=cut
+
+has langfuse_metadata => (
+  is => 'ro',
+  isa => 'HashRef',
+  predicate => 'has_langfuse_metadata',
+);
+
+=attr langfuse_metadata
+
+Optional metadata HashRef merged into the Langfuse trace metadata
+(alongside auto-generated fields like mission and history_length).
+
+=cut
+
 sub clear_history {
   my ( $self ) = @_;
   $self->history([]);
+  splice @{$self->_injections};
   return $self;
 }
 
@@ -176,7 +373,24 @@ sub clear_history {
 
     $raider->clear_history;
 
-Clears conversation history while preserving metrics.
+Clears conversation history and pending injections while preserving metrics.
+
+=cut
+
+sub inject {
+  my ( $self, @messages ) = @_;
+  push @{$self->_injections}, @messages;
+  return $self;
+}
+
+=method inject
+
+    $raider->inject('Also check the test files');
+    $raider->inject({ role => 'user', content => 'Focus on .pm files' });
+
+Queues messages to be injected into the conversation at the next iteration.
+Strings are automatically wrapped as user messages. The Raider drains the
+queue before each LLM call (iterations 2+).
 
 =cut
 
@@ -196,6 +410,146 @@ sub reset {
 Clears both conversation history and metrics.
 
 =cut
+
+sub _extract_prompt_tokens {
+  my ( $self, $data ) = @_;
+  # OpenAI-compatible (OpenAI, Groq, Mistral, DeepSeek, MiniMax, vLLM, Ollama, AKI)
+  if (my $u = $data->{usage}) {
+    return $u->{prompt_tokens} // $u->{input_tokens};
+  }
+  # Gemini
+  if (my $m = $data->{usageMetadata}) {
+    return $m->{promptTokenCount};
+  }
+  return undef;
+}
+
+async sub compress_history_f {
+  my ( $self ) = @_;
+  my @history = @{$self->history};
+  return unless @history;
+
+  my $engine = $self->has_compression_engine
+    ? $self->compression_engine : $self->engine;
+
+  my @messages = (
+    { role => 'system', content => $self->compression_prompt },
+    @history,
+    { role => 'user', content => 'Provide a concise summary.' },
+  );
+
+  my $request = $engine->chat_request(\@messages);
+  my $response = await $engine->_async_http->do_request(request => $request);
+  my $data = $engine->parse_response($response);
+  my $summary = $engine->response_text_content($data);
+
+  # Replace working history with summary
+  $self->history([
+    { role => 'assistant', content => $summary },
+  ]);
+
+  # Mark compression event in session_history
+  push @{$self->session_history}, {
+    role => 'system',
+    content => '[Context compressed — history summarized]',
+  };
+
+  return $summary;
+}
+
+=method compress_history_f
+
+    my $summary = await $raider->compress_history_f;
+
+Async. Summarizes the current working history via LLM and replaces it
+with the summary. Uses C<compression_engine> if set, otherwise falls
+back to C<engine>. A marker is added to C<session_history>.
+
+=cut
+
+sub compress_history {
+  my ( $self ) = @_;
+  return $self->compress_history_f->get;
+}
+
+=method compress_history
+
+    my $summary = $raider->compress_history;
+
+Synchronous wrapper around C<compress_history_f>.
+
+=cut
+
+sub register_session_history_tool {
+  my ( $self, $server ) = @_;
+  $server->tool(
+    name => 'session_history',
+    description => 'Retrieve the full session history including tool calls.',
+    input_schema => {
+      type => 'object',
+      properties => {
+        query   => { type => 'string', description => 'Filter messages containing this text' },
+        last_n  => { type => 'integer', description => 'Return only the last N messages' },
+      },
+    },
+    code => sub {
+      my ( $tool, $args ) = @_;
+      my @hist = @{$self->session_history};
+      if (my $q = $args->{query}) {
+        @hist = grep { ($_->{content} // '') =~ /\Q$q/i } @hist;
+      }
+      if (my $n = $args->{last_n}) {
+        @hist = @hist[-$n..-1] if @hist > $n;
+      }
+      my $text = join("\n\n", map {
+        "[$_->{role}] $_->{content}"
+      } @hist);
+      $tool->text_result($text || 'No messages in session history.');
+    },
+  );
+}
+
+=method register_session_history_tool
+
+    $raider->register_session_history_tool($mcp_server);
+
+Registers a C<session_history> MCP tool on the given server, allowing
+the LLM to query its own full session history. Supports C<query>
+(text filter) and C<last_n> (return last N messages) parameters.
+
+=cut
+
+sub _langfuse_model_parameters {
+  my ( $self ) = @_;
+  my $e = $self->engine;
+  my %p;
+  $p{temperature} = $e->temperature if $e->can('has_temperature') && $e->has_temperature;
+  $p{max_tokens} = $e->get_response_size if $e->can('get_response_size') && $e->get_response_size;
+  return keys %p ? \%p : undef;
+}
+
+sub _langfuse_usage {
+  my ( $self, $data ) = @_;
+  # OpenAI-compatible + Anthropic (both use $data->{usage})
+  if (my $u = $data->{usage}) {
+    my $input  = $u->{prompt_tokens} // $u->{input_tokens};
+    my $output = $u->{completion_tokens} // $u->{output_tokens};
+    return {
+      input  => $input,
+      output => $output,
+      total  => $u->{total_tokens} // (($input // 0) + ($output // 0)),
+    };
+  }
+  # Gemini
+  if (my $m = $data->{usageMetadata}) {
+    return {
+      input  => $m->{promptTokenCount},
+      output => $m->{candidatesTokenCount},
+      total  => $m->{totalTokenCount},
+    };
+  }
+  return undef;
+}
 
 sub raid {
   my ( $self, @messages ) = @_;
@@ -219,14 +573,29 @@ async sub raid_f {
   my $trace_id;
 
   if ($langfuse) {
-    $trace_id = $engine->langfuse_trace(
-      name     => 'raid',
-      input    => \@messages,
-      metadata => {
-        mission        => $self->has_mission ? $self->mission : undef,
-        history_length => scalar @{$self->history},
-      },
+    my %trace_meta = (
+      mission        => $self->has_mission ? $self->mission : undef,
+      history_length => scalar @{$self->history},
     );
+    if ($self->has_langfuse_metadata) {
+      %trace_meta = (%trace_meta, %{$self->langfuse_metadata});
+    }
+    $trace_id = $engine->langfuse_trace(
+      name     => $self->langfuse_trace_name,
+      input    => \@messages,
+      metadata => \%trace_meta,
+      $self->has_langfuse_user_id    ? ( user_id    => $self->langfuse_user_id )    : (),
+      $self->has_langfuse_session_id ? ( session_id => $self->langfuse_session_id ) : (),
+      $self->has_langfuse_tags       ? ( tags       => $self->langfuse_tags )       : (),
+      $self->has_langfuse_release    ? ( release    => $self->langfuse_release )    : (),
+      $self->has_langfuse_version    ? ( version    => $self->langfuse_version )    : (),
+    );
+  }
+
+  # Auto-compress if threshold exceeded
+  if ($self->has_max_context_tokens && $self->has_last_prompt_tokens
+      && $self->_last_prompt_tokens > $self->max_context_tokens * $self->context_compress_threshold) {
+    await $self->compress_history_f();
   }
 
   croak "Engine must have MCP servers configured"
@@ -243,11 +612,15 @@ async sub raid_f {
   }
 
   my $formatted_tools = $engine->format_tools(\@all_tools);
+  my $model_params = $langfuse ? $self->_langfuse_model_parameters : undef;
 
   # Build new user messages
   my @user_msgs = map {
     ref $_ ? $_ : { role => 'user', content => $_ }
   } @messages;
+
+  # Push user messages to session_history
+  push @{$self->session_history}, @user_msgs;
 
   # Build full conversation: mission + history + new messages
   my @conversation;
@@ -267,10 +640,42 @@ async sub raid_f {
 
   my $raid_iterations = 0;
   my $raid_tool_calls = 0;
+  my @injected_history;
 
   for my $iteration (1..$self->max_iterations) {
     $raid_iterations++;
+
+    # Drain injections for iterations 2+
+    if ($iteration > 1) {
+      my @injected;
+      if (@{$self->_injections}) {
+        push @injected, splice @{$self->_injections};
+      }
+      if ($self->has_on_iteration) {
+        my $cb_msgs = $self->on_iteration->($self, $iteration);
+        push @injected, @$cb_msgs if $cb_msgs && @$cb_msgs;
+      }
+      if (@injected) {
+        my @msgs = map {
+          ref $_ ? $_ : { role => 'user', content => $_ }
+        } @injected;
+        push @conversation, @msgs;
+        push @injected_history, @msgs;
+        push @{$self->session_history}, @msgs;
+      }
+    }
+
     my $iter_t0 = $langfuse ? $engine->_langfuse_timestamp : undef;
+
+    # Langfuse: create iteration span
+    my $iter_span_id;
+    if ($langfuse) {
+      $iter_span_id = $engine->langfuse_span(
+        trace_id   => $trace_id,
+        name       => "iteration-$iteration",
+        start_time => $iter_t0,
+      );
+    }
 
     # Build and send the request
     my $request;
@@ -289,6 +694,13 @@ async sub raid_f {
 
     my $data = $engine->parse_response($response);
 
+    # Track prompt tokens for auto-compression
+    my $pt = $self->_extract_prompt_tokens($data);
+    $self->_last_prompt_tokens($pt) if defined $pt;
+
+    # Extract usage for Langfuse
+    my $langfuse_usage = $langfuse ? $self->_langfuse_usage($data) : undef;
+
     # Extract tool calls
     my $tool_calls;
     if ($hermes) {
@@ -306,23 +718,44 @@ async sub raid_f {
         $text = $engine->response_text_content($data);
       }
 
-      # Langfuse: generation for this final iteration
+      my $iter_t1 = $langfuse ? $engine->_langfuse_timestamp : undef;
+
+      # Langfuse: generation nested under iteration span
       if ($langfuse) {
         $engine->langfuse_generation(
-          trace_id   => $trace_id,
-          name       => "raid-iteration-$iteration",
-          model      => $engine->chat_model,
-          input      => \@conversation,
-          output     => $text,
-          start_time => $iter_t0,
-          end_time   => $engine->_langfuse_timestamp,
-          metadata   => { tool_calls => 0 },
+          trace_id              => $trace_id,
+          parent_observation_id => $iter_span_id,
+          name                  => 'llm-call',
+          model                 => $engine->chat_model,
+          input                 => \@conversation,
+          output                => $text,
+          start_time            => $iter_t0,
+          end_time              => $iter_t1,
+          $langfuse_usage  ? ( usage            => $langfuse_usage )  : (),
+          $model_params    ? ( model_parameters => $model_params )    : (),
+        );
+
+        # Close iteration span
+        $engine->langfuse_update_span(
+          id       => $iter_span_id,
+          end_time => $iter_t1,
+          output   => $text,
+        );
+
+        # Update trace with final output
+        $engine->langfuse_update_trace(
+          id     => $trace_id,
+          output => $text,
         );
       }
 
-      # Persist user messages and final assistant response in history
+      # Persist user messages, injections, and final assistant response in history
       push @{$self->history}, @user_msgs;
+      push @{$self->history}, @injected_history if @injected_history;
       push @{$self->history}, { role => 'assistant', content => $text };
+
+      # Push final assistant response to session_history
+      push @{$self->session_history}, { role => 'assistant', content => $text };
 
       # Update metrics
       my $elapsed = tv_interval($t0) * 1000;
@@ -333,6 +766,25 @@ async sub raid_f {
       $m->{time_ms}     += $elapsed;
 
       return $text;
+    }
+
+    # Langfuse: generation for the LLM call that produced tool calls
+    my $post_llm_t = $langfuse ? $engine->_langfuse_timestamp : undef;
+    if ($langfuse) {
+      $engine->langfuse_generation(
+        trace_id              => $trace_id,
+        parent_observation_id => $iter_span_id,
+        name                  => 'llm-call',
+        model                 => $engine->chat_model,
+        input                 => \@conversation,
+        output                => $engine->json->encode([map {
+          $hermes ? $_->{name} : ($engine->extract_tool_call($_))[0]
+        } @$tool_calls]),
+        start_time            => $iter_t0,
+        end_time              => $post_llm_t,
+        $langfuse_usage  ? ( usage            => $langfuse_usage )  : (),
+        $model_params    ? ( model_parameters => $model_params )    : (),
+      );
     }
 
     # Execute each tool call
@@ -348,6 +800,8 @@ async sub raid_f {
       my $mcp = $tool_server_map{$name}
         or die "Tool '$name' not found on any MCP server";
 
+      my $tool_t0 = $langfuse ? $engine->_langfuse_timestamp : undef;
+
       my $result = await $mcp->call_tool($name, $input)->else(sub {
         my ( $error ) = @_;
         Future->done({
@@ -356,36 +810,48 @@ async sub raid_f {
         });
       });
 
+      # Langfuse: span for each tool call, nested under iteration span
+      if ($langfuse) {
+        my $tool_output = join('', map { $_->{text} // '' } @{$result->{content} // []});
+        $engine->langfuse_span(
+          trace_id              => $trace_id,
+          parent_observation_id => $iter_span_id,
+          name                  => "tool: $name",
+          input                 => $input,
+          output                => $tool_output,
+          start_time            => $tool_t0,
+          end_time              => $engine->_langfuse_timestamp,
+          $result->{isError} ? ( level => 'ERROR' ) : (),
+        );
+      }
+
       push @results, { tool_call => $tc, result => $result };
       $raid_tool_calls++;
     }
 
-    # Langfuse: generation for this tool-calling iteration
+    # Langfuse: close iteration span after tools complete
     if ($langfuse) {
-      my @tool_names = map {
-        $hermes ? $_->{tool_call}{name} : ($engine->extract_tool_call($_->{tool_call}))[0]
-      } @results;
-      $engine->langfuse_generation(
-        trace_id   => $trace_id,
-        name       => "raid-iteration-$iteration",
-        model      => $engine->chat_model,
-        input      => \@conversation,
-        output     => $engine->json->encode([map { $_->{name} } @$tool_calls]),
-        start_time => $iter_t0,
-        end_time   => $engine->_langfuse_timestamp,
-        metadata   => {
+      $engine->langfuse_update_span(
+        id       => $iter_span_id,
+        end_time => $engine->_langfuse_timestamp,
+        metadata => {
           tool_calls => scalar @$tool_calls,
-          tools_used => \@tool_names,
+          tools_used => [map {
+            $hermes ? $_->{tool_call}{name} : ($engine->extract_tool_call($_->{tool_call}))[0]
+          } @results],
         },
       );
     }
 
-    # Append assistant + tool results to conversation (NOT to history)
+    # Append assistant + tool results to conversation and session_history
+    my @tool_msgs;
     if ($hermes) {
-      push @conversation, $engine->_hermes_build_tool_results($data, \@results);
+      @tool_msgs = $engine->_hermes_build_tool_results($data, \@results);
     } else {
-      push @conversation, $engine->format_tool_results($data, \@results);
+      @tool_msgs = $engine->format_tool_results($data, \@results);
     }
+    push @conversation, @tool_msgs;
+    push @{$self->session_history}, @tool_msgs;
   }
 
   die "Raider tool loop exceeded ".$self->max_iterations." iterations";

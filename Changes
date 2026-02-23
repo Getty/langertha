@@ -1,6 +1,42 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - Langfuse cascading traces — Raider now creates proper hierarchical
+      Trace → Span (iteration) → Generation (llm-call) / Span (tool)
+      structure instead of flat trace → generation. Iteration spans group
+      the LLM call and its tool calls. Tool spans capture per-tool timing,
+      input, and output. Trace is updated with final output at raid end.
+    - Langfuse: add langfuse_span() for creating span events
+    - Langfuse: add langfuse_update_trace(), langfuse_update_span(),
+      langfuse_update_generation() for updating observations after creation
+    - Langfuse: langfuse_trace() now supports tags, user_id, session_id,
+      release, version, public, and environment fields
+    - Langfuse: langfuse_generation() now supports parent_observation_id,
+      model_parameters, level, status_message, and version fields
+    - Langfuse: Raider generations now include token usage data and
+      model parameters (temperature, max_tokens) when available
+    - Raider: add langfuse_trace_name, langfuse_user_id, langfuse_session_id,
+      langfuse_tags, langfuse_release, langfuse_version, langfuse_metadata
+      attributes for customizing Langfuse trace creation
+    - Add Raider context compression — when prompt token usage exceeds
+      a configurable threshold (max_context_tokens * context_compress_threshold),
+      history is automatically summarized via LLM before the next raid.
+      Supports separate compression_engine for using cheaper models.
+      Manual compression via compress_history/compress_history_f.
+    - Add Raider session_history — full chronological archive of ALL
+      messages including tool calls and results, persisted across
+      clear_history and reset. Queryable by the LLM via MCP tool
+      registered with register_session_history_tool().
+    - Add MiniMax to live tool calling test (t/80_live_tool_calling.t)
+      and live raider test (t/82_live_raider.t)
+    - Add t/83_live_minimax.t: dedicated MiniMax live test covering
+      simple_chat, list_models, and Raider with Coding Plan web search
+    - Add Raider inject() method for mid-raid context injection —
+      queue messages from async callbacks, timers, or other tasks
+      that get picked up at the next iteration naturally
+    - Add Raider on_iteration callback — called before each LLM call
+      (iterations 2+) with ($raider, $iteration), returns messages
+      to inject. Injected messages are persisted in history.
     - Add Langertha::Engine::MiniMax for MiniMax AI API
       (chat, streaming, tool calling via OpenAI-compatible API)
     - Rewrite all POD to inline style across all modules —

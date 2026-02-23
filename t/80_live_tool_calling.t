@@ -15,6 +15,7 @@ BEGIN {
   push @available, 'groq'      if $ENV{TEST_LANGERTHA_GROQ_API_KEY};
   push @available, 'mistral'   if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};
   push @available, 'deepseek'    if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
+  push @available, 'minimax'     if $ENV{TEST_LANGERTHA_MINIMAX_API_KEY};
   # Perplexity does not support tool calling
   push @available, 'nousresearch' if $ENV{TEST_LANGERTHA_NOUSRESEARCH_API_KEY};
   push @available, 'aki'        if $ENV{TEST_LANGERTHA_AKI_API_KEY};
@@ -151,6 +152,18 @@ async sub run_tests {
       ));
     };
     diag "DeepSeek error: $@" if $@;
+  }
+
+  # --- MiniMax ---
+  if ($ENV{TEST_LANGERTHA_MINIMAX_API_KEY}) {
+    require Langertha::Engine::MiniMax;
+    eval {
+      await test_engine('MiniMax', Langertha::Engine::MiniMax->new(
+        api_key => $ENV{TEST_LANGERTHA_MINIMAX_API_KEY},
+        mcp_servers => [$mcp],
+      ));
+    };
+    diag "MiniMax error: $@" if $@;
   }
 
   # --- Perplexity ---

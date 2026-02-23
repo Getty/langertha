@@ -4,6 +4,7 @@ our $VERSION = '0.201';
 use Moose::Role;
 use Time::HiRes qw( gettimeofday tv_interval );
 use Carp qw( croak );
+use JSON::MaybeXS ();
 use MIME::Base64 qw( encode_base64 );
 
 =head1 SYNOPSIS
@@ -83,9 +84,14 @@ B<Langfuse concepts:>
 
 =item * B<Trace> — Top-level unit of work (a request, a conversation turn)
 
+=item * B<Span> — A grouping of work within a trace (an iteration, a tool call)
+
 =item * B<Generation> — A single LLM call within a trace (with model, usage, timing)
 
 =back
+
+B<Hierarchy:> Traces contain spans and generations. Spans can nest via
+C<parent_observation_id>. All observations can be updated after creation.
 
 =cut
 
@@ -201,9 +207,17 @@ sub langfuse_trace {
     body => {
       id   => $id,
       name => $opts{name} // 'langfuse-trace',
-      $opts{input}    ? ( input    => $opts{input} )    : (),
-      $opts{output}   ? ( output   => $opts{output} )   : (),
-      $opts{metadata} ? ( metadata => $opts{metadata} ) : (),
+      $opts{input}       ? ( input       => $opts{input} )       : (),
+      $opts{output}      ? ( output      => $opts{output} )      : (),
+      $opts{metadata}    ? ( metadata    => $opts{metadata} )    : (),
+      $opts{tags}        ? ( tags        => $opts{tags} )        : (),
+      $opts{user_id}     ? ( userId      => $opts{user_id} )     : (),
+      $opts{session_id}  ? ( sessionId   => $opts{session_id} )  : (),
+      $opts{release}     ? ( release     => $opts{release} )     : (),
+      $opts{version}     ? ( version     => $opts{version} )     : (),
+      defined $opts{public}
+        ? ( public => $opts{public} ? JSON::MaybeXS->true : JSON::MaybeXS->false ) : (),
+      $opts{environment} ? ( environment => $opts{environment} ) : (),
     },
   };
   return $id;
@@ -212,13 +226,23 @@ sub langfuse_trace {
 =method langfuse_trace
 
     my $trace_id = $engine->langfuse_trace(
-        name     => 'my-trace',
-        input    => { ... },
-        output   => '...',
-        metadata => { ... },
+        name        => 'my-trace',
+        input       => { ... },
+        output      => '...',
+        metadata    => { ... },
+        tags        => ['tag1', 'tag2'],
+        user_id     => 'user-123',
+        session_id  => 'session-abc',
+        release     => '1.0.0',
+        version     => '1',
+        public      => 1,
+        environment => 'production',
     );
 
-Creates a trace event. Returns the trace ID for linking generations.
+Creates a trace event. Returns the trace ID for linking generations and
+spans. Accepts optional C<tags>, C<user_id>, C<session_id>, C<release>,
+C<version>, C<public>, and C<environment> fields. Calling with the same
+C<id> upserts (updates) the trace.
 
 =cut
 
@@ -243,6 +267,13 @@ sub langfuse_generation {
       $opts{end_time}       ? ( endTime        => $opts{end_time} )       : (),
       defined $opts{completion_start_time}
         ? ( completionStartTime => $opts{completion_start_time} ) : (),
+      $opts{parent_observation_id}
+        ? ( parentObservationId => $opts{parent_observation_id} ) : (),
+      $opts{model_parameters}
+        ? ( modelParameters     => $opts{model_parameters} )     : (),
+      $opts{level}          ? ( level          => $opts{level} )          : (),
+      $opts{status_message} ? ( statusMessage  => $opts{status_message} ) : (),
+      $opts{version}        ? ( version        => $opts{version} )        : (),
     },
   };
   return $id;
@@ -251,17 +282,185 @@ sub langfuse_generation {
 =method langfuse_generation
 
     $engine->langfuse_generation(
-        trace_id   => $trace_id,
-        name       => 'chat',
-        model      => 'gpt-4o',
-        input      => '...',
-        output     => '...',
-        usage      => { input => 10, output => 5, total => 15 },
-        start_time => $iso_timestamp,
-        end_time   => $iso_timestamp,
+        trace_id              => $trace_id,
+        name                  => 'chat',
+        model                 => 'gpt-4o',
+        input                 => '...',
+        output                => '...',
+        usage                 => { input => 10, output => 5, total => 15 },
+        start_time            => $iso_timestamp,
+        end_time              => $iso_timestamp,
+        parent_observation_id => $span_id,
+        model_parameters      => { temperature => 0.7, max_tokens => 1000 },
+        level                 => 'DEFAULT',
+        status_message        => 'OK',
+        version               => '1',
     );
 
 Creates a generation event linked to a trace. C<trace_id> is required.
+Accepts optional C<parent_observation_id> for nesting under a span,
+C<model_parameters>, C<level> (DEBUG/DEFAULT/WARNING/ERROR),
+C<status_message>, and C<version>.
+
+=cut
+
+sub langfuse_span {
+  my ( $self, %opts ) = @_;
+  return unless $self->langfuse_enabled;
+  my $id = $opts{id} || $self->_langfuse_id;
+  push @{$self->_langfuse_batch}, {
+    id   => $self->_langfuse_id,
+    type => 'span-create',
+    timestamp => $self->_langfuse_timestamp,
+    body => {
+      id      => $id,
+      traceId => $opts{trace_id} // croak("langfuse_span requires trace_id"),
+      $opts{name}       ? ( name       => $opts{name} )       : (),
+      $opts{input}      ? ( input      => $opts{input} )      : (),
+      $opts{output}     ? ( output     => $opts{output} )     : (),
+      $opts{metadata}   ? ( metadata   => $opts{metadata} )   : (),
+      $opts{start_time} ? ( startTime  => $opts{start_time} ) : (),
+      $opts{end_time}   ? ( endTime    => $opts{end_time} )   : (),
+      $opts{parent_observation_id}
+        ? ( parentObservationId => $opts{parent_observation_id} ) : (),
+      $opts{level}          ? ( level         => $opts{level} )          : (),
+      $opts{status_message} ? ( statusMessage => $opts{status_message} ) : (),
+      $opts{version}        ? ( version       => $opts{version} )        : (),
+    },
+  };
+  return $id;
+}
+
+=method langfuse_span
+
+    my $span_id = $engine->langfuse_span(
+        trace_id              => $trace_id,
+        name                  => 'my-span',
+        input                 => { ... },
+        output                => '...',
+        start_time            => $iso_timestamp,
+        end_time              => $iso_timestamp,
+        parent_observation_id => $parent_span_id,
+        metadata              => { ... },
+        level                 => 'DEFAULT',
+        status_message        => 'OK',
+        version               => '1',
+    );
+
+Creates a span event for grouping work within a trace. C<trace_id> is
+required. Returns the span ID. Spans can be nested via
+C<parent_observation_id>.
+
+=cut
+
+sub langfuse_update_trace {
+  my ( $self, %opts ) = @_;
+  return unless $self->langfuse_enabled;
+  my $id = $opts{id} // croak("langfuse_update_trace requires id");
+  push @{$self->_langfuse_batch}, {
+    id   => $self->_langfuse_id,
+    type => 'trace-create',
+    timestamp => $self->_langfuse_timestamp,
+    body => {
+      id => $id,
+      $opts{name}        ? ( name        => $opts{name} )        : (),
+      $opts{input}       ? ( input       => $opts{input} )       : (),
+      $opts{output}      ? ( output      => $opts{output} )      : (),
+      $opts{metadata}    ? ( metadata    => $opts{metadata} )    : (),
+      $opts{tags}        ? ( tags        => $opts{tags} )        : (),
+      $opts{user_id}     ? ( userId      => $opts{user_id} )     : (),
+      $opts{session_id}  ? ( sessionId   => $opts{session_id} )  : (),
+      $opts{release}     ? ( release     => $opts{release} )     : (),
+      $opts{version}     ? ( version     => $opts{version} )     : (),
+      defined $opts{public}
+        ? ( public => $opts{public} ? JSON::MaybeXS->true : JSON::MaybeXS->false ) : (),
+      $opts{environment} ? ( environment => $opts{environment} ) : (),
+    },
+  };
+  return $id;
+}
+
+=method langfuse_update_trace
+
+    $engine->langfuse_update_trace(
+        id       => $trace_id,
+        output   => 'final result',
+        metadata => { ... },
+    );
+
+Updates a trace by upserting with the same C<id>. Uses C<trace-create>
+event type (Langfuse upserts on matching body ID). C<id> is required.
+
+=cut
+
+sub langfuse_update_span {
+  my ( $self, %opts ) = @_;
+  return unless $self->langfuse_enabled;
+  my $id = $opts{id} // croak("langfuse_update_span requires id");
+  push @{$self->_langfuse_batch}, {
+    id   => $self->_langfuse_id,
+    type => 'span-update',
+    timestamp => $self->_langfuse_timestamp,
+    body => {
+      id => $id,
+      $opts{trace_id}   ? ( traceId   => $opts{trace_id} )   : (),
+      $opts{output}     ? ( output    => $opts{output} )      : (),
+      $opts{metadata}   ? ( metadata  => $opts{metadata} )    : (),
+      $opts{end_time}   ? ( endTime   => $opts{end_time} )    : (),
+      $opts{level}          ? ( level         => $opts{level} )          : (),
+      $opts{status_message} ? ( statusMessage => $opts{status_message} ) : (),
+    },
+  };
+  return $id;
+}
+
+=method langfuse_update_span
+
+    $engine->langfuse_update_span(
+        id       => $span_id,
+        end_time => $iso_timestamp,
+        output   => { ... },
+    );
+
+Updates an existing span. C<id> is required. Use this to set C<end_time>
+and C<output> after the span's work completes.
+
+=cut
+
+sub langfuse_update_generation {
+  my ( $self, %opts ) = @_;
+  return unless $self->langfuse_enabled;
+  my $id = $opts{id} // croak("langfuse_update_generation requires id");
+  push @{$self->_langfuse_batch}, {
+    id   => $self->_langfuse_id,
+    type => 'generation-update',
+    timestamp => $self->_langfuse_timestamp,
+    body => {
+      id => $id,
+      $opts{trace_id}   ? ( traceId   => $opts{trace_id} )   : (),
+      $opts{output}     ? ( output    => $opts{output} )      : (),
+      $opts{usage}      ? ( usage     => $opts{usage} )       : (),
+      $opts{metadata}   ? ( metadata  => $opts{metadata} )    : (),
+      $opts{end_time}   ? ( endTime   => $opts{end_time} )    : (),
+      $opts{level}          ? ( level              => $opts{level} )          : (),
+      $opts{status_message} ? ( statusMessage      => $opts{status_message} ) : (),
+      defined $opts{completion_start_time}
+        ? ( completionStartTime => $opts{completion_start_time} ) : (),
+    },
+  };
+  return $id;
+}
+
+=method langfuse_update_generation
+
+    $engine->langfuse_update_generation(
+        id     => $gen_id,
+        output => 'final response text',
+        usage  => { input => 100, output => 50, total => 150 },
+    );
+
+Updates an existing generation. C<id> is required. Use this to add
+C<output>, C<usage>, and C<end_time> after the LLM call completes.
 
 =cut
 

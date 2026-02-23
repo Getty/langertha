@@ -252,7 +252,57 @@ say $raider->metrics->{tool_calls};  # cumulative
 $raider->clear_history;              # start fresh
 ```
 
-Key features: persistent history, mission (system prompt), cumulative metrics (raids, iterations, tool_calls, time_ms), Hermes tool calling support. Langfuse observability is automatic when enabled on the engine.
+Key features: persistent history, mission (system prompt), cumulative metrics (raids, iterations, tool_calls, time_ms), context compression, session history, Hermes tool calling support. Langfuse observability is automatic when enabled on the engine.
+
+### Context Compression
+
+For long-running agents, history can grow large. Enable auto-compression to keep token usage under control:
+
+```perl
+my $raider = Langertha::Raider->new(
+    engine             => $engine,
+    mission            => 'You are an assistant.',
+    max_context_tokens => 100_000,           # enables auto-compression
+    context_compress_threshold => 0.75,      # compress at 75% (default)
+    # compression_engine => $cheap_engine,   # optional: use a cheaper model
+);
+```
+
+When prompt tokens exceed the threshold, the working history is automatically summarized via LLM before the next raid. The summary replaces the history, keeping context compact while preserving key information.
+
+### Session History
+
+The full session history (including tool calls and results) is archived in `session_history` — never auto-compressed, persisted across `clear_history` and `reset`:
+
+```perl
+# Register MCP tool so the LLM can query its own history
+$raider->register_session_history_tool($mcp_server);
+
+# Or inspect programmatically
+my @all = @{$raider->session_history};
+```
+
+### Mid-Raid Context Injection
+
+Feed additional context to the agent while it's working — it picks it up at the next iteration:
+
+```perl
+# From another async task, timer, or callback:
+$raider->inject('Also check the test files');
+$raider->inject({ role => 'user', content => 'Focus on .pm files' });
+
+# Or use on_iteration for programmatic injection per iteration:
+my $raider = Langertha::Raider->new(
+    engine  => $engine,
+    on_iteration => sub {
+        my ($raider, $iteration) = @_;
+        return ['Check the error log'] if $iteration == 3;
+        return;
+    },
+);
+```
+
+Injected messages are persisted in history so the agent remembers them across raids.
 
 ## Observability with Langfuse
 
@@ -273,7 +323,29 @@ $engine->simple_chat('Hello!');  # auto-traced
 $engine->langfuse_flush;         # send events to Langfuse
 ```
 
-`simple_chat` calls are auto-instrumented with traces and generations (including token usage and timing). Raider raids are also traced with per-iteration generation events.
+`simple_chat` calls are auto-instrumented with traces and generations (including token usage and timing). Raider raids create cascading traces with proper hierarchy:
+
+```
+Trace: "raid" (with userId, sessionId, tags)
+  ├── Span: iteration-1
+  │     ├── Generation: llm-call (with usage, modelParameters)
+  │     ├── Span: tool: list_files (with input/output, timing)
+  │     └── Span: tool: read_file
+  ├── Span: iteration-2
+  │     └── Generation: llm-call (final response)
+  └── [trace updated with output at end]
+```
+
+Customize Raider traces with user/session/tag metadata:
+
+```perl
+my $raider = Langertha::Raider->new(
+    engine             => $engine,
+    langfuse_user_id   => 'user-42',
+    langfuse_session_id => 'session-abc',
+    langfuse_tags      => ['production', 'v2'],
+);
+```
 
 Disabled by default — active only when both keys are set. A Kubernetes manifest for self-hosted Langfuse is included: `kubectl apply -f ex/langfuse-k8s.yaml`
 
