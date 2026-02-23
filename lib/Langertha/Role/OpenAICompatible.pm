@@ -1,6 +1,6 @@
 package Langertha::Role::OpenAICompatible;
 # ABSTRACT: Role for OpenAI-compatible API format
-our $VERSION = '0.201';
+our $VERSION = '0.202';
 use Moose::Role;
 use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );

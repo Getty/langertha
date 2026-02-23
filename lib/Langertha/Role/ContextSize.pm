@@ -1,6 +1,6 @@
 package Langertha::Role::ContextSize;
 # ABSTRACT: Role for an engine where you can specify the context size (in tokens)
-our $VERSION = '0.201';
+our $VERSION = '0.202';
 use Moose::Role;
 
 has context_size => (

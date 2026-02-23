@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.201     2026-02-23 03:50:17Z
     - Add Response.thinking attribute for chain-of-thought reasoning:
       - Native extraction: DeepSeek/OpenAI-compatible reasoning_content,

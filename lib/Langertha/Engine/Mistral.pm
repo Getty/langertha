@@ -1,6 +1,6 @@
 package Langertha::Engine::Mistral;
 # ABSTRACT: Mistral API
-our $VERSION = '0.201';
+our $VERSION = '0.202';
 use Moose;
 use Carp qw( croak );
 
