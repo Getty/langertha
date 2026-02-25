@@ -65,8 +65,25 @@ diag "AKI chat response: $response";
 
 # --- openai() method ---
 
-my $aki_openai = $chat_aki->openai;
-isa_ok($aki_openai, 'Langertha::Engine::AKIOpenAI');
-is($aki_openai->model, $chat_model, 'openai() preserves model');
+{
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my $aki_openai = $chat_aki->openai;
+  isa_ok($aki_openai, 'Langertha::Engine::AKIOpenAI');
+  ok(scalar @warnings >= 1, 'openai() without explicit model emits warning');
+  like($warnings[0] || '', qr/cannot be mapped/, 'warning mentions model mapping');
+}
+
+# --- openai() with explicit model ---
+
+my $aki_openai = $chat_aki->openai(model => 'llama3-chat-8b');
+is($aki_openai->model, 'llama3-chat-8b', 'openai(model => ...) uses given model');
+
+# --- openai simple_chat ---
+
+my $oai_response = $aki_openai->simple_chat('Say exactly: Hello OpenAI format');
+ok(defined $oai_response, 'openai simple_chat returns a response');
+ok(length $oai_response > 0, 'openai simple_chat response is non-empty');
+diag "AKI OpenAI chat response: $oai_response";
 
 done_testing;

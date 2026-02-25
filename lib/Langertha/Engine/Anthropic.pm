@@ -5,9 +5,9 @@ use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;
 
+extends 'Langertha::Engine::Remote';
+
 with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
   Models
   Chat
   Temperature
@@ -139,7 +139,6 @@ has '+url' => (
   lazy => 1,
   default => sub { 'https://api.anthropic.com' },
 );
-sub has_url { 1 }
 
 sub default_model { 'claude-sonnet-4-6' }
 
@@ -403,6 +402,8 @@ __PACKAGE__->meta->make_immutable;
 =seealso
 
 =over
+
+=item * L<https://status.anthropic.com/> - Anthropic service status
 
 =item * L<https://docs.anthropic.com/> - Official Anthropic documentation
 

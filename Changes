@@ -1,6 +1,38 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - Engine base class hierarchy: introduce Engine::Remote (JSON + HTTP
+      + url required) and Engine::OpenAIBase (+ OpenAICompatible, OpenAPI,
+      Models, Temperature, ResponseSize, SystemPrompt, Streaming, Chat).
+      All 15 engines now extend these base classes instead of repeating
+      10+ role composition statements. New engines need only 2-3 lines.
+    - Migrate non-OpenAI engines to extend Engine::Remote:
+      Anthropic, Gemini, Ollama, AKI
+    - Migrate OpenAI-compatible engines to extend Engine::OpenAIBase:
+      OpenAI, DeepSeek, Groq, Perplexity, Mistral, MiniMax, NousResearch,
+      AKIOpenAI, OllamaOpenAI, vLLM (Whisper inherits via OpenAI)
+    - New engine: Cerebras — fastest inference platform (llama-3.3-70b)
+    - New engine: OpenRouter — unified gateway for 300+ models
+    - New engine: Replicate — thousands of open-source models
+    - New engine: LlamaCpp — llama.cpp server with embeddings
+    - OpenAICompatible: api_key is now optional (undef = no Authorization
+      header), enabling local engines (vLLM, llama.cpp) without dummy keys
+    - OpenAICompatible: model is now optional in requests, enabling
+      single-model servers (vLLM, llama.cpp) without explicit model names
+    - Add comprehensive engine hierarchy test (t/10_engine_hierarchy.t)
+      verifying inheritance, role composition, instantiation, and request
+      generation for all 19 engines
+    - Raider self-tools: raider_mcp => 1 enables LLM-controlled tools:
+      raider_ask_user, raider_pause, raider_abort, raider_wait,
+      raider_wait_for, raider_session_history, raider_manage_mcps,
+      raider_switch_engine
+    - Raider engine_catalog: runtime engine switching via self-tool or API
+    - Raider mcp_catalog: dynamic MCP server activation/deactivation
+    - Raider inline tools: quick tool definitions without MCP server setup
+    - Raider::Result: typed result objects (final, question, pause, abort)
+      with backward-compatible stringification
+    - AKI: openai() no longer carries over native model name (different
+      naming between native and /v1 API), uses default model and warns
 
 0.201     2026-02-23 03:50:17Z
     - Add Response.thinking attribute for chain-of-thought reasoning:

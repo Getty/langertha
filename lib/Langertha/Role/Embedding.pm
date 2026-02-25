@@ -11,7 +11,7 @@ requires qw(
 
 has embedding_model => (
   is => 'ro',
-  isa => 'Str',
+  isa => 'Maybe[Str]',
   lazy_build => 1,
 );
 sub _build_embedding_model {

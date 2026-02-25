@@ -4,20 +4,9 @@ our $VERSION = '0.202';
 use Moose;
 use Carp qw( croak );
 
-with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
-  OpenAICompatible
-  OpenAPI
-  Models
-  Temperature
-  ResponseSize
-  SystemPrompt
-  Streaming
-  Chat
-  Embedding
-));
+extends 'Langertha::Engine::OpenAIBase';
 
+with 'Langertha::Role::Embedding';
 with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
@@ -68,9 +57,9 @@ B<THIS API IS WORK IN PROGRESS>
 
 =cut
 
-has '+url' => ( required => 1 );
-
-sub _build_api_key { 'ollama' }
+has '+url' => (
+  required => 1,
+);
 
 sub default_model { croak "".(ref $_[0])." requires model to be set" }
 sub default_embedding_model { 'mxbai-embed-large' }

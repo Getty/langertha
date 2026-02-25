@@ -4,18 +4,10 @@ our $VERSION = '0.202';
 use Moose;
 use Carp qw( croak );
 
+extends 'Langertha::Engine::OpenAIBase';
+
 with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
-  OpenAICompatible
-  OpenAPI
-  Models
-  Temperature
-  ResponseSize
   ResponseFormat
-  SystemPrompt
-  Streaming
-  Chat
   Embedding
   Transcription
 ));
@@ -83,6 +75,11 @@ endpoint.
 
 =cut
 
+has '+url' => (
+  lazy => 1,
+  default => sub { 'https://api.openai.com/v1' },
+);
+
 sub _build_api_key {
   my ( $self ) = @_;
   return $ENV{LANGERTHA_OPENAI_API_KEY}
@@ -96,6 +93,8 @@ __PACKAGE__->meta->make_immutable;
 =seealso
 
 =over
+
+=item * L<https://status.openai.com/> - OpenAI service status
 
 =item * L<https://platform.openai.com/docs> - Official OpenAI documentation
 

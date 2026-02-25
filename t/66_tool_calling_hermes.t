@@ -22,12 +22,12 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'Hermes-3-Llama-3.1-70B',
+    model   => 'Hermes-4-70B',
   );
 
   ok($nous->does('Langertha::Role::OpenAICompatible'), 'NousResearch composes OpenAICompatible');
   is($nous->hermes_tools, 1, 'NousResearch: hermes_tools defaults to 1');
-  is($nous->default_model, 'Hermes-3-Llama-3.1-70B', 'default model');
+  is($nous->default_model, 'Hermes-4-70B', 'default model');
   ok($nous->can('chat_with_tools_f'), 'has chat_with_tools_f');
   is_deeply($nous->mcp_servers, [], 'mcp_servers defaults to empty');
 }
@@ -508,7 +508,7 @@ SKIP: {
 
   my $nous = Langertha::Engine::NousResearch->new(
     api_key     => 'test-key',
-    model       => 'Hermes-3-Llama-3.1-70B',
+    model       => 'Hermes-4-70B',
     mcp_servers => [$mcp],
     _async_http => $mock_http,
   );

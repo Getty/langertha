@@ -18,6 +18,9 @@ BEGIN {
   push @available, 'minimax'     if $ENV{TEST_LANGERTHA_MINIMAX_API_KEY};
   # Perplexity does not support tool calling
   push @available, 'nousresearch' if $ENV{TEST_LANGERTHA_NOUSRESEARCH_API_KEY};
+  push @available, 'cerebras'    if $ENV{TEST_LANGERTHA_CEREBRAS_API_KEY};
+  push @available, 'openrouter'  if $ENV{TEST_LANGERTHA_OPENROUTER_API_KEY};
+  push @available, 'replicate'   if $ENV{TEST_LANGERTHA_REPLICATE_API_KEY};
   push @available, 'aki'        if $ENV{TEST_LANGERTHA_AKI_API_KEY};
   push @available, 'ollama'      if $ENV{TEST_LANGERTHA_OLLAMA_URL};
   push @available, 'vllm'      if $ENV{TEST_LANGERTHA_VLLM_URL} && $ENV{TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER};
@@ -176,10 +179,48 @@ async sub run_tests {
     eval {
       await test_engine('NousResearch', Langertha::Engine::NousResearch->new(
         api_key => $ENV{TEST_LANGERTHA_NOUSRESEARCH_API_KEY},
-        model => 'Hermes-3-Llama-3.1-70B', mcp_servers => [$mcp],
+        model => 'Hermes-4-70B', mcp_servers => [$mcp],
       ));
     };
     diag "NousResearch error: $@" if $@;
+  }
+
+  # --- Cerebras ---
+  if ($ENV{TEST_LANGERTHA_CEREBRAS_API_KEY}) {
+    require Langertha::Engine::Cerebras;
+    eval {
+      await test_engine('Cerebras', Langertha::Engine::Cerebras->new(
+        api_key => $ENV{TEST_LANGERTHA_CEREBRAS_API_KEY},
+        mcp_servers => [$mcp],
+      ));
+    };
+    diag "Cerebras error: $@" if $@;
+  }
+
+  # --- OpenRouter ---
+  if ($ENV{TEST_LANGERTHA_OPENROUTER_API_KEY}) {
+    require Langertha::Engine::OpenRouter;
+    my $or_model = $ENV{TEST_LANGERTHA_OPENROUTER_MODEL} || 'meta-llama/llama-3.3-70b-instruct:free';
+    eval {
+      await test_engine("OpenRouter/$or_model", Langertha::Engine::OpenRouter->new(
+        api_key => $ENV{TEST_LANGERTHA_OPENROUTER_API_KEY},
+        model => $or_model, mcp_servers => [$mcp],
+      ));
+    };
+    diag "OpenRouter/$or_model error: $@" if $@;
+  }
+
+  # --- Replicate ---
+  if ($ENV{TEST_LANGERTHA_REPLICATE_API_KEY}) {
+    require Langertha::Engine::Replicate;
+    my $rep_model = $ENV{TEST_LANGERTHA_REPLICATE_MODEL} || 'meta/llama-4-maverick';
+    eval {
+      await test_engine("Replicate/$rep_model", Langertha::Engine::Replicate->new(
+        api_key => $ENV{TEST_LANGERTHA_REPLICATE_API_KEY},
+        model => $rep_model, mcp_servers => [$mcp],
+      ));
+    };
+    diag "Replicate/$rep_model error: $@" if $@;
   }
 
   # --- vLLM ---

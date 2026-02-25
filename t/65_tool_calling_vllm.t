@@ -13,11 +13,10 @@ use Langertha::Engine::vLLM;
 eval { Langertha::Engine::vLLM->new(model => 'test-model') };
 like($@, qr/url/, 'url is required');
 
-# Test: model is required (croak on access, not construction)
+# Test: model defaults to 'default' (single-model server)
 {
   my $vllm_no_model = Langertha::Engine::vLLM->new(url => 'http://test.invalid:8000');
-  eval { $vllm_no_model->model };
-  like($@, qr/requires/, 'model croaks when accessed without being set');
+  is($vllm_no_model->model, 'default', 'model defaults to default');
 }
 
 my $vllm = Langertha::Engine::vLLM->new(
@@ -25,8 +24,8 @@ my $vllm = Langertha::Engine::vLLM->new(
   model => 'Qwen/Qwen2.5-3B-Instruct',
 );
 
-# Test: api_key defaults to 'vllm'
-is($vllm->api_key, 'vllm', 'api_key defaults to vllm');
+# Test: api_key is undef (no auth needed for local server)
+is($vllm->api_key, undef, 'api_key defaults to undef');
 
 # Test: composes OpenAICompatible
 ok($vllm->does('Langertha::Role::OpenAICompatible'), 'vLLM composes OpenAICompatible');

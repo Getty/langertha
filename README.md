@@ -35,7 +35,11 @@
 | [MiniMax](https://www.minimax.io/) :cn: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [Perplexity](https://docs.perplexity.ai/) :us: | :white_check_mark: | :white_check_mark: | | | | |
 | [Nous Research](https://nousresearch.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [Cerebras](https://cloud.cerebras.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
+| [OpenRouter](https://openrouter.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
+| [Replicate](https://replicate.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
 | [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | |
 | [AKI.IO](https://aki.io/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | :white_check_mark: | |
 
@@ -107,8 +111,9 @@ my $aki = Langertha::Engine::AKI->new(
 );
 print $aki->simple_chat('Hello!');
 
-# Or use the OpenAI-compatible API for streaming & tool calling
-my $aki_openai = $aki->openai;
+# OpenAI-compatible API for streaming & tool calling
+# Note: native model names are not mapped automatically to /v1 names
+my $aki_openai = $aki->openai(model => 'llama3-chat-8b');
 ```
 
 ### Self-hosted with vLLM
@@ -502,6 +507,7 @@ See the [`ex/`](ex/) directory for runnable examples:
 | `mcp_stdio.pl` | MCP tool calling with stdio server |
 | `hermes_tools.pl` | Hermes-native tool calling with NousResearch |
 | `raider.pl` | Autonomous agent with MCP tools and history |
+| `raider_run.pl` | Full Raider demo: self-tools, engine/MCP catalogs, bootstrapping |
 | `langfuse.pl` | Langfuse observability tracing |
 | `langfuse-k8s.yaml` | Kubernetes manifest for self-hosted Langfuse |
 | `embedding.pl` | Text embeddings |

@@ -8,9 +8,9 @@ use JSON::MaybeXS;
 
 use Langertha::Engine::OllamaOpenAI;
 
+extends 'Langertha::Engine::Remote';
+
 with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
   OpenAPI
   Models
   Seed

@@ -63,7 +63,7 @@ method, so synchronous-only usage does not require them.
 
 has chat_model => (
   is => 'ro',
-  isa => 'Str',
+  isa => 'Maybe[Str]',
   lazy_build => 1,
 );
 sub _build_chat_model {

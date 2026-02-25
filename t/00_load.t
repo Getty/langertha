@@ -9,22 +9,29 @@ use Module::Runtime qw( use_module );
 
 my @modules = qw(
   Langertha
+  Langertha::Engine::Remote
+  Langertha::Engine::OpenAIBase
   Langertha::Engine::AKI
   Langertha::Engine::AKIOpenAI
   Langertha::Engine::Anthropic
+  Langertha::Engine::Cerebras
   Langertha::Engine::DeepSeek
   Langertha::Engine::Gemini
   Langertha::Engine::Groq
+  Langertha::Engine::LlamaCpp
   Langertha::Engine::MiniMax
   Langertha::Engine::Mistral
   Langertha::Engine::NousResearch
   Langertha::Engine::OpenAI
+  Langertha::Engine::OpenRouter
   Langertha::Engine::Ollama
   Langertha::Engine::OllamaOpenAI
   Langertha::Engine::Perplexity
+  Langertha::Engine::Replicate
   Langertha::Engine::vLLM
   Langertha::Engine::Whisper
   Langertha::Raider
+  Langertha::Raider::Result
   Langertha::Request::HTTP
   Langertha::Response
   Langertha::Role::Langfuse

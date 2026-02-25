@@ -4,20 +4,9 @@ our $VERSION = '0.202';
 use Moose;
 use Carp qw( croak );
 
-with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
-  OpenAICompatible
-  OpenAPI
-  Models
-  Temperature
-  ResponseSize
-  ResponseFormat
-  SystemPrompt
-  Streaming
-  Chat
-));
+extends 'Langertha::Engine::OpenAIBase';
 
+with 'Langertha::Role::ResponseFormat';
 with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
@@ -59,7 +48,6 @@ has '+url' => (
   lazy => 1,
   default => sub { 'https://api.deepseek.com' },
 );
-around has_url => sub { 1 };
 
 sub _build_api_key {
   my ( $self ) = @_;
@@ -74,6 +62,8 @@ __PACKAGE__->meta->make_immutable;
 =seealso
 
 =over
+
+=item * L<https://status.deepseek.com/> - DeepSeek service status
 
 =item * L<https://api-docs.deepseek.com/> - Official DeepSeek API documentation
 

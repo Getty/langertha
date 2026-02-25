@@ -4,18 +4,7 @@ our $VERSION = '0.202';
 use Moose;
 use Carp qw( croak );
 
-with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
-  OpenAICompatible
-  OpenAPI
-  Models
-  Temperature
-  ResponseSize
-  SystemPrompt
-  Streaming
-  Chat
-));
+extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools';
 
@@ -25,15 +14,15 @@ with 'Langertha::Role::Tools';
 
     my $nous = Langertha::Engine::NousResearch->new(
         api_key => $ENV{NOUSRESEARCH_API_KEY},
-        model   => 'Hermes-3-Llama-3.1-70B',
+        model   => 'Hermes-4-70B',
     );
 
     print $nous->simple_chat('Explain the Hermes prompt format');
 
-    # Chain-of-thought reasoning (DeepHermes 3 / Hermes 4)
+    # Chain-of-thought reasoning (Hermes 4)
     my $nous = Langertha::Engine::NousResearch->new(
         api_key   => $ENV{NOUSRESEARCH_API_KEY},
-        model     => 'DeepHermes-3-Mistral-24B-Preview',
+        model     => 'Hermes-4-70B',
         reasoning => 1,
     );
 
@@ -46,7 +35,7 @@ with 'Langertha::Role::Tools';
 
     my $nous = Langertha::Engine::NousResearch->new(
         api_key     => $ENV{NOUSRESEARCH_API_KEY},
-        model       => 'Hermes-3-Llama-3.1-70B',
+        model       => 'Hermes-4-70B',
         mcp_servers => [$mcp],
     );
 
@@ -58,8 +47,7 @@ Provides access to Nous Research's inference API. Composes
 L<Langertha::Role::OpenAICompatible> with Nous's endpoint
 (C<https://inference-api.nousresearch.com/v1>) and Hermes tool calling.
 
-Available models: C<Hermes-3-Llama-3.1-70B> (default), C<Hermes-3-Llama-3.1-405B>,
-C<Hermes-4-70B>, C<Hermes-4-405B>, C<DeepHermes-3-Mistral-24B-Preview>.
+Available models: C<Hermes-4-70B> (default), C<Hermes-4-405B>.
 
 C<hermes_tools> is enabled by default. Tool descriptions are injected into
 the system prompt as C<< <tools> >> XML, and C<< <tool_call> >> tags are
@@ -81,7 +69,6 @@ has '+url' => (
   lazy => 1,
   default => sub { 'https://inference-api.nousresearch.com/v1' },
 );
-around has_url => sub { 1 };
 
 sub _build_api_key {
   my ( $self ) = @_;
@@ -89,7 +76,7 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_NOUSRESEARCH_API_KEY or api_key set";
 }
 
-sub default_model { 'Hermes-3-Llama-3.1-70B' }
+sub default_model { 'Hermes-4-70B' }
 
 # Hermes models use <tool_call> XML tags for tool calling
 has '+hermes_tools' => ( default => 1 );

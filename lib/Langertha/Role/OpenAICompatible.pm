@@ -37,14 +37,6 @@ The role provides default implementations for all OpenAI-format operations.
 Engines can override individual methods to customize behavior (e.g.,
 different operation IDs for Mistral, or disabling unsupported features).
 
-B<Engines composing this role must provide:>
-
-=over 4
-
-=item * C<_build_api_key> - Returns the API key (from env var or config)
-
-=back
-
 B<Engines should also compose these roles:>
 
 =over 4
@@ -70,25 +62,30 @@ has api_key => (
   is => 'ro',
   lazy_build => 1,
 );
+sub _build_api_key { undef }
 
 =attr api_key
 
-The API key used for Bearer token authentication. Set via C<_build_api_key>
-in each engine (typically from an environment variable). Required.
+Optional API key for Bearer token authentication. Override
+C<_build_api_key> in engines that require authentication (typically
+from an environment variable). When C<undef>, no Authorization header
+is sent.
 
 =cut
 
 sub update_request {
   my ( $self, $request ) = @_;
-  $request->header('Authorization', 'Bearer '.$self->api_key);
+  my $key = $self->api_key;
+  $request->header('Authorization', 'Bearer '.$key) if defined $key;
 }
 
 =method update_request
 
     $role->update_request($http_request);
 
-Adds C<Authorization: Bearer {api_key}> header to outgoing requests.
-Called automatically before each request.
+Adds C<Authorization: Bearer {api_key}> header to outgoing requests
+when an API key is configured. Skipped when C<api_key> is C<undef>
+(e.g. for local servers like vLLM or llama.cpp).
 
 =cut
 
@@ -191,7 +188,7 @@ sub embedding_operation_id { 'createEmbedding' }
 sub embedding_request {
   my ( $self, $input, %extra ) = @_;
   return $self->generate_request( $self->embedding_operation_id, sub { $self->embedding_response(shift) },
-    model => $self->embedding_model,
+    defined $self->embedding_model ? ( model => $self->embedding_model ) : (),
     input => $input,
     %extra,
   );
@@ -231,7 +228,7 @@ sub chat_operation_id { 'createChatCompletion' }
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
   return $self->generate_request( $self->chat_operation_id, sub { $self->chat_response(shift) },
-    model => $self->chat_model,
+    defined $self->chat_model ? ( model => $self->chat_model ) : (),
     messages => $messages,
     $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
     ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : (),
@@ -334,7 +331,7 @@ select the correct stream parser.
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
   return $self->generate_request( $self->chat_operation_id, sub {},
-    model => $self->chat_model,
+    defined $self->chat_model ? ( model => $self->chat_model ) : (),
     messages => $messages,
     $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
     ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : (),

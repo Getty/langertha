@@ -103,7 +103,7 @@ my $ollama_openai = $ollama_for_openai->openai;
 my $ollama_openai_request = $ollama_openai->chat('testprompt');
 is($ollama_openai_request->uri, $ollama_openai_testurl.'/v1/chat/completions', 'Ollama OpenAI request uri is correct');
 is($ollama_openai_request->method, 'POST', 'Ollama OpenAI request method is correct');
-is($ollama_openai_request->header('Authorization'), 'Bearer ollama', 'Ollama OpenAI request Authorization header is correct');
+is($ollama_openai_request->header('Authorization'), undef, 'Ollama OpenAI request has no Authorization header (local server)');
 is($ollama_openai_request->header('Content-Type'), 'application/json; charset=utf-8', 'Ollama OpenAI request JSON Content Type is set');
 my $ollama_openai_data = $json->decode($ollama_openai_request->content);
 is_deeply($ollama_openai_data, {

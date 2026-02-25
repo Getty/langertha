@@ -5,9 +5,9 @@ use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;
 
+extends 'Langertha::Engine::Remote';
+
 with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
   Models
   Chat
   Temperature
@@ -86,7 +86,6 @@ has '+url' => (
   lazy => 1,
   default => sub { 'https://generativelanguage.googleapis.com' },
 );
-sub has_url { 1 }
 
 sub default_model { 'gemini-2.5-flash' }
 
@@ -438,6 +437,8 @@ __PACKAGE__->meta->make_immutable;
 =seealso
 
 =over
+
+=item * L<https://aistudio.google.com/status> - Google AI Studio service status
 
 =item * L<https://ai.google.dev/gemini-api/docs> - Official Gemini API documentation
 

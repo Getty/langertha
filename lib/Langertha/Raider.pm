@@ -5,6 +5,7 @@ use Moose;
 use Future::AsyncAwait;
 use Time::HiRes qw( gettimeofday tv_interval );
 use Carp qw( croak );
+use Langertha::Raider::Result;
 
 =head1 SYNOPSIS
 
@@ -362,6 +363,198 @@ Optional metadata HashRef merged into the Langfuse trace metadata
 
 =cut
 
+has raider_mcp => (
+  is => 'ro',
+  predicate => 'has_raider_mcp',
+);
+
+=attr raider_mcp
+
+Enables virtual self-tools that the LLM can call to interact with the
+Raider itself. Set to C<1> to enable all self-tools, or pass a HashRef
+to enable selectively:
+
+    raider_mcp => 1                               # all self-tools
+    raider_mcp => { ask_user => 1, pause => 1 }   # only these
+
+Available self-tools: C<ask_user>, C<wait>, C<wait_for>, C<pause>,
+C<abort>, C<session_history>, C<manage_mcps>, C<switch_engine>.
+
+=cut
+
+has on_ask_user => (
+  is => 'rw',
+  isa => 'CodeRef',
+  predicate => 'has_on_ask_user',
+);
+
+=attr on_ask_user
+
+Optional callback for the C<raider_ask_user> self-tool. Receives
+C<($question, $options)> and must return an answer string. When not set,
+the raid pauses and returns a C<question> Result that can be continued
+with L</respond_f>.
+
+=cut
+
+has on_pause => (
+  is => 'rw',
+  isa => 'CodeRef',
+  predicate => 'has_on_pause',
+);
+
+=attr on_pause
+
+Optional callback for the C<raider_pause> self-tool. Receives C<($reason)>.
+When not set, the raid pauses and returns a C<pause> Result.
+
+=cut
+
+has on_wait_for => (
+  is => 'rw',
+  isa => 'CodeRef',
+  predicate => 'has_on_wait_for',
+);
+
+=attr on_wait_for
+
+Callback for the C<raider_wait_for> self-tool. Receives
+C<($condition, $args)> and must return a result string. Required when the
+LLM uses C<raider_wait_for> — will die if not set.
+
+=cut
+
+has _continuation => (
+  is => 'rw',
+  predicate => 'has_continuation',
+  clearer => 'clear_continuation',
+);
+
+has tools => (
+  is => 'ro',
+  isa => 'ArrayRef[HashRef]',
+  default => sub { [] },
+);
+
+=attr tools
+
+Optional ArrayRef of inline tool definitions. Each entry is a HashRef with
+C<name>, C<description>, C<input_schema>, and C<code> keys — the same
+format as L<MCP::Server/tool>. An internal MCP server is created
+automatically.
+
+    my $raider = Langertha::Raider->new(
+        engine => $engine,
+        tools  => [{
+            name         => 'greet',
+            description  => 'Say hello',
+            input_schema => { type => 'object', properties => { name => { type => 'string' } } },
+            code         => sub { $_[0]->text_result("Hello $_[1]->{name}!") },
+        }],
+    );
+
+=cut
+
+has mcp_catalog => (
+  is => 'ro',
+  isa => 'HashRef',
+  default => sub { {} },
+);
+
+=attr mcp_catalog
+
+HashRef of named MCP servers available for dynamic activation. The LLM can
+use C<raider_manage_mcps> to list, activate, and deactivate catalog entries.
+
+    mcp_catalog => {
+        database => { server => $db_mcp, description => 'Database tools', auto => 1 },
+        email    => { server => $email_mcp, description => 'Email tools' },
+    }
+
+Entries with C<< auto => 1 >> are activated at construction time.
+
+=cut
+
+has engine_catalog => (
+  is => 'ro',
+  isa => 'HashRef',
+  default => sub { {} },
+);
+
+=attr engine_catalog
+
+HashRef of named engines available for runtime switching via C<switch_engine>.
+
+    engine_catalog => {
+        fast  => { engine => $groq,      description => 'Fast inference' },
+        smart => { engine => $anthropic,  description => 'Complex reasoning' },
+        code  => { engine => $deepseek,   description => 'Code generation' },
+    }
+
+Use C<switch_engine>, C<reset_engine>, C<active_engine>, and C<engine_info>
+to control which engine is used during raids.
+
+=cut
+
+has _active_engine => (
+  is => 'rw',
+  predicate => '_has_active_engine',
+  clearer => '_clear_active_engine',
+);
+
+has _active_engine_name => (
+  is => 'rw',
+  isa => 'Maybe[Str]',
+  default => undef,
+);
+
+has _active_catalog_mcps => (
+  is => 'ro',
+  isa => 'HashRef',
+  default => sub { {} },
+);
+
+has _tools_dirty => (
+  is => 'rw',
+  isa => 'Bool',
+  default => 0,
+);
+
+has _inline_mcp => (
+  is => 'rw',
+  predicate => 'has_inline_mcp',
+);
+
+has embedding_engine => (
+  is => 'ro',
+  predicate => 'has_embedding_engine',
+);
+
+=attr embedding_engine
+
+Optional engine with L<Langertha::Role::Embedding> for semantic history search.
+When not set, auto-detects if the main C<engine> supports embeddings.
+
+=cut
+
+has _session_embeddings => (
+  is => 'ro',
+  isa => 'ArrayRef',
+  default => sub { [] },
+);
+
+sub BUILD {
+  my ( $self ) = @_;
+
+  # Auto-activate catalog MCPs with auto => 1
+  for my $name (keys %{$self->mcp_catalog}) {
+    my $entry = $self->mcp_catalog->{$name};
+    if ($entry->{auto}) {
+      $self->_active_catalog_mcps->{$name} = $entry->{server};
+    }
+  }
+}
+
 sub clear_history {
   my ( $self ) = @_;
   $self->history([]);
@@ -397,6 +590,8 @@ queue before each LLM call (iterations 2+).
 sub reset {
   my ( $self ) = @_;
   $self->clear_history;
+  $self->_clear_active_engine;
+  $self->_active_engine_name(undef);
   $self->metrics({
     raids => 0, iterations => 0, tool_calls => 0, time_ms => 0,
   });
@@ -407,7 +602,156 @@ sub reset {
 
     $raider->reset;
 
-Clears both conversation history and metrics.
+Clears conversation history, metrics, and resets to the default engine.
+
+=cut
+
+sub active_engine {
+  my ($self) = @_;
+  return $self->_has_active_engine ? $self->_active_engine : $self->engine;
+}
+
+=method active_engine
+
+    my $engine = $raider->active_engine;
+
+Returns the currently active engine. If C<switch_engine> was called, returns
+the catalog engine; otherwise returns the default C<engine>.
+
+=cut
+
+sub active_engine_name {
+  my ($self) = @_;
+  return $self->_active_engine_name;
+}
+
+=method active_engine_name
+
+    my $name = $raider->active_engine_name;  # 'smart' or undef
+
+Returns the name of the currently active catalog engine, or C<undef> if using
+the default engine.
+
+=cut
+
+sub switch_engine {
+  my ($self, $name) = @_;
+  croak "Engine '$name' not found in engine_catalog"
+    unless exists $self->engine_catalog->{$name};
+  my $entry = $self->engine_catalog->{$name};
+  $self->_active_engine($entry->{engine});
+  $self->_active_engine_name($name);
+  $self->_tools_dirty(1);
+  return $entry->{engine};
+}
+
+=method switch_engine
+
+    $raider->switch_engine('smart');
+
+Switches to a named engine from the C<engine_catalog>. Sets C<_tools_dirty>
+so the raid loop re-gathers and re-formats tools for the new engine.
+Croaks if the name is not in the catalog.
+
+=cut
+
+sub reset_engine {
+  my ($self) = @_;
+  $self->_clear_active_engine;
+  $self->_active_engine_name(undef);
+  $self->_tools_dirty(1);
+  return $self->engine;
+}
+
+=method reset_engine
+
+    $raider->reset_engine;
+
+Switches back to the default engine (the one passed at construction).
+
+=cut
+
+sub engine_info {
+  my ($self) = @_;
+  my $engine = $self->active_engine;
+  return {
+    name  => $self->_active_engine_name // 'default',
+    class => ref $engine,
+    model => $engine->can('chat_model') ? $engine->chat_model : undef,
+  };
+}
+
+=method engine_info
+
+    my $info = $raider->engine_info;
+    # { name => 'smart', class => 'Langertha::Engine::Anthropic', model => 'claude-sonnet-4-6' }
+
+Returns a hashref with the active engine's name, class, and model.
+
+=cut
+
+sub list_engines {
+  my ($self) = @_;
+  my %list;
+  $list{default} = {
+    engine => $self->engine,
+    active => !$self->_has_active_engine,
+  };
+  for my $name (keys %{$self->engine_catalog}) {
+    my $entry = $self->engine_catalog->{$name};
+    $list{$name} = {
+      engine      => $entry->{engine},
+      description => $entry->{description},
+      active      => (defined $self->_active_engine_name && $self->_active_engine_name eq $name),
+    };
+  }
+  return \%list;
+}
+
+=method list_engines
+
+    my $engines = $raider->list_engines;
+
+Returns a hashref of all available engines (default + catalog entries),
+each with C<engine>, C<description> (if from catalog), and C<active> flag.
+
+=cut
+
+sub add_engine {
+  my ( $self, $name, %opts ) = @_;
+  croak "Engine object required" unless $opts{engine};
+  $self->engine_catalog->{$name} = \%opts;
+  $self->_tools_dirty(1);
+  return;
+}
+
+=method add_engine
+
+    $raider->add_engine('vision', engine => $vision_engine, description => 'Vision model');
+
+Adds a new engine to the catalog at runtime. The LLM will see it in the
+C<raider_switch_engine> tool after the next tool re-gather.
+
+=cut
+
+sub remove_engine {
+  my ( $self, $name ) = @_;
+  croak "Engine '$name' not found in engine_catalog"
+    unless exists $self->engine_catalog->{$name};
+  if (defined $self->_active_engine_name && $self->_active_engine_name eq $name) {
+    $self->reset_engine;
+  }
+  delete $self->engine_catalog->{$name};
+  $self->_tools_dirty(1);
+  return;
+}
+
+=method remove_engine
+
+    $raider->remove_engine('vision');
+
+Removes an engine from the catalog. If the removed engine is currently active,
+automatically resets to the default engine.
 
 =cut
 
@@ -551,6 +895,331 @@ sub _langfuse_usage {
   return undef;
 }
 
+sub _self_tool_enabled {
+  my ( $self, $tool_name ) = @_;
+  return 0 unless $self->has_raider_mcp;
+  my $cfg = $self->raider_mcp;
+  return 1 if !ref $cfg; # truthy scalar = all tools
+  return $cfg->{$tool_name} ? 1 : 0 if ref $cfg eq 'HASH';
+  return 0;
+}
+
+sub _self_tool_definitions {
+  my ( $self ) = @_;
+  my @tools;
+
+  if ($self->_self_tool_enabled('ask_user')) {
+    push @tools, {
+      name => 'raider_ask_user',
+      description => 'Ask the user a question and wait for their answer. Use this when you need clarification or a decision from the user.',
+      inputSchema => {
+        type => 'object',
+        properties => {
+          question => { type => 'string', description => 'The question to ask the user' },
+          options  => { type => 'array', items => { type => 'string' }, description => 'Optional list of choices for the user' },
+        },
+        required => ['question'],
+      },
+    };
+  }
+
+  if ($self->_self_tool_enabled('wait')) {
+    push @tools, {
+      name => 'raider_wait',
+      description => 'Wait for a specified number of seconds before continuing.',
+      inputSchema => {
+        type => 'object',
+        properties => {
+          seconds => { type => 'number', description => 'Number of seconds to wait' },
+          reason  => { type => 'string', description => 'Why you are waiting' },
+        },
+        required => ['seconds'],
+      },
+    };
+  }
+
+  if ($self->_self_tool_enabled('wait_for')) {
+    push @tools, {
+      name => 'raider_wait_for',
+      description => 'Wait for an external condition to be met. The condition is evaluated by the host application.',
+      inputSchema => {
+        type => 'object',
+        properties => {
+          condition => { type => 'string', description => 'Description of the condition to wait for' },
+          args      => { type => 'object', description => 'Additional arguments for the condition check' },
+          timeout   => { type => 'number', description => 'Timeout in seconds' },
+        },
+        required => ['condition'],
+      },
+    };
+  }
+
+  if ($self->_self_tool_enabled('pause')) {
+    push @tools, {
+      name => 'raider_pause',
+      description => 'Pause execution and return control to the user. The user can resume later with respond_f.',
+      inputSchema => {
+        type => 'object',
+        properties => {
+          reason => { type => 'string', description => 'Why you are pausing' },
+        },
+      },
+    };
+  }
+
+  if ($self->_self_tool_enabled('abort')) {
+    push @tools, {
+      name => 'raider_abort',
+      description => 'Abort the current raid. Use only when the task cannot be completed.',
+      inputSchema => {
+        type => 'object',
+        properties => {
+          reason => { type => 'string', description => 'Why you are aborting' },
+        },
+      },
+    };
+  }
+
+  if ($self->_self_tool_enabled('session_history')) {
+    push @tools, {
+      name => 'raider_session_history',
+      description => 'Search or retrieve the full session history including tool calls and results.',
+      inputSchema => {
+        type => 'object',
+        properties => {
+          query   => { type => 'string', description => 'Filter messages containing this text' },
+          last_n  => { type => 'integer', description => 'Return only the last N messages' },
+          search  => { type => 'string', description => 'Semantic search query (requires embedding engine)' },
+        },
+      },
+    };
+  }
+
+  if ($self->_self_tool_enabled('manage_mcps')) {
+    push @tools, {
+      name => 'raider_manage_mcps',
+      description => 'List, activate, or deactivate MCP tool servers from the catalog.',
+      inputSchema => {
+        type => 'object',
+        properties => {
+          action => { type => 'string', enum => ['list', 'activate', 'deactivate'], description => 'Action to perform' },
+          name   => { type => 'string', description => 'Name of the MCP server (for activate/deactivate)' },
+        },
+        required => ['action'],
+      },
+    };
+  }
+
+  if ($self->_self_tool_enabled('switch_engine') && keys %{$self->engine_catalog}) {
+    my @names = ('default', sort keys %{$self->engine_catalog});
+    push @tools, {
+      name => 'raider_switch_engine',
+      description => 'Switch to a different AI engine from the catalog. Use "default" to reset to the original engine.',
+      inputSchema => {
+        type => 'object',
+        properties => {
+          name => {
+            type => 'string',
+            enum => \@names,
+            description => 'Name of the engine to switch to',
+          },
+        },
+        required => ['name'],
+      },
+    };
+  }
+
+  return \@tools;
+}
+
+sub _execute_self_tool {
+  my ( $self, $name, $input ) = @_;
+  my $short = $name;
+  $short =~ s/^raider_//;
+
+  if ($short eq 'ask_user') {
+    my $question = $input->{question};
+    my $options  = $input->{options};
+    if ($self->has_on_ask_user) {
+      my $answer = $self->on_ask_user->($question, $options);
+      return { type => 'result', content => [{ type => 'text', text => "$answer" }] };
+    }
+    return { type => 'question', question => $question, options => $options };
+  }
+
+  if ($short eq 'wait') {
+    my $seconds = $input->{seconds} // 1;
+    return { type => 'wait', seconds => $seconds, reason => $input->{reason} };
+  }
+
+  if ($short eq 'wait_for') {
+    croak "No on_wait_for callback configured" unless $self->has_on_wait_for;
+    my $result = $self->on_wait_for->($input->{condition}, $input->{args});
+    return { type => 'result', content => [{ type => 'text', text => "$result" }] };
+  }
+
+  if ($short eq 'pause') {
+    my $reason = $input->{reason} // '';
+    if ($self->has_on_pause) {
+      $self->on_pause->($reason);
+      return { type => 'result', content => [{ type => 'text', text => "Resumed after pause." }] };
+    }
+    return { type => 'pause', reason => $reason };
+  }
+
+  if ($short eq 'abort') {
+    return { type => 'abort', reason => $input->{reason} // 'Agent aborted' };
+  }
+
+  if ($short eq 'session_history') {
+    return { type => 'result', content => [{ type => 'text', text => $self->_query_session_history($input) }] };
+  }
+
+  if ($short eq 'manage_mcps') {
+    return { type => 'result', content => [{ type => 'text', text => $self->_manage_mcps($input) }] };
+  }
+
+  if ($short eq 'switch_engine') {
+    return { type => 'result', content => [{ type => 'text', text => $self->_switch_engine_tool($input) }] };
+  }
+
+  die "Unknown self-tool: $name";
+}
+
+sub _query_session_history {
+  my ( $self, $args ) = @_;
+  my @hist = @{$self->session_history};
+
+  # Semantic search via embeddings
+  if (my $search = $args->{search}) {
+    my $engine = $self->_get_embedding_engine;
+    if ($engine) {
+      my $query_vec = $engine->simple_embedding($search);
+      my @scored;
+      for my $i (0..$#hist) {
+        my $emb = $self->_session_embeddings->[$i];
+        next unless $emb;
+        my $sim = _cosine_similarity($query_vec, $emb);
+        push @scored, { idx => $i, score => $sim };
+      }
+      @scored = sort { $b->{score} <=> $a->{score} } @scored;
+      @scored = @scored[0..9] if @scored > 10;
+      @hist = map { $hist[$_->{idx}] } @scored;
+    } else {
+      # Fallback to text grep
+      @hist = grep { ($_->{content} // '') =~ /\Q$search/i } @hist;
+    }
+  }
+
+  if (my $q = $args->{query}) {
+    @hist = grep { ($_->{content} // '') =~ /\Q$q/i } @hist;
+  }
+  if (my $n = $args->{last_n}) {
+    @hist = @hist[-$n..-1] if @hist > $n;
+  }
+
+  my $text = join("\n\n", map {
+    "[$_->{role}] $_->{content}"
+  } @hist);
+  return $text || 'No messages in session history.';
+}
+
+sub _manage_mcps {
+  my ( $self, $args ) = @_;
+  my $action = $args->{action};
+
+  if ($action eq 'list') {
+    my @lines;
+    for my $name (sort keys %{$self->mcp_catalog}) {
+      my $entry = $self->mcp_catalog->{$name};
+      my $active = exists $self->_active_catalog_mcps->{$name} ? 'ACTIVE' : 'inactive';
+      my $desc = $entry->{description} // '';
+      push @lines, "- $name [$active] $desc";
+    }
+    return join("\n", @lines) || 'No MCP servers in catalog.';
+  }
+
+  if ($action eq 'activate') {
+    my $name = $args->{name} or return "Error: name required for activate";
+    my $entry = $self->mcp_catalog->{$name}
+      or return "Error: '$name' not found in catalog";
+    $self->_active_catalog_mcps->{$name} = $entry->{server};
+    $self->_tools_dirty(1);
+    return "Activated MCP server '$name'.";
+  }
+
+  if ($action eq 'deactivate') {
+    my $name = $args->{name} or return "Error: name required for deactivate";
+    delete $self->_active_catalog_mcps->{$name};
+    $self->_tools_dirty(1);
+    return "Deactivated MCP server '$name'.";
+  }
+
+  return "Error: unknown action '$action'";
+}
+
+sub _switch_engine_tool {
+  my ( $self, $args ) = @_;
+  my $name = $args->{name} or return "Error: name required";
+
+  if ($name eq 'default') {
+    $self->reset_engine;
+    my $info = $self->engine_info;
+    return "Switched to default engine ($info->{class}, model: $info->{model}).";
+  }
+
+  my $entry = $self->engine_catalog->{$name}
+    or return "Error: '$name' not found in engine catalog";
+  $self->switch_engine($name);
+  my $info = $self->engine_info;
+  return "Switched to engine '$name' ($info->{class}, model: $info->{model}).";
+}
+
+sub _get_embedding_engine {
+  my ( $self ) = @_;
+  return $self->embedding_engine if $self->has_embedding_engine;
+  my $engine = $self->engine;
+  return $engine if $engine->does('Langertha::Role::Embedding');
+  return undef;
+}
+
+sub _cosine_similarity {
+  my ( $a, $b ) = @_;
+  my $dot = 0;
+  my $na  = 0;
+  my $nb  = 0;
+  my $len = @$a < @$b ? @$a : @$b;
+  for my $i (0..$len-1) {
+    $dot += $a->[$i] * $b->[$i];
+    $na  += $a->[$i] * $a->[$i];
+    $nb  += $b->[$i] * $b->[$i];
+  }
+  my $denom = sqrt($na) * sqrt($nb);
+  return $denom > 0 ? $dot / $denom : 0;
+}
+
+sub _push_session_history {
+  my ( $self, @msgs ) = @_;
+  push @{$self->session_history}, @msgs;
+  # Fire-and-forget embedding computation
+  my $engine = $self->_get_embedding_engine;
+  if ($engine) {
+    for my $msg (@msgs) {
+      my $text = $msg->{content};
+      next unless defined $text && length $text;
+      eval {
+        my $vec = $engine->simple_embedding($text);
+        push @{$self->_session_embeddings}, $vec;
+      };
+      if ($@) {
+        push @{$self->_session_embeddings}, undef;
+      }
+    }
+  } else {
+    push @{$self->_session_embeddings}, (undef) x scalar @msgs;
+  }
+}
+
 sub raid {
   my ( $self, @messages ) = @_;
   return $self->raid_f(@messages)->get;
@@ -565,9 +1234,76 @@ loop, and returns the final text response. Updates history and metrics.
 
 =cut
 
+async sub _gather_tools_f {
+  my ( $self ) = @_;
+  my $engine = $self->engine;
+  my ( @all_tools, %tool_server_map );
+
+  # Engine MCP servers
+  if ($engine->can('mcp_servers')) {
+    for my $mcp (@{$engine->mcp_servers}) {
+      my $tools = await $mcp->list_tools;
+      for my $tool (@$tools) {
+        $tool_server_map{$tool->{name}} = $mcp;
+        push @all_tools, $tool;
+      }
+    }
+  }
+
+  # Inline MCP
+  if ($self->has_inline_mcp) {
+    my $tools = await $self->_inline_mcp->list_tools;
+    for my $tool (@$tools) {
+      $tool_server_map{$tool->{name}} = $self->_inline_mcp;
+      push @all_tools, $tool;
+    }
+  }
+
+  # Active catalog MCPs
+  for my $name (sort keys %{$self->_active_catalog_mcps}) {
+    my $mcp = $self->_active_catalog_mcps->{$name};
+    my $tools = await $mcp->list_tools;
+    for my $tool (@$tools) {
+      $tool_server_map{$tool->{name}} = $mcp;
+      push @all_tools, $tool;
+    }
+  }
+
+  # Self-tools (virtual — no MCP server mapping needed)
+  if ($self->has_raider_mcp) {
+    push @all_tools, @{$self->_self_tool_definitions};
+  }
+
+  return ( \@all_tools, \%tool_server_map );
+}
+
+async sub _initialize_inline_mcp_f {
+  my ( $self ) = @_;
+  return if $self->has_inline_mcp;
+  return unless @{$self->tools};
+
+  require MCP::Server;
+  require Net::Async::MCP;
+
+  my $server = MCP::Server->new(name => 'raider-inline', version => '1.0');
+  for my $tdef (@{$self->tools}) {
+    $server->tool(
+      name         => $tdef->{name},
+      description  => $tdef->{description},
+      input_schema => $tdef->{input_schema},
+      code         => $tdef->{code},
+    );
+  }
+
+  my $mcp = Net::Async::MCP->new(server => $server);
+  $self->engine->_async_http->loop->add($mcp);
+  await $mcp->initialize;
+  $self->_inline_mcp($mcp);
+}
+
 async sub raid_f {
   my ( $self, @messages ) = @_;
-  my $engine = $self->engine;
+  my $engine = $self->active_engine;
   my $t0 = [gettimeofday];
   my $langfuse = $engine->can('langfuse_enabled') && $engine->langfuse_enabled;
   my $trace_id;
@@ -598,20 +1334,16 @@ async sub raid_f {
     await $self->compress_history_f();
   }
 
-  croak "Engine must have MCP servers configured"
-    unless $engine->can('mcp_servers') && @{$engine->mcp_servers};
+  # Initialize inline MCP if tools defined
+  await $self->_initialize_inline_mcp_f;
 
-  # Gather tools from all MCP servers
-  my ( @all_tools, %tool_server_map );
-  for my $mcp (@{$engine->mcp_servers}) {
-    my $tools = await $mcp->list_tools;
-    for my $tool (@$tools) {
-      $tool_server_map{$tool->{name}} = $mcp;
-      push @all_tools, $tool;
-    }
-  }
+  # Gather tools from all sources
+  my ( $all_tools, $tool_server_map ) = await $self->_gather_tools_f;
 
-  my $formatted_tools = $engine->format_tools(\@all_tools);
+  croak "No tools available (configure MCP servers, inline tools, or raider_mcp)"
+    unless @$all_tools;
+
+  my $formatted_tools = $engine->format_tools($all_tools);
   my $model_params = $langfuse ? $self->_langfuse_model_parameters : undef;
 
   # Build new user messages
@@ -620,7 +1352,7 @@ async sub raid_f {
   } @messages;
 
   # Push user messages to session_history
-  push @{$self->session_history}, @user_msgs;
+  $self->_push_session_history(@user_msgs);
 
   # Build full conversation: mission + history + new messages
   my @conversation;
@@ -642,11 +1374,74 @@ async sub raid_f {
   my $raid_tool_calls = 0;
   my @injected_history;
 
-  for my $iteration (1..$self->max_iterations) {
-    $raid_iterations++;
+  # Package loop state for potential continuation
+  my $state = {
+    engine           => $engine,
+    t0               => $t0,
+    langfuse         => $langfuse,
+    trace_id         => $trace_id,
+    tool_server_map  => $tool_server_map,
+    formatted_tools  => $formatted_tools,
+    model_params     => $model_params,
+    user_msgs        => \@user_msgs,
+    conversation     => \@conversation,
+    hermes           => $hermes,
+    hermes_system_msg => $hermes_system_msg,
+    raid_iterations  => \$raid_iterations,
+    raid_tool_calls  => \$raid_tool_calls,
+    injected_history => \@injected_history,
+  };
+
+  return await $self->_run_raid_loop($state, 1);
+}
+
+async sub _run_raid_loop {
+  my ( $self, $state, $start_iteration ) = @_;
+  my $engine           = $state->{engine};
+  my $langfuse         = $state->{langfuse};
+  my $trace_id         = $state->{trace_id};
+  my $tool_server_map  = $state->{tool_server_map};
+  my $formatted_tools  = $state->{formatted_tools};
+  my $model_params     = $state->{model_params};
+  my $user_msgs        = $state->{user_msgs};
+  my $conversation     = $state->{conversation};
+  my $hermes           = $state->{hermes};
+  my $hermes_system_msg = $state->{hermes_system_msg};
+  my $raid_iterations  = $state->{raid_iterations};
+  my $raid_tool_calls  = $state->{raid_tool_calls};
+  my $injected_history = $state->{injected_history};
+  my $t0               = $state->{t0};
+
+  for my $iteration ($start_iteration..$self->max_iterations) {
+    $$raid_iterations++;
+
+    # Re-gather tools if catalog/engine changed
+    if ($self->_tools_dirty) {
+      $engine = $self->active_engine;
+      $state->{engine} = $engine;
+      my ( $all_tools, $new_map ) = await $self->_gather_tools_f;
+      $formatted_tools = $engine->format_tools($all_tools);
+      $tool_server_map = $new_map;
+      $state->{formatted_tools} = $formatted_tools;
+      $state->{tool_server_map} = $tool_server_map;
+
+      # Re-evaluate hermes mode for the (possibly new) engine
+      $hermes = $engine->can('hermes_tools') && $engine->hermes_tools;
+      $state->{hermes} = $hermes;
+      if ($hermes) {
+        my $tools_json = $engine->json->encode($formatted_tools);
+        my $tool_prompt = sprintf($engine->hermes_tool_prompt, $tools_json);
+        $hermes_system_msg = { role => 'system', content => $tool_prompt };
+      } else {
+        $hermes_system_msg = undef;
+      }
+      $state->{hermes_system_msg} = $hermes_system_msg;
+
+      $self->_tools_dirty(0);
+    }
 
     # Drain injections for iterations 2+
-    if ($iteration > 1) {
+    if ($iteration > $start_iteration || $start_iteration > 1) {
       my @injected;
       if (@{$self->_injections}) {
         push @injected, splice @{$self->_injections};
@@ -659,9 +1454,9 @@ async sub raid_f {
         my @msgs = map {
           ref $_ ? $_ : { role => 'user', content => $_ }
         } @injected;
-        push @conversation, @msgs;
-        push @injected_history, @msgs;
-        push @{$self->session_history}, @msgs;
+        push @$conversation, @msgs;
+        push @$injected_history, @msgs;
+        $self->_push_session_history(@msgs);
       }
     }
 
@@ -680,10 +1475,10 @@ async sub raid_f {
     # Build and send the request
     my $request;
     if ($hermes) {
-      my @conv = ( $hermes_system_msg, @conversation );
+      my @conv = ( $hermes_system_msg, @$conversation );
       $request = $engine->chat_request(\@conv);
     } else {
-      $request = $engine->chat_request(\@conversation, tools => $formatted_tools);
+      $request = $engine->chat_request($conversation, tools => $formatted_tools);
     }
 
     my $response = await $engine->_async_http->do_request(request => $request);
@@ -730,7 +1525,7 @@ async sub raid_f {
           parent_observation_id => $iter_span_id,
           name                  => 'llm-call',
           model                 => $engine->chat_model,
-          input                 => \@conversation,
+          input                 => $conversation,
           output                => $text,
           start_time            => $iter_t0,
           end_time              => $iter_t1,
@@ -753,22 +1548,22 @@ async sub raid_f {
       }
 
       # Persist user messages, injections, and final assistant response in history
-      push @{$self->history}, @user_msgs;
-      push @{$self->history}, @injected_history if @injected_history;
+      push @{$self->history}, @$user_msgs;
+      push @{$self->history}, @$injected_history if @$injected_history;
       push @{$self->history}, { role => 'assistant', content => $text };
 
       # Push final assistant response to session_history
-      push @{$self->session_history}, { role => 'assistant', content => $text };
+      $self->_push_session_history({ role => 'assistant', content => $text });
 
       # Update metrics
       my $elapsed = tv_interval($t0) * 1000;
       my $m = $self->metrics;
       $m->{raids}++;
-      $m->{iterations}  += $raid_iterations;
-      $m->{tool_calls}  += $raid_tool_calls;
+      $m->{iterations}  += $$raid_iterations;
+      $m->{tool_calls}  += $$raid_tool_calls;
       $m->{time_ms}     += $elapsed;
 
-      return $text;
+      return Langertha::Raider::Result->new(type => 'final', text => $text);
     }
 
     # Langfuse: generation for the LLM call that produced tool calls
@@ -779,7 +1574,7 @@ async sub raid_f {
         parent_observation_id => $iter_span_id,
         name                  => 'llm-call',
         model                 => $engine->chat_model,
-        input                 => \@conversation,
+        input                 => $conversation,
         output                => $engine->json->encode([map {
           $hermes ? $_->{name} : ($engine->extract_tool_call($_))[0]
         } @$tool_calls]),
@@ -800,10 +1595,101 @@ async sub raid_f {
         ( $name, $input ) = $engine->extract_tool_call($tc);
       }
 
-      my $mcp = $tool_server_map{$name}
-        or die "Tool '$name' not found on any MCP server";
-
       my $tool_t0 = $langfuse ? $engine->_langfuse_timestamp : undef;
+
+      # Check for virtual self-tools
+      if ($name =~ /^raider_/ && $self->has_raider_mcp) {
+        my $self_result = $self->_execute_self_tool($name, $input);
+
+        # Handle interactive self-tool results
+        if ($self_result->{type} eq 'question' || $self_result->{type} eq 'pause') {
+          # Save continuation state for respond_f
+          $self->_continuation({
+            state          => $state,
+            iteration      => $iteration,
+            data           => $data,
+            pending_tc     => $tc,
+            remaining_tcs  => [grep { $_ != $tc } @$tool_calls],
+            results_so_far => \@results,
+            iter_span_id   => $iter_span_id,
+          });
+
+          if ($self_result->{type} eq 'question') {
+            return Langertha::Raider::Result->new(
+              type    => 'question',
+              content => $self_result->{question},
+              $self_result->{options} ? (options => $self_result->{options}) : (),
+            );
+          } else {
+            return Langertha::Raider::Result->new(
+              type    => 'pause',
+              content => $self_result->{reason},
+            );
+          }
+        }
+
+        if ($self_result->{type} eq 'abort') {
+          # Finalize metrics before aborting
+          my $elapsed = tv_interval($t0) * 1000;
+          my $m = $self->metrics;
+          $m->{iterations}  += $$raid_iterations;
+          $m->{tool_calls}  += $$raid_tool_calls;
+          $m->{time_ms}     += $elapsed;
+
+          return Langertha::Raider::Result->new(
+            type    => 'abort',
+            content => $self_result->{reason},
+          );
+        }
+
+        if ($self_result->{type} eq 'wait') {
+          my $loop = $engine->_async_http->loop;
+          await $loop->delay_future(after => $self_result->{seconds});
+          my $result = {
+            content => [{ type => 'text', text => "Waited $self_result->{seconds} seconds." }],
+          };
+
+          if ($langfuse) {
+            $engine->langfuse_span(
+              trace_id              => $trace_id,
+              parent_observation_id => $iter_span_id,
+              name                  => "tool: $name",
+              input                 => $input,
+              output                => "Waited $self_result->{seconds} seconds.",
+              start_time            => $tool_t0,
+              end_time              => $engine->_langfuse_timestamp,
+            );
+          }
+
+          push @results, { tool_call => $tc, result => $result };
+          $$raid_tool_calls++;
+          next;
+        }
+
+        # type eq 'result' — normal self-tool result
+        my $result = $self_result;
+
+        if ($langfuse) {
+          my $tool_output = join('', map { $_->{text} // '' } @{$result->{content} // []});
+          $engine->langfuse_span(
+            trace_id              => $trace_id,
+            parent_observation_id => $iter_span_id,
+            name                  => "tool: $name",
+            input                 => $input,
+            output                => $tool_output,
+            start_time            => $tool_t0,
+            end_time              => $engine->_langfuse_timestamp,
+          );
+        }
+
+        push @results, { tool_call => $tc, result => $result };
+        $$raid_tool_calls++;
+        next;
+      }
+
+      # Normal MCP tool call
+      my $mcp = $tool_server_map->{$name}
+        or die "Tool '$name' not found on any MCP server";
 
       my $result = await $mcp->call_tool($name, $input)->else(sub {
         my ( $error ) = @_;
@@ -829,7 +1715,7 @@ async sub raid_f {
       }
 
       push @results, { tool_call => $tc, result => $result };
-      $raid_tool_calls++;
+      $$raid_tool_calls++;
     }
 
     # Langfuse: close iteration span after tools complete
@@ -853,20 +1739,122 @@ async sub raid_f {
     } else {
       @tool_msgs = $engine->format_tool_results($data, \@results);
     }
-    push @conversation, @tool_msgs;
-    push @{$self->session_history}, @tool_msgs;
+    push @$conversation, @tool_msgs;
+    $self->_push_session_history(@tool_msgs);
   }
 
   die "Raider tool loop exceeded ".$self->max_iterations." iterations";
 }
 
+async sub respond_f {
+  my ( $self, $answer ) = @_;
+  croak "No pending interaction — call raid_f first"
+    unless $self->has_continuation;
+
+  my $cont = $self->_continuation;
+  $self->clear_continuation;
+
+  my $state      = $cont->{state};
+  my $data       = $cont->{data};
+  my $pending_tc = $cont->{pending_tc};
+  my @results    = @{$cont->{results_so_far}};
+  my $engine     = $state->{engine};
+  my $hermes     = $state->{hermes};
+
+  # Add the answer as the tool result for the pending self-tool call
+  my $answer_result = {
+    content => [{ type => 'text', text => "$answer" }],
+  };
+  push @results, { tool_call => $pending_tc, result => $answer_result };
+  ${$state->{raid_tool_calls}}++;
+
+  # Execute remaining tool calls from the same batch
+  for my $tc (@{$cont->{remaining_tcs}}) {
+    my ( $name, $input );
+    if ($hermes) {
+      ( $name, $input ) = ( $tc->{name}, $tc->{arguments} );
+    } else {
+      ( $name, $input ) = $engine->extract_tool_call($tc);
+    }
+
+    if ($name =~ /^raider_/ && $self->has_raider_mcp) {
+      my $self_result = $self->_execute_self_tool($name, $input);
+      if ($self_result->{type} eq 'result') {
+        push @results, { tool_call => $tc, result => $self_result };
+        ${$state->{raid_tool_calls}}++;
+      }
+      # For simplicity, skip interactive self-tools in remaining batch
+      next;
+    }
+
+    my $mcp = $state->{tool_server_map}{$name}
+      or die "Tool '$name' not found on any MCP server";
+
+    my $result = await $mcp->call_tool($name, $input)->else(sub {
+      my ( $error ) = @_;
+      Future->done({
+        content => [{ type => 'text', text => "Error calling tool '$name': $error" }],
+        isError => JSON::MaybeXS->true,
+      });
+    });
+
+    push @results, { tool_call => $tc, result => $result };
+    ${$state->{raid_tool_calls}}++;
+  }
+
+  # Close iteration span if Langfuse
+  if ($state->{langfuse} && $cont->{iter_span_id}) {
+    $engine->langfuse_update_span(
+      id       => $cont->{iter_span_id},
+      end_time => $engine->_langfuse_timestamp,
+      metadata => { tool_calls => scalar @results },
+    );
+  }
+
+  # Format tool results and append to conversation
+  my @tool_msgs;
+  if ($hermes) {
+    @tool_msgs = $engine->_hermes_build_tool_results($data, \@results);
+  } else {
+    @tool_msgs = $engine->format_tool_results($data, \@results);
+  }
+  push @{$state->{conversation}}, @tool_msgs;
+  $self->_push_session_history(@tool_msgs);
+
+  # Continue the raid loop from the next iteration
+  return await $self->_run_raid_loop($state, $cont->{iteration} + 1);
+}
+
+sub respond {
+  my ( $self, $answer ) = @_;
+  return $self->respond_f($answer)->get;
+}
+
 =method raid_f
 
-    my $response = await $raider->raid_f(@messages);
+    my $result = await $raider->raid_f(@messages);
 
 Async tool-calling conversation. Accepts the same message arguments as
 C<simple_chat> (strings become user messages, hashrefs pass through).
-Returns a L<Future> resolving to the final text response.
+Returns a L<Future> resolving to a L<Langertha::Raider::Result>.
+
+The result stringifies to the final text (backward compatible), but also
+provides C<type>, C<is_final>, C<is_question>, C<is_pause>, C<is_abort>
+for programmatic handling of interactive self-tools.
+
+=method respond_f
+
+    my $result = await $raider->respond_f($answer);
+
+Continue a paused raid after a C<question> or C<pause> result. The answer
+is used as the tool result and the raid loop resumes. Returns the next
+L<Langertha::Raider::Result>.
+
+=method respond
+
+    my $result = $raider->respond($answer);
+
+Synchronous wrapper around C<respond_f>.
 
 =cut
 

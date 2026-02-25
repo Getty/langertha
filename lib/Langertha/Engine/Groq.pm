@@ -4,18 +4,10 @@ our $VERSION = '0.202';
 use Moose;
 use Carp qw( croak );
 
+extends 'Langertha::Engine::OpenAIBase';
+
 with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
-  OpenAICompatible
-  OpenAPI
-  Models
-  Temperature
-  ResponseSize
   ResponseFormat
-  SystemPrompt
-  Streaming
-  Chat
   Transcription
 ));
 
@@ -79,6 +71,8 @@ __PACKAGE__->meta->make_immutable;
 =seealso
 
 =over
+
+=item * L<https://groqstatus.com/> - Groq service status
 
 =item * L<https://console.groq.com/docs/models> - Official Groq models documentation
 

@@ -6,18 +6,10 @@ use Carp qw( croak );
 
 use File::ShareDir::ProjectDistDir qw( :all );
 
+extends 'Langertha::Engine::OpenAIBase';
+
 with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
-  OpenAICompatible
-  OpenAPI
-  Models
-  Temperature
-  ResponseSize
   ResponseFormat
-  SystemPrompt
-  Streaming
-  Chat
   Embedding
 ));
 
@@ -61,7 +53,6 @@ has '+url' => (
   lazy => 1,
   default => sub { 'https://api.mistral.ai' },
 );
-around has_url => sub { 1 };
 
 sub _build_api_key {
   my ( $self ) = @_;
@@ -82,6 +73,8 @@ __PACKAGE__->meta->make_immutable;
 =seealso
 
 =over
+
+=item * L<https://status.mistral.ai/> - Mistral service status
 
 =item * L<https://mistral.ai/models> - Official Mistral models documentation
 

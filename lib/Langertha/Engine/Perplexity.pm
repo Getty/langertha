@@ -4,18 +4,7 @@ our $VERSION = '0.202';
 use Moose;
 use Carp qw( croak );
 
-with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
-  OpenAICompatible
-  OpenAPI
-  Models
-  Temperature
-  ResponseSize
-  SystemPrompt
-  Streaming
-  Chat
-));
+extends 'Langertha::Engine::OpenAIBase';
 
 =head1 SYNOPSIS
 
@@ -66,7 +55,6 @@ has '+url' => (
   lazy => 1,
   default => sub { 'https://api.perplexity.ai' },
 );
-around has_url => sub { 1 };
 
 sub _build_api_key {
   my ( $self ) = @_;
@@ -81,6 +69,8 @@ __PACKAGE__->meta->make_immutable;
 =seealso
 
 =over
+
+=item * L<https://status.perplexity.com/> - Perplexity service status
 
 =item * L<https://docs.perplexity.ai/> - Official Perplexity API documentation
 

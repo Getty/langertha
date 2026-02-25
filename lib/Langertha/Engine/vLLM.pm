@@ -4,18 +4,7 @@ our $VERSION = '0.202';
 use Moose;
 use Carp qw( croak );
 
-with 'Langertha::Role::'.$_ for (qw(
-  JSON
-  HTTP
-  OpenAICompatible
-  OpenAPI
-  Models
-  Temperature
-  ResponseSize
-  SystemPrompt
-  Streaming
-  Chat
-));
+extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools';
 
@@ -24,8 +13,7 @@ with 'Langertha::Role::Tools';
     use Langertha::Engine::vLLM;
 
     my $vllm = Langertha::Engine::vLLM->new(
-        url          => $ENV{VLLM_URL},
-        model        => $ENV{VLLM_MODEL},
+        url           => 'http://localhost:8000/v1',
         system_prompt => 'You are a helpful assistant',
     );
 
@@ -48,9 +36,9 @@ Provides access to vLLM, a high-throughput inference engine for large
 language models. Composes L<Langertha::Role::OpenAICompatible> since vLLM
 exposes an OpenAI-compatible API.
 
-Both C<url> and C<model> are required. The URL must include the C</v1>
-path prefix (e.g., C<http://localhost:8000/v1>). The API key defaults to
-C<'vllm'> since local vLLM instances typically don't require authentication.
+Only C<url> is required. The URL must include the C</v1> path prefix
+(e.g., C<http://localhost:8000/v1>). Since vLLM serves exactly one model
+(configured at server startup), no model name or API key is needed.
 
 MCP tool calling requires the vLLM server to be started with
 C<--enable-auto-tool-choice> and C<--tool-call-parser> matching the model
@@ -66,9 +54,7 @@ has '+url' => (
   required => 1,
 );
 
-sub default_model { croak "".(ref $_[0])." requires a default_model" }
-
-sub _build_api_key { 'vllm' }
+sub default_model { 'default' }
 
 sub _build_supported_operations {[qw(
   createChatCompletion
