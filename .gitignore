@@ -4,3 +4,4 @@ Langertha-*
 *.tar.gz
 .bash_history
 .env
+cover_db
