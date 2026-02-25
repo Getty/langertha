@@ -158,9 +158,24 @@ is_deeply($min_decoded, [{
 
 # --- openai() method ---
 
-my $aki_openai = $aki->openai;
-isa_ok($aki_openai, 'Langertha::Engine::AKIOpenAI');
-is($aki_openai->model, 'llama3_8b_chat', 'openai() passes model');
-is($aki_openai->api_key, 'testkey', 'openai() passes api_key');
+{
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my $aki_openai = $aki->openai;
+  isa_ok($aki_openai, 'Langertha::Engine::AKIOpenAI');
+  is($aki_openai->model, 'llama3-chat-8b', 'openai() uses AKIOpenAI default model');
+  is($aki_openai->api_key, 'testkey', 'openai() passes api_key');
+  ok(scalar @warnings >= 1, 'openai() without explicit model emits warning');
+  like($warnings[0] || '', qr/cannot be mapped/, 'warning mentions model mapping');
+}
+
+# openai() with explicit model does not warn
+{
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my $aki_openai = $aki->openai(model => 'llama3-chat-8b');
+  is($aki_openai->model, 'llama3-chat-8b', 'openai(model => ...) uses given model');
+  is(scalar @warnings, 0, 'openai() with explicit model does not warn');
+}
 
 done_testing;
