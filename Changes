@@ -33,6 +33,9 @@ Revision history for Langertha
       with backward-compatible stringification
     - AKI: openai() no longer carries over native model name (different
       naming between native and /v1 API), uses default model and warns
+    - Add live embedding test (t/82_live_embedding.t) with semantic
+      similarity verification via Math::Vector::Similarity for OpenAI,
+      Mistral, and Ollama
 
 0.201     2026-02-23 03:50:17Z
     - Add Response.thinking attribute for chain-of-thought reasoning:
