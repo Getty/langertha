@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.202     2026-02-25 03:50:44Z
     - Engine base class hierarchy: introduce Engine::Remote (JSON + HTTP
       + url required) and Engine::OpenAIBase (+ OpenAICompatible, OpenAPI,

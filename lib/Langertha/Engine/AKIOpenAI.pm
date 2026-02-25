@@ -1,6 +1,6 @@
 package Langertha::Engine::AKIOpenAI;
 # ABSTRACT: AKI.IO via OpenAI-compatible API
-our $VERSION = '0.202';
+our $VERSION = '0.203';
 use Moose;
 use Carp qw( croak );
 
