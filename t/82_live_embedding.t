@@ -10,9 +10,11 @@ BEGIN {
   my @available;
   push @available, 'openai'  if $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
   push @available, 'mistral' if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};
-  push @available, 'ollama'  if $ENV{TEST_LANGERTHA_OLLAMA_URL};
+  push @available, 'ollama'      if $ENV{TEST_LANGERTHA_OLLAMA_URL};
+  push @available, 'ollamaopenai' if $ENV{TEST_LANGERTHA_OLLAMA_URL};
+  push @available, 'llamacpp'    if $ENV{TEST_LANGERTHA_LLAMACPP_URL};
   unless (@available) {
-    plan skip_all => 'Set TEST_LANGERTHA_OPENAI_API_KEY, TEST_LANGERTHA_MISTRAL_API_KEY, or TEST_LANGERTHA_OLLAMA_URL';
+    plan skip_all => 'Set TEST_LANGERTHA_OPENAI_API_KEY, TEST_LANGERTHA_MISTRAL_API_KEY, TEST_LANGERTHA_OLLAMA_URL, or TEST_LANGERTHA_LLAMACPP_URL';
   }
   eval { require Math::Vector::Similarity; Math::Vector::Similarity->import('cosine_similarity'); 1 }
     or plan skip_all => 'Math::Vector::Similarity required for this test';
@@ -113,6 +115,27 @@ if ($ENV{TEST_LANGERTHA_OLLAMA_URL}) {
       : (),
   );
   test_engine('Ollama', $ollama);
+
+  # --- OllamaOpenAI (same server, /v1 endpoint) ---
+  require Langertha::Engine::OllamaOpenAI;
+  my $ollama_oai = Langertha::Engine::OllamaOpenAI->new(
+    url => $ENV{TEST_LANGERTHA_OLLAMA_URL} . '/v1',
+    model => 'dummy',  # not used for embeddings
+    $ENV{TEST_LANGERTHA_OLLAMA_EMBEDDING_MODEL}
+      ? (embedding_model => $ENV{TEST_LANGERTHA_OLLAMA_EMBEDDING_MODEL})
+      : (),
+  );
+  test_engine('OllamaOpenAI', $ollama_oai);
+}
+
+# --- LlamaCpp ---
+
+if ($ENV{TEST_LANGERTHA_LLAMACPP_URL}) {
+  require Langertha::Engine::LlamaCpp;
+  my $llamacpp = Langertha::Engine::LlamaCpp->new(
+    url => $ENV{TEST_LANGERTHA_LLAMACPP_URL},
+  );
+  test_engine('LlamaCpp', $llamacpp);
 }
 
 done_testing;

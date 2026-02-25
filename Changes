@@ -35,7 +35,9 @@ Revision history for Langertha
       naming between native and /v1 API), uses default model and warns
     - Add live embedding test (t/82_live_embedding.t) with semantic
       similarity verification via Math::Vector::Similarity for OpenAI,
-      Mistral, and Ollama
+      Mistral, Ollama, OllamaOpenAI, and LlamaCpp
+    - Add live chat test (t/83_live_chat.t) for all 16 engines including
+      Cerebras, OpenRouter, Perplexity, MiniMax, and LlamaCpp
 
 0.201     2026-02-23 03:50:17Z
     - Add Response.thinking attribute for chain-of-thought reasoning:
