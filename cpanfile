@@ -24,4 +24,5 @@ recommends 'IO::Async::SSL';
 on test => sub {
   requires 'Test2::Suite';
   requires 'Module::Runtime';
+  requires 'Math::Vector::Similarity';
 };
