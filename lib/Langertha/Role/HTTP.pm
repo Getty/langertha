@@ -4,6 +4,7 @@ our $VERSION = '0.203';
 use Moose::Role;
 
 use Carp qw( croak );
+use Log::Any qw( $log );
 use URI;
 use LWP::UserAgent;
 
@@ -111,7 +112,11 @@ Basic authentication is set automatically.
 
 sub parse_response {
   my ( $self, $response ) = @_;
-  croak "".(ref $self)." request failed: ".($response->status_line) unless $response->is_success;
+  unless ($response->is_success) {
+    $log->errorf("[%s] HTTP %s", ref $self, $response->status_line);
+    croak "".(ref $self)." request failed: ".($response->status_line);
+  }
+  $log->tracef("[%s] Response: %s", ref $self, $response->decoded_content);
   return $self->json->decode($response->decoded_content);
 }
 

@@ -1,6 +1,54 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - Plugin system: Langertha::Plugin base class with lifecycle hooks
+      (plugin_before_raid, plugin_build_conversation, plugin_before_llm_call,
+      plugin_after_llm_response, plugin_before_tool_call,
+      plugin_after_tool_call, plugin_after_raid) and self_tools support.
+      Plugins can be specified by short name (resolved to
+      Langertha::Plugin::* or LangerthaX::Plugin::*).
+    - Langertha::Plugin::Langfuse: Langfuse observability as a plugin
+      (alternative to engine-level Role::Langfuse), with cascading traces,
+      generations, and tool call spans in the Raider loop.
+    - Role::PluginHost: shared plugin hosting for engines and Raider,
+      with plugin resolution, instantiation, and _plugin_instances caching.
+    - Wrapper classes: Langertha::Chat, Langertha::Embedder,
+      Langertha::ImageGen for wrapping engines with optional overrides
+      (model, system_prompt, temperature, etc.) and plugin lifecycle hooks.
+    - Class sugar: `use Langertha qw( Raider )` and
+      `use Langertha qw( Plugin )` for quick subclass setup with
+      auto-import of Moose and Future::AsyncAwait.
+    - Image generation: Role::ImageGeneration with image_model attribute,
+      OpenAICompatible image_request/image_response/simple_image methods,
+      OpenAI now composes ImageGeneration role (default: gpt-image-1).
+    - Role::KeepAlive: extracted keep_alive attribute from Ollama into
+      a reusable role with get_keep_alive accessor.
+    - Ollama: update to current API — use operationIds chat/embed/list/ps
+      (was generateChat/generateEmbeddings/getModels/getRunningModels),
+      embedding response uses embeddings[0] (was embedding).
+    - NousResearch: reasoning_prompt is now a configurable attribute
+      (was hardcoded string).
+    - Groq, Mistral, OpenAI: consolidate `with 'Langertha::Role::Tools'`
+      into the main role composition block.
+    - Log::Any debug/trace logging in Role::Chat, Role::Embedding,
+      Role::HTTP, Role::Tools, and Role::OpenAPI for request lifecycle
+      visibility.
+    - Add Log::Any to cpanfile runtime dependencies.
+    - Update OpenAPI specs: openai.yaml, mistral.yaml, ollama.yaml to
+      latest upstream versions.
+    - Pre-computed OpenAPI lookup tables: ship Langertha::Spec::OpenAI (148
+      ops), Langertha::Spec::Mistral (67 ops), and Langertha::Spec::Ollama
+      (12 ops) as static Perl data instead of parsing YAML + constructing
+      OpenAPI::Modern at runtime. Startup cost drops from ~16s to <1ms.
+    - New openapi_operations attribute in Role::OpenAPI with automatic
+      fallback: engines that override _build_openapi_operations get the
+      fast path; custom engines using openapi_file still work via the
+      slow YAML/OpenAPI::Modern path.
+    - Add maint/generate_spec_data.pl to regenerate Spec modules from
+      share/*.yaml when specs are updated.
+    - New tests: t/84_live_imagegen.t, t/87_raider_plugins.t,
+      t/89_langertha_sugar.t, t/91_plugin_config.t, t/92_embedder.t,
+      t/93_chat.t, t/94_plugin_langfuse.t, t/95_imagegen.t.
 
 0.202     2026-02-25 03:50:44Z
     - Engine base class hierarchy: introduce Engine::Remote (JSON + HTTP

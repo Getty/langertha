@@ -20,13 +20,13 @@ my $ollama = Langertha::Engine::Ollama->new(
   embedding_model => 'model',
 );
 my $ollama_request = $ollama->embedding('testprompt');
-is($ollama_request->uri, $ollama_testurl.'/api/embeddings', 'Ollama request uri is correct');
+is($ollama_request->uri, $ollama_testurl.'/api/embed', 'Ollama request uri is correct');
 is($ollama_request->method, 'POST', 'Ollama request method is correct');
 is($ollama_request->header('Content-Type'), 'application/json; charset=utf-8', 'Ollama request JSON Content Type is set');
 my $ollama_data = $json->decode($ollama_request->content);
 is_deeply($ollama_data, {
   model => 'model',
-  prompt => 'testprompt',
+  input => 'testprompt',
 }, 'Ollama request body is correct');
 
 my $openai = Langertha::Engine::OpenAI->new(

@@ -11,9 +11,8 @@ extends 'Langertha::Engine::OpenAIBase';
 with 'Langertha::Role::'.$_ for (qw(
   ResponseFormat
   Embedding
+  Tools
 ));
-
-with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
@@ -61,6 +60,11 @@ sub _build_api_key {
 }
 
 sub openapi_file { yaml => dist_file('Langertha','mistral.yaml') };
+
+sub _build_openapi_operations {
+  require Langertha::Spec::Mistral;
+  return Langertha::Spec::Mistral::data();
+}
 
 sub default_model { 'mistral-small-latest' }
 

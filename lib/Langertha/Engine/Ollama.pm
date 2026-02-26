@@ -18,6 +18,7 @@ with 'Langertha::Role::'.$_ for (qw(
   ContextSize
   ResponseSize
   SystemPrompt
+  KeepAlive
   Chat
   Embedding
   Streaming
@@ -117,19 +118,11 @@ sub default_embedding_model { 'mxbai-embed-large' }
 
 sub openapi_file { yaml => dist_file('Langertha','ollama.yaml') };
 
-has keep_alive => (
-  isa => 'Str',
-  is => 'ro',
-  predicate => 'has_keep_alive',
-);
+sub _build_openapi_operations {
+  require Langertha::Spec::Ollama;
+  return Langertha::Spec::Ollama::data();
+}
 
-=attr keep_alive
-
-Controls how long Ollama keeps the model loaded in memory after a request.
-Accepts duration strings such as C<5m> or C<-1> (keep forever). When not set,
-Ollama uses its own default (currently C<5m>).
-
-=cut
 
 has json_format => (
   isa => 'Bool',
@@ -146,9 +139,9 @@ requesting JSON-formatted output from the model. Defaults to C<0>.
 
 sub embedding_request {
   my ( $self, $prompt, %extra ) = @_;
-  return $self->generate_request( generateEmbeddings => sub { $self->embedding_response(shift) },
+  return $self->generate_request( embed => sub { $self->embedding_response(shift) },
     model => $self->embedding_model,
-    prompt => $prompt,
+    input => $prompt,
     %extra,
   );
 }
@@ -156,18 +149,18 @@ sub embedding_request {
 sub embedding_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
-  # tracing
-  return $data->{embedding};
+  # New API returns embeddings as array of arrays
+  return $data->{embeddings}[0];
 }
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
-  return $self->generate_request( generateChat => sub { $self->chat_response(shift) },
+  return $self->generate_request( chat => sub { $self->chat_response(shift) },
     model => $self->chat_model,
     messages => $messages,
     stream => JSON->false,
     $self->json_format ? ( format => 'json' ) : (),
-    $self->has_keep_alive ? ( keep_alive => $self->keep_alive ) : (),
+    defined $self->get_keep_alive ? ( keep_alive => $self->get_keep_alive ) : (),
     options => {
       $self->has_temperature ? ( temperature => $self->temperature ) : (),
       $self->has_context_size ? ( num_ctx => $self->get_context_size ) : (),
@@ -211,7 +204,7 @@ sub chat_response {
 sub tags { $_[0]->tags_request }
 sub tags_request {
   my ( $self ) = @_;
-  return $self->generate_request( getModels => sub { $self->tags_response(shift) } );
+  return $self->generate_request( list => sub { $self->tags_response(shift) } );
 }
 
 =method tags
@@ -251,7 +244,7 @@ the Ollama C</api/tags> endpoint. Also updates the engine's C<models> list.
 sub ps { $_[0]->ps_request }
 sub ps_request {
   my ( $self ) = @_;
-  return $self->generate_request( getRunningModels => sub { $self->ps_response(shift) } );
+  return $self->generate_request( ps => sub { $self->ps_response(shift) } );
 }
 
 =method ps
@@ -329,12 +322,12 @@ sub stream_format { 'ndjson' }
 
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
-  return $self->generate_request( generateChat => sub {},
+  return $self->generate_request( chat => sub {},
     model => $self->chat_model,
     messages => $messages,
     stream => JSON->true,
     $self->json_format ? ( format => 'json' ) : (),
-    $self->has_keep_alive ? ( keep_alive => $self->keep_alive ) : (),
+    defined $self->get_keep_alive ? ( keep_alive => $self->get_keep_alive ) : (),
     options => {
       $self->has_temperature ? ( temperature => $self->temperature ) : (),
       $self->has_context_size ? ( num_ctx => $self->get_context_size ) : (),

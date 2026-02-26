@@ -5,6 +5,49 @@ use utf8;
 use strict;
 use warnings;
 
+use Import::Into;
+use Module::Runtime qw( use_module );
+
+my %_sugar_plugins;  # per-class plugin accumulator
+
+my %setup = (
+  Raider => sub {
+    my ( $caller ) = @_;
+    Moose->import::into($caller);
+    Future::AsyncAwait->import::into($caller);
+    $caller->meta->superclasses('Langertha::Raider');
+    $_sugar_plugins{$caller} = [];
+    no strict 'refs';
+    *{"${caller}::plugin"} = sub {
+      push @{$_sugar_plugins{$caller}}, @_;
+    };
+    $caller->meta->add_method('_sugar_plugins' => sub {
+      return [@{$_sugar_plugins{$caller} // []}];
+    });
+  },
+  Plugin => sub {
+    my ( $caller ) = @_;
+    Moose->import::into($caller);
+    Future::AsyncAwait->import::into($caller);
+    $caller->meta->superclasses('Langertha::Plugin');
+  },
+);
+
+sub import {
+  my ( $class, @args ) = @_;
+  return unless @args;
+  my $caller = caller;
+  for my $arg (@args) {
+    my $setup = $setup{$arg}
+      or Carp::croak("Unknown Langertha import '$arg' (known: ".join(', ', sort keys %setup).")");
+    require Moose;
+    require Future::AsyncAwait;
+    use_module('Langertha::Raider') if $arg eq 'Raider';
+    use_module('Langertha::Plugin') if $arg eq 'Plugin';
+    $setup->($caller);
+  }
+}
+
 =head1 SYNOPSIS
 
     my $system_prompt = 'You are a helpful assistant.';
@@ -72,7 +115,46 @@ B<THIS API IS WORK IN PROGRESS.>
 
 =item * Temperature, response size, and other parameter controls
 
+=item * Plugin system for extending the Raider agent
+
 =back
+
+=head2 Class Sugar
+
+Langertha can set up your package as a Raider subclass or Plugin role:
+
+    # Build a custom Raider agent
+    package MyAgent;
+    use Langertha qw( Raider );
+    plugin 'Langfuse';
+
+    around plugin_before_llm_call => async sub {
+        my ($orig, $self, $conversation, $iteration) = @_;
+        $conversation = await $self->$orig($conversation, $iteration);
+        # ... custom logic ...
+        return $conversation;
+    };
+
+    __PACKAGE__->meta->make_immutable;
+
+    # Build a custom Plugin
+    package MyApp::Guardrails;
+    use Langertha qw( Plugin );
+
+    around plugin_before_tool_call => async sub {
+        my ($orig, $self, $name, $input) = @_;
+        my @result = await $self->$orig($name, $input);
+        return unless @result;
+        return if $name eq 'dangerous_tool';
+        return @result;
+    };
+
+C<use Langertha qw( Raider )> imports L<Moose> and L<Future::AsyncAwait>,
+sets L<Langertha::Raider> as superclass, and provides the C<plugin>
+function for applying plugins by short name.
+
+C<use Langertha qw( Plugin )> imports L<Moose> and
+L<Future::AsyncAwait>, and sets L<Langertha::Plugin> as superclass.
 
 =head2 Engine Modules
 
@@ -146,9 +228,39 @@ Roles provide composable functionality to engines:
 
 =item * L<Langertha::Role::Tools> - Tool/function calling
 
-=item * L<Langertha::Role::Langfuse> - Langfuse observability integration
+=item * L<Langertha::Role::ImageGeneration> - Image generation
+
+=item * L<Langertha::Role::KeepAlive> - Keep-alive duration for local models
+
+=item * L<Langertha::Role::PluginHost> - Plugin system for wrapper classes and Raider
+
+=item * L<Langertha::Role::Langfuse> - Langfuse observability integration (engine-level)
 
 =item * L<Langertha::Role::OpenAPI> - OpenAPI spec support
+
+=back
+
+=head2 Wrapper Classes
+
+These classes wrap an engine with optional overrides and plugin lifecycle hooks:
+
+=over 4
+
+=item * L<Langertha::Chat> - Chat wrapper with system prompt, model, and temperature overrides
+
+=item * L<Langertha::Embedder> - Embedding wrapper with optional model override
+
+=item * L<Langertha::ImageGen> - Image generation wrapper with model, size, and quality overrides
+
+=back
+
+=head2 Plugins
+
+=over 4
+
+=item * L<Langertha::Plugin> - Base class for all plugins
+
+=item * L<Langertha::Plugin::Langfuse> - Langfuse observability (traces, generations, spans)
 
 =back
 

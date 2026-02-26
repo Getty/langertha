@@ -23,25 +23,25 @@
 
 ## Supported Providers
 
-| Provider | Chat | Streaming | Tools (MCP) | Embeddings | Transcription | Models API |
-|----------|:----:|:---------:|:-----------:|:----------:|:-------------:|:----------:|
-| [OpenAI](https://platform.openai.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
-| [Anthropic](https://console.anthropic.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [Gemini](https://ai.google.dev/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [Ollama](https://ollama.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: |
-| [Groq](https://console.groq.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: | :white_check_mark: |
-| [Mistral](https://console.mistral.ai/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [DeepSeek](https://platform.deepseek.com/) :cn: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [MiniMax](https://www.minimax.io/) :cn: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [Perplexity](https://docs.perplexity.ai/) :us: | :white_check_mark: | :white_check_mark: | | | | |
-| [Nous Research](https://nousresearch.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [Cerebras](https://cloud.cerebras.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
-| [OpenRouter](https://openrouter.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
-| [Replicate](https://replicate.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
-| [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | |
-| [AKI.IO](https://aki.io/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | :white_check_mark: | |
+| Provider | Chat | Streaming | Tools (MCP) | Embeddings | Images | Transcription | Models API |
+|----------|:----:|:---------:|:-----------:|:----------:|:------:|:-------------:|:----------:|
+| [OpenAI](https://platform.openai.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| [Anthropic](https://console.anthropic.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
+| [Gemini](https://ai.google.dev/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
+| [Ollama](https://ollama.com/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
+| [Groq](https://console.groq.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: | :white_check_mark: |
+| [Mistral](https://console.mistral.ai/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
+| [DeepSeek](https://platform.deepseek.com/) :cn: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
+| [MiniMax](https://www.minimax.io/) :cn: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
+| [Perplexity](https://docs.perplexity.ai/) :us: | :white_check_mark: | :white_check_mark: | | | | | |
+| [Nous Research](https://nousresearch.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
+| [Cerebras](https://cloud.cerebras.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
+| [OpenRouter](https://openrouter.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
+| [Replicate](https://replicate.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
+| [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
+| [AKI.IO](https://aki.io/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
+| [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | | :white_check_mark: | |
 
 ## Quick Start
 
@@ -298,7 +298,45 @@ say $raider->metrics->{tool_calls};  # cumulative
 $raider->clear_history;              # start fresh
 ```
 
-Key features: persistent history, mission (system prompt), cumulative metrics (raids, iterations, tool_calls, time_ms), context compression, session history, Hermes tool calling support. Langfuse observability is automatic when enabled on the engine.
+Key features: persistent history, mission (system prompt), cumulative metrics (raids, iterations, tool_calls, time_ms), context compression, session history, Hermes tool calling support, plugin system.
+
+### Plugins
+
+Extend the Raider with plugins that hook into every stage of the raid lifecycle:
+
+```perl
+my $raider = Langertha::Raider->new(
+    engine  => $engine,
+    plugins => ['Langfuse', 'MyApp::Guardrails'],
+);
+```
+
+Plugins are Moose classes extending `Langertha::Plugin` with async hook methods:
+
+- `plugin_before_raid` — transform input messages
+- `plugin_build_conversation` — transform assembled conversation
+- `plugin_before_llm_call` — transform conversation before each LLM call
+- `plugin_after_llm_response` — inspect/transform LLM response
+- `plugin_before_tool_call` — inspect/skip/transform tool calls
+- `plugin_after_tool_call` — transform tool results
+- `plugin_after_raid` — transform the final result
+
+Short names are resolved to `Langertha::Plugin::*` or `LangerthaX::Plugin::*`. The built-in `Langfuse` plugin provides full observability as an alternative to engine-level Langfuse.
+
+```perl
+# Quick plugin with sugar
+package MyApp::Guardrails;
+use Langertha qw( Plugin );
+
+around plugin_before_tool_call => async sub {
+    my ($orig, $self, $name, $input) = @_;
+    my @result = await $self->$orig($name, $input);
+    return if $name eq 'dangerous_tool';  # skip
+    return @result;
+};
+
+__PACKAGE__->meta->make_immutable;
+```
 
 ### Context Compression
 
@@ -395,6 +433,43 @@ my $raider = Langertha::Raider->new(
 
 Disabled by default — active only when both keys are set. A Kubernetes manifest for self-hosted Langfuse is included: `kubectl apply -f ex/langfuse-k8s.yaml`
 
+## Wrapper Classes
+
+Wrap an engine with optional overrides for specific use cases:
+
+```perl
+use Langertha::Chat;
+use Langertha::Embedder;
+use Langertha::ImageGen;
+
+# Chat wrapper with custom system prompt and model
+my $chat = Langertha::Chat->new(
+    engine        => $openai,
+    system_prompt => 'You are a pirate.',
+    model         => 'gpt-4o',
+    temperature   => 0.9,
+);
+print $chat->simple_chat('Ahoy!');
+
+# Embedding wrapper with specific model
+my $embedder = Langertha::Embedder->new(
+    engine => $openai,
+    model  => 'text-embedding-3-small',
+);
+my $vec = $embedder->simple_embedding('some text');
+
+# Image generation wrapper
+my $imagegen = Langertha::ImageGen->new(
+    engine  => $openai,
+    model   => 'gpt-image-1',
+    size    => '1024x1024',
+    quality => 'high',
+);
+my $images = $imagegen->simple_image('A cat in space');
+```
+
+Wrappers support plugins via the same `plugins` attribute as Raider.
+
 ## Async/Await
 
 All operations have async variants via [Future::AsyncAwait](https://metacpan.org/pod/Future::AsyncAwait):
@@ -424,6 +499,21 @@ my $embedding = $openai->simple_embedding('Some text to embed');
 ```
 
 Also supported by Ollama (e.g. `mxbai-embed-large`).
+
+## Image Generation
+
+```perl
+use Langertha::Engine::OpenAI;
+
+my $openai = Langertha::Engine::OpenAI->new(
+    api_key => $ENV{OPENAI_API_KEY},
+);
+
+my $images = $openai->simple_image('A viking with an axe in pixel art');
+# Returns arrayref of image objects with url or b64_json
+```
+
+Default model is `gpt-image-1`. Pass `size`, `quality`, or `n` as extra arguments.
 
 ## Transcription (Whisper)
 
@@ -508,6 +598,8 @@ See the [`ex/`](ex/) directory for runnable examples:
 | `hermes_tools.pl` | Hermes-native tool calling with NousResearch |
 | `raider.pl` | Autonomous agent with MCP tools and history |
 | `raider_run.pl` | Full Raider demo: self-tools, engine/MCP catalogs, bootstrapping |
+| `raider_plugin_sugar.pl` | Raider with plugins using class sugar |
+| `raider_rag.pl` | RAG (Retrieval-Augmented Generation) with Raider |
 | `langfuse.pl` | Langfuse observability tracing |
 | `langfuse-k8s.yaml` | Kubernetes manifest for self-hosted Langfuse |
 | `embedding.pl` | Text embeddings |

@@ -6,6 +6,7 @@ use Moose::Role;
 use Carp qw( croak );
 use JSON::MaybeXS ();
 use JSON::PP ();
+use Log::Any qw( $log );
 use OpenAPI::Modern;
 use Path::Tiny;
 use URI;
@@ -17,6 +18,49 @@ requires qw(
   url
   json
 );
+
+has openapi_operations => (
+  is => 'ro',
+  isa => 'HashRef',
+  lazy_build => 1,
+);
+sub _build_openapi_operations {
+  my ( $self ) = @_;
+  # Slow path: parse YAML + OpenAPI::Modern
+  my $oam = $self->openapi;
+  my $data = $oam->openapi_document->get('/');
+  my %operations;
+  my $paths = $data->{paths} || {};
+  for my $path (keys %$paths) {
+    for my $method (keys %{$paths->{$path}}) {
+      next unless ref $paths->{$path}{$method} eq 'HASH';
+      my $op = $paths->{$path}{$method};
+      my $opId = $op->{operationId} or next;
+      my $ct;
+      if ($op->{requestBody} && $op->{requestBody}{content}) {
+        $ct = 'application/json' if $op->{requestBody}{content}{'application/json'};
+        $ct //= 'multipart/form-data' if $op->{requestBody}{content}{'multipart/form-data'};
+      }
+      $operations{$opId} = {
+        method       => uc($method),
+        path         => $path,
+        defined $ct ? (content_type => $ct) : (),
+      };
+    }
+  }
+  my $server_url = $data->{servers}[0]{url} if $data->{servers};
+  return { server_url => $server_url, operations => \%operations };
+}
+
+=attr openapi_operations
+
+HashRef of pre-computed OpenAPI operation data. Contains C<server_url> and
+an C<operations> sub-hash mapping each C<operationId> to its HTTP method,
+path, and content type. Built lazily; engines can override
+C<_build_openapi_operations> to provide pre-computed data and skip the
+expensive YAML parsing / OpenAPI::Modern construction.
+
+=cut
 
 has openapi => (
   is => 'ro',
@@ -36,7 +80,8 @@ sub _build_openapi {
 =attr openapi
 
 The L<OpenAPI::Modern> instance loaded from the engine's C<openapi_file>. Built
-lazily on first use. Only YAML format OpenAPI specs are currently supported.
+lazily on first use. Only used as fallback when C<openapi_operations> is not
+overridden. Only YAML format OpenAPI specs are currently supported.
 
 =cut
 
@@ -79,18 +124,11 @@ sub get_operation {
   my ( $self, $operationId ) = @_;
   croak "".(ref $self)." runs in compatibility mode and is unable to perform this OpenAPI operation"
     unless ($self->can_operation($operationId));
-  my $jpath = $self->openapi->openapi_document->get_operationId_path($operationId);
-  my $operation = $self->openapi->openapi_document->get($jpath);
-  my $content_type = ( $operation->{requestBody} && $operation->{requestBody}->{content} )
-    ? $operation->{requestBody}->{content}->{'application/json'} ? 'application/json'
-      : $operation->{requestBody}->{content}->{'multipart/form-data'} ? 'multipart/form-data'
-        : undef
-    : undef;
-  my ( undef, $paths, $path, $method ) = split('/', $jpath);
-  return unless $paths eq 'paths';
-  $path =~ s/~1/\//g;
-  my $url = $self->url || $self->openapi->openapi_document->get('/servers/0/url');
-  return ( uc($method), $url.$path, $content_type );
+  my $ops = $self->openapi_operations;
+  my $op = $ops->{operations}{$operationId}
+    or croak "".(ref $self).": operationId '$operationId' not found in spec";
+  my $url = $self->url || $ops->{server_url};
+  return ( $op->{method}, $url.$op->{path}, $op->{content_type} );
 }
 
 =method get_operation
@@ -106,6 +144,7 @@ operation is not in C<supported_operations>.
 sub generate_request {
   my ( $self, $operationId, $response_call, %args ) = @_;
   my ( $method, $url, $content_type ) = $self->get_operation($operationId);
+  $log->debugf("[%s] %s %s (%s)", ref $self, $method, $url, $operationId);
   $args{content_type} = $content_type if defined $content_type;
   return $self->generate_http_request( $method, $url, $response_call, %args );
 }

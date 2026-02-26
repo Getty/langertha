@@ -3,6 +3,7 @@ package Langertha::Role::Embedding;
 our $VERSION = '0.203';
 use Moose::Role;
 use Carp qw( croak );
+use Log::Any qw( $log );
 
 requires qw(
   embedding_request
@@ -45,6 +46,8 @@ Use L</simple_embedding> to execute the request and get the result directly.
 
 sub simple_embedding {
   my ( $self, $text ) = @_;
+  $log->debugf("[%s] simple_embedding, model=%s, input_length=%d",
+    ref $self, $self->embedding_model // 'default', length($text // ''));
   my $request = $self->embedding($text);
   my $response = $self->user_agent->request($request);
   return $request->response_call->($response);

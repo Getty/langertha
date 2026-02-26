@@ -9,9 +9,8 @@ extends 'Langertha::Engine::OpenAIBase';
 with 'Langertha::Role::'.$_ for (qw(
   ResponseFormat
   Transcription
+  Tools
 ));
-
-with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 

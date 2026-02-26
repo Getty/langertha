@@ -7,6 +7,7 @@ requires 'JSON::PP';
 requires 'JSON::Schema::Modern', '>= 0.617';
 requires 'LWP::Protocol::https';
 requires 'MIME::Base64';
+requires 'Log::Any';
 requires 'Module::Runtime';
 requires 'Moose';
 requires 'MooseX::NonMoose';

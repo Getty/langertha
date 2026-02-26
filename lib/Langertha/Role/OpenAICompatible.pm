@@ -100,8 +100,15 @@ Override in an engine to use a provider-specific spec (e.g., Mistral).
 
 =cut
 
+sub _build_openapi_operations {
+  require Langertha::Spec::OpenAI;
+  return Langertha::Spec::OpenAI::data();
+}
+
+
 sub default_embedding_model { 'text-embedding-3-large' }
 sub default_transcription_model { 'whisper-1' }
+sub default_image_model { 'gpt-image-1' }
 
 # Dynamic model listing
 
@@ -478,6 +485,62 @@ sub format_tool_results {
 Converts tool execution results into OpenAI-format messages to append
 to the conversation. Returns a list: first the assistant message (with
 tool calls), then one C<role =E<gt> 'tool'> message per result.
+
+=cut
+
+# Image generation
+
+sub image_operation_id { 'createImage' }
+
+sub image_request {
+  my ( $self, $prompt, %extra ) = @_;
+  return $self->generate_request( $self->image_operation_id, sub { $self->image_response(shift) },
+    model  => $self->image_model,
+    prompt => $prompt,
+    %extra,
+  );
+}
+
+=method image_request
+
+    my $request = $engine->image_request($prompt, %extra);
+
+Generates an OpenAI-format image generation request for the given
+C<$prompt>. Uses C<image_model> (default: C<gpt-image-1>). Accepts
+optional C<size>, C<quality>, C<n>, C<response_format> via C<%extra>.
+Returns an HTTP request object.
+
+=cut
+
+sub image_response {
+  my ( $self, $response ) = @_;
+  my $data = $self->parse_response($response);
+  return $data->{data};
+}
+
+=method image_response
+
+    my $images = $engine->image_response($http_response);
+
+Parses an OpenAI-format image generation response. Returns an ArrayRef
+of image objects, each with C<url> or C<b64_json> and optionally
+C<revised_prompt>.
+
+=cut
+
+sub simple_image {
+  my ( $self, $prompt, %extra ) = @_;
+  my $request = $self->image_request($prompt, %extra);
+  my $response = $self->user_agent->request($request);
+  return $request->response_call->($response);
+}
+
+=method simple_image
+
+    my $images = $engine->simple_image('A cat in space');
+
+Sends an image generation request and returns the result. Blocks until
+the request completes. Returns an ArrayRef of image objects.
 
 =cut
 

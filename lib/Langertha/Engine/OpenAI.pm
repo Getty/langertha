@@ -10,9 +10,9 @@ with 'Langertha::Role::'.$_ for (qw(
   ResponseFormat
   Embedding
   Transcription
+  ImageGeneration
+  Tools
 ));
-
-with 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
