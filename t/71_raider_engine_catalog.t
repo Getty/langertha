@@ -57,6 +57,9 @@ my $raider = Langertha::Raider->new(
   engine         => $openai,
   raider_mcp     => 1,
   engine_catalog => {
+    general => {
+      description => 'General purpose model for everyday tasks',
+    },
     fast => {
       engine      => $groq,
       description => 'Fast inference for simple tasks',
@@ -75,6 +78,33 @@ is($raider->active_engine, $openai,
 
 is($raider->active_engine_name, undef,
   'active_engine_name is undef initially');
+
+# --- catalog entry without engine refers to default engine ---
+
+{
+  my $switched = $raider->switch_engine('general');
+  is($switched, $openai,
+    'switch_engine to engine-less entry returns default engine');
+  is($raider->active_engine, $openai,
+    'active_engine returns default engine for engine-less catalog entry');
+  is($raider->active_engine_name, 'general',
+    'active_engine_name is the catalog name, not default');
+  is_deeply($raider->engine_info, {
+    name  => 'general',
+    class => 'Langertha::Engine::OpenAI',
+    model => 'gpt-4o',
+  }, 'engine_info uses catalog name for engine-less entry');
+
+  my $list = $raider->list_engines;
+  is($list->{general}{engine}, $openai,
+    'list_engines resolves engine-less entry to default engine');
+  is($list->{general}{description}, 'General purpose model for everyday tasks',
+    'list_engines preserves description for engine-less entry');
+  ok($list->{general}{active}, 'engine-less entry shows as active');
+  ok(!$list->{default}{active}, 'default not active when engine-less entry is');
+
+  $raider->reset_engine;
+}
 
 # --- switch_engine ---
 
@@ -201,7 +231,7 @@ ok($switch_tool, 'raider_switch_engine self-tool is defined');
 # --- Correct enum with default + catalog keys ---
 
 my $enum = $switch_tool->{inputSchema}{properties}{name}{enum};
-is_deeply($enum, ['default', 'fast', 'smart'],
+is_deeply($enum, ['default', 'fast', 'general', 'smart'],
   'enum contains default + sorted catalog keys');
 
 # --- NOT generated for empty catalog ---
@@ -283,12 +313,19 @@ ok($raider->_tools_dirty, '_tools_dirty set after add_engine');
 my $updated_tools = $raider->_self_tool_definitions;
 my ($updated_switch) = grep { $_->{name} eq 'raider_switch_engine' } @$updated_tools;
 my $updated_enum = $updated_switch->{inputSchema}{properties}{name}{enum};
-is_deeply($updated_enum, ['default', 'deep', 'fast', 'smart'],
+is_deeply($updated_enum, ['default', 'deep', 'fast', 'general', 'smart'],
   'enum updated after add_engine');
 
-# add_engine croaks without engine
-eval { $raider->add_engine('bad') };
-like($@, qr/Engine object required/, 'add_engine croaks without engine');
+# add_engine without engine creates alias for default
+$raider->add_engine('alias', description => 'Alias for default');
+is($raider->engine_catalog->{alias}{description}, 'Alias for default',
+  'add_engine without engine stores description');
+{
+  my $a = $raider->switch_engine('alias');
+  is($a, $openai, 'engine-less add_engine entry resolves to default engine');
+  $raider->reset_engine;
+}
+delete $raider->engine_catalog->{alias};
 
 # === remove_engine ===
 

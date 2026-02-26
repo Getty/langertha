@@ -494,6 +494,19 @@ HashRef of named engines available for runtime switching via C<switch_engine>.
         code  => { engine => $deepseek,   description => 'Code generation' },
     }
 
+Entries without an C<engine> key refer to the default engine (the one passed
+as C<engine> at construction). This lets you give the default engine a named
+catalog entry with a description:
+
+    engine_catalog => {
+        sonnet => { description => 'Balanced model for everyday tasks' },
+        fast   => { engine => $groq,  description => 'Fast inference' },
+        smart  => { engine => $opus,  description => 'Complex reasoning' },
+    }
+
+The LLM always sees a C<default> entry (reset to original) plus all catalog
+keys in the C<raider_switch_engine> tool enum.
+
 Use C<switch_engine>, C<reset_engine>, C<active_engine>, and C<engine_info>
 to control which engine is used during raids.
 
@@ -642,10 +655,11 @@ sub switch_engine {
   croak "Engine '$name' not found in engine_catalog"
     unless exists $self->engine_catalog->{$name};
   my $entry = $self->engine_catalog->{$name};
-  $self->_active_engine($entry->{engine});
+  my $engine = $entry->{engine} // $self->engine;
+  $self->_active_engine($engine);
   $self->_active_engine_name($name);
   $self->_tools_dirty(1);
-  return $entry->{engine};
+  return $engine;
 }
 
 =method switch_engine
@@ -703,7 +717,7 @@ sub list_engines {
   for my $name (keys %{$self->engine_catalog}) {
     my $entry = $self->engine_catalog->{$name};
     $list{$name} = {
-      engine      => $entry->{engine},
+      engine      => $entry->{engine} // $self->engine,
       description => $entry->{description},
       active      => (defined $self->_active_engine_name && $self->_active_engine_name eq $name),
     };
@@ -722,7 +736,6 @@ each with C<engine>, C<description> (if from catalog), and C<active> flag.
 
 sub add_engine {
   my ( $self, $name, %opts ) = @_;
-  croak "Engine object required" unless $opts{engine};
   $self->engine_catalog->{$name} = \%opts;
   $self->_tools_dirty(1);
   return;
@@ -731,8 +744,10 @@ sub add_engine {
 =method add_engine
 
     $raider->add_engine('vision', engine => $vision_engine, description => 'Vision model');
+    $raider->add_engine('main', description => 'Default model for general tasks');
 
-Adds a new engine to the catalog at runtime. The LLM will see it in the
+Adds a new engine to the catalog at runtime. If C<engine> is omitted, the
+entry refers to the default engine. The LLM will see it in the
 C<raider_switch_engine> tool after the next tool re-gather.
 
 =cut
