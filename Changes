@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.300     2026-02-26 21:03:33Z
     - Plugin system: Langertha::Plugin base class with lifecycle hooks
       (plugin_before_raid, plugin_build_conversation, plugin_before_llm_call,

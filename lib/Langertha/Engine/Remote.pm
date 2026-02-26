@@ -1,6 +1,6 @@
 package Langertha::Engine::Remote;
 # ABSTRACT: Base class for all remote engines
-our $VERSION = '0.203';
+our $VERSION = '0.301';
 use Moose;
 
 with 'Langertha::Role::'.$_ for (qw(
