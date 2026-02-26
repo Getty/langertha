@@ -451,6 +451,33 @@ ok(Langertha::Engine::Replicate->does('Langertha::Role::Tools'), 'Replicate does
   is($r->api_key, 'env-key-12345', 'Replicate reads api_key from LANGERTHA_REPLICATE_API_KEY');
 }
 
+# --- HuggingFace (cloud, meta-provider) ---
+
+use Langertha::Engine::HuggingFace;
+
+ok(Langertha::Engine::HuggingFace->isa('Langertha::Engine::OpenAIBase'), 'HuggingFace isa OpenAIBase');
+ok(Langertha::Engine::HuggingFace->does('Langertha::Role::Tools'), 'HuggingFace does Tools');
+{
+  my $hf = Langertha::Engine::HuggingFace->new(api_key => 'test-key', model => 'Qwen/Qwen2.5-7B-Instruct');
+  is($hf->url, 'https://router.huggingface.co/v1', 'HuggingFace url default correct');
+  my $req = $hf->chat('hello');
+  is($req->header('Authorization'), 'Bearer test-key', 'HuggingFace sets Authorization header');
+  like($req->uri, qr{/chat/completions$}, 'HuggingFace chat endpoint');
+  my $body = $json->decode($req->content);
+  is($body->{model}, 'Qwen/Qwen2.5-7B-Instruct', 'HuggingFace request has org/model format');
+}
+{
+  # model is required (meta-provider, no sensible default)
+  my $hf = Langertha::Engine::HuggingFace->new(api_key => 'k');
+  eval { $hf->default_model };
+  like($@, qr/requires model/, 'HuggingFace default_model croaks');
+}
+{
+  local $ENV{LANGERTHA_HUGGINGFACE_API_KEY} = 'env-key-12345';
+  my $hf = Langertha::Engine::HuggingFace->new(model => 'test');
+  is($hf->api_key, 'env-key-12345', 'HuggingFace reads api_key from LANGERTHA_HUGGINGFACE_API_KEY');
+}
+
 # --- LlamaCpp (local, like vLLM) ---
 
 use Langertha::Engine::LlamaCpp;
@@ -495,6 +522,7 @@ for my $class (qw(
   Langertha::Engine::Cerebras
   Langertha::Engine::OpenRouter
   Langertha::Engine::Replicate
+  Langertha::Engine::HuggingFace
   Langertha::Engine::LlamaCpp
 )) {
   ok($class->isa('Langertha::Engine::Remote'), "$class isa Remote");

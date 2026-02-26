@@ -21,6 +21,7 @@ BEGIN {
   push @available, 'cerebras'    if $ENV{TEST_LANGERTHA_CEREBRAS_API_KEY};
   push @available, 'openrouter'  if $ENV{TEST_LANGERTHA_OPENROUTER_API_KEY};
   push @available, 'replicate'   if $ENV{TEST_LANGERTHA_REPLICATE_API_KEY};
+  push @available, 'huggingface' if $ENV{TEST_LANGERTHA_HUGGINGFACE_API_KEY};
   push @available, 'aki'        if $ENV{TEST_LANGERTHA_AKI_API_KEY};
   push @available, 'ollama'      if $ENV{TEST_LANGERTHA_OLLAMA_URL};
   push @available, 'vllm'      if $ENV{TEST_LANGERTHA_VLLM_URL} && $ENV{TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER};
@@ -221,6 +222,19 @@ async sub run_tests {
       ));
     };
     diag "Replicate/$rep_model error: $@" if $@;
+  }
+
+  # --- HuggingFace ---
+  if ($ENV{TEST_LANGERTHA_HUGGINGFACE_API_KEY}) {
+    require Langertha::Engine::HuggingFace;
+    my $hf_model = $ENV{TEST_LANGERTHA_HUGGINGFACE_MODEL} || 'Qwen/Qwen2.5-7B-Instruct';
+    eval {
+      await test_engine("HuggingFace/$hf_model", Langertha::Engine::HuggingFace->new(
+        api_key => $ENV{TEST_LANGERTHA_HUGGINGFACE_API_KEY},
+        model => $hf_model, mcp_servers => [$mcp],
+      ));
+    };
+    diag "HuggingFace/$hf_model error: $@" if $@;
   }
 
   # --- vLLM ---

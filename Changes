@@ -1,6 +1,8 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - New engine: HuggingFace — HuggingFace Inference Providers
+      (OpenAI-compatible, org/model format, chat + streaming + tool calling)
 
 0.300     2026-02-26 21:03:33Z
     - Plugin system: Langertha::Plugin base class with lifecycle hooks

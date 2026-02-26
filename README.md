@@ -38,6 +38,7 @@
 | [Cerebras](https://cloud.cerebras.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [OpenRouter](https://openrouter.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [Replicate](https://replicate.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
+| [HuggingFace](https://huggingface.co/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
 | [AKI.IO](https://aki.io/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |

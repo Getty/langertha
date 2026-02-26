@@ -56,8 +56,8 @@ Concrete engines that extend this class:
 L<Langertha::Engine::Groq>, L<Langertha::Engine::Mistral>,
 L<Langertha::Engine::Cerebras>, L<Langertha::Engine::MiniMax>,
 L<Langertha::Engine::NousResearch>, L<Langertha::Engine::OpenRouter>,
-L<Langertha::Engine::Replicate>, L<Langertha::Engine::Perplexity>,
-L<Langertha::Engine::AKIOpenAI>
+L<Langertha::Engine::Replicate>, L<Langertha::Engine::HuggingFace>,
+L<Langertha::Engine::Perplexity>, L<Langertha::Engine::AKIOpenAI>
 
 =item * Self-hosted — L<Langertha::Engine::OllamaOpenAI>,
 L<Langertha::Engine::vLLM>, L<Langertha::Engine::LlamaCpp>

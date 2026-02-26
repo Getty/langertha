@@ -54,7 +54,8 @@ B<Engines should also compose these roles:>
 B<Engines using this role:> L<Langertha::Engine::OpenAI>, L<Langertha::Engine::DeepSeek>,
 L<Langertha::Engine::Groq>, L<Langertha::Engine::Mistral>, L<Langertha::Engine::vLLM>,
 L<Langertha::Engine::NousResearch>, L<Langertha::Engine::Perplexity>,
-L<Langertha::Engine::OllamaOpenAI>, L<Langertha::Engine::AKIOpenAI>.
+L<Langertha::Engine::HuggingFace>, L<Langertha::Engine::OllamaOpenAI>,
+L<Langertha::Engine::AKIOpenAI>.
 
 =cut
 

@@ -178,6 +178,8 @@ L<Future::AsyncAwait>, and sets L<Langertha::Plugin> as superclass.
 
 =item * L<Langertha::Engine::vLLM> - vLLM inference server
 
+=item * L<Langertha::Engine::HuggingFace> - HuggingFace Inference Providers
+
 =item * L<Langertha::Engine::Perplexity> - Perplexity AI models
 
 =item * L<Langertha::Engine::NousResearch> - Nous Research models
