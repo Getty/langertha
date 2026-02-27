@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.302     2026-02-27 03:48:44Z
     - Fix list_models URL construction: add overridable list_models_path
       method to Role::OpenAICompatible (default: /models). Mistral

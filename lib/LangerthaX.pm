@@ -1,6 +1,6 @@
 package LangerthaX;
 # ABSTRACT: Bring your own viking!
-our $VERSION = '0.302';
+our $VERSION = '0.303';
 use strict;
 use warnings;
 
