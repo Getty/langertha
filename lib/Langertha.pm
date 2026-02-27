@@ -103,19 +103,25 @@ B<THIS API IS WORK IN PROGRESS.>
 
 =over 4
 
-=item * Unified API across multiple LLM providers
+=item * B<20 engines> -- unified API across cloud and local LLM providers
 
-=item * Streaming support via callback, iterator, or L<Future>
+=item * B<Chat, streaming, embeddings, transcription, image generation>
 
-=item * Async/await syntax via L<Future::AsyncAwait>
+=item * B<MCP tool calling> -- automatic multi-round tool loops via L<Net::Async::MCP>
 
-=item * Role-based architecture for easy extensibility
+=item * B<Raider> -- autonomous agent with history, compression, and plugins
 
-=item * JSON response handling
+=item * B<Response metadata> -- token usage, model, timing, rate limits
 
-=item * Temperature, response size, and other parameter controls
+=item * B<Async/await> via L<Future::AsyncAwait>, sync via L<LWP::UserAgent>
 
-=item * Plugin system for extending the Raider agent
+=item * B<Langfuse observability> -- traces, generations, and tool spans
+
+=item * B<Dynamic model discovery> -- query provider APIs with caching
+
+=item * B<Chain-of-thought> -- native extraction and C<E<lt>thinkE<gt>> tag filtering
+
+=item * B<Plugin system> for extending Raider, Chat, Embedder, and ImageGen
 
 =back
 
@@ -182,13 +188,21 @@ L<Future::AsyncAwait>, and sets L<Langertha::Plugin> as superclass.
 
 =item * L<Langertha::Engine::Perplexity> - Perplexity AI models
 
-=item * L<Langertha::Engine::NousResearch> - Nous Research models
+=item * L<Langertha::Engine::NousResearch> - Nous Research (Hermes models)
+
+=item * L<Langertha::Engine::Cerebras> - Cerebras (wafer-scale, fastest inference)
+
+=item * L<Langertha::Engine::OpenRouter> - OpenRouter (300+ models, meta-provider)
+
+=item * L<Langertha::Engine::Replicate> - Replicate (thousands of open-source models)
 
 =item * L<Langertha::Engine::OllamaOpenAI> - Ollama via OpenAI-compatible API
 
-=item * L<Langertha::Engine::AKI> - AKI engine
+=item * L<Langertha::Engine::LlamaCpp> - llama.cpp server (chat, embeddings)
 
-=item * L<Langertha::Engine::AKIOpenAI> - AKI via OpenAI-compatible API
+=item * L<Langertha::Engine::AKI> - AKI.IO native API (EU/Germany)
+
+=item * L<Langertha::Engine::AKIOpenAI> - AKI.IO via OpenAI-compatible API
 
 =item * L<Langertha::Engine::Whisper> - OpenAI Whisper speech-to-text
 
@@ -270,15 +284,19 @@ These classes wrap an engine with optional overrides and plugin lifecycle hooks:
 
 =over 4
 
-=item * L<Langertha::Response> - LLM response with content and metadata
+=item * L<Langertha::Response> - LLM response with content, usage, and rate limit metadata
+
+=item * L<Langertha::RateLimit> - Normalized rate limit data from HTTP response headers
 
 =item * L<Langertha::Stream> - Iterator over streaming chunks
 
 =item * L<Langertha::Stream::Chunk> - A single chunk from a streaming response
 
-=item * L<Langertha::Request::HTTP> - Internal HTTP request object
+=item * L<Langertha::Raider> - Autonomous agent with history and tool calling
 
-=item * L<Langertha::Raider> - Raider orchestration object
+=item * L<Langertha::Raider::Result> - Typed raid result (final, question, pause, abort)
+
+=item * L<Langertha::Request::HTTP> - Internal HTTP request object
 
 =back
 
@@ -357,6 +375,70 @@ B<Using with Mojolicious:>
         say "Done: $content";
     });
     Mojo::IOLoop->start;
+
+=head2 Response Metadata
+
+C<simple_chat> returns L<Langertha::Response> objects that stringify to text
+content (backward compatible) but carry full metadata:
+
+    my $r = $engine->simple_chat('Hello!');
+    print $r;                    # prints the text
+    say $r->model;               # actual model used
+    say $r->prompt_tokens;       # input tokens
+    say $r->completion_tokens;   # output tokens
+    say $r->total_tokens;        # total
+    say $r->finish_reason;       # stop, end_turn, tool_calls, ...
+    say $r->thinking;            # chain-of-thought (if available)
+
+=head2 Rate Limiting
+
+Rate limit information from HTTP response headers is extracted automatically
+into L<Langertha::RateLimit> objects. Available per-response and on the engine:
+
+    if ($r->has_rate_limit) {
+        say $r->requests_remaining;
+        say $r->tokens_remaining;
+        say $r->rate_limit->requests_reset;
+    }
+
+    # Engine always reflects the latest response
+    say $engine->rate_limit->requests_remaining
+        if $engine->has_rate_limit;
+
+Supported: OpenAI, Groq, Cerebras, OpenRouter, Replicate, HuggingFace
+(C<x-ratelimit-*>) and Anthropic (C<anthropic-ratelimit-*>).
+
+=head2 MCP Tool Calling
+
+Integrates with L<Net::Async::MCP> for automatic multi-round tool calling:
+
+    my $engine = Langertha::Engine::OpenAI->new(
+        api_key     => $ENV{OPENAI_API_KEY},
+        mcp_servers => [$mcp],
+    );
+
+    my $response = await $engine->chat_with_tools_f('Search for Perl modules');
+
+Works with all engines that support tool calling. See L<Langertha::Role::Tools>.
+
+=head2 Raider (Autonomous Agent)
+
+L<Langertha::Raider> is a stateful agent with conversation history, MCP tool
+calling, context compression, session history, and a plugin system:
+
+    my $raider = Langertha::Raider->new(
+        engine  => $engine,
+        mission => 'You are a code explorer.',
+    );
+
+    my $r1 = await $raider->raid_f('What files are in lib/?');
+    my $r2 = await $raider->raid_f('Read the main module.');
+
+=head2 Langfuse Observability
+
+Every engine has L<Langfuse|https://langfuse.com/> observability built in.
+Set C<LANGFUSE_PUBLIC_KEY> and C<LANGFUSE_SECRET_KEY> env vars to enable
+auto-instrumented traces and generations. See L<Langertha::Role::Langfuse>.
 
 =head2 Extensions
 
