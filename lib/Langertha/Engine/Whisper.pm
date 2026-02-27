@@ -1,6 +1,6 @@
 package Langertha::Engine::Whisper;
 # ABSTRACT: Whisper compatible transcription server
-our $VERSION = '0.301';
+our $VERSION = '0.302';
 use Moose;
 use Carp qw( croak );
 

@@ -1,6 +1,6 @@
 package Langertha::Role::Models;
 # ABSTRACT: Role for APIs with several models
-our $VERSION = '0.301';
+our $VERSION = '0.302';
 use Moose::Role;
 
 requires qw(

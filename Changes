@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.301     2026-02-27 01:57:13Z
     - Rate limit extraction from HTTP response headers: new
       Langertha::RateLimit data class with normalized requests_limit,
