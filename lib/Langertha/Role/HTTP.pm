@@ -116,6 +116,7 @@ sub parse_response {
     $log->errorf("[%s] HTTP %s", ref $self, $response->status_line);
     croak "".(ref $self)." request failed: ".($response->status_line);
   }
+  $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   $log->tracef("[%s] Response: %s", ref $self, $response->decoded_content);
   return $self->json->decode($response->decoded_content);
 }
@@ -125,7 +126,9 @@ sub parse_response {
     my $data = $engine->parse_response($http_response);
 
 Decodes a successful L<HTTP::Response> body as JSON and returns the data
-structure. Croaks with the HTTP status line on failure.
+structure. Croaks with the HTTP status line on failure. If the engine
+supports rate limiting, extracts rate limit headers via
+C<_update_rate_limit> before decoding the body.
 
 =cut
 

@@ -545,9 +545,46 @@ the request completes. Returns an ArrayRef of image objects.
 
 =cut
 
+sub _parse_rate_limit_headers {
+  my ( $self, $http_response ) = @_;
+  my %raw;
+  for my $name (qw(
+    x-ratelimit-limit-requests
+    x-ratelimit-remaining-requests
+    x-ratelimit-reset-requests
+    x-ratelimit-limit-tokens
+    x-ratelimit-remaining-tokens
+    x-ratelimit-reset-tokens
+  )) {
+    my $val = $http_response->header($name);
+    $raw{$name} = $val if defined $val;
+  }
+  return undef unless %raw;
+  require Langertha::RateLimit;
+  return Langertha::RateLimit->new(
+    ( defined $raw{'x-ratelimit-limit-requests'}     ? ( requests_limit     => $raw{'x-ratelimit-limit-requests'} + 0 )     : () ),
+    ( defined $raw{'x-ratelimit-remaining-requests'} ? ( requests_remaining => $raw{'x-ratelimit-remaining-requests'} + 0 ) : () ),
+    ( defined $raw{'x-ratelimit-reset-requests'}     ? ( requests_reset     => $raw{'x-ratelimit-reset-requests'} )         : () ),
+    ( defined $raw{'x-ratelimit-limit-tokens'}       ? ( tokens_limit       => $raw{'x-ratelimit-limit-tokens'} + 0 )       : () ),
+    ( defined $raw{'x-ratelimit-remaining-tokens'}   ? ( tokens_remaining   => $raw{'x-ratelimit-remaining-tokens'} + 0 )   : () ),
+    ( defined $raw{'x-ratelimit-reset-tokens'}       ? ( tokens_reset       => $raw{'x-ratelimit-reset-tokens'} )           : () ),
+    raw => \%raw,
+  );
+}
+
+=method _parse_rate_limit_headers
+
+Parses C<x-ratelimit-*> headers from the HTTP response into a
+L<Langertha::RateLimit> object. Covers OpenAI, Groq, Cerebras, OpenRouter,
+Replicate, and all other OpenAI-compatible engines.
+
+=cut
+
 =seealso
 
 =over
+
+=item * L<Langertha::RateLimit> - Normalized rate limit data
 
 =item * L<Langertha::Engine::OpenAI> - OpenAI engine
 

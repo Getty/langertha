@@ -397,6 +397,47 @@ sub format_tool_results {
 
 with 'Langertha::Role::Tools';
 
+sub _parse_rate_limit_headers {
+  my ( $self, $http_response ) = @_;
+  my %raw;
+  for my $name (qw(
+    anthropic-ratelimit-requests-limit
+    anthropic-ratelimit-requests-remaining
+    anthropic-ratelimit-requests-reset
+    anthropic-ratelimit-tokens-limit
+    anthropic-ratelimit-tokens-remaining
+    anthropic-ratelimit-tokens-reset
+    anthropic-ratelimit-input-tokens-limit
+    anthropic-ratelimit-input-tokens-remaining
+    anthropic-ratelimit-input-tokens-reset
+    anthropic-ratelimit-output-tokens-limit
+    anthropic-ratelimit-output-tokens-remaining
+    anthropic-ratelimit-output-tokens-reset
+  )) {
+    my $val = $http_response->header($name);
+    $raw{$name} = $val if defined $val;
+  }
+  return undef unless %raw;
+  require Langertha::RateLimit;
+  return Langertha::RateLimit->new(
+    ( defined $raw{'anthropic-ratelimit-requests-limit'}     ? ( requests_limit     => $raw{'anthropic-ratelimit-requests-limit'} + 0 )     : () ),
+    ( defined $raw{'anthropic-ratelimit-requests-remaining'} ? ( requests_remaining => $raw{'anthropic-ratelimit-requests-remaining'} + 0 ) : () ),
+    ( defined $raw{'anthropic-ratelimit-requests-reset'}     ? ( requests_reset     => $raw{'anthropic-ratelimit-requests-reset'} )         : () ),
+    ( defined $raw{'anthropic-ratelimit-tokens-limit'}       ? ( tokens_limit       => $raw{'anthropic-ratelimit-tokens-limit'} + 0 )       : () ),
+    ( defined $raw{'anthropic-ratelimit-tokens-remaining'}   ? ( tokens_remaining   => $raw{'anthropic-ratelimit-tokens-remaining'} + 0 )   : () ),
+    ( defined $raw{'anthropic-ratelimit-tokens-reset'}       ? ( tokens_reset       => $raw{'anthropic-ratelimit-tokens-reset'} )           : () ),
+    raw => \%raw,
+  );
+}
+
+=method _parse_rate_limit_headers
+
+Parses C<anthropic-ratelimit-*> headers from the HTTP response into a
+L<Langertha::RateLimit> object. The C<raw> hash captures extras like
+C<input-tokens-limit> and C<output-tokens-limit>.
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

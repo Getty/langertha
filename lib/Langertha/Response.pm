@@ -141,6 +141,19 @@ has thinking => (
   predicate => 'has_thinking',
 );
 
+has rate_limit => (
+  is => 'ro',
+  isa => 'Maybe[Langertha::RateLimit]',
+  predicate => 'has_rate_limit',
+);
+
+=attr rate_limit
+
+Optional L<Langertha::RateLimit> object with rate limit information from the
+API response headers. Only present when the provider returns rate limit headers.
+
+=cut
+
 =attr thinking
 
 Chain-of-thought reasoning content. Populated automatically from native API
@@ -153,7 +166,7 @@ L<Langertha::Role::ThinkTag/think_tag_filter> is enabled.
 sub clone_with {
   my ( $self, %overrides ) = @_;
   my %args = (content => $self->content);
-  for my $attr (qw( raw id model finish_reason usage timing created thinking )) {
+  for my $attr (qw( raw id model finish_reason usage timing created thinking rate_limit )) {
     my $pred = "has_$attr";
     $args{$attr} = $self->$attr if $self->$pred;
   }
@@ -213,9 +226,35 @@ otherwise sums prompt and completion tokens.
 
 =cut
 
+sub requests_remaining {
+  my ( $self ) = @_;
+  my $rl = $self->rate_limit or return undef;
+  return $rl->requests_remaining;
+}
+
+=method requests_remaining
+
+Returns the number of requests remaining from rate limit headers, or C<undef>.
+
+=cut
+
+sub tokens_remaining {
+  my ( $self ) = @_;
+  my $rl = $self->rate_limit or return undef;
+  return $rl->tokens_remaining;
+}
+
+=method tokens_remaining
+
+Returns the number of tokens remaining from rate limit headers, or C<undef>.
+
+=cut
+
 =seealso
 
 =over
+
+=item * L<Langertha::RateLimit> - Rate limit data from response headers
 
 =item * L<Langertha::Stream::Chunk> - Single chunk from a streaming response
 

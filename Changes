@@ -1,6 +1,14 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - Rate limit extraction from HTTP response headers: new
+      Langertha::RateLimit data class with normalized requests_limit,
+      requests_remaining, tokens_limit, tokens_remaining, and reset
+      fields plus raw provider-specific headers. Supported providers:
+      OpenAI/Groq/Cerebras/OpenRouter/Replicate/HuggingFace
+      (x-ratelimit-*) and Anthropic (anthropic-ratelimit-*). Engine
+      stores latest rate_limit, Response carries per-response rate_limit
+      with requests_remaining/tokens_remaining convenience methods.
     - New engine: HuggingFace — HuggingFace Inference Providers
       (OpenAI-compatible, org/model format, chat + streaming + tool calling)
 

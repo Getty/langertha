@@ -127,7 +127,11 @@ sub simple_chat {
     ref $self, scalar @messages, $self->chat_model // 'default');
   my $request = $self->chat(@messages);
   my $response = $self->user_agent->request($request);
-  return $request->response_call->($response);
+  my $result = $request->response_call->($response);
+  if ($self->can('has_rate_limit') && $self->has_rate_limit && ref $result && $result->isa('Langertha::Response')) {
+    $result = $result->clone_with(rate_limit => $self->rate_limit);
+  }
+  return $result;
 }
 
 =method simple_chat
@@ -242,7 +246,11 @@ async sub simple_chat_f {
     die "".(ref $self)." request failed: ".$response->status_line;
   }
 
-  return $request->response_call->($response);
+  my $result = $request->response_call->($response);
+  if ($self->can('has_rate_limit') && $self->has_rate_limit && ref $result && $result->isa('Langertha::Response')) {
+    $result = $result->clone_with(rate_limit => $self->rate_limit);
+  }
+  return $result;
 }
 
 =method simple_chat_f

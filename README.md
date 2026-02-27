@@ -233,6 +233,27 @@ say $r->finish_reason;       # stop
 
 Works across all engines. Each provider's token counts and metadata are normalized automatically.
 
+### Rate Limiting
+
+Rate limit information from HTTP response headers is extracted automatically and normalized into `Langertha::RateLimit` objects. Available per-response and on the engine (always reflects the latest response):
+
+```perl
+my $r = $engine->simple_chat('Hello!');
+
+# Per-response rate limit
+if ($r->has_rate_limit) {
+    say $r->requests_remaining;              # 499
+    say $r->tokens_remaining;                # 29990
+    say $r->rate_limit->requests_reset;      # "12s" or RFC 3339
+    say $r->rate_limit->raw;                 # all provider-specific headers
+}
+
+# Engine always has latest rate limit
+say $engine->rate_limit->requests_remaining if $engine->has_rate_limit;
+```
+
+Supported providers: OpenAI, Groq, Cerebras, OpenRouter, Replicate, HuggingFace (`x-ratelimit-*`), Anthropic (`anthropic-ratelimit-*`). Local engines (Ollama, vLLM, llama.cpp) typically don't return rate limit headers.
+
 ## Chain-of-Thought Reasoning
 
 Reasoning models produce chain-of-thought thinking alongside their answers. Langertha extracts this automatically — the response content is always clean, and thinking is available separately:

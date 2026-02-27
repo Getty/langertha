@@ -3,6 +3,8 @@ package Langertha::Engine::Remote;
 our $VERSION = '0.301';
 use Moose;
 
+use Langertha::RateLimit;
+
 with 'Langertha::Role::'.$_ for (qw(
   JSON
   HTTP
@@ -37,6 +39,53 @@ has '+url' => (
   required => 1,
 );
 
+has _last_rate_limit => (
+  is => 'rw',
+  isa => 'Maybe[Langertha::RateLimit]',
+  predicate => '_has_last_rate_limit',
+  clearer => '_clear_last_rate_limit',
+  init_arg => undef,
+);
+
+sub rate_limit {
+  my ( $self ) = @_;
+  return $self->_last_rate_limit;
+}
+
+=method rate_limit
+
+    my $rl = $engine->rate_limit;
+
+Returns the L<Langertha::RateLimit> from the most recent API response,
+or C<undef> if no rate limit headers were present.
+
+=cut
+
+sub has_rate_limit {
+  my ( $self ) = @_;
+  return defined $self->_last_rate_limit;
+}
+
+=method has_rate_limit
+
+    if ($engine->has_rate_limit) { ... }
+
+Returns true if the engine has rate limit data from the most recent response.
+
+=cut
+
+sub _update_rate_limit {
+  my ( $self, $http_response ) = @_;
+  my $rl = $self->_parse_rate_limit_headers($http_response);
+  if ($rl) {
+    $self->_last_rate_limit($rl);
+  }
+}
+
+sub _parse_rate_limit_headers {
+  return undef;
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -58,6 +107,8 @@ __PACKAGE__->meta->make_immutable;
 =item * L<Langertha::Role::JSON> - Shared JSON encoder/decoder
 
 =item * L<Langertha::Role::PluginHost> - Plugin system with lifecycle events
+
+=item * L<Langertha::RateLimit> - Rate limit data stored per-engine
 
 =back
 
