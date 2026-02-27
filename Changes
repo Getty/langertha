@@ -1,6 +1,16 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - Fix list_models URL construction: add overridable list_models_path
+      method to Role::OpenAICompatible (default: /models). Mistral
+      overrides to /v1/models. Fixes broken URL for engines whose base
+      URL does not include /v1.
+    - New Role::StaticModels: provides list_models from a hardcoded model
+      list without HTTP requests. Used by MiniMax.
+    - HuggingFace: list_models now queries the Hub API
+      (huggingface.co/api/models) with search, pipeline_tag, and
+      inference_provider filters. Only returns models with active
+      inference providers.
 
 0.301     2026-02-27 01:57:13Z
     - Rate limit extraction from HTTP response headers: new

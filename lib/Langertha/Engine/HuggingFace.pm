@@ -3,6 +3,7 @@ package Langertha::Engine::HuggingFace;
 our $VERSION = '0.302';
 use Moose;
 use Carp qw( croak );
+use URI;
 
 extends 'Langertha::Engine::OpenAIBase';
 
@@ -61,6 +62,112 @@ sub default_model { croak "".(ref $_[0])." requires model to be set" }
 sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
+
+has hub_url => (
+  is => 'ro',
+  isa => 'Str',
+  default => sub { 'https://huggingface.co' },
+);
+
+=attr hub_url
+
+Base URL for the HuggingFace Hub API. Default: C<https://huggingface.co>.
+Used by C<list_models> to query available inference models.
+
+=cut
+
+sub list_models_request {
+  my ($self, %opts) = @_;
+  my $url = URI->new($self->hub_url.'/api/models');
+  my %params = (
+    inference_provider => $opts{inference_provider} // 'all',
+    pipeline_tag => $opts{pipeline_tag} // 'text-generation',
+    limit => $opts{limit} // 50,
+    $opts{search} ? (search => $opts{search}) : (),
+    'expand[]' => 'inferenceProviderMapping',
+  );
+  $url->query_form(%params);
+  return $self->generate_http_request(
+    GET => $url->as_string,
+    sub { $self->list_models_response(shift, %opts) },
+  );
+}
+
+=method list_models_request
+
+    my $request = $engine->list_models_request(%opts);
+
+Generates an HTTP GET request for the HuggingFace Hub API models
+endpoint with inference provider filtering. Accepts options:
+C<search>, C<pipeline_tag> (default: C<text-generation>),
+C<inference_provider> (default: C<all>), C<limit> (default: 50).
+
+=cut
+
+sub list_models_response {
+  my ($self, $response, %opts) = @_;
+  my $data = $self->parse_response($response);
+  return $data;
+}
+
+=method list_models_response
+
+    my $models = $engine->list_models_response($http_response);
+
+Parses the Hub API response. Returns an ArrayRef of model objects
+with C<id>, C<pipeline_tag>, C<inferenceProviderMapping>, etc.
+
+=cut
+
+sub list_models {
+  my ($self, %opts) = @_;
+
+  # Check cache unless force_refresh or search (searches are not cached)
+  unless ($opts{force_refresh} || $opts{search}) {
+    my $cache = $self->_models_cache;
+    if ($cache->{timestamp} && time - $cache->{timestamp} < $self->models_cache_ttl) {
+      return $opts{full} ? $cache->{models} : $cache->{model_ids};
+    }
+  }
+
+  my $request = $self->list_models_request(%opts);
+  my $response = $self->user_agent->request($request);
+  my $models = $request->response_call->($response);
+
+  my @model_ids = map { $_->{id} } @$models;
+
+  # Only cache non-search results
+  unless ($opts{search}) {
+    $self->_models_cache({
+      timestamp => time,
+      models => $models,
+      model_ids => \@model_ids,
+    });
+  }
+
+  return $opts{full} ? $models : \@model_ids;
+}
+
+=method list_models
+
+    # All text-generation models with inference providers
+    my $ids = $hf->list_models;
+
+    # Search for specific models
+    my $ids = $hf->list_models(search => 'llama');
+
+    # Filter by pipeline tag
+    my $ids = $hf->list_models(pipeline_tag => 'text-to-image');
+
+    # Full model objects with provider details
+    my $models = $hf->list_models(full => 1);
+
+Queries the HuggingFace Hub API for models available via inference
+providers. Only returns models that have at least one active inference
+provider. Results are cached for C<models_cache_ttl> seconds (search
+results are not cached).
+
+=cut
 
 __PACKAGE__->meta->make_immutable;
 

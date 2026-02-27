@@ -113,10 +113,23 @@ sub default_image_model { 'gpt-image-1' }
 
 # Dynamic model listing
 
+sub list_models_path { '/models' }
+
+=method list_models_path
+
+    my $path = $engine->list_models_path;
+
+Returns the path appended to C<url> for the models endpoint.
+Default: C</models>. Override in engines whose API spec uses a
+different path (e.g. Mistral uses C</v1/models> because its base URL
+does not include C</v1>).
+
+=cut
+
 sub list_models_request {
   my ($self) = @_;
   return $self->generate_http_request(
-    GET => $self->url.'/v1/models',
+    GET => $self->url.$self->list_models_path,
     sub { $self->list_models_response(shift) },
   );
 }
@@ -125,8 +138,8 @@ sub list_models_request {
 
     my $request = $engine->list_models_request;
 
-Generates an HTTP GET request for the C</v1/models> endpoint.
-Returns an HTTP request object.
+Generates an HTTP GET request for the models endpoint using
+C<list_models_path>. Returns an HTTP request object.
 
 =cut
 

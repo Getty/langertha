@@ -155,10 +155,7 @@ subtest 'DeepSeek response parsing' => sub {
 subtest 'OpenAI list_models_request construction' => sub {
   plan tests => 3;
 
-  my $engine = Langertha::Engine::OpenAI->new(
-    api_key => 'test-key',
-    url => 'https://api.openai.com',
-  );
+  my $engine = Langertha::Engine::OpenAI->new(api_key => 'test-key');
   my $request = $engine->list_models_request;
 
   isa_ok($request, 'Langertha::Request::HTTP');
@@ -201,7 +198,6 @@ subtest 'OpenAI list_models with mock user_agent' => sub {
 
   my $engine = Langertha::Engine::OpenAI->new(
     api_key => 'test-key',
-    url => 'https://api.openai.com',
     user_agent => $mock_ua,
   );
 
@@ -235,7 +231,6 @@ subtest 'Cache TTL behavior' => sub {
 
   my $engine = Langertha::Engine::OpenAI->new(
     api_key => 'test-key',
-    url => 'https://api.openai.com',
     user_agent => $mock_ua,
     models_cache_ttl => 3600,
   );
@@ -307,10 +302,7 @@ subtest 'Gemini model ID prefix stripping' => sub {
 subtest 'Models role cache attributes' => sub {
   plan tests => 4;
 
-  my $engine = Langertha::Engine::OpenAI->new(
-    api_key => 'test-key',
-    url => 'https://api.openai.com',
-  );
+  my $engine = Langertha::Engine::OpenAI->new(api_key => 'test-key');
 
   # Default TTL
   is($engine->models_cache_ttl, 3600, 'Default TTL is 3600 seconds (1 hour)');
@@ -321,7 +313,6 @@ subtest 'Models role cache attributes' => sub {
   # Custom TTL
   my $engine2 = Langertha::Engine::OpenAI->new(
     api_key => 'test-key',
-    url => 'https://api.openai.com',
     models_cache_ttl => 600,
   );
   is($engine2->models_cache_ttl, 600, 'Custom TTL is respected');
@@ -355,6 +346,107 @@ subtest 'Anthropic new parameters' => sub {
   );
   ok($engine3->has_inference_geo, 'inference_geo is set');
   is($engine3->inference_geo, 'eu', 'inference_geo value is correct');
+};
+
+subtest 'list_models URL correctness for all OpenAICompatible engines' => sub {
+  my @engines = (
+    [ 'Langertha::Engine::OpenAI',       qr{api\.openai\.com/v1/models$} ],
+    [ 'Langertha::Engine::Groq',         qr{groq\.com/openai/v1/models$} ],
+    [ 'Langertha::Engine::Cerebras',     qr{cerebras\.ai/v1/models$} ],
+    [ 'Langertha::Engine::OpenRouter',   qr{openrouter\.ai/api/v1/models$} ],
+    [ 'Langertha::Engine::Replicate',    qr{replicate\.com/v1/models$} ],
+    [ 'Langertha::Engine::NousResearch', qr{nousresearch\.com/v1/models$} ],
+    [ 'Langertha::Engine::AKIOpenAI',    qr{aki\.io/v1/models$} ],
+    [ 'Langertha::Engine::DeepSeek',     qr{deepseek\.com/models$} ],
+    [ 'Langertha::Engine::Perplexity',   qr{perplexity\.ai/models$} ],
+    [ 'Langertha::Engine::Mistral',      qr{mistral\.ai/v1/models$} ],
+  );
+
+  plan tests => scalar(@engines) * 2;
+
+  for my $e (@engines) {
+    my ($class, $expected) = @$e;
+    use_ok($class);
+    my $engine = $class->new(api_key => 'test-key');
+    my $request = $engine->list_models_request;
+    like($request->uri, $expected, "$class: URL correct (".$request->uri.")");
+  }
+};
+
+subtest 'Mistral list_models_path override' => sub {
+  plan tests => 2;
+
+  my $mistral = Langertha::Engine::Mistral->new(api_key => 'test-key');
+  is($mistral->list_models_path, '/v1/models', 'Mistral overrides list_models_path to /v1/models');
+
+  my $openai = Langertha::Engine::OpenAI->new(api_key => 'test-key');
+  is($openai->list_models_path, '/models', 'OpenAI uses default /models');
+};
+
+subtest 'MiniMax static models' => sub {
+  plan tests => 5;
+
+  use_ok('Langertha::Engine::MiniMax');
+
+  my $engine = Langertha::Engine::MiniMax->new(api_key => 'test-key');
+
+  # list_models returns static list without HTTP
+  my $model_ids = $engine->list_models;
+  is(ref($model_ids), 'ARRAY', 'Returns arrayref');
+  ok(scalar(@$model_ids) >= 5, 'Has at least 5 models');
+  ok((grep { $_ eq 'MiniMax-M2.5' } @$model_ids), 'Contains MiniMax-M2.5');
+
+  # Full mode returns hashrefs
+  my $full = $engine->list_models(full => 1);
+  is(ref($full->[0]), 'HASH', 'Full mode returns model hashrefs');
+};
+
+subtest 'HuggingFace Hub API list_models' => sub {
+  plan tests => 7;
+
+  use_ok('Langertha::Engine::HuggingFace');
+
+  my $fixture = load_fixture('huggingface_hub_models.json');
+  my $mock_ua = MockUA->new([mock_response($fixture), mock_response($fixture)]);
+
+  my $engine = Langertha::Engine::HuggingFace->new(
+    api_key => 'test-key',
+    model => 'test/model',
+    user_agent => $mock_ua,
+  );
+
+  # list_models returns IDs
+  my $model_ids = $engine->list_models;
+  is(ref($model_ids), 'ARRAY', 'Returns arrayref');
+  is(scalar(@$model_ids), 3, 'Got 3 model IDs');
+  is($model_ids->[0], 'meta-llama/Llama-3.3-70B-Instruct', 'First model ID correct');
+
+  # Full mode returns full objects with provider data
+  my $full = $engine->list_models(full => 1);
+  is(ref($full->[0]), 'HASH', 'Full mode returns model hashrefs');
+  ok(exists $full->[0]{inferenceProviderMapping}, 'Full models include inference provider data');
+
+  # Request URL points to Hub API
+  $engine->clear_models_cache;
+  my $request = $engine->list_models_request;
+  like($request->uri, qr{huggingface\.co/api/models}, 'URL points to Hub API');
+};
+
+subtest 'HuggingFace list_models with search' => sub {
+  plan tests => 2;
+
+  my $fixture = load_fixture('huggingface_hub_models.json');
+  my $mock_ua = MockUA->new([mock_response($fixture)]);
+
+  my $engine = Langertha::Engine::HuggingFace->new(
+    api_key => 'test-key',
+    model => 'test/model',
+    user_agent => $mock_ua,
+  );
+
+  my $request = $engine->list_models_request(search => 'llama');
+  like($request->uri, qr{search=llama}, 'Search parameter in URL');
+  like($request->uri, qr{inference_provider=all}, 'inference_provider filter in URL');
 };
 
 done_testing;

@@ -7,6 +7,7 @@ use Carp qw( croak );
 extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools';
+with 'Langertha::Role::StaticModels';
 
 =head1 SYNOPSIS
 
@@ -90,6 +91,14 @@ sub _build_api_key {
 }
 
 sub default_model { 'MiniMax-M2.5' }
+
+sub _build_static_models {[
+  { id => 'MiniMax-M2.5' },
+  { id => 'MiniMax-M2.5-highspeed' },
+  { id => 'MiniMax-M2.1' },
+  { id => 'MiniMax-M2.1-highspeed' },
+  { id => 'MiniMax-M2' },
+]}
 
 __PACKAGE__->meta->make_immutable;
 

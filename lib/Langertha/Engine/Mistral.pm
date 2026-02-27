@@ -70,6 +70,8 @@ sub default_model { 'mistral-small-latest' }
 
 sub chat_operation_id { 'chat_completion_v1_chat_completions_post' }
 
+sub list_models_path { '/v1/models' }
+
 sub embedding_operation_id { 'embeddings_v1_embeddings_post' }
 
 __PACKAGE__->meta->make_immutable;
