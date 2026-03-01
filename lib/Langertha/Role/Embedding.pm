@@ -1,6 +1,6 @@
 package Langertha::Role::Embedding;
 # ABSTRACT: Role for APIs with embedding functionality
-our $VERSION = '0.303';
+our $VERSION = '0.304';
 use Moose::Role;
 use Carp qw( croak );
 use Log::Any qw( $log );

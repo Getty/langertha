@@ -1,6 +1,6 @@
 package Langertha::Role::ImageGeneration;
 # ABSTRACT: Role for engines that support image generation
-our $VERSION = '0.303';
+our $VERSION = '0.304';
 use Moose::Role;
 use Carp qw( croak );
 

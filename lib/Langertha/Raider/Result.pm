@@ -1,6 +1,6 @@
 package Langertha::Raider::Result;
 # ABSTRACT: Result object from a Raider raid
-our $VERSION = '0.303';
+our $VERSION = '0.304';
 use Moose;
 
 use overload

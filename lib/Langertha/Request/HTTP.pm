@@ -1,6 +1,6 @@
 package Langertha::Request::HTTP;
 # ABSTRACT: A HTTP Request inside of Langertha
-our $VERSION = '0.303';
+our $VERSION = '0.304';
 use Moose;
 use MooseX::NonMoose;
 

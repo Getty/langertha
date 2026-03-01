@@ -1,6 +1,6 @@
 package Langertha::Engine::OllamaOpenAI;
 # ABSTRACT: Ollama via OpenAI-compatible API
-our $VERSION = '0.303';
+our $VERSION = '0.304';
 use Moose;
 use Carp qw( croak );
 
