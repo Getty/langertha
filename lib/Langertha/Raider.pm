@@ -550,6 +550,20 @@ has embedding_engine => (
 
 Optional engine with L<Langertha::Role::Embedding> for semantic history search.
 When not set, auto-detects if the main C<engine> supports embeddings.
+Set L</no_session_embeddings> to disable auto-detection.
+
+=cut
+
+has no_session_embeddings => (
+  is => 'ro',
+  default => sub { 0 },
+);
+
+=attr no_session_embeddings
+
+When true, disables automatic embedding computation for session history
+entries. Useful when the engine supports embeddings but calling it would
+cause issues (e.g. self-referencing proxy deadlock).
 
 =cut
 
@@ -1211,6 +1225,7 @@ sub _switch_engine_tool {
 
 sub _get_embedding_engine {
   my ( $self ) = @_;
+  return undef if $self->no_session_embeddings;
   return $self->embedding_engine if $self->has_embedding_engine;
   my $engine = $self->engine;
   return $engine if $engine->does('Langertha::Role::Embedding');
