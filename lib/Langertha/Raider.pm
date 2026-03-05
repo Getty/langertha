@@ -586,6 +586,22 @@ Clears conversation history and pending injections while preserving metrics.
 
 =cut
 
+sub add_history {
+  my ( $self, $role, $content ) = @_;
+  push @{$self->history}, { role => $role, content => $content };
+  return $self;
+}
+
+=method add_history
+
+    $raider->add_history('user', 'Hello');
+    $raider->add_history('assistant', 'Hi there!');
+
+Appends a message to the conversation history. Useful for replaying
+persisted messages into a fresh Raider instance.
+
+=cut
+
 sub inject {
   my ( $self, @messages ) = @_;
   push @{$self->_injections}, @messages;
