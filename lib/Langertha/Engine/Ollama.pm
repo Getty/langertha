@@ -60,8 +60,9 @@ Supports chat, embeddings, streaming, MCP tool calling (OpenAI-compatible
 format), and an OpenAI-compatible API via L</openai>. Not all models support
 tool calling; known working models include C<qwen3:8b> and C<llama3.2:3b>.
 
-For Hermes-format tool calling in models without API-level tool support, set
-C<hermes_tools => 1>. See L<Langertha::Role::Tools> for details.
+For Hermes-format tool calling in models without API-level tool support,
+compose L<Langertha::Role::HermesTools>. See L<Langertha::Role::HermesTools>
+for details.
 
 B<THIS API IS WORK IN PROGRESS>
 

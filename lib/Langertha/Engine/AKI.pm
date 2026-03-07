@@ -12,6 +12,8 @@ with 'Langertha::Role::'.$_ for (qw(
   Temperature
   SystemPrompt
   Chat
+  Tools
+  HermesTools
 ));
 
 =head1 SYNOPSIS
@@ -37,7 +39,8 @@ fully GDPR-compliant with no data leaving the EU.
 
 The native API sends the API key as a C<key> field in the JSON request body
 (not as an HTTP header). Supports synchronous chat, temperature and sampling
-controls, dynamic endpoint listing, and OpenAI-compatible access via L</openai>.
+controls, dynamic endpoint listing, MCP tool calling via
+L<Langertha::Role::HermesTools>, and OpenAI-compatible access via L</openai>.
 
 Streaming is not yet supported in the native API. For streaming, use the
 OpenAI-compatible endpoint via C<< $aki->openai >>.
@@ -72,6 +75,11 @@ has '+url' => (
 );
 
 sub default_model { 'llama3_8b_chat' }
+
+sub hermes_extract_content {
+  my ( $self, $data ) = @_;
+  return $data->{text};
+}
 
 has top_k => (
   is => 'ro',

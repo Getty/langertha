@@ -7,6 +7,7 @@ use Carp qw( croak );
 extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools';
+with 'Langertha::Role::HermesTools';
 
 =head1 SYNOPSIS
 
@@ -30,7 +31,7 @@ with 'Langertha::Role::Tools';
     say $response;                  # clean answer
     say $response->thinking;        # chain-of-thought reasoning
 
-    # MCP tool calling (hermes_tools enabled by default)
+    # MCP tool calling (via HermesTools role)
     use Future::AsyncAwait;
 
     my $nous = Langertha::Engine::NousResearch->new(
@@ -49,10 +50,11 @@ L<Langertha::Role::OpenAICompatible> with Nous's endpoint
 
 Available models: C<Hermes-4-70B> (default), C<Hermes-4-405B>.
 
-C<hermes_tools> is enabled by default. Tool descriptions are injected into
-the system prompt as C<< <tools> >> XML, and C<< <tool_call> >> tags are
-parsed from the model output. No server-side tool calling support required.
-See L<Langertha::Role::Tools> for customization options.
+Composes L<Langertha::Role::HermesTools> for tool calling. Tool descriptions
+are injected into the system prompt as C<< <tools> >> XML, and
+C<< <tool_call> >> tags are parsed from the model output. No server-side tool
+calling support required. See L<Langertha::Role::HermesTools> for
+customization options.
 
 Get your API key at L<https://portal.nousresearch.com/> and set
 C<LANGERTHA_NOUSRESEARCH_API_KEY>.
@@ -77,9 +79,6 @@ sub _build_api_key {
 }
 
 sub default_model { 'Hermes-4-70B' }
-
-# Hermes models use <tool_call> XML tags for tool calling
-has '+hermes_tools' => ( default => 1 );
 
 has reasoning => (
   is => 'ro',
@@ -149,7 +148,7 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<https://portal.nousresearch.com/api-docs> - API documentation
 
-=item * L<Langertha::Role::Tools> - Tool calling with Hermes support (C<hermes_tools> enabled by default)
+=item * L<Langertha::Role::HermesTools> - Hermes-style tool calling via XML tags
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

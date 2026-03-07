@@ -7,6 +7,7 @@ use Carp qw( croak );
 extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools';
+with 'Langertha::Role::HermesTools';
 
 =head1 SYNOPSIS
 
@@ -41,8 +42,10 @@ Provides access to AKI.IO's OpenAI-compatible API at C<https://aki.io/v1>.
 Composes L<Langertha::Role::OpenAICompatible> for the standard OpenAI format.
 
 AKI.IO is a European AI model hub (Germany) — fully GDPR-compliant with all
-inference on EU infrastructure. Supports chat completions (with SSE streaming),
-MCP tool calling, and dynamic model listing.
+inference on EU infrastructure. Supports chat completions (with SSE streaming)
+and dynamic model listing. Composes L<Langertha::Role::HermesTools> for MCP
+tool calling via XML tags (AKI's C</v1> endpoint does not support native tool
+parameters).
 
 Embeddings and transcription are not supported. For native AKI.IO API features
 (C<top_k>, C<top_p>, C<max_gen_tokens>), use L<Langertha::Engine::AKI>.

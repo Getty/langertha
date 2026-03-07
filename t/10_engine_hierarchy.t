@@ -301,7 +301,7 @@ test_openai_cloud_engine(
 is(Langertha::Engine::NousResearch->new(api_key => 'k')->default_model, 'Hermes-4-70B', 'NousResearch default_model');
 {
   my $nous = Langertha::Engine::NousResearch->new(api_key => 'k');
-  ok($nous->hermes_tools, 'NousResearch has hermes_tools enabled by default');
+  ok($nous->does('Langertha::Role::HermesTools'), 'NousResearch uses HermesTools');
 }
 
 # --- AKIOpenAI ---
