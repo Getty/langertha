@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.304     2026-03-07 02:05:27Z
     - New role: Langertha::Role::HermesTools — extracted Hermes-style XML
       tool calling into a dedicated role. Engines compose this role instead

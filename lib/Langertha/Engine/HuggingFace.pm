@@ -1,6 +1,6 @@
 package Langertha::Engine::HuggingFace;
 # ABSTRACT: HuggingFace Inference Providers API
-our $VERSION = '0.304';
+our $VERSION = '0.305';
 use Moose;
 use Carp qw( croak );
 use URI;
