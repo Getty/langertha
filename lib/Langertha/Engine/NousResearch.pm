@@ -1,6 +1,6 @@
 package Langertha::Engine::NousResearch;
 # ABSTRACT: Nous Research Inference API
-our $VERSION = '0.305';
+our $VERSION = '0.306';
 use Moose;
 use Carp qw( croak );
 

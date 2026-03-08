@@ -1,6 +1,6 @@
 package Langertha::Engine::LMStudio;
 # ABSTRACT: LM Studio native REST API
-our $VERSION = '0.305';
+our $VERSION = '0.306';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;

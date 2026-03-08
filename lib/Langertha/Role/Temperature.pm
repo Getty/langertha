@@ -1,6 +1,6 @@
 package Langertha::Role::Temperature;
 # ABSTRACT: Role for an engine that can have a temperature setting
-our $VERSION = '0.305';
+our $VERSION = '0.306';
 use Moose::Role;
 
 has temperature => (
