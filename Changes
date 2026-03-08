@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.305     2026-03-08 21:51:01Z
     - New engine base class: Langertha::Engine::AnthropicBase for
       Anthropic-compatible APIs (shared /v1/messages chat/streaming/tool/model
       handling and Anthropic rate-limit parsing). Anthropic now extends this
