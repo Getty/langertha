@@ -4,7 +4,7 @@ our $VERSION = '0.305';
 use Moose;
 use Carp qw( croak );
 
-extends 'Langertha::Engine::Anthropic';
+extends 'Langertha::Engine::AnthropicBase';
 
 with 'Langertha::Role::StaticModels';
 
@@ -100,7 +100,7 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<https://platform.minimax.io/docs/api-reference/text-anthropic-api> - MiniMax Anthropic API docs
 
-=item * L<Langertha::Engine::Anthropic> - Base Anthropic engine
+=item * L<Langertha::Engine::AnthropicBase> - Base Anthropic-compatible engine
 
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
 

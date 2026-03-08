@@ -55,6 +55,7 @@
 | [HuggingFace](https://huggingface.co/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
+| [LM Studio](https://lmstudio.ai/) | :white_check_mark: | :white_check_mark: | | | | | :white_check_mark: |
 | [AKI.IO](https://aki.io/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
 | [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | | :white_check_mark: | |
 
@@ -158,6 +159,40 @@ my $vllm = Langertha::Engine::vLLM->new(
     model => 'meta-llama/Llama-3.3-70B-Instruct',
 );
 print $vllm->simple_chat('Hello!');
+```
+
+### Local Models with LM Studio (native API)
+
+```perl
+use Langertha::Engine::LMStudio;
+
+my $lmstudio = Langertha::Engine::LMStudio->new(
+    url   => 'http://localhost:1234',
+    model => 'qwen2.5-7b-instruct',
+);
+print $lmstudio->simple_chat('Hello!');
+
+# OpenAI-compatible wrapper (/v1)
+my $lmstudio_oai = $lmstudio->openai;
+print $lmstudio_oai->simple_chat('Hello via OpenAI-compatible API!');
+# Equivalent explicit class:
+use Langertha::Engine::LMStudioOpenAI;
+my $lmstudio_oai2 = Langertha::Engine::LMStudioOpenAI->new(
+    url   => 'http://localhost:1234/v1',
+    model => 'qwen2.5-7b-instruct',
+);
+ # api_key defaults internally to "lmstudio"
+
+# Anthropic-compatible wrapper (/v1/messages)
+my $lmstudio_anth = $lmstudio->anthropic;
+print $lmstudio_anth->simple_chat('Hello via Anthropic-compatible API!');
+# Equivalent explicit class:
+use Langertha::Engine::LMStudioAnthropic;
+my $lmstudio_anth2 = Langertha::Engine::LMStudioAnthropic->new(
+    url   => 'http://localhost:1234',
+    model => 'qwen2.5-7b-instruct',
+);
+ # api_key defaults internally to "lmstudio"
 ```
 
 ## Streaming
@@ -723,6 +758,11 @@ TEST_LANGERTHA_VLLM_URL=http://localhost:8000/v1              \
 TEST_LANGERTHA_VLLM_MODEL=Qwen/Qwen2.5-3B-Instruct           \
 TEST_LANGERTHA_VLLM_TOOL_CALL_PARSER=hermes                   \
 prove -l t/80_live_tool_calling.t
+
+# LM Studio live chat (native + OpenAI-compatible + Anthropic-compatible)
+TEST_LANGERTHA_LMSTUDIO_URL=http://localhost:1234             \
+TEST_LANGERTHA_LMSTUDIO_MODEL=qwen2.5-7b-instruct             \
+prove -l t/83_live_chat.t
 ```
 
 ## Examples

@@ -1,6 +1,34 @@
 Revision history for Langertha
 
 {{$NEXT}}
+    - New engine base class: Langertha::Engine::AnthropicBase for
+      Anthropic-compatible APIs (shared /v1/messages chat/streaming/tool/model
+      handling and Anthropic rate-limit parsing). Anthropic now extends this
+      base, and MiniMax + LMStudioAnthropic were migrated to extend it too.
+    - New engine: Langertha::Engine::LMStudio — native LM Studio local REST
+      API adapter (POST /api/v1/chat, SSE streaming with message.delta/chat.end,
+      GET /api/v1/models). Supports optional bearer auth via
+      LANGERTHA_LMSTUDIO_API_KEY, plus basic auth via URL userinfo.
+      Includes openai() helper returning a Langertha::Engine::LMStudioOpenAI
+      instance for LM Studio's /v1 endpoint.
+    - New engine: Langertha::Engine::LMStudioOpenAI for LM Studio's
+      OpenAI-compatible /v1 endpoint (defaults api_key to C<lmstudio>).
+    - New engine: Langertha::Engine::LMStudioAnthropic for LM Studio's
+      Anthropic-compatible /v1/messages endpoint. Includes LMStudio->anthropic
+      helper for easy conversion from native engine instances; defaults api_key
+      to C<lmstudio>.
+    - New OpenAPI spec: share/lmstudio.yaml with operationIds for LM Studio
+      native chat and model listing, plus Langertha::Spec::LMStudio for
+      pre-computed operation lookup.
+    - Tests: extend t/00_load.t, t/10_engine_hierarchy.t, and
+      t/11_basic_auth.t to cover LMStudio loading, inheritance/roles,
+      request mapping, and auth behavior.
+      Extend t/83_live_chat.t with optional LM Studio live coverage via
+      TEST_LANGERTHA_LMSTUDIO_URL, TEST_LANGERTHA_LMSTUDIO_MODEL, and
+      TEST_LANGERTHA_LMSTUDIO_API_KEY.
+    - Documentation: add POD for LMStudio, LMStudioOpenAI, and
+      LMStudioAnthropic helpers/attributes and expand README examples
+      to include explicit LMStudioOpenAI/LMStudioAnthropic class usage.
     - Orchestration foundation on top of Raider:
       add Langertha::Role::Runnable (run_f contract),
       Langertha::RunContext (input/state/artifacts/metadata/trace + branch/merge),

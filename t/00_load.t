@@ -14,11 +14,15 @@ my @modules = qw(
   Langertha::Engine::AKI
   Langertha::Engine::AKIOpenAI
   Langertha::Engine::Anthropic
+  Langertha::Engine::AnthropicBase
   Langertha::Engine::Cerebras
   Langertha::Engine::DeepSeek
   Langertha::Engine::Gemini
   Langertha::Engine::Groq
   Langertha::Engine::LlamaCpp
+  Langertha::Engine::LMStudio
+  Langertha::Engine::LMStudioAnthropic
+  Langertha::Engine::LMStudioOpenAI
   Langertha::Engine::MiniMax
   Langertha::Engine::Mistral
   Langertha::Engine::NousResearch
