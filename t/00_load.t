@@ -32,6 +32,13 @@ my @modules = qw(
   Langertha::Engine::Whisper
   Langertha::Raider
   Langertha::Raider::Result
+  Langertha::Result
+  Langertha::RunContext
+  Langertha::Role::Runnable
+  Langertha::Raid
+  Langertha::Raid::Sequential
+  Langertha::Raid::Parallel
+  Langertha::Raid::Loop
   Langertha::Request::HTTP
   Langertha::Response
   Langertha::Role::Langfuse

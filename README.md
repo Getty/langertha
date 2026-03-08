@@ -19,7 +19,21 @@
 
 ---
 
-**Langertha** is a unified Perl interface for LLM APIs. One API, many providers. Supports chat, streaming, embeddings, transcription, MCP tool calling, autonomous agents, observability, and dynamic model discovery.
+**Langertha** is a unified Perl interface for LLM APIs. One API, many providers. Supports chat, streaming, embeddings, transcription, MCP tool calling, autonomous agents, workflow orchestration, observability, and dynamic model discovery.
+
+## Table of Contents
+
+- [Supported Providers](#supported-providers)
+- [Quick Start](#quick-start)
+- [Architecture at a Glance](#architecture-at-a-glance)
+- [Usage Examples](#usage-examples)
+- [MCP Tool Calling](#mcp-tool-calling)
+- [Raider — Autonomous Agent](#raider--autonomous-agent)
+- [Raid — Workflow Orchestration](#raid--workflow-orchestration)
+- [Observability with Langfuse](#observability-with-langfuse)
+- [Wrapper Classes](#wrapper-classes)
+- [Testing](#testing)
+- [Examples](#examples)
 
 ## Supported Providers
 
@@ -59,6 +73,23 @@ my $openai = Langertha::Engine::OpenAI->new(
 );
 
 print $openai->simple_chat('Hello from Perl!');
+```
+
+## Architecture at a Glance
+
+```text
+Engine (provider API adapter)
+  -> low-level provider calls (chat, streaming, tools, embeddings, images, transcription)
+
+Wrappers (task-focused facades)
+  -> Chat / Embedder / ImageGen with optional overrides + plugins
+
+Raider (autonomous worker agent)
+  -> history, mission, tool loop, self-tools, plugins, continuation
+
+Raid (workflow orchestration)
+  -> compose Raider + Raid nodes as Sequential / Parallel / Loop trees
+  -> shared RunContext + unified Result semantics
 ```
 
 ## Usage Examples
@@ -406,6 +437,100 @@ my $raider = Langertha::Raider->new(
 ```
 
 Injected messages are persisted in history so the agent remembers them across raids.
+
+## Raid — Workflow Orchestration
+
+`Langertha::Raid` adds a lightweight orchestration layer on top of `Langertha::Raider`.
+Use it to compose multiple runnable nodes into workflow trees without introducing a DSL.
+
+Core building blocks:
+
+- `Langertha::Role::Runnable` — shared execution contract (`run_f($ctx)`)
+- `Langertha::RunContext` — structured execution state (`input`, `state`, `artifacts`, `metadata`, `trace`)
+- `Langertha::Raid::Sequential` — ordered step execution
+- `Langertha::Raid::Parallel` — concurrent branch execution with context branching/merge
+- `Langertha::Raid::Loop` — orchestration-level loop with `max_loops` / `max_iterations`
+
+### Minimal Sequential Example
+
+```perl
+use Future::AsyncAwait;
+use Langertha::Raider;
+use Langertha::Raid::Sequential;
+use Langertha::RunContext;
+
+my $flow = Langertha::Raid::Sequential->new(
+    steps => [
+        Langertha::Raider->new(engine => $engine, mission => 'Collect facts'),
+        Langertha::Raider->new(engine => $engine, mission => 'Write concise summary'),
+    ],
+);
+
+my $ctx = Langertha::RunContext->new(
+    input => 'Analyze lib/Langertha.pm and summarize key components.',
+);
+
+my $result = await $flow->run_f($ctx);
+say $result->text if $result->is_final;
+```
+
+```perl
+use Future::AsyncAwait;
+use Langertha::Raider;
+use Langertha::Raid::Sequential;
+use Langertha::Raid::Parallel;
+use Langertha::Raid::Loop;
+use Langertha::RunContext;
+
+my $raid = Langertha::Raid::Sequential->new(
+    steps => [
+        Langertha::Raider->new(engine => $engine_a, mission => 'Research'),
+        Langertha::Raid::Parallel->new(
+            steps => [
+                Langertha::Raider->new(engine => $engine_b, mission => 'Summarize'),
+                Langertha::Raider->new(engine => $engine_c, mission => 'Extract risks'),
+            ],
+        ),
+        Langertha::Raid::Loop->new(
+            steps => [
+                Langertha::Raider->new(engine => $engine_a, mission => 'Refine output'),
+            ],
+            max_loops => 2,
+        ),
+    ],
+);
+
+my $ctx = Langertha::RunContext->new(
+    input    => 'Analyze this repository and produce an action plan.',
+    metadata => { request_id => 'req-42' },
+);
+
+my $result = await $raid->run_f($ctx);
+
+if ($result->is_final) {
+    say $result->text;
+} elsif ($result->is_question) {
+    say "Needs input: " . $result->content;
+} elsif ($result->is_pause) {
+    say "Paused: " . $result->content;
+} elsif ($result->is_abort) {
+    die "Aborted: " . $result->content;
+}
+```
+
+Parallel branches do not mutate one shared context object blindly.
+Each branch gets its own cloned context and merged snapshots are available in:
+
+```perl
+my $branches = $ctx->artifacts->{parallel_branches};
+```
+
+Result semantics are unified across Raider and Raid:
+
+- `final` — completed successfully
+- `question` — needs user input
+- `pause` — execution paused/resumable
+- `abort` — explicit stop/failure
 
 ## Observability with Langfuse
 
