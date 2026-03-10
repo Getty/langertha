@@ -1,5 +1,5 @@
 package Langertha::Metrics;
-our $VERSION = '0.306';
+our $VERSION = '0.307';
 # ABSTRACT: Metrics and pricing helpers across Langertha ecosystem
 use strict;
 use warnings;

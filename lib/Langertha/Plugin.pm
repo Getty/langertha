@@ -1,6 +1,6 @@
 package Langertha::Plugin;
 # ABSTRACT: Base class for plugins
-our $VERSION = '0.306';
+our $VERSION = '0.307';
 use Moose;
 use Future::AsyncAwait;
 

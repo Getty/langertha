@@ -1,6 +1,6 @@
 package Langertha::Role::ThinkTag;
 # ABSTRACT: Configurable think tag filtering for reasoning models
-our $VERSION = '0.306';
+our $VERSION = '0.307';
 use Moose::Role;
 
 =head1 SYNOPSIS

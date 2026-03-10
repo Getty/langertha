@@ -1,5 +1,5 @@
 package Langertha::Input::Tools;
-our $VERSION = '0.306';
+our $VERSION = '0.307';
 # ABSTRACT: Tool input conversion across proxy formats
 use strict;
 use warnings;
