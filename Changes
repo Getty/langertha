@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Add new shared core modules for cross-format normalization:
+      Langertha::Input(+::Tools), Langertha::Output(+::Tools),
+      and Langertha::Metrics.
+    - Core modules centralize tool schema conversion (OpenAI/Anthropic/Ollama),
+      Hermes XML extraction/normalization, and usage/cost metric normalization.
+    - Add core tests t/97_input_output.t and t/98_metrics.t and extend t/00_load.t.
+
 0.305     2026-03-08 21:51:01Z
     - New engine base class: Langertha::Engine::AnthropicBase for
       Anthropic-compatible APIs (shared /v1/messages chat/streaming/tool/model

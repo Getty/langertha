@@ -48,6 +48,11 @@ my @modules = qw(
   Langertha::Role::Langfuse
   Langertha::Role::OpenAICompatible
   Langertha::Role::Tools
+  Langertha::Input
+  Langertha::Input::Tools
+  Langertha::Output
+  Langertha::Output::Tools
+  Langertha::Metrics
   LangerthaX
 );
 
