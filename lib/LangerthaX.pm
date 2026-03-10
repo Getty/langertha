@@ -11,6 +11,10 @@ extensions to L<Langertha>. If you are building a module that extends or
 integrates with Langertha but does not belong in the core distribution,
 publish it under C<LangerthaX::>.
 
+For custom engines, publish under C<LangerthaX::Engine::*>. L<Langertha>
+resolves configured engine names against both C<Langertha::Engine::*> and
+C<LangerthaX::Engine::*>.
+
 =seealso
 
 =over

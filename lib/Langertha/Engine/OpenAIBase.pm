@@ -60,7 +60,8 @@ L<Langertha::Engine::Replicate>, L<Langertha::Engine::HuggingFace>,
 L<Langertha::Engine::Perplexity>, L<Langertha::Engine::AKIOpenAI>
 
 =item * Self-hosted — L<Langertha::Engine::OllamaOpenAI>,
-L<Langertha::Engine::vLLM>, L<Langertha::Engine::LlamaCpp>
+L<Langertha::Engine::vLLM>, L<Langertha::Engine::SGLang>,
+L<Langertha::Engine::LlamaCpp>
 
 =back
 
@@ -108,6 +109,8 @@ __PACKAGE__->meta->make_immutable;
 =item * L<Langertha::Engine::OllamaOpenAI> - Ollama OpenAI-compatible endpoint
 
 =item * L<Langertha::Engine::vLLM> - vLLM high-throughput inference server
+
+=item * L<Langertha::Engine::SGLang> - SGLang OpenAI-compatible endpoint
 
 =back
 
