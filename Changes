@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.307     2026-03-10 17:42:28Z
 
     - Add new OpenAI-compatible self-hosted engine:

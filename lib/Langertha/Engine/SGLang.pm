@@ -1,6 +1,6 @@
 package Langertha::Engine::SGLang;
 # ABSTRACT: SGLang inference server
-our $VERSION = '0.307';
+our $VERSION = '0.308';
 use Moose;
 
 extends 'Langertha::Engine::OpenAIBase';

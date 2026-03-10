@@ -1,5 +1,5 @@
 package Langertha::Output::Tools;
-our $VERSION = '0.307';
+our $VERSION = '0.308';
 # ABSTRACT: Tool output conversion across proxy formats
 use strict;
 use warnings;
