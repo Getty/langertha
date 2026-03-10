@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.306     2026-03-10 13:37:01Z
 
     - Add new shared core modules for cross-format normalization:
       Langertha::Input(+::Tools), Langertha::Output(+::Tools),
