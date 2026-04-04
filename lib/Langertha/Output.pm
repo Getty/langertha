@@ -1,5 +1,5 @@
 package Langertha::Output;
-our $VERSION = '0.308';
+our $VERSION = '0.309';
 # ABSTRACT: Response output transformation helpers
 use strict;
 use warnings;
