@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.309     2026-04-05 16:37:32Z
 
     - Fix Moose role composition: consolidate all separate `with` calls into

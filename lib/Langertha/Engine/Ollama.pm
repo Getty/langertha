@@ -1,6 +1,6 @@
 package Langertha::Engine::Ollama;
 # ABSTRACT: Ollama API
-our $VERSION = '0.309';
+our $VERSION = '0.310';
 use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );

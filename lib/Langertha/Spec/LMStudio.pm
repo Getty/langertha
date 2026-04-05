@@ -1,6 +1,6 @@
 package Langertha::Spec::LMStudio;
 # ABSTRACT: Pre-computed OpenAPI operations for LM Studio native API
-our $VERSION = '0.309';
+our $VERSION = '0.310';
 
 # AUTO-GENERATED style table (maintained in-repo).
 # Source: share/lmstudio.yaml (2 operations)

@@ -1,6 +1,6 @@
 package Langertha::Embedder;
 # ABSTRACT: Embedding abstraction wrapping an engine with optional model override
-our $VERSION = '0.309';
+our $VERSION = '0.310';
 use Moose;
 use Future::AsyncAwait;
 use Carp qw( croak );

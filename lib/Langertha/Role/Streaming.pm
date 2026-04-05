@@ -1,6 +1,6 @@
 package Langertha::Role::Streaming;
 # ABSTRACT: Role for streaming support
-our $VERSION = '0.309';
+our $VERSION = '0.310';
 use Moose::Role;
 
 requires qw(
