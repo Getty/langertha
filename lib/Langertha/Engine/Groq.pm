@@ -6,11 +6,11 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::'.$_ for (qw(
+with map { 'Langertha::Role::'.$_ } qw(
   ResponseFormat
   Transcription
   Tools
-));
+);
 
 =head1 SYNOPSIS
 

@@ -5,12 +5,13 @@ use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );
 use JSON::MaybeXS;
+use Module::Runtime qw( use_module );
 
 use Langertha::Engine::OllamaOpenAI;
 
 extends 'Langertha::Engine::Remote';
 
-with 'Langertha::Role::'.$_ for (qw(
+with map { 'Langertha::Role::'.$_ } qw(
   OpenAPI
   Models
   Seed
@@ -22,7 +23,8 @@ with 'Langertha::Role::'.$_ for (qw(
   Chat
   Embedding
   Streaming
-));
+  Tools
+);
 
 =head1 SYNOPSIS
 
@@ -120,8 +122,7 @@ sub default_embedding_model { 'mxbai-embed-large' }
 sub openapi_file { yaml => dist_file('Langertha','ollama.yaml') };
 
 sub _build_openapi_operations {
-  require Langertha::Spec::Ollama;
-  return Langertha::Spec::Ollama::data();
+  return use_module('Langertha::Spec::Ollama')->data;
 }
 
 
@@ -409,8 +410,6 @@ sub format_tool_results {
     } @$results
   );
 }
-
-with 'Langertha::Role::Tools';
 
 __PACKAGE__->meta->make_immutable;
 

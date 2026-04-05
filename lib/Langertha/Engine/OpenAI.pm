@@ -6,13 +6,13 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::'.$_ for (qw(
+with map { 'Langertha::Role::'.$_ } qw(
   ResponseFormat
   Embedding
   Transcription
   ImageGeneration
   Tools
-));
+);
 
 =head1 SYNOPSIS
 

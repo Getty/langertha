@@ -7,14 +7,14 @@ use JSON::MaybeXS;
 
 extends 'Langertha::Engine::Remote';
 
-with 'Langertha::Role::'.$_ for (qw(
+with map { 'Langertha::Role::'.$_ } qw(
   Models
   Temperature
   SystemPrompt
   Chat
   Tools
   HermesTools
-));
+);
 
 =head1 SYNOPSIS
 

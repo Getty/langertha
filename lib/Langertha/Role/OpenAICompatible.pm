@@ -14,11 +14,10 @@ use JSON::MaybeXS;
     package My::Engine;
     use Moose;
 
-    with 'Langertha::Role::'.$_ for (qw(
+    with map { 'Langertha::Role::'.$_ } qw(
         JSON HTTP OpenAICompatible OpenAPI Models Temperature
-        ResponseSize SystemPrompt Streaming Chat
-    ));
-    with 'Langertha::Role::Tools';
+        ResponseSize SystemPrompt Streaming Chat Tools
+    );
 
     sub _build_api_key { $ENV{MY_API_KEY} || die "needs api_key" }
     sub default_model { 'my-model' }
@@ -100,12 +99,6 @@ Returns the OpenAI OpenAPI spec file path used for request generation.
 Override in an engine to use a provider-specific spec (e.g., Mistral).
 
 =cut
-
-sub _build_openapi_operations {
-  require Langertha::Spec::OpenAI;
-  return Langertha::Spec::OpenAI::data();
-}
-
 
 sub default_embedding_model { 'text-embedding-3-large' }
 sub default_transcription_model { 'whisper-1' }

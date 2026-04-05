@@ -6,8 +6,7 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Tools';
-with 'Langertha::Role::HermesTools';
+with 'Langertha::Role::Tools', 'Langertha::Role::HermesTools';
 
 =head1 SYNOPSIS
 

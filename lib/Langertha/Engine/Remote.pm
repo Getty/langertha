@@ -5,11 +5,11 @@ use Moose;
 
 use Langertha::RateLimit;
 
-with 'Langertha::Role::'.$_ for (qw(
+with map { 'Langertha::Role::'.$_ } qw(
   JSON
   HTTP
   PluginHost
-));
+);
 
 =head1 SYNOPSIS
 

@@ -64,6 +64,8 @@ sub BUILDARGS {
   return { %args };
 }
 
+__PACKAGE__->meta->make_immutable;
+
 =seealso
 
 =over

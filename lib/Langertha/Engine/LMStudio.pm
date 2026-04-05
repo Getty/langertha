@@ -5,10 +5,11 @@ use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;
 use File::ShareDir::ProjectDistDir qw( :all );
+use Module::Runtime qw( use_module );
 
 extends 'Langertha::Engine::Remote';
 
-with 'Langertha::Role::'.$_ for (qw(
+with map { 'Langertha::Role::'.$_ } qw(
   OpenAPI
   Models
   Temperature
@@ -17,7 +18,7 @@ with 'Langertha::Role::'.$_ for (qw(
   SystemPrompt
   Streaming
   Chat
-));
+);
 
 =head1 SYNOPSIS
 
@@ -103,8 +104,7 @@ C<share/lmstudio.yaml>.
 =cut
 
 sub _build_openapi_operations {
-  require Langertha::Spec::LMStudio;
-  return Langertha::Spec::LMStudio::data();
+  return use_module('Langertha::Spec::LMStudio')->data;
 }
 
 sub _build_supported_operations {[qw(

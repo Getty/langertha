@@ -45,6 +45,8 @@ sub _build_supported_operations {[qw(
   createTranslation
 )]}
 
+__PACKAGE__->meta->make_immutable;
+
 =seealso
 
 =over

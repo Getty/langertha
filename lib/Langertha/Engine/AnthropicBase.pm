@@ -7,14 +7,15 @@ use JSON::MaybeXS;
 
 extends 'Langertha::Engine::Remote';
 
-with 'Langertha::Role::'.$_ for (qw(
+with map { 'Langertha::Role::'.$_ } qw(
   Models
   Chat
   Temperature
   ResponseSize
   SystemPrompt
   Streaming
-));
+  Tools
+);
 
 =head1 SYNOPSIS
 
@@ -373,8 +374,6 @@ sub format_tool_results {
     ]},
   );
 }
-
-with 'Langertha::Role::Tools';
 
 sub _parse_rate_limit_headers {
   my ( $self, $http_response ) = @_;

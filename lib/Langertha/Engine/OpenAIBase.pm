@@ -3,10 +3,11 @@ package Langertha::Engine::OpenAIBase;
 our $VERSION = '0.309';
 use Moose;
 use Carp qw( croak );
+use Module::Runtime qw( use_module );
 
 extends 'Langertha::Engine::Remote';
 
-with 'Langertha::Role::'.$_ for (qw(
+with map { 'Langertha::Role::'.$_ } qw(
   OpenAICompatible
   OpenAPI
   Models
@@ -15,7 +16,11 @@ with 'Langertha::Role::'.$_ for (qw(
   SystemPrompt
   Streaming
   Chat
-));
+);
+
+sub _build_openapi_operations {
+  return use_module('Langertha::Spec::OpenAI')->data;
+}
 
 =head1 SYNOPSIS
 

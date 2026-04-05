@@ -5,8 +5,7 @@ use Moose;
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Embedding';
-with 'Langertha::Role::Tools';
+with 'Langertha::Role::Embedding', 'Langertha::Role::Tools';
 
 =head1 SYNOPSIS
 
