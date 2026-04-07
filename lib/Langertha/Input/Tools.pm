@@ -1,130 +1,68 @@
 package Langertha::Input::Tools;
 our $VERSION = '0.310';
-# ABSTRACT: Tool input conversion across proxy formats
+# ABSTRACT: Backwards-compat facade over Langertha::Tool / Langertha::ToolChoice
 use strict;
 use warnings;
+use Langertha::Tool;
+use Langertha::ToolChoice;
+
+# All methods here are kept for backwards compatibility with Skeid/Knarr
+# and other existing consumers. New code should use Langertha::Tool and
+# Langertha::ToolChoice directly.
 
 sub normalize_tools {
   my ($class, $tools) = @_;
-  my @out;
-  for my $t (@{$tools || []}) {
-    next unless ref($t) eq 'HASH';
-
-    # OpenAI/Ollama style
-    if (($t->{type} // '') eq 'function' && ref($t->{function}) eq 'HASH') {
-      my $fn = $t->{function};
-      my $name = $fn->{name} // '';
-      next unless length $name;
-      push @out, {
-        name         => $name,
-        description  => ($fn->{description} // ''),
-        input_schema => ($fn->{parameters} || { type => 'object', properties => {} }),
-      };
-      next;
-    }
-
-    # Anthropic style
-    if (defined $t->{name}) {
-      my $name = $t->{name} // '';
-      next unless length $name;
-      push @out, {
-        name         => $name,
-        description  => ($t->{description} // ''),
-        input_schema => ($t->{input_schema} || $t->{parameters} || { type => 'object', properties => {} }),
-      };
-    }
-  }
-  return \@out;
+  return [ map { $_->to_hash } @{ Langertha::Tool->from_list($tools) } ];
 }
 
 sub to_openai_tools {
   my ($class, $canonical_tools) = @_;
-  return [map {
-    {
-      type     => 'function',
-      function => {
-        name        => ($_->{name} // 'tool'),
-        description => ($_->{description} // ''),
-        parameters  => ($_->{input_schema} || { type => 'object', properties => {} }),
-      },
-    }
-  } @{$canonical_tools || []}];
+  my @out;
+  for my $hash ( @{ $canonical_tools || [] } ) {
+    next unless ref($hash) eq 'HASH';
+    my $name = $hash->{name} // 'tool';
+    push @out, Langertha::Tool->new(
+      name         => $name,
+      description  => ( $hash->{description} // '' ),
+      input_schema => ( $hash->{input_schema} || { type => 'object', properties => {} } ),
+    )->to_openai;
+  }
+  return \@out;
 }
 
 sub to_anthropic_tools {
   my ($class, $canonical_tools) = @_;
-  return [map {
-    {
-      name         => ($_->{name} // 'tool'),
-      description  => ($_->{description} // ''),
-      input_schema => ($_->{input_schema} || { type => 'object', properties => {} }),
-    }
-  } @{$canonical_tools || []}];
+  my @out;
+  for my $hash ( @{ $canonical_tools || [] } ) {
+    next unless ref($hash) eq 'HASH';
+    my $name = $hash->{name} // 'tool';
+    push @out, Langertha::Tool->new(
+      name         => $name,
+      description  => ( $hash->{description} // '' ),
+      input_schema => ( $hash->{input_schema} || { type => 'object', properties => {} } ),
+    )->to_anthropic;
+  }
+  return \@out;
 }
 
 sub normalize_tool_choice {
   my ($class, $tool_choice) = @_;
-  return undef unless defined $tool_choice;
-
-  if (!ref($tool_choice)) {
-    return { type => 'any' }  if $tool_choice eq 'required';
-    return { type => 'auto' } if $tool_choice eq 'auto';
-    return { type => 'none' } if $tool_choice eq 'none';
-    return undef;
-  }
-
-  return undef unless ref($tool_choice) eq 'HASH';
-  my $type = $tool_choice->{type} // '';
-
-  if ($type eq 'function') {
-    my $name = '';
-    if (ref($tool_choice->{function}) eq 'HASH') {
-      $name = $tool_choice->{function}{name} // '';
-    } elsif (defined $tool_choice->{name}) {
-      $name = $tool_choice->{name} // '';
-    }
-    return length($name) ? { type => 'tool', name => $name } : { type => 'auto' };
-  }
-
-  if ($type eq 'tool') {
-    my $name = $tool_choice->{name} // '';
-    return length($name) ? { type => 'tool', name => $name } : { type => 'auto' };
-  }
-
-  return { type => 'any' }  if $type eq 'any';
-  return { type => 'auto' } if $type eq 'auto';
-  return { type => 'none' } if $type eq 'none';
-  return undef;
+  my $tc = Langertha::ToolChoice->from_hash($tool_choice);
+  return $tc ? $tc->to_hash : undef;
 }
 
 sub to_openai_tool_choice {
   my ($class, $canonical_tool_choice) = @_;
   return undef unless ref($canonical_tool_choice) eq 'HASH';
-  my $type = $canonical_tool_choice->{type} // '';
-
-  return 'required' if $type eq 'any';
-  return 'auto'     if $type eq 'auto';
-  return 'none'     if $type eq 'none';
-  if ($type eq 'tool') {
-    my $name = $canonical_tool_choice->{name} // '';
-    return length($name) ? { type => 'function', function => { name => $name } } : 'auto';
-  }
-  return undef;
+  my $tc = Langertha::ToolChoice->from_hash($canonical_tool_choice);
+  return $tc ? $tc->to_openai : undef;
 }
 
 sub to_anthropic_tool_choice {
   my ($class, $canonical_tool_choice) = @_;
   return undef unless ref($canonical_tool_choice) eq 'HASH';
-  my $type = $canonical_tool_choice->{type} // '';
-
-  return { type => 'any' }  if $type eq 'any';
-  return { type => 'auto' } if $type eq 'auto';
-  return { type => 'none' } if $type eq 'none';
-  if ($type eq 'tool') {
-    my $name = $canonical_tool_choice->{name} // '';
-    return length($name) ? { type => 'tool', name => $name } : { type => 'auto' };
-  }
-  return undef;
+  my $tc = Langertha::ToolChoice->from_hash($canonical_tool_choice);
+  return $tc ? $tc->to_anthropic : undef;
 }
 
 1;
