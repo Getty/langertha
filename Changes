@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.400     2026-04-07 23:01:11Z
 
     - New value object Langertha::Usage for token counting with from_hash /
       from_response constructors and to_openai/anthropic/ollama_format
