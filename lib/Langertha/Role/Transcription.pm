@@ -1,6 +1,6 @@
 package Langertha::Role::Transcription;
 # ABSTRACT: Role for APIs with transcription functionality
-our $VERSION = '0.310';
+our $VERSION = '0.401';
 use Moose::Role;
 use Carp qw( croak );
 

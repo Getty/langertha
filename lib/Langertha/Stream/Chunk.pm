@@ -1,6 +1,6 @@
 package Langertha::Stream::Chunk;
 # ABSTRACT: Represents a single chunk from a streaming response
-our $VERSION = '0.310';
+our $VERSION = '0.401';
 use Moose;
 
 =head1 SYNOPSIS

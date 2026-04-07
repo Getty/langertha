@@ -1,6 +1,6 @@
 package Langertha::Usage;
 # ABSTRACT: Immutable value object for LLM token usage with cross-provider conversion
-our $VERSION = '0.310';
+our $VERSION = '0.401';
 use Moose;
 use Scalar::Util qw( blessed );
 
