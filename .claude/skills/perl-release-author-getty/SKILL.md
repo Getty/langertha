@@ -1,6 +1,6 @@
 ---
-name: perl-dzil-author-getty
-description: "Explains @Author::GETTY plugin bundle configuration and conventions"
+name: perl-release-author-getty
+description: "Load when dist.ini contains [@Author::GETTY] — bundle options, POD conventions (=attr/=method/=opt), next-version semantics, dzil release workflow, copyright_year, Changes/{{$NEXT}}"
 user-invocable: false
 allowed-tools: Read, Grep
 model: sonnet
@@ -100,6 +100,32 @@ For wrapping C libraries with Alien::Base:
 
 **Auto-generated sections (do NOT write manually):**
 NAME, VERSION, AUTHOR, SUPPORT, CONTRIBUTING, COPYRIGHT
+
+## Versioning Convention — CRITICAL
+
+**The version in the repository is always the NEXT release version, not the current one.**
+
+Before a release, the files already contain the upcoming version:
+- `dist.ini` or module `$VERSION` = e.g. `1.005`
+- `Changes` has `{{$NEXT}}` as the placeholder for unreleased changes
+- The currently released version on CPAN is `1.004`
+
+After `dzil release` runs:
+1. `{{$NEXT}}` in Changes is replaced with `1.005` + release date
+2. The version is bumped to `1.006` (or next AutoVersion value)
+3. A Git tag `v1.005` is created
+
+**Do NOT treat the version in dist.ini as the released version.** If the user asks "what version is released?", check CPAN or git tags — not the current `$VERSION` in the files.
+
+**Do NOT bump the version manually before a release** — `dzil release` handles this automatically.
+
+## Release Workflow
+
+```bash
+# Before release: check Changes, ensure {{$NEXT}} section has entries
+# Then:
+dzil release        # Builds, tests, uploads to CPAN, bumps version, commits, tags
+```
 
 ## Conventions
 

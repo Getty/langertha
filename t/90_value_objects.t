@@ -106,7 +106,10 @@ use Langertha::UsageRecord;
 }
 
 # --- Backwards-compat facade ---
-use Langertha::Metrics;
+{
+  local $SIG{__WARN__} = sub { return if $_[0] =~ /backwards-compatibility facade/; warn @_ };
+  require Langertha::Metrics;
+}
 {
   my $u = Langertha::Metrics->normalize_usage({ prompt_tokens => 7, completion_tokens => 3 });
   is( $u->{input_tokens}, 7, 'facade normalize_usage' );

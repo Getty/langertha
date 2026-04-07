@@ -3,10 +3,16 @@ our $VERSION = '0.310';
 # ABSTRACT: Backwards-compat facade over Langertha::Usage / Pricing / Cost / UsageRecord
 use strict;
 use warnings;
+use Carp ();
 use Langertha::Usage;
 use Langertha::Pricing;
 use Langertha::Cost;
 use Langertha::UsageRecord;
+
+Carp::carp(
+  "Langertha::Metrics is a backwards-compatibility facade. New code should use "
+  . "Langertha::Usage / Langertha::Pricing / Langertha::Cost / Langertha::UsageRecord directly."
+);
 
 # All methods here are kept for backwards compatibility with existing
 # Skeid/Knarr code. New code should construct Langertha::Usage,

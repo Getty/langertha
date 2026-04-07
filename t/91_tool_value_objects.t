@@ -175,8 +175,11 @@ use Langertha::ToolChoice;
 }
 
 # --- Facade backwards compat ---
-use Langertha::Input::Tools;
-use Langertha::Output::Tools;
+{
+  local $SIG{__WARN__} = sub { return if $_[0] =~ /backwards-compatibility facade/; warn @_ };
+  require Langertha::Input::Tools;
+  require Langertha::Output::Tools;
+}
 {
   my $norm = Langertha::Input::Tools->normalize_tools([
     { type => 'function', function => { name => 'a', description => 'aa' } },

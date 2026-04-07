@@ -3,7 +3,13 @@ our $VERSION = '0.310';
 # ABSTRACT: Response output transformation helpers
 use strict;
 use warnings;
+use Carp ();
 use Langertha::Output::Tools;
+
+Carp::carp(
+  "Langertha::Output is a backwards-compatibility facade. New code should use "
+  . "Langertha::ToolCall directly."
+);
 
 sub extract_from_raw {
   shift;

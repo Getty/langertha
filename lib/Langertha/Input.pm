@@ -3,7 +3,13 @@ our $VERSION = '0.310';
 # ABSTRACT: Request input transformation helpers
 use strict;
 use warnings;
+use Carp ();
 use Langertha::Input::Tools;
+
+Carp::carp(
+  "Langertha::Input is a backwards-compatibility facade. New code should use "
+  . "Langertha::Tool / Langertha::ToolChoice directly."
+);
 
 sub normalize_tools {
   shift;

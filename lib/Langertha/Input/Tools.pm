@@ -3,8 +3,14 @@ our $VERSION = '0.310';
 # ABSTRACT: Backwards-compat facade over Langertha::Tool / Langertha::ToolChoice
 use strict;
 use warnings;
+use Carp ();
 use Langertha::Tool;
 use Langertha::ToolChoice;
+
+Carp::carp(
+  "Langertha::Input::Tools is a backwards-compatibility facade. New code should use "
+  . "Langertha::Tool / Langertha::ToolChoice directly."
+);
 
 # All methods here are kept for backwards compatibility with Skeid/Knarr
 # and other existing consumers. New code should use Langertha::Tool and
