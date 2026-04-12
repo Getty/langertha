@@ -1,6 +1,6 @@
 package Langertha::Response;
 # ABSTRACT: LLM response with metadata
-our $VERSION = '0.401';
+our $VERSION = '0.402';
 use Moose;
 
 use overload

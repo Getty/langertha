@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.401     2026-04-12 21:24:49Z
 
     - Guard list_models in OpenAICompatible against engines that do not

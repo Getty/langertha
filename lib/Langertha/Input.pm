@@ -1,5 +1,5 @@
 package Langertha::Input;
-our $VERSION = '0.401';
+our $VERSION = '0.402';
 # ABSTRACT: Request input transformation helpers
 use strict;
 use warnings;
