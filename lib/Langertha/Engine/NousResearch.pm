@@ -6,7 +6,7 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Tools', 'Langertha::Role::HermesTools';
+with 'Langertha::Role::Tools', 'Langertha::Role::HermesTools', 'Langertha::Role::StaticModels';
 
 =head1 SYNOPSIS
 
@@ -78,6 +78,11 @@ sub _build_api_key {
 }
 
 sub default_model { 'Hermes-4-70B' }
+
+sub _build_static_models {[
+  { id => 'Hermes-4-70B' },
+  { id => 'Hermes-4-405B' },
+]}
 
 has reasoning => (
   is => 'ro',

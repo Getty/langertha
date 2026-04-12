@@ -160,6 +160,11 @@ including C<data>, C<has_more>, and C<last_id> for pagination.
 sub list_models {
   my ($self, %opts) = @_;
 
+  # Guard: if supported_operations excludes listModels, fall back to current model
+  unless ($self->can_operation('listModels')) {
+    return [$self->model];
+  }
+
   # Check cache unless force_refresh requested
   unless ($opts{force_refresh}) {
     my $cache = $self->_models_cache;
