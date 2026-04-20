@@ -1,6 +1,6 @@
 package Langertha::Engine::Mistral;
 # ABSTRACT: Mistral API
-our $VERSION = '0.402';
+our $VERSION = '0.403';
 use Moose;
 use Carp qw( croak );
 use File::ShareDir::ProjectDistDir qw( :all );

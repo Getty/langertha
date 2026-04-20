@@ -1,6 +1,6 @@
 package Langertha::UsageRecord;
 # ABSTRACT: Tagged ledger entry combining Usage, Cost, and request metadata
-our $VERSION = '0.402';
+our $VERSION = '0.403';
 use Moose;
 use Langertha::Usage;
 use Langertha::Cost;

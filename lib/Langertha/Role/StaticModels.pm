@@ -1,6 +1,6 @@
 package Langertha::Role::StaticModels;
 # ABSTRACT: Role for engines with a hardcoded model list
-our $VERSION = '0.402';
+our $VERSION = '0.403';
 use Moose::Role;
 
 =head1 SYNOPSIS

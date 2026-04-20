@@ -1,6 +1,6 @@
 package Langertha::Raid::Sequential;
 # ABSTRACT: Sequential Raid orchestrator
-our $VERSION = '0.402';
+our $VERSION = '0.403';
 use Moose;
 use Future::AsyncAwait;
 
