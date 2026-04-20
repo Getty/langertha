@@ -307,7 +307,9 @@ Resolves and constructs an engine instance in one call.
 
 =item * L<Langertha::Engine::DeepSeek> - DeepSeek models
 
-=item * L<Langertha::Engine::MiniMax> - MiniMax AI models (M2.5, M2.1)
+=item * L<Langertha::Engine::MiniMax> - MiniMax AI models (M2.7, M2.5, M2.1) via OpenAI-compatible endpoint
+
+=item * L<Langertha::Engine::MiniMaxAnthropic> - MiniMax via legacy Anthropic-compatible endpoint
 
 =item * L<Langertha::Engine::Gemini> - Google Gemini models (Flash, Pro)
 

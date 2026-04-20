@@ -7,6 +7,8 @@ use Carp qw( croak );
 use JSON::MaybeXS;
 use Log::Any qw( $log );
 
+with 'Langertha::Role::ParallelToolUse';
+
 =head1 SYNOPSIS
 
     use IO::Async::Loop;

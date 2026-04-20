@@ -5,6 +5,7 @@ use Moose::Role;
 use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );
 use JSON::MaybeXS;
+use Langertha::ToolChoice;
 
 =head1 SYNOPSIS
 
@@ -262,6 +263,22 @@ sub chat_operation_id { 'createChatCompletion' }
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
+
+  # Normalize tool_choice to OpenAI native format (accepts Anthropic-style,
+  # OpenAI-style, and string shorthands).
+  if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
+    if ( my $tc = Langertha::ToolChoice->from_hash( $extra{tool_choice} ) ) {
+      $extra{tool_choice} = $tc->to_openai;
+    }
+  }
+
+  # parallel_tool_use -> OpenAI's parallel_tool_calls (only when tools present)
+  if ( !exists $extra{parallel_tool_calls}
+    && exists $extra{tools}
+    && $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
+    $extra{parallel_tool_calls} = $self->parallel_tool_use ? JSON->true : JSON->false;
+  }
+
   return $self->generate_request( $self->chat_operation_id, sub { $self->chat_response(shift) },
     defined $self->chat_model ? ( model => $self->chat_model ) : (),
     messages => $messages,
