@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.402     2026-04-20 22:07:40Z
 
     - [BREAKING] Langertha::Engine::MiniMax now talks to MiniMax's native
       OpenAI-compatible endpoint (https://api.minimax.io/v1) instead of
