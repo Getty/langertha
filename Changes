@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.403     2026-04-21 12:04:54Z
 
     - Fixed "Wide character in subroutine entry" crash on non-ASCII JSON

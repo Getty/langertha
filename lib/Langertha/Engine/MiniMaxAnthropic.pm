@@ -1,6 +1,6 @@
 package Langertha::Engine::MiniMaxAnthropic;
 # ABSTRACT: MiniMax API via Anthropic-compatible endpoint (legacy)
-our $VERSION = '0.403';
+our $VERSION = '0.404';
 use Moose;
 use Carp qw( croak );
 
