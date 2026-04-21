@@ -118,7 +118,7 @@ sub parse_response {
   }
   $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   $log->tracef("[%s] Response: %s", ref $self, $response->decoded_content);
-  return $self->json->decode($response->decoded_content);
+  return $self->json->decode($response->content);
 }
 
 =method parse_response
@@ -193,7 +193,7 @@ sub execute_streaming_request {
   croak "".(ref $self)." streaming request failed: ".($response->status_line)
     unless $response->is_success;
 
-  return $self->process_stream_data($response->decoded_content, $chunk_callback);
+  return $self->process_stream_data($response->content, $chunk_callback);
 }
 
 =method execute_streaming_request
