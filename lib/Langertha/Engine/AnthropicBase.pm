@@ -48,6 +48,8 @@ B<THIS API IS WORK IN PROGRESS>
 
 sub default_response_size { 1024 }
 
+sub content_format { 'anthropic' }
+
 has api_key => (
   is => 'ro',
   lazy_build => 1,

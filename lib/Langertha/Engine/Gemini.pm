@@ -65,6 +65,8 @@ B<THIS API IS WORK IN PROGRESS>
 
 sub default_response_size { 2048 }
 
+sub content_format { 'gemini' }
+
 has api_key => (
   is => 'ro',
   lazy_build => 1,

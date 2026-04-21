@@ -2,6 +2,27 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New Langertha::Content role and Langertha::Content::Image value object
+      for provider-agnostic vision input. Mirrors the Langertha::ToolChoice
+      pattern: one canonical block (from_url / from_file / from_data /
+      from_base64) serializes to OpenAI image_url, Anthropic image source
+      (URL or base64), and Gemini inline_data via to_openai / to_anthropic
+      / to_gemini. Gemini auto-downloads URL-only images on first call
+      because it has no URL source equivalent; media_type is sniffed from
+      the extension or the fetched Content-Type header.
+    - Langertha::Role::Chat gained content_format ('openai' by default,
+      'anthropic' on AnthropicBase, 'gemini' on Gemini) and a normalization
+      pass in chat_messages: a user message whose content is an arrayref
+      containing Langertha::Content objects is converted to the engine's
+      native wire format (bare strings in the array are wrapped as text
+      blocks, and Gemini messages are rebuilt into role/parts with
+      assistant -> model). Messages without Langertha::Content objects are
+      passed through untouched, so existing callers are unaffected.
+    - Fixes the "messages.0.content.1: Input tag 'image_url' ... does not
+      match 'image'" 400 from Anthropic when the same [text + image] prompt
+      was reused across engines: the canonical block is what callers
+      author, each engine produces its own format.
+
 0.403     2026-04-21 12:04:54Z
 
     - Fixed "Wide character in subroutine entry" crash on non-ASCII JSON

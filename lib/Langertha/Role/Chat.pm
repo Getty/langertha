@@ -5,11 +5,25 @@ use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );
 use Log::Any qw( $log );
+use Scalar::Util qw( blessed );
 
 requires qw(
   chat_request
   chat_response
 );
+
+=method content_format
+
+    my $fmt = $engine->content_format;  # 'openai' | 'anthropic' | 'gemini'
+
+Wire format for multimodal content blocks. Controls how
+L<Langertha::Content> objects embedded in a message's C<content> arrayref
+are serialized during L</chat_messages>. Defaults to C<'openai'>; overridden
+by L<Langertha::Engine::AnthropicBase> and L<Langertha::Engine::Gemini>.
+
+=cut
+
+sub content_format { 'openai' }
 
 =head1 SYNOPSIS
 
@@ -99,15 +113,52 @@ system prompt from L<Langertha::Role::SystemPrompt> is prepended automatically.
 
 sub chat_messages {
   my ( $self, @messages ) = @_;
-  return [$self->has_system_prompt
-    ? ({
-      role => 'system', content => $self->system_prompt,
-    }) : (),
-    map {
-      ref $_ ? $_ : {
-        role => 'user', content => $_,
-      }
-    } @messages];
+  my @out;
+  push @out, { role => 'system', content => $self->system_prompt }
+    if $self->has_system_prompt;
+  for my $m (@messages) {
+    my $msg = ref $m ? $m : { role => 'user', content => $m };
+    push @out, $self->_normalize_content_blocks($msg);
+  }
+  return \@out;
+}
+
+sub _normalize_content_blocks {
+  my ( $self, $msg ) = @_;
+  my $content = $msg->{content};
+  return $msg unless ref $content eq 'ARRAY';
+
+  my $needs_convert = 0;
+  for my $b (@$content) {
+    if ( blessed($b) && $b->does('Langertha::Content') ) {
+      $needs_convert = 1;
+      last;
+    }
+  }
+  return $msg unless $needs_convert;
+
+  my $fmt    = $self->content_format;
+  my $method = "to_$fmt";
+
+  my @blocks = map {
+    if ( blessed($_) && $_->does('Langertha::Content') ) {
+      $_->$method;
+    }
+    elsif ( !ref $_ ) {
+      $fmt eq 'gemini'
+        ? { text => $_ }
+        : { type => 'text', text => $_ };
+    }
+    else {
+      $_;
+    }
+  } @$content;
+
+  if ( $fmt eq 'gemini' ) {
+    my $role = ( $msg->{role} // 'user' ) eq 'assistant' ? 'model' : ( $msg->{role} // 'user' );
+    return { role => $role, parts => \@blocks };
+  }
+  return { %$msg, content => \@blocks };
 }
 
 =method chat_messages
