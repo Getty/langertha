@@ -2,6 +2,26 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Fixed "Wide character in subroutine entry" crash on non-ASCII JSON
+      responses. Role::JSON's shared instance is configured with utf8=>1
+      (bytes in/out), but parse_response and execute_streaming_request
+      were feeding it Perl-Unicode via $response->decoded_content, which
+      blew up the first time a response body contained a non-ASCII byte
+      (Umlaut, em-dash, CJK, emoji). Both entry points now use
+      $response->content (raw bytes), keeping the pipeline consistent
+      with the outgoing side. The two spots that re-decode JSON
+      substrings out of an already-decoded tree (OpenAICompatible's
+      extract_tool_call for tool_call.function.arguments, and
+      HermesTools' response_tool_calls for <tool_call> XML bodies) now
+      go through a new Role::JSON::decode_json_text helper that
+      centralizes the encode_utf8 bridge.
+    - format_tools in OpenAICompatible, AnthropicBase, Gemini, and Ollama
+      now accept input_schema, inputSchema, or parameters as the schema
+      key (snake_case preferred, camelCase for MCP spec compatibility,
+      parameters as OpenAI-style fallback). Matches the defensive lookup
+      already done by Langertha::Tool::from_hash and
+      Raider::tools_as_mcp, which mix both styles internally.
+
 0.402     2026-04-20 22:07:40Z
 
     - [BREAKING] Langertha::Engine::MiniMax now talks to MiniMax's native
