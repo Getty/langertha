@@ -383,7 +383,7 @@ sub format_tools {
       {
         name        => $_->{name},
         description => $_->{description},
-        parameters  => $_->{inputSchema},
+        parameters  => $_->{input_schema} // $_->{inputSchema} // $_->{parameters},
       }
     } @$mcp_tools],
   }];
