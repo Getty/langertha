@@ -5,7 +5,6 @@ use Moose::Role;
 use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );
 use JSON::MaybeXS;
-use Encode qw( encode_utf8 );
 use Langertha::ToolChoice;
 
 =head1 SYNOPSIS
@@ -479,7 +478,7 @@ Returns an ArrayRef of tool call objects (may be empty).
 sub extract_tool_call {
   my ( $self, $tc ) = @_;
   my $args = $tc->{function}{arguments};
-  $args = $self->json->decode(encode_utf8($args)) if $args && !ref $args;
+  $args = $self->decode_json_text($args) if $args && !ref $args;
   return ( $tc->{function}{name}, $args );
 }
 

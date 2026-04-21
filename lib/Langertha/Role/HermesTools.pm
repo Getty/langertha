@@ -3,7 +3,6 @@ package Langertha::Role::HermesTools;
 our $VERSION = '0.403';
 use Moose::Role;
 use JSON::MaybeXS;
-use Encode qw( encode_utf8 );
 
 =head1 SYNOPSIS
 
@@ -175,7 +174,7 @@ sub response_tool_calls {
   while ($content =~ m{<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>}sg) {
     my $json_str = $1;
     eval {
-      my $tc = $self->json->decode(encode_utf8($json_str));
+      my $tc = $self->decode_json_text($json_str);
       push @tool_calls, $tc;
     };
   }
