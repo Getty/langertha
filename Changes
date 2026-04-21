@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.404     2026-04-21 14:06:44Z
 
     - New Langertha::Content role and Langertha::Content::Image value object
       for provider-agnostic vision input. Mirrors the Langertha::ToolChoice
