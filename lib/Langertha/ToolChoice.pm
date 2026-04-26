@@ -1,6 +1,6 @@
 package Langertha::ToolChoice;
 # ABSTRACT: Immutable canonical tool-selection policy with cross-provider conversion
-our $VERSION = '0.405';
+our $VERSION = '0.501';
 use Moose;
 use Moose::Util::TypeConstraints qw( enum );
 

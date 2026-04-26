@@ -1,6 +1,6 @@
 package Langertha::Role::Capabilities;
 # ABSTRACT: Engine-capability registry derived from composed roles
-our $VERSION = '0.405';
+our $VERSION = '0.501';
 use Moose::Role;
 
 =head1 SYNOPSIS

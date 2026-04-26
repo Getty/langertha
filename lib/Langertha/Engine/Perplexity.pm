@@ -1,6 +1,6 @@
 package Langertha::Engine::Perplexity;
 # ABSTRACT: Perplexity Sonar API
-our $VERSION = '0.405';
+our $VERSION = '0.501';
 use Moose;
 use Carp qw( croak );
 

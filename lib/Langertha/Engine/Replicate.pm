@@ -1,6 +1,6 @@
 package Langertha::Engine::Replicate;
 # ABSTRACT: Replicate API
-our $VERSION = '0.405';
+our $VERSION = '0.501';
 use Moose;
 use Carp qw( croak );
 
