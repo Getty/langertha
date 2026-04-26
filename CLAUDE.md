@@ -42,6 +42,8 @@ Engine::Remote              url required, JSON + HTTP
   │     ├── HuggingFace     Inference Providers, org/model format
   │     ├── Perplexity      search-augmented, citations — NO tool calling
   │     ├── AKIOpenAI       EU/Germany, GDPR-compliant
+  │     ├── TSystems        T-Systems AIFS / LLM Hub, T-Cloud Germany + EU hyperscaler models
+  │     ├── Scaleway        EU-hosted Generative APIs, drop-in OpenAI replacement
   │     │
   │     │  Self-hosted (url required, no api_key)
   │     ├── OllamaOpenAI    Ollama /v1 endpoint, embeddings

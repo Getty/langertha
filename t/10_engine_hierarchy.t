@@ -416,6 +416,38 @@ test_openai_cloud_engine(
 );
 is(Langertha::Engine::Mistral->new(api_key => 'k')->default_model, 'mistral-small-latest', 'Mistral default_model');
 
+# --- TSystems ---
+
+use Langertha::Engine::TSystems;
+
+test_openai_cloud_engine(
+  class => 'Langertha::Engine::TSystems',
+  name => 'TSystems',
+  url => 'https://llm-server.llmhub.t-systems.net/v2',
+  model => 'gpt-oss-120b',
+  env_var => 'LANGERTHA_TSYSTEMS_API_KEY',
+  has_tools => 1,
+  has_embedding => 1,
+  has_response_format => 1,
+);
+is(Langertha::Engine::TSystems->new(api_key => 'k')->default_model, 'gpt-oss-120b', 'TSystems default_model');
+
+# --- Scaleway ---
+
+use Langertha::Engine::Scaleway;
+
+test_openai_cloud_engine(
+  class => 'Langertha::Engine::Scaleway',
+  name => 'Scaleway',
+  url => 'https://api.scaleway.ai/v1',
+  model => 'llama-3.1-8b-instruct',
+  env_var => 'LANGERTHA_SCALEWAY_API_KEY',
+  has_tools => 1,
+  has_embedding => 1,
+  has_response_format => 1,
+);
+is(Langertha::Engine::Scaleway->new(api_key => 'k')->default_model, 'llama-3.1-8b-instruct', 'Scaleway default_model');
+
 # --- MiniMax (OpenAI-compatible endpoint) ---
 
 use Langertha::Engine::MiniMax;
@@ -698,6 +730,8 @@ for my $class (qw(
   Langertha::Engine::AKI
   Langertha::Engine::OpenAI
   Langertha::Engine::DeepSeek
+  Langertha::Engine::Scaleway
+  Langertha::Engine::TSystems
   Langertha::Engine::Groq
   Langertha::Engine::Perplexity
   Langertha::Engine::Mistral

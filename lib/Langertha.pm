@@ -343,6 +343,10 @@ Resolves and constructs an engine instance in one call.
 
 =item * L<Langertha::Engine::AKIOpenAI> - AKI.IO via OpenAI-compatible API
 
+=item * L<Langertha::Engine::TSystems> - T-Systems AI Foundation Services / LLM Hub (EU/Germany)
+
+=item * L<Langertha::Engine::Scaleway> - Scaleway Generative APIs (EU)
+
 =item * L<Langertha::Engine::Whisper> - OpenAI Whisper speech-to-text
 
 =back

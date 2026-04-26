@@ -58,6 +58,8 @@
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
 | [LM Studio](https://lmstudio.ai/) | :white_check_mark: | :white_check_mark: | | | | | :white_check_mark: |
 | [AKI.IO](https://aki.io/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
+| [T-Systems AIFS](https://docs.llmhub.t-systems.net/) :de: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: | :white_check_mark: |
+| [Scaleway](https://www.scaleway.com/en/generative-apis/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | | :white_check_mark: | |
 
 ## Quick Start
@@ -149,6 +151,51 @@ print $aki->simple_chat('Hello!');
 # Note: native model names are not mapped automatically to /v1 names
 my $aki_openai = $aki->openai(model => 'llama3-chat-8b');
 ```
+
+### T-Systems AIFS :de: GDPR-Compliant LLM Hub
+
+[T-Systems AI Foundation Services](https://docs.llmhub.t-systems.net/) (formerly LLM Hub) is an
+OpenAI-compatible aggregator with 30+ models. **T-Cloud** models (Llama 3.3, Qwen 3, Mistral
+Small, Teuken, BGE-M3, Whisper, gpt-oss-120b) are processed exclusively in **Germany**;
+hyperscaler models (GPT 5/4.1/4o, Claude 4.5 Sonnet, Gemini 2.5/3) are processed in the EU.
+
+```perl
+use Langertha::Engine::TSystems;
+
+my $tsi = Langertha::Engine::TSystems->new(
+    api_key => $ENV{LANGERTHA_TSYSTEMS_API_KEY},
+    model   => 'gpt-oss-120b',          # default — T-Cloud, reliable tools
+);
+print $tsi->simple_chat('Hello from AIFS!');
+
+my $vector = $tsi->simple_embedding('embed me');  # default model: text-embedding-bge-m3
+```
+
+Trial API keys at [apikey.llmhub.t-systems.net](https://apikey.llmhub.t-systems.net/).
+
+### Scaleway :eu: European Generative APIs
+
+[Scaleway Generative APIs](https://www.scaleway.com/en/generative-apis/) is a fully-managed,
+EU-hosted, drop-in replacement for the OpenAI API. EU-Act compliant, priced per 1M tokens.
+
+```perl
+use Langertha::Engine::Scaleway;
+
+my $scw = Langertha::Engine::Scaleway->new(
+    api_key => $ENV{LANGERTHA_SCALEWAY_API_KEY},
+    model   => 'llama-3.1-8b-instruct',  # default
+);
+print $scw->simple_chat('Hello from Scaleway!');
+
+# Project-scoped URL (optional)
+my $scw_proj = Langertha::Engine::Scaleway->new(
+    url     => 'https://api.scaleway.ai/<PROJECT_ID>/v1',
+    api_key => $ENV{LANGERTHA_SCALEWAY_API_KEY},
+);
+```
+
+Generate an IAM API key (only the **Secret Key** is needed) at
+[console.scaleway.com](https://console.scaleway.com/) → IAM & API keys.
 
 ### Self-hosted with vLLM
 

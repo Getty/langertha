@@ -2,6 +2,20 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New Langertha::Engine::TSystems for the T-Systems AI Foundation
+      Services / LLM Hub OpenAI-compatible endpoint
+      (https://llm-server.llmhub.t-systems.net/v2). Bearer auth via
+      LANGERTHA_TSYSTEMS_API_KEY, default model gpt-oss-120b (T-Cloud,
+      Germany; reliable tool calling), supports chat, streaming, tool
+      calling, embeddings (default text-embedding-bge-m3) and structured
+      output. GDPR-compliant; T-Cloud models are processed in Germany,
+      hyperscaler models in the EU.
+    - New Langertha::Engine::Scaleway for Scaleway Generative APIs
+      (https://api.scaleway.ai/v1) — EU-hosted, drop-in OpenAI-compatible
+      replacement. Bearer auth via LANGERTHA_SCALEWAY_API_KEY, default
+      model llama-3.1-8b-instruct, supports chat, streaming, tool
+      calling, embeddings and structured output.
+
 0.404     2026-04-21 14:06:44Z
 
     - New Langertha::Content role and Langertha::Content::Image value object
