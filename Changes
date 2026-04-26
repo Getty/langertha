@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.500     2026-04-26 18:50:51Z
 
     !!! Heads-up for callers upgrading from 0.404 — items marked [BREAKING]
     !!! below may need code changes; everything else is additive.
