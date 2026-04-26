@@ -340,32 +340,36 @@ callers read the result the same way regardless of provider.
 
 #### Decision flow (single-turn `chat_f`)
 
-```
-What did the caller pass?
-│
-├─ tools => [...] only (no tool_choice, no response_format)
-│    ├─ engine supports tools_native        → forwarded to wire (provider format via Tool->to_X)
-│    └─ engine supports only tools_hermes   → only takes effect via chat_with_tools_f loop
-│
-├─ tools => [...] + tool_choice => { type=>'tool', name=>X }     ← forced named tool
-│    ├─ engine supports tool_choice_named   → native forcing
-│    └─ engine supports only response_format_json_schema (e.g. Perplexity)
-│         AUTO-REWRITE: tools/tool_choice cleared, response_format set
-│         to json_schema with the tool's schema. Response loose-parsed,
-│         a synthetic Langertha::ToolCall (synthetic=>1) is attached.
-│
-├─ response_format => { type=>'json_object'|'json_schema', ... }
-│    ├─ engine supports response_format_json_*  → native (OpenAI-shape)
-│    │     • Gemini translates to generationConfig.responseSchema
-│    │     • Ollama translates to format='json' or schema HashRef
-│    └─ engine has only tool_choice_named (Anthropic)
-│         ENGINE-INTERNAL: synthesizes a tool with the schema, forces
-│         tool_choice to it, lifts the resulting tool_use input back
-│         into Response.content as JSON. ToolCall is also exposed.
-│
-└─ mcp_servers => [$mcp, ...]   → use chat_with_tools_f (multi-turn loop;
-                                   tools come from MCP, get executed
-                                   automatically, results fed back).
+```mermaid
+flowchart TD
+    Start([Caller invokes chat_f]) --> Q{What was passed?}
+
+    Q -->|tools only| T{Engine caps?}
+    Q -->|tools +<br>forced named<br>tool_choice| F{Engine caps?}
+    Q -->|response_format<br>json_object /<br>json_schema| R{Engine caps?}
+    Q -->|mcp_servers set| MCP[Use chat_with_tools_f<br>multi-turn loop:<br>tools from MCP,<br>auto-executed,<br>results fed back]
+
+    T -->|tools_native| TA[Forward via<br>Tool->to_PROVIDER]
+    T -->|only tools_hermes| TB[XML in prompt<br>via chat_with_tools_f]
+
+    F -->|tool_choice_named| FA[Native forced-name<br>on the wire]
+    F -->|only<br>response_format_json_schema<br>e.g. Perplexity| FB[AUTO-REWRITE<br>clear tools/choice,<br>set response_format=json_schema,<br>loose-parse content,<br>attach synthetic ToolCall]
+
+    R -->|response_format_json_*| RA[Native<br>OpenAI: native block<br>Gemini: responseSchema<br>Ollama: format param]
+    R -->|only tool_choice_named<br>Anthropic| RB[ENGINE-INTERNAL<br>synth tool + forced choice,<br>tool_use input lifted<br>into Response.content as JSON]
+
+    TA --> End([Response.tool_calls<br>ArrayRef of<br>Langertha::ToolCall])
+    TB --> End
+    FA --> End
+    FB --> End
+    RA --> End
+    RB --> End
+    MCP --> End
+
+    classDef rewrite fill:#fef3c7,stroke:#d97706,color:#000
+    classDef done fill:#d1fae5,stroke:#059669,color:#000
+    class FB,RB rewrite
+    class End done
 ```
 
 #### Per-provider tool wire mechanics
