@@ -744,6 +744,10 @@ Default model is `gpt-image-1`. Pass `size`, `quality`, or `n` as extra argument
 
 ## Transcription (Whisper)
 
+`Langertha::Engine::Whisper` is a slim transcription-only engine (extends
+`Langertha::Engine::TranscriptionBase`) for self-hosted Whisper-compatible
+servers — no chat, tools, or embeddings on the same object:
+
 ```perl
 use Langertha::Engine::Whisper;
 
@@ -753,7 +757,8 @@ my $whisper = Langertha::Engine::Whisper->new(
 print $whisper->simple_transcription('recording.ogg');
 ```
 
-OpenAI and Groq also support transcription via their Whisper endpoints:
+OpenAI and Groq also support transcription via their Whisper endpoints
+directly on the chat-side engine:
 
 ```perl
 my $openai = Langertha::Engine::OpenAI->new(
@@ -761,6 +766,39 @@ my $openai = Langertha::Engine::OpenAI->new(
 );
 print $openai->simple_transcription('recording.ogg');
 ```
+
+For a focused transcription handle reusing the chat engine's credentials
+(no need to restate `api_key` / `url`), use the `whisper` attribute on
+`Langertha::Engine::OpenAI`:
+
+```perl
+my $text = $openai->whisper->simple_transcription('recording.ogg');
+# $openai->whisper is a Langertha::Engine::TranscriptionBase bound to
+# the parent's api_key/url, with transcription_model 'whisper-1'.
+```
+
+## Engine Capabilities
+
+Every engine reports its capabilities so calling code can avoid sending
+parameters the wire cannot honour:
+
+```perl
+if ($engine->supports('tool_choice_named')) {
+    # safe to pass tool_choice => { type => 'tool', name => '...' }
+}
+if ($engine->supports('response_format_json_schema')) {
+    # safe to pass response_format => { type => 'json_schema', ... }
+}
+
+my $caps = $engine->engine_capabilities;
+# { chat => 1, streaming => 1, tools_native => 1, tool_choice_named => 1,
+#   response_format_json_schema => 1, embedding => 1, ... }
+```
+
+The flag set is derived from which capability roles the engine composes;
+engines override (via `around engine_capabilities`) when the wire reality
+differs from the role inventory. See `Langertha::Role::Capabilities` for
+the full list.
 
 ## Dynamic Model Discovery
 

@@ -7,7 +7,6 @@ use Carp qw( croak );
 extends 'Langertha::Engine::OpenAIBase';
 
 with map { 'Langertha::Role::'.$_ } qw(
-  ResponseFormat
   Transcription
   Tools
 );

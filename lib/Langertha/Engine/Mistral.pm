@@ -9,7 +9,6 @@ use Module::Runtime qw( use_module );
 extends 'Langertha::Engine::OpenAIBase';
 
 with map { 'Langertha::Role::'.$_ } qw(
-  ResponseFormat
   Embedding
   Tools
 );

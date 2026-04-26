@@ -8,7 +8,6 @@ extends 'Langertha::Engine::OpenAIBase';
 
 with map { 'Langertha::Role::'.$_ } qw(
   StaticModels
-  ResponseFormat
   Tools
 );
 

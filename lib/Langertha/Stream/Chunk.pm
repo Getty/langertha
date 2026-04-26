@@ -2,6 +2,7 @@ package Langertha::Stream::Chunk;
 # ABSTRACT: Represents a single chunk from a streaming response
 our $VERSION = '0.405';
 use Moose;
+use Langertha::ToolCall;
 
 =head1 SYNOPSIS
 
@@ -96,6 +97,22 @@ has usage => (
   isa => 'Maybe[HashRef]',
   predicate => 'has_usage',
 );
+
+has tool_calls => (
+  is        => 'ro',
+  isa       => 'Maybe[ArrayRef[Langertha::ToolCall]]',
+  predicate => 'has_tool_calls',
+);
+
+=attr tool_calls
+
+Optional ArrayRef of L<Langertha::ToolCall> objects associated with
+this chunk. Populated when the engine emits tool-call information
+mid-stream (e.g. Anthropic's C<content_block_stop> for a C<tool_use>
+block, or the final OpenAI delta carrying assembled tool_calls). Most
+chunks have no tool calls — use C<has_tool_calls> to check.
+
+=cut
 
 =attr usage
 

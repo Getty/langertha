@@ -14,6 +14,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   Temperature
   ResponseSize
   SystemPrompt
+  ResponseFormat
   Streaming
   Chat
 );
@@ -62,13 +63,19 @@ L<Langertha::Engine::Groq>, L<Langertha::Engine::Mistral>,
 L<Langertha::Engine::Cerebras>, L<Langertha::Engine::MiniMax>,
 L<Langertha::Engine::NousResearch>, L<Langertha::Engine::OpenRouter>,
 L<Langertha::Engine::Replicate>, L<Langertha::Engine::HuggingFace>,
-L<Langertha::Engine::Perplexity>, L<Langertha::Engine::AKIOpenAI>
+L<Langertha::Engine::Perplexity>, L<Langertha::Engine::AKIOpenAI>,
+L<Langertha::Engine::TSystems>, L<Langertha::Engine::Scaleway>
 
 =item * Self-hosted — L<Langertha::Engine::OllamaOpenAI>,
 L<Langertha::Engine::vLLM>, L<Langertha::Engine::SGLang>,
-L<Langertha::Engine::LlamaCpp>
+L<Langertha::Engine::LlamaCpp>, L<Langertha::Engine::LMStudioOpenAI>
 
 =back
+
+For transcription-only engines (Whisper-style) see
+L<Langertha::Engine::TranscriptionBase>; that base does I<not>
+compose Chat/Tools/Embedding/ImageGeneration so callers get a focused
+audio-transcription handle.
 
 =cut
 

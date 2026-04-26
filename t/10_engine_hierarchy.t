@@ -584,14 +584,19 @@ ok(Langertha::Engine::SGLang->does('Langertha::Role::Tools'), 'SGLang does Tools
 }
 
 # ======================================================================
-# Part 5: Whisper (extends OpenAI, not OpenAIBase)
+# Part 5: Whisper (extends TranscriptionBase — focused transcription engine,
+# no chat / tools / embeddings / image-gen baggage)
 # ======================================================================
 
 use Langertha::Engine::Whisper;
+use Langertha::Engine::TranscriptionBase;
 
-ok(Langertha::Engine::Whisper->isa('Langertha::Engine::OpenAI'), 'Whisper isa OpenAI');
-ok(Langertha::Engine::Whisper->isa('Langertha::Engine::OpenAIBase'), 'Whisper isa OpenAIBase (via OpenAI)');
-ok(Langertha::Engine::Whisper->isa('Langertha::Engine::Remote'), 'Whisper isa Remote (via chain)');
+ok(Langertha::Engine::Whisper->isa('Langertha::Engine::TranscriptionBase'),
+  'Whisper isa TranscriptionBase');
+ok(Langertha::Engine::Whisper->isa('Langertha::Engine::Remote'),
+  'Whisper isa Remote (via chain)');
+ok(!Langertha::Engine::Whisper->isa('Langertha::Engine::OpenAI'),
+  'Whisper no longer extends OpenAI (transcription is its own base)');
 
 {
   my $w = Langertha::Engine::Whisper->new(url => 'http://test.invalid:9000');

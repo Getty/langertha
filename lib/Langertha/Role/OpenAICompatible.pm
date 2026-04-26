@@ -6,6 +6,8 @@ use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );
 use JSON::MaybeXS;
 use Langertha::ToolChoice;
+use Langertha::Response;
+use Langertha::ToolCall;
 
 =head1 SYNOPSIS
 
@@ -305,7 +307,7 @@ sub chat_response {
   my $data = $self->parse_response($response);
   my $choice = $data->{choices}[0];
   my $msg = $choice->{message} || {};
-  require Langertha::Response;
+  my @tcs = Langertha::ToolCall->extract($data);
   return Langertha::Response->new(
     content       => $msg->{content} // '',
     raw           => $data,
@@ -315,6 +317,7 @@ sub chat_response {
     $data->{usage} ? ( usage => $data->{usage} ) : (),
     $data->{created} ? ( created => $data->{created} ) : (),
     defined $msg->{reasoning_content} ? ( thinking => $msg->{reasoning_content} ) : (),
+    @tcs ? ( tool_calls => [ @tcs ] ) : (),
   );
 }
 

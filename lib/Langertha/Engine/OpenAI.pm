@@ -3,11 +3,11 @@ package Langertha::Engine::OpenAI;
 our $VERSION = '0.405';
 use Moose;
 use Carp qw( croak );
+use Langertha::Engine::TranscriptionBase;
 
 extends 'Langertha::Engine::OpenAIBase';
 
 with map { 'Langertha::Role::'.$_ } qw(
-  ResponseFormat
   Embedding
   Transcription
   ImageGeneration
@@ -87,6 +87,37 @@ sub _build_api_key {
 }
 
 sub default_model { 'gpt-4o-mini' }
+
+has whisper => (
+  is => 'ro',
+  isa => 'Langertha::Engine::TranscriptionBase',
+  lazy_build => 1,
+);
+
+sub _build_whisper {
+  my ($self) = @_;
+  return Langertha::Engine::TranscriptionBase->new(
+    api_key             => $self->api_key,
+    url                 => $self->url,
+    transcription_model => 'whisper-1',
+  );
+}
+
+=attr whisper
+
+Lazy-built L<Langertha::Engine::TranscriptionBase> instance bound to
+this engine's C<api_key> and C<url>, defaulting to model C<whisper-1>.
+Useful when you have an OpenAI engine handy and want a focused
+transcription handle without re-stating credentials:
+
+    my $text = $openai->whisper->simple_transcription('/path/audio.mp3');
+
+The transcription engine is fully independent: configure it directly
+(C<temperature>, C<language>, etc.) via the returned object, or
+construct your own L<Langertha::Engine::TranscriptionBase> if you need
+a different model or endpoint.
+
+=cut
 
 __PACKAGE__->meta->make_immutable;
 
