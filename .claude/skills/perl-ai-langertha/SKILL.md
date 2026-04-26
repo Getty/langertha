@@ -112,6 +112,33 @@ $tc->synthetic;   # true for forced-name fallbacks (Perplexity etc.)
 
 For multi-turn MCP tool-calling loops use `chat_with_tools_f` (next
 section) — that's the autonomous loop, `chat_f` is single-turn.
+
+### Decision Matrix
+
+`chat_f` auto-rewrites between forms when the wire reality demands it.
+Every case lands as a `Langertha::ToolCall` on `Response.tool_calls`
+so callers consume the result the same way regardless of provider.
+
+| Caller passes | Engine has | What `chat_f` does |
+|---|---|---|
+| `tools` only | `tools_native` | forward to wire (per-provider via `Tool->to_X`) |
+| `tools` only | only `tools_hermes` | only via `chat_with_tools_f` (XML in prompt) |
+| `tools` + `tool_choice={type=>'tool',name=>X}` | `tool_choice_named` | native forced-name |
+| `tools` + `tool_choice={type=>'tool',name=>X}` | only `response_format_json_schema` (Perplexity) | **auto-rewrite**: clears tools/choice, sets `response_format=json_schema` from tool's schema; loose-parses content; attaches `ToolCall` with `synthetic=>1` |
+| `response_format=json_*` | `response_format_json_*` | native (Gemini→`responseSchema`, Ollama→`format`) |
+| `response_format=json_*` | only `tool_choice_named` (Anthropic) | engine-internal: synth tool + forced choice; `tool_use` input lifted into `Response.content` as JSON |
+| `mcp_servers` set | `tools_native` or `tools_hermes` | switch to `chat_with_tools_f` for multi-turn loop |
+
+### Per-Provider Wire Mechanics
+
+| Provider | Tools wire | tool_choice forms | response_format mechanism | Tool calls in response |
+|---|---|---|---|---|
+| OpenAIBase family | `tools=[{type=>'function',function=>{...}}]` | `auto`/`required`/`none` + `{type=>'function',function=>{name=>X}}` | native `response_format` (json_object / json_schema) | `choices[0].message.tool_calls` |
+| AnthropicBase family | `tools=[{name=>...,input_schema=>...}]` | `{type=>'auto'/'any'/'none'/'tool',name=>X}` | engine-internal: synth tool + forced choice; lift to content | `content[*]` blocks `type=>'tool_use'` |
+| Gemini | `tools=[{functionDeclarations=>[...]}]` | `toolConfig.functionCallingConfig` (`mode` + `allowedFunctionNames`) | `generationConfig.responseSchema` | `candidates[0].content.parts[*].functionCall` |
+| Ollama (native) | OpenAI-shape natively | OpenAI-shape | `format='json'` or schema HashRef | `message.tool_calls` |
+| Perplexity | NO tools | `auto`/`required`/`none` only (named coerced to `required`) | native `response_format=json_schema` | (synthetic via auto-rewrite) |
+| Hermes engines | tools injected into system prompt as XML | model decides via prompt | n/a (use response_format on engines that have it too) | `<tool_call>...</tool_call>` parsed from text |
 </chat-f>
 
 <simple-chat>

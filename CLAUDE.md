@@ -132,6 +132,32 @@ handle from an existing `OpenAI` instance use the `whisper` attribute
 - **Langertha::Raider** — Autonomous agent (see below)
 - **Langertha::Raider::Result** — Raid result with type handling
 
+### Tool & Structured-Output Flow
+
+Three inputs combine: caller arguments (`tools`/`tool_choice`/
+`response_format`/`mcp_servers`), method (`chat_f` single-turn vs
+`chat_with_tools_f` multi-turn loop), and engine caps. `chat_f`
+auto-rewrites between forms when the wire reality demands it; every
+case lands as a `Langertha::ToolCall` on `Response.tool_calls`.
+
+| Caller passes | Engine has | What `chat_f` does |
+|---|---|---|
+| `tools` only (no choice) | `tools_native` | forwarded to wire (per-provider via `Tool->to_X`) |
+| `tools` only | only `tools_hermes` | only via `chat_with_tools_f` (XML in prompt) |
+| `tools` + `tool_choice={type=>'tool',name=>X}` | `tool_choice_named` | native forced-name |
+| `tools` + `tool_choice={type=>'tool',name=>X}` | only `response_format_json_schema` (Perplexity) | **auto-rewrite**: clears tools/choice, sets `response_format=json_schema` from tool's schema; loose-parses content; attaches synthetic `ToolCall` |
+| `response_format=json_*` | `response_format_json_*` | native (Gemini→`responseSchema`, Ollama→`format`) |
+| `response_format=json_*` | only `tool_choice_named` (Anthropic) | engine-internal: synth tool + forced choice; `tool_use` input lifted into `Response.content` as JSON |
+| `mcp_servers` set | `tools_native` or `tools_hermes` | use `chat_with_tools_f` for multi-turn loop |
+
+Per-provider wire payload: OpenAI `tools=[{type=>'function',...}]` /
+`tool_calls` in `choices[0].message`; Anthropic `tools=[{name,input_schema}]`
+/ `tool_use` blocks in `content[]`; Gemini `functionDeclarations` +
+`toolConfig.functionCallingConfig` / `functionCall` parts; Ollama
+OpenAI-shape natively. Hermes engines (NousResearch, AKI, AKIOpenAI)
+inject tools as XML into the system prompt and parse `<tool_call>`
+tags from the model's text output.
+
 ## Raider (Autonomous Agent)
 
 `Langertha::Raider` wraps an engine with conversation history, MCP tools, and a multi-turn tool-calling loop.

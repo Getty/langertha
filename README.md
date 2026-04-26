@@ -328,6 +328,89 @@ my $aki = Langertha::Engine::AKI->new(
 
 Tools are injected into the system prompt and `<tool_call>` tags are parsed from the model's text output. The tool prompt template is customizable via `hermes_tool_prompt`.
 
+### Tool & Structured-Output Flow
+
+Three things go into a tool/structured-output call: what the caller
+passed (`tools`, `tool_choice`, `response_format`, `mcp_servers`), which
+method was used (`chat_f` single-turn vs `chat_with_tools_f` multi-turn
+loop), and what the engine actually supports on the wire. Langertha
+auto-rewrites between forms when the wire reality demands it. Every
+case lands as a `Langertha::ToolCall` on `Response.tool_calls` so
+callers read the result the same way regardless of provider.
+
+#### Decision flow (single-turn `chat_f`)
+
+```
+What did the caller pass?
+│
+├─ tools => [...] only (no tool_choice, no response_format)
+│    ├─ engine supports tools_native        → forwarded to wire (provider format via Tool->to_X)
+│    └─ engine supports only tools_hermes   → only takes effect via chat_with_tools_f loop
+│
+├─ tools => [...] + tool_choice => { type=>'tool', name=>X }     ← forced named tool
+│    ├─ engine supports tool_choice_named   → native forcing
+│    └─ engine supports only response_format_json_schema (e.g. Perplexity)
+│         AUTO-REWRITE: tools/tool_choice cleared, response_format set
+│         to json_schema with the tool's schema. Response loose-parsed,
+│         a synthetic Langertha::ToolCall (synthetic=>1) is attached.
+│
+├─ response_format => { type=>'json_object'|'json_schema', ... }
+│    ├─ engine supports response_format_json_*  → native (OpenAI-shape)
+│    │     • Gemini translates to generationConfig.responseSchema
+│    │     • Ollama translates to format='json' or schema HashRef
+│    └─ engine has only tool_choice_named (Anthropic)
+│         ENGINE-INTERNAL: synthesizes a tool with the schema, forces
+│         tool_choice to it, lifts the resulting tool_use input back
+│         into Response.content as JSON. ToolCall is also exposed.
+│
+└─ mcp_servers => [$mcp, ...]   → use chat_with_tools_f (multi-turn loop;
+                                   tools come from MCP, get executed
+                                   automatically, results fed back).
+```
+
+#### Per-provider tool wire mechanics
+
+| Provider family | Tools wire | tool_choice forms | response_format mechanism | Tool calls in response |
+|---|---|---|---|---|
+| OpenAIBase (OpenAI, DeepSeek, Groq, Mistral, Cerebras, MiniMax, OpenRouter, Replicate, HuggingFace, vLLM, SGLang, LlamaCpp, Ollama-OpenAI, LMStudioOpenAI, AKIOpenAI, TSystems, Scaleway) | `tools=[{type=>'function',function=>{...}}]` | string `auto`/`required`/`none` + `{type=>'function',function=>{name=>X}}` | native `response_format` block (json_object / json_schema) | `choices[0].message.tool_calls` |
+| AnthropicBase (Anthropic, MiniMaxAnthropic, LMStudioAnthropic) | `tools=[{name=>...,input_schema=>...}]` | `{type=>'auto'/'any'/'none'/'tool',name=>X}` | engine-internal: synthesizes tool + forces it; lifts tool_use input into Response.content as JSON | `content[*]` blocks with `type=>'tool_use'` |
+| Gemini | `tools=[{functionDeclarations=>[...]}]` | `toolConfig.functionCallingConfig` (`mode` + `allowedFunctionNames` for named) | `generationConfig.responseSchema` + `responseMimeType='application/json'` | `candidates[0].content.parts[*].functionCall` |
+| Ollama (native) | OpenAI-shape tools natively | OpenAI-shape `tool_choice` | `format='json'` (json_object) or schema HashRef (json_schema) | `message.tool_calls` |
+| Perplexity | NO tool calling on the wire | string `auto`/`required`/`none` only (named coerced to `required`) | native `response_format=json_schema` | (synthetic, via `chat_f` auto-rewrite) |
+| Hermes engines (NousResearch, AKI, AKIOpenAI) | tools injected into system prompt as XML | (model decides via prompt) | (use response_format on AKIOpenAI / NousResearch where applicable) | `<tool_call>...</tool_call>` parsed from text |
+
+#### Reading tool calls back
+
+Single source of truth — same shape regardless of provider:
+
+```perl
+my $r = await $engine->chat_f(...);
+
+if ($r->has_tool_calls) {
+    for my $tc (@{ $r->tool_calls }) {
+        say $tc->name;          # tool name
+        say $tc->arguments;     # decoded HashRef
+        say $tc->id;            # provider call id (if any)
+        say $tc->synthetic;     # 1 if synthesized via fallback
+    }
+}
+
+# Lookup helpers
+my $tc   = $r->tool_call;            # first ToolCall (or undef)
+my $tc   = $r->tool_call('extract'); # by name
+my $args = $r->tool_call_args('extract');  # ->arguments shortcut
+```
+
+#### Capability gating before sending
+
+```perl
+$engine->supports('tool_choice_named')          or warn "engine cannot force a named tool — chat_f will auto-rewrite if json_schema is available";
+$engine->supports('response_format_json_schema')  # safe to pass json_schema
+$engine->supports('tools_native')                 # accepts tools array on the wire
+$engine->supports('tools_hermes')                 # XML-prompt fallback path
+$engine->supports('streaming')                    # chat_stream_request available
+```
+
 ## Response Metadata
 
 `simple_chat` returns `Langertha::Response` objects with full metadata — token usage, model, finish reason, timing. Backward-compatible: stringifies to the text content, so existing code works unchanged.
