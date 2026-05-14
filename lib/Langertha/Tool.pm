@@ -138,6 +138,17 @@ sub to_gemini {
   };
 }
 
+# OpenAI Responses API: flat tool objects, no {type:'function',function:{...}} wrapper
+sub to_responses {
+  my ($self) = @_;
+  return {
+    type        => 'function',
+    name        => $self->name,
+    description => $self->description,
+    parameters  => $self->input_schema,
+  };
+}
+
 sub to_mcp {
   my ($self) = @_;
   return {

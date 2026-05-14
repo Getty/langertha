@@ -112,6 +112,23 @@ sub from_gemini {
   );
 }
 
+# OpenAI Responses API: output[type=function_call] block inside output[type=message].content[]:
+#   { "type": "function_call", "call_id": "call_abc", "name": "foo", "arguments": "{...}" }
+sub from_responses {
+  my ($class, $block) = @_;
+  return undef unless ref($block) eq 'HASH';
+  return undef unless ( $block->{type} // '' ) eq 'function_call';
+  my $name = $block->{name} // '';
+  return undef unless length $name;
+  my $args = $block->{arguments};
+  $args = _decode_args($args);
+  return $class->new(
+    name      => $name,
+    arguments => ( ref($args) eq 'HASH' ? $args : {} ),
+    id        => ( $block->{call_id} // '' ),
+  );
+}
+
 # Pull every tool call out of an upstream response, in any of the formats
 # we know about. Returns a list of ToolCall objects (possibly empty).
 sub extract {
@@ -143,6 +160,23 @@ sub extract {
     return grep { defined }
       map { $class->from_gemini($_) }
       @{ $raw->{candidates}[0]{content}{parts} };
+  }
+
+  # OpenAI Responses shape: output[type=message].content[type=function_call]
+  if ( ref( $raw->{output} ) eq 'ARRAY' ) {
+    my @calls;
+    for my $item (@{$raw->{output}}) {
+      next unless ref($item) eq 'HASH';
+      next unless ( $item->{type} // '' ) eq 'message';
+      for my $block (@{$item->{content} // []}) {
+        if (($block->{type} // '') eq 'function_call') {
+          if (my $tc = $class->from_responses($block)) {
+            push @calls, $tc;
+          }
+        }
+      }
+    }
+    return @calls if @calls;
   }
 
   return ();
