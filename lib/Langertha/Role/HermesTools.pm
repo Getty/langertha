@@ -1,6 +1,6 @@
 package Langertha::Role::HermesTools;
 # ABSTRACT: Hermes-style tool calling via XML tags
-our $VERSION = '0.501';
+our $VERSION = '0.502';
 use Moose::Role;
 use JSON::MaybeXS;
 

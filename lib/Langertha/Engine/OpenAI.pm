@@ -1,6 +1,6 @@
 package Langertha::Engine::OpenAI;
 # ABSTRACT: OpenAI API
-our $VERSION = '0.501';
+our $VERSION = '0.502';
 use Moose;
 use Carp qw( croak );
 use Langertha::Engine::TranscriptionBase;

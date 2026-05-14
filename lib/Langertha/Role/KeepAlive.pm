@@ -1,6 +1,6 @@
 package Langertha::Role::KeepAlive;
 # ABSTRACT: Role for engines that support keep-alive duration
-our $VERSION = '0.501';
+our $VERSION = '0.502';
 use Moose::Role;
 
 has keep_alive => (

@@ -1,6 +1,6 @@
 package Langertha::Engine::OpenAIResponses;
 # ABSTRACT: OpenAI Responses API (reasoning models like gpt-5.5-pro)
-our $VERSION = '0.501';
+our $VERSION = '0.502';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;

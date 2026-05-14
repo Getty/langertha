@@ -1,6 +1,6 @@
 package Langertha::Tool;
 # ABSTRACT: Immutable canonical tool definition with cross-provider format conversion
-our $VERSION = '0.501';
+our $VERSION = '0.502';
 use Moose;
 
 has name => (
