@@ -1,6 +1,6 @@
 Revision history for Langertha
 
-{{$NEXT}}
+0.501     2026-05-14 22:35:35Z
 
     - New Langertha::Engine::OpenAIResponses for OpenAI's Responses API
       (POST /v1/responses) - serves reasoning-only models like gpt-5.5-pro
