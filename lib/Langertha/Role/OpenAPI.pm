@@ -1,6 +1,6 @@
 package Langertha::Role::OpenAPI;
 # ABSTRACT: Role for APIs with OpenAPI definition
-our $VERSION = '0.502';
+our $VERSION = '0.503';
 use Moose::Role;
 
 use Carp qw( croak );

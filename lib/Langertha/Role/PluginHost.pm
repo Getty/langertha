@@ -1,6 +1,6 @@
 package Langertha::Role::PluginHost;
 # ABSTRACT: Role for objects that host plugins (Raider, Engine)
-our $VERSION = '0.502';
+our $VERSION = '0.503';
 use Moose::Role;
 use Future::AsyncAwait;
 use Log::Any qw( $log );

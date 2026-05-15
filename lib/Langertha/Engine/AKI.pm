@@ -1,6 +1,6 @@
 package Langertha::Engine::AKI;
 # ABSTRACT: AKI.IO native API
-our $VERSION = '0.502';
+our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak carp );
 use JSON::MaybeXS;

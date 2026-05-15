@@ -1,6 +1,6 @@
 package Langertha::Engine::Groq;
 # ABSTRACT: GroqCloud API
-our $VERSION = '0.502';
+our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 

@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.502     2026-05-15 23:02:10Z
 
     - Fix Langertha::Engine::OpenAIResponses to handle function_call as a

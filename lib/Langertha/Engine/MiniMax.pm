@@ -1,6 +1,6 @@
 package Langertha::Engine::MiniMax;
 # ABSTRACT: MiniMax API (OpenAI-compatible)
-our $VERSION = '0.502';
+our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 

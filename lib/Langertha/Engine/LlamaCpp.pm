@@ -1,6 +1,6 @@
 package Langertha::Engine::LlamaCpp;
 # ABSTRACT: llama.cpp server
-our $VERSION = '0.502';
+our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 

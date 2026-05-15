@@ -1,6 +1,6 @@
 package Langertha::Role::ResponseFormat;
 # ABSTRACT: Role for an engine where you can specify structured output
-our $VERSION = '0.502';
+our $VERSION = '0.503';
 use Moose::Role;
 use JSON::MaybeXS qw( decode_json );
 

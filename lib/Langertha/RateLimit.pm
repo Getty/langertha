@@ -1,6 +1,6 @@
 package Langertha::RateLimit;
 # ABSTRACT: Rate limit information from API response headers
-our $VERSION = '0.502';
+our $VERSION = '0.503';
 use Moose;
 
 =head1 SYNOPSIS
