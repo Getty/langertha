@@ -120,6 +120,36 @@ my $gemini = Langertha::Engine::Gemini->new(
 print $gemini->simple_chat('Explain quantum computing.');
 ```
 
+### OpenAI Responses API (reasoning-only models)
+
+OpenAI's reasoning-only SKUs (`gpt-5.5-pro`, `gpt-5.4-pro`, `gpt-5-pro`,
+`o3-pro`, `o1-pro`, …) are not served on `/v1/chat/completions` — they
+require the Responses API (`/v1/responses`). `Langertha::Engine::OpenAIResponses`
+extends `Langertha::Engine::OpenAI` and rewires the request/response shape:
+
+- `input` instead of `messages`, `instructions` instead of `system`
+- Flat tool objects `{type,name,description,parameters}` (no `function` wrapper)
+- `output[]` with `reasoning` / `message` / `function_call` type discriminators
+- `input_tokens` / `output_tokens` normalized to chat-style `prompt_tokens` /
+  `completion_tokens` so cost lookup keeps working
+- Reasoning tokens lifted from `output_tokens_details.reasoning_tokens` into
+  `completion_tokens_details.reasoning_tokens`
+
+```perl
+use Langertha::Engine::OpenAIResponses;
+
+my $pro = Langertha::Engine::OpenAIResponses->new(
+    api_key => $ENV{OPENAI_API_KEY},
+    model   => 'gpt-5.5-pro',
+);
+print $pro->simple_chat('Plan the migration.');
+```
+
+Tool calling and forced `tool_choice` work the same as the Chat Completions
+engine — `Langertha::Response->tool_calls` is populated regardless of whether
+the model emitted `function_call` as a top-level `output[]` item (real API)
+or nested inside a `message` item (older fixtures). Streaming is not supported.
+
 ### Local Models with Ollama
 
 ```perl

@@ -57,7 +57,26 @@ the chat path, so existing consumers (including Goldmine's C<complete>
 method) work without modification. Reasoning tokens are normalized to
 C<completion_tokens_details.reasoning_tokens> for cost lookup compatibility.
 
-B<THIS API IS WORK IN PROGRESS>
+=head2 Function call output shape
+
+The Responses API emits C<function_call> in two different positions
+depending on model and request shape:
+
+=over 4
+
+=item * B<Top-level> C<output[]> item:
+C<< { type =E<gt> 'function_call', call_id =E<gt> 'call_abc', name =E<gt> 'foo',
+arguments =E<gt> '{...}' } >>. This is what real reasoning models (e.g.
+C<gpt-5.5-pro>) return for forced C<tool_choice>.
+
+=item * B<Nested> inside a message item:
+C<< output[type='message'].content[type='function_call'] >>. Historically
+seen in streaming / older fixtures.
+
+=back
+
+C<chat_response>, C<response_tool_calls> and L<Langertha::ToolCall/extract>
+walk both shapes. Streaming is not supported.
 
 =cut
 
@@ -152,6 +171,12 @@ sub chat_response {
                 }
             }
         }
+        elsif ( $type eq 'function_call' ) {
+            # Real Responses API emits function_call as a top-level output[]
+            # item carrying name/arguments/call_id directly on the item.
+            push @tc_data, $item;
+            $finish_reason //= 'tool_calls';
+        }
     }
 
     # Normalize usage to chat-style (Goldmine expects prompt_tokens/completion_tokens)
@@ -195,10 +220,15 @@ sub response_tool_calls {
     my @calls;
     for my $item ( @{ $data->{output} // [] } ) {
         next unless ref($item) eq 'HASH';
-        next unless ( $item->{type} // '' ) eq 'message';
-        for my $block ( @{ $item->{content} // [] } ) {
-            next unless ( $block->{type} // '' ) eq 'function_call';
-            push @calls, $block;
+        my $type = $item->{type} // '';
+        if ( $type eq 'function_call' ) {
+            push @calls, $item;
+        }
+        elsif ( $type eq 'message' ) {
+            for my $block ( @{ $item->{content} // [] } ) {
+                next unless ( $block->{type} // '' ) eq 'function_call';
+                push @calls, $block;
+            }
         }
     }
     return \@calls;

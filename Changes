@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Fix Langertha::Engine::OpenAIResponses to handle function_call as a
+      top-level output[] item, which is what the real OpenAI Responses API
+      emits for reasoning-only models like gpt-5.5-pro. Previously only
+      the nested output[type=message].content[type=function_call] shape
+      was walked, so tool_calls came back empty against the live endpoint
+      and forced tool_choice retries failed with "no tool call returned".
+      response_tool_calls() and Langertha::ToolCall::extract() walk both
+      shapes now.
+
 0.501     2026-05-14 22:35:35Z
 
     - New Langertha::Engine::OpenAIResponses for OpenAI's Responses API

@@ -16,6 +16,8 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 # Load fixtures
 my $text_fixture    = $json->decode( path('t/data/responses_api_text.json')->slurp );
 my $toolcall_fixture = $json->decode( path('t/data/responses_api_toolcall.json')->slurp );
+my $toolcall_toplevel_fixture
+    = $json->decode( path('t/data/responses_api_toolcall_toplevel.json')->slurp );
 
 subtest 'engine creation' => sub {
     my $engine = Langertha::Engine::OpenAIResponses->new(
@@ -223,6 +225,47 @@ subtest 'ToolCall->extract works on Responses format' => sub {
     is( $tcs[0]->name, 'get_weather', 'name correct' );
     is_deeply( $tcs[0]->arguments, { location => 'Paris, France', units => 'celsius' },
         'arguments correct' );
+};
+
+# The shape the real OpenAI Responses endpoint returns for gpt-5.5-pro:
+# function_call is a top-level output[] entry, NOT nested under message.content[].
+# Regression test for the 0.501 bug where this shape returned 0 tool calls.
+subtest 'chat_response handles top-level function_call (real API shape)' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+    );
+
+    my $mock_response = _build_mock_response($toolcall_toplevel_fixture);
+    my $resp = $engine->chat_response($mock_response);
+
+    ok( $resp->has_tool_calls, 'top-level function_call produces tool_calls' );
+    is( scalar @{$resp->tool_calls}, 1, 'exactly one tool call' );
+
+    my $tc = $resp->tool_call;
+    is( $tc->name, 'get_weather', 'name extracted from top-level item' );
+    is_deeply( $tc->arguments, { location => 'Berlin, Germany', units => 'celsius' },
+        'arguments parsed' );
+    is( $tc->id, 'call_real789', 'call_id from top-level item' );
+};
+
+subtest 'response_tool_calls handles top-level function_call' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+    );
+
+    my $tcs = $engine->response_tool_calls($toolcall_toplevel_fixture);
+    is( scalar @$tcs, 1, 'one raw tool call collected' );
+    is( $tcs->[0]{name}, 'get_weather', 'name from top-level item' );
+    is( $tcs->[0]{call_id}, 'call_real789', 'call_id from top-level item' );
+};
+
+subtest 'ToolCall->extract handles top-level function_call' => sub {
+    my @tcs = Langertha::ToolCall->extract($toolcall_toplevel_fixture);
+    is( scalar @tcs, 1, 'one ToolCall extracted from top-level shape' );
+    is( $tcs[0]->name, 'get_weather', 'name correct' );
+    is( $tcs[0]->id, 'call_real789', 'call_id correct' );
 };
 
 subtest 'response_text_content' => sub {

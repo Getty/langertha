@@ -112,7 +112,8 @@ sub from_gemini {
   );
 }
 
-# OpenAI Responses API: output[type=function_call] block inside output[type=message].content[]:
+# OpenAI Responses API: function_call appears either as a top-level output[]
+# item or nested inside output[type=message].content[]. Both shapes look like:
 #   { "type": "function_call", "call_id": "call_abc", "name": "foo", "arguments": "{...}" }
 sub from_responses {
   my ($class, $block) = @_;
@@ -162,16 +163,25 @@ sub extract {
       @{ $raw->{candidates}[0]{content}{parts} };
   }
 
-  # OpenAI Responses shape: output[type=message].content[type=function_call]
+  # OpenAI Responses shape: function_call appears either as a top-level
+  # output[] item (real API) or nested under output[type=message].content[]
+  # (older / streaming shape). Walk both.
   if ( ref( $raw->{output} ) eq 'ARRAY' ) {
     my @calls;
     for my $item (@{$raw->{output}}) {
       next unless ref($item) eq 'HASH';
-      next unless ( $item->{type} // '' ) eq 'message';
-      for my $block (@{$item->{content} // []}) {
-        if (($block->{type} // '') eq 'function_call') {
-          if (my $tc = $class->from_responses($block)) {
-            push @calls, $tc;
+      my $type = $item->{type} // '';
+      if ( $type eq 'function_call' ) {
+        if ( my $tc = $class->from_responses($item) ) {
+          push @calls, $tc;
+        }
+      }
+      elsif ( $type eq 'message' ) {
+        for my $block (@{$item->{content} // []}) {
+          if (($block->{type} // '') eq 'function_call') {
+            if (my $tc = $class->from_responses($block)) {
+              push @calls, $tc;
+            }
           }
         }
       }
