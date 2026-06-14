@@ -6,6 +6,9 @@ use Future::AsyncAwait;
 use Carp qw( croak );
 use JSON::MaybeXS;
 use Log::Any qw( $log );
+use Langertha::Tool;
+use Langertha::ToolCall;
+use Langertha::ToolResult;
 
 with 'Langertha::Role::ParallelToolUse';
 
@@ -59,12 +62,15 @@ async tool-calling loop:
 
 =back
 
-Engines must provide implementations for five methods that handle
-engine-specific tool format conversion: C<format_tools>,
+All tool wire-translation is tag-driven: an engine declares its dialect via
+L</tool_wire_format> (C<openai> | C<anthropic> | C<gemini> | C<ollama> |
+C<responses> | C<hermes>) and the default implementations of C<format_tools>,
 C<response_tool_calls>, C<extract_tool_call>, C<format_tool_results>, and
-C<response_text_content>. Native API engines (OpenAI, Anthropic, Gemini, etc.)
-implement these directly. Engines without native tool support compose
-L<Langertha::Role::HermesTools> which provides implementations using XML tags.
+C<response_text_content> delegate to the L<Langertha::Tool>,
+L<Langertha::ToolCall>, and L<Langertha::ToolResult> value objects keyed by that
+tag. Engines carry no per-format tool code. The C<hermes> dialect injects tools
+into the system prompt and parses C<E<lt>tool_callE<gt>> XML; its tag names and
+prompt template come from L<Langertha::Role::HermesTools>.
 
 =cut
 
@@ -99,18 +105,261 @@ Defaults to C<10>. Increase for complex multi-step tool workflows.
 
 =cut
 
+has tool_wire_format => (
+  is      => 'ro',
+  isa     => 'Str',
+  lazy    => 1,
+  builder => '_build_tool_wire_format',
+);
+
+sub _build_tool_wire_format { 'openai' }
+
+=attr tool_wire_format
+
+    tool_wire_format => 'anthropic'
+
+The single per-engine enum naming which tool dialect this engine speaks —
+C<openai> | C<anthropic> | C<gemini> | C<ollama> | C<responses> | C<hermes>.
+This one tag drives all tool wire-translation: the outbound tool definitions
+(L<Langertha::Tool>), the inbound tool calls (L<Langertha::ToolCall>), the
+result blocks (L<Langertha::ToolResult>), the final-text extraction, and the
+outbound transport (native API parameter vs. Hermes prompt injection).
+
+The default follows the engine base-class hierarchy: C<OpenAIBase> leaves it at
+C<openai>, C<AnthropicBase> overrides to C<anthropic>, and so on — so the ~25
+concrete engines inherit it and carry no tool-format code of their own. Override
+C<_build_tool_wire_format> to change it.
+
+=cut
+
+# The five tool-format methods below are tag-driven defaults: they delegate to
+# the Langertha::Tool / ToolCall / ToolResult value objects keyed by
+# L</tool_wire_format>. Engines no longer carry per-format copies.
+
 sub build_tool_chat_request {
   my ( $self, $conversation, $formatted_tools, %extra ) = @_;
-  return $self->chat_request($conversation, tools => $formatted_tools, %extra);
+  if ( $self->tool_wire_format eq 'hermes' ) {
+    my $tools_json  = $self->json->encode($formatted_tools);
+    my $tool_prompt = sprintf( $self->hermes_tool_prompt, $tools_json );
+    my @conv = ( { role => 'system', content => $tool_prompt }, @$conversation );
+    return $self->chat_request( \@conv, %extra );
+  }
+  return $self->chat_request( $conversation, tools => $formatted_tools, %extra );
 }
 
 =method build_tool_chat_request
 
     my $request = $self->build_tool_chat_request($conversation, $formatted_tools);
 
-Builds an HTTP request for a tool-calling chat turn. The default implementation
-passes tools as an API parameter via C<chat_request>. Overridden by
-L<Langertha::Role::HermesTools> to inject tools into the system prompt instead.
+Builds an HTTP request for a tool-calling chat turn. For native wire formats the
+tools are passed as an API parameter via C<chat_request>; for the C<hermes>
+format they are injected into the system prompt as XML.
+
+=cut
+
+sub format_tools {
+  my ( $self, $mcp_tools ) = @_;
+  return Langertha::Tool->format_list( $self->tool_wire_format, $mcp_tools );
+}
+
+=method format_tools
+
+    my $tools = $engine->format_tools($mcp_tools);
+
+Converts an ArrayRef of MCP tool definitions to the wire C<tools> payload for
+this engine's L</tool_wire_format> via L<Langertha::Tool/format_list>.
+
+=cut
+
+sub response_tool_calls {
+  my ( $self, $data ) = @_;
+  my $fmt = $self->tool_wire_format;
+  if ( $fmt eq 'hermes' ) {
+    my $content = $self->hermes_extract_content($data);
+    return [] unless $content;
+    my $tag = $self->hermes_call_tag;
+    my @tool_calls;
+    while ( $content =~ m{<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>}sg ) {
+      my $json_str = $1;
+      eval {
+        my $tc = $self->decode_json_text($json_str);
+        push @tool_calls, $tc;
+      };
+    }
+    return \@tool_calls;
+  }
+  return Langertha::ToolCall->locate( $fmt, $data );
+}
+
+=method response_tool_calls
+
+    my $tool_calls = $engine->response_tool_calls($raw_data);
+
+Returns the ArrayRef of raw tool-call structures located in C<$raw_data> for
+this engine's format (via L<Langertha::ToolCall/locate>). For C<hermes>, parses
+the C<E<lt>tool_callE<gt>> XML tags out of the model's text. May be empty.
+
+=cut
+
+sub extract_tool_call {
+  my ( $self, $tc ) = @_;
+  my $fmt = $self->tool_wire_format;
+  return ( $tc->{name}, $tc->{arguments} ) if $fmt eq 'hermes';
+  my $call = Langertha::ToolCall->from_fmt( $fmt, $tc );
+  return $call ? ( $call->name, $call->arguments ) : ( undef, undef );
+}
+
+=method extract_tool_call
+
+    my ($name, $args) = $engine->extract_tool_call($tool_call);
+
+Extracts the tool name and decoded argument HashRef from a single raw tool-call
+structure, via L<Langertha::ToolCall/from_fmt>.
+
+=cut
+
+sub response_text_content {
+  my ( $self, $data ) = @_;
+  my $fmt = $self->tool_wire_format;
+  if ( $fmt eq 'openai' ) {
+    my $choice = $data->{choices}[0] or return '';
+    return $choice->{message}{content} // '';
+  }
+  if ( $fmt eq 'ollama' ) {
+    my $msg = $data->{message} or return '';
+    return $msg->{content} // '';
+  }
+  if ( $fmt eq 'anthropic' ) {
+    return join( '',
+      map { $_->{text} } grep { $_->{type} eq 'text' } @{ $data->{content} // [] } );
+  }
+  if ( $fmt eq 'gemini' ) {
+    my $candidates = $data->{candidates} || [];
+    return '' unless @$candidates;
+    my $parts = $candidates->[0]{content}{parts} || [];
+    return join( '', map { $_->{text} } grep { exists $_->{text} } @$parts );
+  }
+  if ( $fmt eq 'responses' ) {
+    my $text = '';
+    for my $item ( @{ $data->{output} // [] } ) {
+      next unless ref($item) eq 'HASH';
+      next unless ( $item->{type} // '' ) eq 'message';
+      for my $block ( @{ $item->{content} // [] } ) {
+        $text .= ( $block->{text} // '' ) if ( $block->{type} // '' ) eq 'output_text';
+      }
+    }
+    return $text;
+  }
+  if ( $fmt eq 'hermes' ) {
+    my $content = $self->hermes_extract_content($data) // '';
+    my $tag = $self->hermes_call_tag;
+    $content =~ s{<\Q$tag\E>.*?</\Q$tag\E>}{}sg;
+    $content =~ s/^\s+|\s+$//g;
+    return $content;
+  }
+  return '';
+}
+
+=method response_text_content
+
+    my $text = $engine->response_text_content($raw_data);
+
+Extracts the assistant's final text content from a raw response, per
+L</tool_wire_format>. For C<hermes>, strips C<E<lt>tool_callE<gt>> tags.
+
+=cut
+
+sub format_tool_results {
+  my ( $self, $data, $results ) = @_;
+  my $fmt = $self->tool_wire_format;
+
+  if ( $fmt eq 'anthropic' ) {
+    my @blocks = map {
+      Langertha::ToolResult->new(
+        id       => ( $_->{tool_call}{id} // '' ),
+        content  => ( $_->{result}{content} // [] ),
+        is_error => ( $_->{result}{isError} ? 1 : 0 ),
+      )->to('anthropic')
+    } @$results;
+    return (
+      { role => 'assistant', content => $data->{content} },
+      { role => 'user',      content => \@blocks },
+    );
+  }
+
+  if ( $fmt eq 'gemini' ) {
+    my @parts = map {
+      Langertha::ToolResult->new(
+        name    => ( $_->{tool_call}{functionCall}{name} // '' ),
+        content => ( $_->{result}{content} // [] ),
+      )->to('gemini')
+    } @$results;
+    my $candidate = $data->{candidates}[0];
+    return (
+      { role => 'model', parts => $candidate->{content}{parts} },
+      { role => 'user',  parts => \@parts },
+    );
+  }
+
+  if ( $fmt eq 'ollama' ) {
+    return (
+      { role       => 'assistant',
+        content    => $data->{message}{content},
+        tool_calls => $data->{message}{tool_calls} },
+      map {
+        Langertha::ToolResult->new( content => ( $_->{result}{content} // [] ) )->to('ollama')
+      } @$results,
+    );
+  }
+
+  if ( $fmt eq 'responses' ) {
+    return [
+      map {
+        Langertha::ToolResult->new(
+          id      => ( $_->{tool_call}{call_id} // $_->{tool_call}{id} // '' ),
+          content => ( $_->{result}{content} // [] ),
+        )->to('responses')
+      } @$results
+    ];
+  }
+
+  if ( $fmt eq 'hermes' ) {
+    my $content = $self->hermes_extract_content($data);
+    my $res_tag = $self->hermes_response_tag;
+    return (
+      { role => 'assistant', content => $content },
+      map {
+        { role    => 'tool',
+          content => Langertha::ToolResult->new(
+            name    => ( $_->{tool_call}{name} // '' ),
+            content => ( $_->{result}{content} // [] ),
+          )->to( 'hermes', response_tag => $res_tag ) }
+      } @$results,
+    );
+  }
+
+  # openai (default)
+  my $choice = $data->{choices}[0];
+  return (
+    { role       => 'assistant',
+      content    => $choice->{message}{content},
+      tool_calls => $choice->{message}{tool_calls} },
+    map {
+      Langertha::ToolResult->new(
+        id      => ( $_->{tool_call}{id} // '' ),
+        content => ( $_->{result}{content} // [] ),
+      )->to('openai')
+    } @$results,
+  );
+}
+
+=method format_tool_results
+
+    my @messages = $engine->format_tool_results($raw_data, $results);
+
+Assembles tool execution results into the provider-shaped message envelope for
+the next turn: the assistant echo of the prior turn plus one
+L<Langertha::ToolResult> block per result (arity varies by format).
 
 =cut
 

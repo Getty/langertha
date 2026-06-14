@@ -16,6 +16,8 @@ with map { 'Langertha::Role::'.$_ } qw(
   HermesTools
 );
 
+sub _build_tool_wire_format { 'hermes' }
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::AKI;

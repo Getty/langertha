@@ -413,52 +413,8 @@ seconds (default: 3600). Pass C<force_refresh => 1> to bypass the cache.
 
 =cut
 
-# Tool calling support (MCP)
-
-sub format_tools {
-  my ( $self, $mcp_tools ) = @_;
-  return [map {
-    {
-      name         => $_->{name},
-      description  => $_->{description},
-      input_schema => $_->{input_schema} // $_->{inputSchema} // $_->{parameters},
-    }
-  } @$mcp_tools];
-}
-
-sub response_tool_calls {
-  my ( $self, $data ) = @_;
-  return [grep { $_->{type} eq 'tool_use' } @{$data->{content} // []}];
-}
-
-sub extract_tool_call {
-  my ( $self, $tc ) = @_;
-  return ( $tc->{name}, $tc->{input} );
-}
-
-sub response_text_content {
-  my ( $self, $data ) = @_;
-  return join('', map { $_->{text} }
-    grep { $_->{type} eq 'text' } @{$data->{content} // []})
-}
-
-sub format_tool_results {
-  my ( $self, $data, $results ) = @_;
-  return (
-    { role => 'assistant', content => $data->{content} },
-    { role => 'user', content => [
-      map {
-        my $r = $_;
-        {
-          type        => 'tool_result',
-          tool_use_id => $r->{tool_call}{id},
-          content     => $r->{result}{content},
-          $r->{result}{isError} ? ( is_error => JSON->true ) : (),
-        }
-      } @$results
-    ]},
-  );
-}
+# Tool calling support (MCP) is the tag-driven default in Langertha::Role::Tools.
+sub _build_tool_wire_format { 'anthropic' }
 
 sub _parse_rate_limit_headers {
   my ( $self, $http_response ) = @_;

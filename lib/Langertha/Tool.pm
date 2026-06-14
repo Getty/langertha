@@ -2,6 +2,7 @@ package Langertha::Tool;
 # ABSTRACT: Immutable canonical tool definition with cross-provider format conversion
 our $VERSION = '0.503';
 use Moose;
+use Carp qw( croak );
 
 has name => (
   is       => 'ro',
@@ -178,6 +179,40 @@ sub to_hash {
     description  => $self->description,
     input_schema => $self->input_schema,
   };
+}
+
+# --- Tag-driven dispatch ---
+
+# Maps a tool_wire_format tag to the per-tool serializer method.
+my %TO_METHOD = (
+  openai    => 'to_openai',
+  anthropic => 'to_anthropic',
+  gemini    => 'to_gemini',
+  ollama    => 'to_ollama',
+  responses => 'to_responses',
+  mcp       => 'to_mcp',
+  hermes    => 'to_mcp',     # Hermes injects raw MCP defs into the prompt as JSON
+);
+
+# Serialize this single tool to the given wire format.
+sub to {
+  my ($self, $fmt) = @_;
+  my $method = $TO_METHOD{ $fmt // '' }
+    or croak "Langertha::Tool: unknown wire format '" . ( $fmt // '' ) . "'";
+  return $self->$method;
+}
+
+# Class method: turn a list of any-shape (usually MCP) tool hashrefs into the
+# full wire `tools` payload for the given format. Handles collection-level
+# shaping (Gemini wraps its declarations) that a per-tool serializer cannot.
+sub format_list {
+  my ($class, $fmt, $tools) = @_;
+  $fmt //= '';
+  my @objs = @{ $class->from_list($tools) };
+  if ( $fmt eq 'gemini' ) {
+    return [ { functionDeclarations => [ map { $_->to_gemini } @objs ] } ];
+  }
+  return [ map { $_->to($fmt) } @objs ];
 }
 
 __PACKAGE__->meta->make_immutable;

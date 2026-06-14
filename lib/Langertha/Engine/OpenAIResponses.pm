@@ -215,74 +215,8 @@ sub _parse_function_call {
     );
 }
 
-sub response_tool_calls {
-    my ( $self, $data ) = @_;
-    my @calls;
-    for my $item ( @{ $data->{output} // [] } ) {
-        next unless ref($item) eq 'HASH';
-        my $type = $item->{type} // '';
-        if ( $type eq 'function_call' ) {
-            push @calls, $item;
-        }
-        elsif ( $type eq 'message' ) {
-            for my $block ( @{ $item->{content} // [] } ) {
-                next unless ( $block->{type} // '' ) eq 'function_call';
-                push @calls, $block;
-            }
-        }
-    }
-    return \@calls;
-}
-
-sub extract_tool_call {
-    my ( $self, $tc ) = @_;
-    my $args = $tc->{arguments};
-    $args = $self->decode_json_text($args) if $args && !ref $args;
-    return ( $tc->{name}, $args );
-}
-
-sub format_tools {
-    my ( $self, $mcp_tools ) = @_;
-    # Responses API uses flat tool objects — no {type:'function',function:{...}} wrapper
-    return [
-        map {
-            {
-                type        => 'function',
-                name        => $_->{name},
-                description => $_->{description},
-                parameters  => $_->{input_schema} // $_->{inputSchema} // $_->{parameters},
-            },
-        } @$mcp_tools
-    ];
-}
-
-sub format_tool_results {
-    my ( $self, $data, $results ) = @_;
-    # Responses API: tool results go into a new input item, not back into messages
-    return [
-        map {
-            my $r = $_;
-            {
-                role => 'tool',
-                call_id => $r->{tool_call}{call_id} // $r->{tool_call}{id} // '',
-                content => $self->json->encode( $r->{result}{content} ),
-            },
-        } @$results
-    ];
-}
-
-sub response_text_content {
-    my ( $self, $data ) = @_;
-    my $text = '';
-    for my $item ( @{ $data->{output} // [] } ) {
-        next unless ref($item) eq 'HASH';
-        next unless ( $item->{type} // '' ) eq 'message';
-        for my $block ( @{ $item->{content} // [] } ) {
-            $text .= ( $block->{text} // '' ) if ( $block->{type} // '' ) eq 'output_text';
-        }
-    }
-    return $text;
-}
+# Tool calling support (MCP) is the tag-driven default in Langertha::Role::Tools.
+sub _build_tool_wire_format { 'responses' }
 
 sub stream_format { return undef }  # Streaming not supported
 

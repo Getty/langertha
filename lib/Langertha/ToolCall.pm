@@ -2,6 +2,8 @@ package Langertha::ToolCall;
 # ABSTRACT: Immutable canonical tool invocation emitted by an LLM
 our $VERSION = '0.503';
 use Moose;
+use Carp qw( croak );
+use Encode qw( encode_utf8 );
 use JSON::MaybeXS qw( encode_json decode_json );
 
 has name => (
@@ -49,7 +51,10 @@ sub _decode_args {
   return {} unless defined $args;
   return $args if ref($args) eq 'HASH';
   return {} unless length $args;
-  my $decoded = eval { decode_json($args) };
+  # Argument strings reach us as Perl-Unicode (pulled out of an already-decoded
+  # response tree), so UTF-8-encode before the utf8 JSON decoder — same
+  # convention as Role::JSON's decode_json_text.
+  my $decoded = eval { decode_json( encode_utf8($args) ) };
   return ( ref($decoded) eq 'HASH' ) ? $decoded : {};
 }
 
@@ -118,7 +123,11 @@ sub from_gemini {
 sub from_responses {
   my ($class, $block) = @_;
   return undef unless ref($block) eq 'HASH';
-  return undef unless ( $block->{type} // '' ) eq 'function_call';
+  # The sniffing extract() pre-filters output[] items by type, and a located
+  # call passed to from_fmt may carry no type at all — only reject a block
+  # whose type is present AND wrong.
+  my $type = $block->{type};
+  return undef if defined $type && $type ne 'function_call';
   my $name = $block->{name} // '';
   return undef unless length $name;
   my $args = $block->{arguments};
@@ -130,10 +139,80 @@ sub from_responses {
   );
 }
 
-# Pull every tool call out of an upstream response, in any of the formats
-# we know about. Returns a list of ToolCall objects (possibly empty).
+# Maps a tool_wire_format tag to the per-call constructor.
+my %FROM_METHOD = (
+  openai    => 'from_openai',
+  anthropic => 'from_anthropic',
+  gemini    => 'from_gemini',
+  ollama    => 'from_ollama',
+  responses => 'from_responses',
+);
+
+# Construct a single ToolCall from one raw wire-format call hash, pinned to a
+# format (no shape sniffing). Returns undef if the hash doesn't parse.
+sub from_fmt {
+  my ($class, $fmt, $hash) = @_;
+  my $method = $FROM_METHOD{ $fmt // '' }
+    or croak "Langertha::ToolCall: unknown wire format '" . ( $fmt // '' ) . "'";
+  return $class->$method($hash);
+}
+
+# Locate the raw tool-call structures inside an upstream response for a given
+# format, WITHOUT parsing them into objects. Returns an arrayref of raw hashes
+# (possibly empty). This is the per-format locator that engines used to carry
+# as response_tool_calls.
+sub locate {
+  my ($class, $fmt, $data) = @_;
+  $fmt //= '';
+  return [] unless ref($data) eq 'HASH';
+
+  if ( $fmt eq 'openai' ) {
+    my $msg = $data->{choices}[0]{message} or return [];
+    return $msg->{tool_calls} // [];
+  }
+  if ( $fmt eq 'ollama' ) {
+    my $msg = $data->{message} or return [];
+    return $msg->{tool_calls} // [];
+  }
+  if ( $fmt eq 'anthropic' ) {
+    return [ grep { ( $_->{type} // '' ) eq 'tool_use' } @{ $data->{content} // [] } ];
+  }
+  if ( $fmt eq 'gemini' ) {
+    my $candidates = $data->{candidates} || [];
+    return [] unless @$candidates;
+    my $parts = $candidates->[0]{content}{parts} || [];
+    return [ grep { exists $_->{functionCall} } @$parts ];
+  }
+  if ( $fmt eq 'responses' ) {
+    my @calls;
+    for my $item ( @{ $data->{output} // [] } ) {
+      next unless ref($item) eq 'HASH';
+      my $type = $item->{type} // '';
+      if ( $type eq 'function_call' ) {
+        push @calls, $item;
+      }
+      elsif ( $type eq 'message' ) {
+        push @calls,
+          grep { ( $_->{type} // '' ) eq 'function_call' } @{ $item->{content} // [] };
+      }
+    }
+    return \@calls;
+  }
+  croak "Langertha::ToolCall: unknown wire format '$fmt'";
+}
+
+# Pull every tool call out of an upstream response. Two forms:
+#   extract($fmt, $data) — pinned to a format (locate + from_fmt), no sniffing
+#   extract($data)       — legacy self-dispatching sniff across all formats
+# Both return a list of ToolCall objects (possibly empty).
 sub extract {
-  my ($class, $raw) = @_;
+  my ( $class, @args ) = @_;
+  if ( @args == 2 ) {
+    my ( $fmt, $data ) = @args;
+    return grep { defined }
+      map { $class->from_fmt( $fmt, $_ ) } @{ $class->locate( $fmt, $data ) };
+  }
+  my ($raw) = @args;
   return () unless ref($raw) eq 'HASH';
 
   # OpenAI shape: choices[0].message.tool_calls

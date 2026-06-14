@@ -8,6 +8,8 @@ extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools', 'Langertha::Role::HermesTools', 'Langertha::Role::StaticModels';
 
+sub _build_tool_wire_format { 'hermes' }
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::NousResearch;

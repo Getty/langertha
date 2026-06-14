@@ -417,62 +417,8 @@ for C<models_cache_ttl> seconds (default: 3600).
 
 =cut
 
-# Tool calling support (MCP)
-
-sub format_tools {
-  my ( $self, $mcp_tools ) = @_;
-  return [{
-    functionDeclarations => [map {
-      {
-        name        => $_->{name},
-        description => $_->{description},
-        parameters  => $_->{input_schema} // $_->{inputSchema} // $_->{parameters},
-      }
-    } @$mcp_tools],
-  }];
-}
-
-sub response_tool_calls {
-  my ( $self, $data ) = @_;
-  my $candidates = $data->{candidates} || [];
-  return [] unless @$candidates;
-  my $parts = $candidates->[0]{content}{parts} || [];
-  return [grep { exists $_->{functionCall} } @$parts];
-}
-
-sub extract_tool_call {
-  my ( $self, $tc ) = @_;
-  return ( $tc->{functionCall}{name}, $tc->{functionCall}{args} );
-}
-
-sub response_text_content {
-  my ( $self, $data ) = @_;
-  my $candidates = $data->{candidates} || [];
-  return '' unless @$candidates;
-  my $parts = $candidates->[0]{content}{parts} || [];
-  return join('', map { $_->{text} } grep { exists $_->{text} } @$parts);
-}
-
-sub format_tool_results {
-  my ( $self, $data, $results ) = @_;
-  my $candidate = $data->{candidates}[0];
-  return (
-    { role => 'model', parts => $candidate->{content}{parts} },
-    { role => 'user', parts => [
-      map {
-        my $content = $_->{result}{content};
-        # Gemini expects response as a plain object, not an array
-        my $text = join('', map { $_->{text} // '' } @$content);
-        {
-          functionResponse => {
-            name     => $_->{tool_call}{functionCall}{name},
-            response => { result => $text },
-          },
-        }
-      } @$results
-    ]},
-  );
-}
+# Tool calling support (MCP) is the tag-driven default in Langertha::Role::Tools.
+sub _build_tool_wire_format { 'gemini' }
 
 __PACKAGE__->meta->make_immutable;
 

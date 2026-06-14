@@ -2,6 +2,20 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Tool wire-translation is now a single source of truth in the
+      Langertha::Tool / ToolCall / ToolResult value objects, keyed by a new
+      per-engine `tool_wire_format` tag (openai | anthropic | gemini | ollama |
+      responses | hermes). Engines no longer carry per-format format_tools /
+      response_tool_calls / extract_tool_call / response_text_content /
+      format_tool_results copies — the defaults in Langertha::Role::Tools
+      delegate to the value objects via the tag. New Langertha::ToolResult
+      value object for tool execution results; Langertha::Tool->to/format_list,
+      Langertha::ToolCall->from_fmt/locate and a two-arg
+      ToolCall->extract($fmt,$data). Hermes folds into tool_wire_format=hermes
+      (Role::HermesTools is now config-only). Also fixes non-ASCII tool
+      arguments on the Response.tool_calls path (ToolCall arg decoding now
+      UTF-8-safe).
+
 0.502     2026-05-15 23:02:10Z
 
     - Fix Langertha::Engine::OpenAIResponses to handle function_call as a

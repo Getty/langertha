@@ -13,19 +13,23 @@ use JSON::MaybeXS;
     with 'Langertha::Role::Tools';
     with 'Langertha::Role::HermesTools';
 
+    sub _build_tool_wire_format { 'hermes' }
+
 =head1 DESCRIPTION
 
-This role implements tool calling via Hermes-style XML tags. Instead of using
-an API's native C<tools> parameter, tool definitions are injected into the
-system prompt as C<E<lt>toolsE<gt>> XML and the model responds with
-C<E<lt>tool_callE<gt>> XML tags containing JSON. This works with any chat
-model regardless of native tool API support.
+This role configures Hermes-style tool calling: instead of using an API's
+native C<tools> parameter, tool definitions are injected into the system prompt
+as C<E<lt>toolsE<gt>> XML and the model responds with C<E<lt>tool_callE<gt>> XML
+tags containing JSON. This works with any chat model regardless of native tool
+API support.
 
-Engines composing this role get implementations of the five methods required
-by L<Langertha::Role::Tools>: L</format_tools>, L</response_tool_calls>,
-L</extract_tool_call>, L</format_tool_results>, and L</response_text_content>.
-It also provides L</build_tool_chat_request> to inject tools into the system
-prompt instead of passing them as an API parameter.
+The behaviour itself lives in the tag-driven defaults of
+L<Langertha::Role::Tools> (selected by C<tool_wire_format =E<gt> 'hermes'>). This
+role now only carries the Hermes-specific I<configuration> those defaults read:
+the call/response tag names (L</hermes_call_tag>, L</hermes_response_tag>), the
+prompt template (L</hermes_tool_prompt>), and the response-content extractor
+(L</hermes_extract_content>). Compose it alongside L<Langertha::Role::Tools> and
+set C<_build_tool_wire_format> to C<'hermes'>.
 
 =cut
 
@@ -134,114 +138,12 @@ Override this method in engines with non-OpenAI response structures.
 
 =cut
 
-# --- Role::Tools method implementations ---
-
-sub format_tools {
-  my ( $self, $tools ) = @_;
-  return $tools;
-}
-
-=method format_tools
-
-Returns the MCP tool definitions as-is for JSON encoding into the Hermes
-system prompt.
-
-=cut
-
-around build_tool_chat_request => sub {
-  my ( $orig, $self, $conversation, $formatted_tools, %extra ) = @_;
-  my $tools_json = $self->json->encode($formatted_tools);
-  my $tool_prompt = sprintf($self->hermes_tool_prompt, $tools_json);
-  my $system_msg = { role => 'system', content => $tool_prompt };
-  my @conv = ( $system_msg, @$conversation );
-  return $self->chat_request(\@conv, %extra);
-};
-
-=method build_tool_chat_request
-
-Builds a chat request with tool definitions injected into the system prompt
-as XML, rather than passing them as an API parameter.
-
-=cut
-
-sub response_tool_calls {
-  my ( $self, $data ) = @_;
-  my $content = $self->hermes_extract_content($data);
-  return [] unless $content;
-
-  my $tag = $self->hermes_call_tag;
-  my @tool_calls;
-  while ($content =~ m{<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>}sg) {
-    my $json_str = $1;
-    eval {
-      my $tc = $self->decode_json_text($json_str);
-      push @tool_calls, $tc;
-    };
-  }
-  return \@tool_calls;
-}
-
-=method response_tool_calls
-
-Parses C<E<lt>tool_callE<gt>> XML tags from the model's text output and
-returns an ArrayRef of tool call HashRefs with C<name> and C<arguments>.
-
-=cut
-
-sub extract_tool_call {
-  my ( $self, $tc ) = @_;
-  return ( $tc->{name}, $tc->{arguments} );
-}
-
-=method extract_tool_call
-
-Extracts tool name and arguments from a Hermes tool call HashRef.
-
-=cut
-
-sub response_text_content {
-  my ( $self, $data ) = @_;
-  my $content = $self->hermes_extract_content($data) // '';
-  my $tag = $self->hermes_call_tag;
-  $content =~ s{<\Q$tag\E>.*?</\Q$tag\E>}{}sg;
-  $content =~ s/^\s+|\s+$//g;
-  return $content;
-}
-
-=method response_text_content
-
-Extracts the final text content from the response, stripping any
-C<E<lt>tool_callE<gt>> XML tags.
-
-=cut
-
-sub format_tool_results {
-  my ( $self, $data, $results ) = @_;
-  my $content = $self->hermes_extract_content($data);
-  my $res_tag = $self->hermes_response_tag;
-
-  my @messages;
-  push @messages, { role => 'assistant', content => $content };
-
-  for my $r (@$results) {
-    my $tool_content = join('', map { $_->{text} // '' } @{$r->{result}{content}});
-    push @messages, {
-      role => 'tool',
-      content => "<${res_tag}>\n"
-        . $self->json->encode({ name => $r->{tool_call}{name}, content => $tool_content })
-        . "\n</${res_tag}>",
-    };
-  }
-
-  return @messages;
-}
-
-=method format_tool_results
-
-Formats tool execution results as C<E<lt>tool_responseE<gt>> XML messages
-for the next conversation turn.
-
-=cut
+# The tool-format behaviour (format_tools, response_tool_calls,
+# extract_tool_call, response_text_content, format_tool_results,
+# build_tool_chat_request) is provided by the tag-driven defaults in
+# Langertha::Role::Tools for tool_wire_format => 'hermes'. This role now only
+# carries the Hermes-specific configuration (tag names + prompt template) those
+# defaults read.
 
 =seealso
 
