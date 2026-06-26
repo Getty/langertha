@@ -39,15 +39,21 @@ delegates rather than loading them. Skill sources live under `.claude/skills/`.
 ## Architecture decisions (ADRs)
 
 `docs/adr/` records the WHY behind architecturally-significant decisions so it survives
-refactors. Seed ADRs cover the tool wire-translation lane:
+refactors:
 
 - **0001** — tool wire-translation routes through value objects keyed by `tool_wire_format`
 - **0002** — engine capabilities derive from the composed role inventory
 - **0003** — `Response.tool_calls` is the single source of truth for emitted tool calls
+- **0004** — provider-specific wire extras extend the request body / `Response` (no `extra_body` side-channel)
+- **0005** — structured output and forced tool calling are unified; `chat_f` auto-rewrites per capability
+- **0006** — engine inheritance encodes the wire dialect; roles encode capabilities
+- **0007** — Raider keeps a never-compressed session archive plus an auto-compressed working history
+- **0008** — Raider exposes its control surface to the model as virtual self-tools
+- **0009** — request-side control params (reasoning effort, prompt caching) as a per-concern wire-format quartet
 
-Format + when-to-write: skill `langertha-adr`. Backfill the rest via the `langertha-adr-auditor`
-agent (open karr ticket #3). `CONTEXT.md` is the domain language for the tools lane (canonical
-terms, not a decision log) — ADRs link to it, they don't restate it.
+Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
+agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
+log) — ADRs link to it, they don't restate it.
 
 ## Build & test
 
@@ -144,6 +150,9 @@ Engine::Remote              url required, JSON + HTTP
   **OpenAPI** (spec validation) · **ThinkTag** (`<think>` filtering) · **Langfuse** (observability).
 - **SystemPrompt**, **Temperature**, **ResponseSize**, **ContextSize**, **Seed**,
   **ResponseFormat** (`decode_loose_json`), **Models**, **ParallelToolUse**.
+- **ReasoningEffort** (`reasoning_effort`) · **PromptCache** (`prompt_cache` / `prompt_cache_key`)
+  — request-side controls serialized per-wire by value objects, keyed by per-concern
+  `reasoning_wire_format` / `cache_wire_format` (separate from `tool_wire_format`). → **ADR 0009**.
 
 ### Core classes
 
@@ -152,6 +161,9 @@ Engine::Remote              url required, JSON + HTTP
 - **Langertha::Tool / ToolCall / ToolResult / ToolChoice** — canonical tool wire-translation
   value objects, dispatched by `tool_wire_format`. Definitions, calls, result blocks, and
   selection policy each own their per-format serializers. → **ADR 0001**, `CONTEXT.md`.
+- **Langertha::Reasoning / PromptCache** — request-side control value objects (reasoning effort,
+  prompt caching); per-format serializers dispatched by `reasoning_wire_format` /
+  `cache_wire_format`. → **ADR 0009**.
 - **Langertha::Stream / Stream::Chunk** — streaming iteration; `Stream::Chunk` carries
   `tool_calls`, aggregated by `Role::Chat::aggregate_tool_calls`.
 - **Langertha::Content::Image** — provider-agnostic vision input.
@@ -165,7 +177,7 @@ tools / `tool_choice` / `response_format` when the wire reality demands it (e.g.
 `response_format=json_schema` + synthetic ToolCall; Anthropic structured output → synth tool +
 forced choice). Every case lands as a `Langertha::ToolCall` on `Response.tool_calls`. The full
 decision matrix, the per-provider wire payloads, and the resolved vocabulary (Result envelope,
-Assistant echo) live in **`CONTEXT.md`** and **ADRs 0001–0003** — read those before changing
+Assistant echo) live in **`CONTEXT.md`** and **ADRs 0001–0003, 0005** — read those before changing
 the seam, and reconcile any drift (open karr tickets #1, #2).
 
 ## Raider (autonomous agent)

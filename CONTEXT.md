@@ -53,6 +53,23 @@ precede ToolResults so the provider has context. Rebuildable from canonical
 ToolCalls + text rather than from raw response data.
 _Avoid_: "assistant replay", "history echo"
 
+### Request-side controls (sibling seams)
+
+The same value-object-per-wire-format pattern governs two sibling seams outside
+tool-calling. Their canonical vocabulary lives in **ADR 0009** (not restated here);
+named only so the parallel is explicit:
+
+**reasoning_wire_format** / **Langertha::Reasoning**:
+The per-engine reasoning dialect (`openai` | `anthropic` | `gemini` | `responses`)
+and the value object that clamps + places `reasoning_effort` onto it. Deliberately
+separate from `tool_wire_format` — engines sharing one tool dialect diverge on
+reasoning (DeepSeek/MiniMax/Groq are all `tool_wire_format=openai`).
+
+**cache_wire_format** / **Langertha::PromptCache**:
+The per-engine prompt-cache dialect — Anthropic `cache_control` (enable breakpoint)
+vs OpenAI `prompt_cache_key` (routing hint); the two are asymmetric and carry
+distinct capability flags.
+
 ## Relationships
 
 - An engine declares exactly one **tool_wire_format**; its default follows the
