@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-06-26T13:31:15Z
+claimed_by: worker-A
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:39:03Z
+id: 13
+priority: low
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+- stale
+title: 'Housekeeping: refresh stale model ids in engine POD/SYNOPSIS (no behavior
+  change)'
+updated: 2026-06-26T04:39:03Z
+---
+
+Verified 2026-06-26. POD/SYNOPSIS model ids that still resolve but read as stale; refresh for accuracy (these are docs, not defaults):
+- AnthropicBase.pm ~99 SYNOPSIS uses claude-opus-4-6; current Opus flagship is claude-opus-4-8 (platform.claude.com/docs models overview). Anthropic.pm default claude-sonnet-4-6 is CURRENT — leave it.
+- Groq.pm SYNOPSIS llama-3.3-70b-versatile still supported (console.groq.com/docs/models); newer: Llama 4 Scout, gpt-oss, Qwen. OK as-is, optional refresh.
+- Mistral.pm SYNOPSIS mistral-large-latest / default mistral-small-latest are -latest aliases (auto-update to Large 3 / Small 4) — fine.
+- Ollama/OllamaOpenAI default llama3.3 is old (current: qwen3.6, gpt-oss, llama4) but self-hosted/user-chosen — fine.
+- Scaleway default llama-3.1-8b-instruct still in catalog (confirmed) — fine; many newer EU models exist.
+- Replicate meta/llama-4-maverick and HuggingFace Qwen2.5-7B / Llama-3.3-70B synopsis ids still valid.
+- NousResearch Hermes-4-70B/405B CURRENT — no change.
+Group into one surgical POD pass; no default/behavior changes.
+DONE (low). AnthropicBase.pm effort=attr SYNOPSIS claude-opus-4-6 -> claude-opus-4-8 (confirmed present in LIVE Anthropic GET /v1/models 2026-06-26, which also lists claude-opus-4-7, claude-fable-5; claude-sonnet-4-6 still current so Anthropic default left). Reviewed the rest per ticket: Groq/Mistral/Ollama/Scaleway/Replicate/HuggingFace/NousResearch synopsis ids still valid -> left as-is. Top-level Langertha.pm examples (gpt-4o-mini/gemini-2.5-flash) left (still resolve; out of the engine-POD scope). Test fixtures with claude-opus-4-6-20250514 left (parsing fixtures, id still valid live).
