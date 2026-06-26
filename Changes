@@ -16,6 +16,17 @@ Revision history for Langertha
       arguments on the Response.tool_calls path (ToolCall arg decoding now
       UTF-8-safe).
 
+    - Developer tooling (not shipped behaviour): add Claude Code agent / skill
+      infrastructure under .claude/ — house rules (.claude/rules), the
+      langertha-worker, langertha-adr-auditor and langertha-llm-advisor agents,
+      the langertha-adr and langertha-github-issues skills, and the karr board.
+      Seed Architecture Decision Records in docs/adr/ for the tool
+      wire-translation lane: 0001 value-object wire-translation keyed by
+      tool_wire_format, 0002 capability registry derived from the role
+      inventory, 0003 Response.tool_calls as the single source of truth.
+      Streamline CLAUDE.md (rules referenced, delegation + ADR map) and
+      normalize .gitignore.
+
 0.502     2026-05-15 23:02:10Z
 
     - Fix Langertha::Engine::OpenAIResponses to handle function_call as a

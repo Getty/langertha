@@ -1,34 +1,91 @@
 # Langertha — CLAUDE.md
 
-## Overview
+Canonical instruction file for the Langertha repo. Langertha is a Perl LLM framework supporting
+~25 engines via composable Moose roles: chat, tool calling (MCP), streaming, embeddings,
+transcription, structured output, and an autonomous agent (Raider).
 
-Langertha is a Perl LLM framework supporting 15+ engines via composable Moose roles. It provides chat, tool calling (MCP), streaming, embeddings, transcription, and an autonomous agent (Raider).
+This distribution ships its own agent skills (`.claude/skills/`), agents (`.claude/agents/`),
+and house rules (`.claude/rules/`). The engineering discipline, delegation, coordination,
+public-issue and release rules live in `.claude/rules/langertha-rules.md` — imported here so
+they load for the main agent and every subagent.
 
-## Build System
+@.claude/rules/langertha-rules.md
 
-Uses `[@Author::GETTY]` Dist::Zilla plugin bundle.
+## Delegation
+
+Delegate behavior-relevant code to the right agent instead of touching it yourself — principle
+and lane are in the house rules. Agents in this repo:
+
+| Task | Agent |
+|---|---|
+| Implement / refactor / debug / test behavior-relevant code | `langertha-worker` (default) |
+| Backfill & record architecture decisions in `docs/adr/` | `langertha-adr-auditor` |
+| Validate / red-team a plan against LLM-provider reality; market & provider Sonderheiten | `langertha-llm-advisor` |
+
+The natural chain: orchestrator plans → `langertha-llm-advisor` validates it against provider
+reality → `langertha-worker` implements → `langertha-adr-auditor` records the decision.
+
+The agents carry their skills via `briefing.skills` (see `.claude/agents/`); the main agent
+delegates rather than loading them. Skill sources live under `.claude/skills/`.
+
+## Coordination & public issues
+
+- **karr** (`refs/karr/*`, board state in git refs) is the internal AI work board — always in
+  scope, just use it (`karr board`, `karr list`, `karr create …`). One board, single repo.
+- **GitHub issues** (`gh`, `github.com/Getty/langertha`) are the **public** tracker — real
+  users' bug reports. **Never touch without explicit instruction.** Guardrails: house rules +
+  skill `langertha-github-issues`.
+
+## Architecture decisions (ADRs)
+
+`docs/adr/` records the WHY behind architecturally-significant decisions so it survives
+refactors. Seed ADRs cover the tool wire-translation lane:
+
+- **0001** — tool wire-translation routes through value objects keyed by `tool_wire_format`
+- **0002** — engine capabilities derive from the composed role inventory
+- **0003** — `Response.tool_calls` is the single source of truth for emitted tool calls
+
+Format + when-to-write: skill `langertha-adr`. Backfill the rest via the `langertha-adr-auditor`
+agent (open karr ticket #3). `CONTEXT.md` is the domain language for the tools lane (canonical
+terms, not a decision log) — ADRs link to it, they don't restate it.
+
+## Build & test
+
+Uses the `[@Author::GETTY]` Dist::Zilla plugin bundle.
 
 ```bash
-dzil test           # Build and test
-prove -l t/         # Run tests directly
-prove -lv t/60_tool_calling.t  # Single test, verbose
+dzil test                       # Build and test (recursive)
+prove -lr t/                    # Run tests directly (recursive — see note)
+prove -lv t/60_tool_calling.t   # Single test, verbose
 ```
+
+**Verify recursively.** `prove -l t/` is NOT recursive and silently skips `t/` subdir tests.
+Use `prove -lr t/` or `dzil test`. Live tests (`t/80-86*`) are gated on
+`TEST_LANGERTHA_<ENGINE>_API_KEY` and skip without keys (and cost real money — be selective).
+Test framework: `Test2::Bundle::More`. `dzil release` is forbidden without explicit go-ahead
+(house rules).
+
+## OOP / Async / MCP / POD
+
+- **Moose exclusively.** Every class ends with `__PACKAGE__->meta->make_immutable`.
+- **`Future::AsyncAwait`** (>= 0.66) for all async methods; **IO::Async** event loop.
+- **MCP**: `Net::Async::MCP` (client), `MCP::Server` (tool definitions, `inputSchema` camelCase).
+- **POD**: `@Author::GETTY` PodWeaver. `# ABSTRACT:` required on every `.pm`; inline `=attr`,
+  `=method`, `=seealso`. Use the `pod-writer` agent for documentation.
 
 ## Architecture
 
-### Engine Hierarchy (lib/Langertha/Engine/)
+### Engine hierarchy (`lib/Langertha/Engine/`)
 
 ```
 Engine::Remote              url required, JSON + HTTP
   │
   ├── Engine::AnthropicBase /v1/messages format, x-api-key auth, SSE streaming
-  │     │
   │     ├── Anthropic       Claude models, thinking blocks, tool_use
   │     ├── MiniMaxAnthropic MiniMax via legacy /anthropic/v1 shim endpoint
   │     └── LMStudioAnthropic LM Studio Anthropic-compatible endpoint
   │
   ├── Engine::OpenAIBase    /chat/completions format, Bearer auth, SSE streaming
-  │     │
   │     │  Cloud providers (url has default, api_key from env)
   │     ├── OpenAI          gpt-4o, embeddings, whisper transcription, structured output
   │     ├── DeepSeek        deepseek-chat/reasoner, structured output
@@ -44,7 +101,6 @@ Engine::Remote              url required, JSON + HTTP
   │     ├── AKIOpenAI       EU/Germany, GDPR-compliant
   │     ├── TSystems        T-Systems AIFS / LLM Hub, T-Cloud Germany + EU hyperscaler models
   │     ├── Scaleway        EU-hosted Generative APIs, drop-in OpenAI replacement
-  │     │
   │     │  Self-hosted (url required, no api_key)
   │     ├── OllamaOpenAI    Ollama /v1 endpoint, embeddings
   │     ├── vLLM            high-throughput inference, single-model server
@@ -53,7 +109,6 @@ Engine::Remote              url required, JSON + HTTP
   │     └── LMStudioOpenAI  LM Studio's OpenAI-compatible endpoint
   │
   ├── Engine::TranscriptionBase  Transcription-only OpenAI-shape base (no chat/tools)
-  │     │
   │     └── Whisper         self-hosted faster-whisper-server etc.
   │
   │  Non-OpenAI formats (own request/response handling)
@@ -63,171 +118,90 @@ Engine::Remote              url required, JSON + HTTP
   └── LMStudio              LM Studio native API (non-OpenAI/non-Anthropic)
 ```
 
-**LMStudio family** — LM Studio servers can expose three different
-endpoints: `LMStudio` is the native API, `LMStudioOpenAI` is the
-OpenAI-compatible endpoint, and `LMStudioAnthropic` is the
-Anthropic-compatible endpoint. Pick whichever your LM Studio server is
-configured to serve.
+- **LMStudio family** — `LMStudio` (native), `LMStudioOpenAI` (OpenAI-compatible),
+  `LMStudioAnthropic` (Anthropic-compatible). Pick whichever the server serves.
+- **AKI family** — `AKI` (official native API, changes often) vs `AKIOpenAI` (more stable
+  OpenAI-compatible, sometimes lacks features). Both provided; no endorsement.
+- **Whisper / `->whisper`** — `Whisper` extends `TranscriptionBase` (transcription only, no
+  chat/tools/embeddings). The `whisper` attribute on `OpenAI` returns a `TranscriptionBase`
+  pre-configured with the parent's `api_key`/`url`.
 
-**AKI family** — `AKI` is the official AKI.IO native API (changes
-often, breaks). `AKIOpenAI` is the more stable OpenAI-compatible
-endpoint, but it sometimes lacks features. Both are provided so users
-can pick their tradeoff; we don't endorse one over the other.
+### Roles (`lib/Langertha/Role/`)
 
-**Whisper / `->whisper` accessor** — `Whisper` no longer extends
-`OpenAI` (since post-0.404 refactor). It extends the new
-`TranscriptionBase` so it has only transcription functionality, no
-chat / tools / embeddings / image generation. To get a transcription
-handle from an existing `OpenAI` instance use the `whisper` attribute
-— it returns a `TranscriptionBase` configured with the parent's
-`api_key` and `url` so credentials don't have to be restated.
+- **Capabilities** — `engine_capabilities` registry + `supports($cap)`; flags derive from the
+  composed role inventory (`%ROLE_TO_CAPS`), engines correct wire reality via
+  `around engine_capabilities`. → **ADR 0002**.
+- **Chat** — sync/async chat (`simple_chat`, `simple_chat_f`); `chat_f(messages, tools,
+  tool_choice, response_format)` for single-turn structured calls (auto-rewrites per wire reality).
+- **Tools** — MCP tool-calling loop (`chat_with_tools_f`, `mcp_servers`); thin tag-driven
+  orchestration over the value objects. → **ADR 0001**.
+- **HermesTools** — `<tool_call>` XML tag names + prompt template for the `hermes` wire format.
+- **Streaming** — SSE / NDJSON streaming. **Embedding**, **Transcription**, **ImageGeneration**.
+- **HTTP** (sync + async via IO::Async) · **JSON** (`$self->json`) · **OpenAICompatible** ·
+  **OpenAPI** (spec validation) · **ThinkTag** (`<think>` filtering) · **Langfuse** (observability).
+- **SystemPrompt**, **Temperature**, **ResponseSize**, **ContextSize**, **Seed**,
+  **ResponseFormat** (`decode_loose_json`), **Models**, **ParallelToolUse**.
 
-### Roles (lib/Langertha/Role/)
+### Core classes
 
-- **Capabilities** — `engine_capabilities` registry + `supports($cap)`
-  helper. Composed by `Chat` (and indirectly via every other capability
-  role). Mapping role→cap-flag lives in one map in `Role::Capabilities`;
-  engines override via `around engine_capabilities` for wire-reality
-  corrections (e.g. clearing `tool_choice_named` on string-only providers).
-- **Chat** — sync/async chat (`simple_chat`, `simple_chat_f`); also
-  `chat_f(messages => [...], tools => [...], tool_choice => ...,
-  response_format => ...)` for single-turn structured calls.
-- **Tools** — MCP tool calling loop (`chat_with_tools_f`, `mcp_servers`)
-- **HermesTools** — XML-tag tool calling for models without native support
-- **Streaming** — SSE / NDJSON streaming responses
-- **Embedding** — Vector embeddings (`simple_embedding`)
-- **Transcription** — Audio transcription
-- **HTTP** — HTTP transport (sync + async via IO::Async)
-- **JSON** — JSON encoding/decoding (`$self->json->encode/decode`)
-- **SystemPrompt** — System prompt management
-- **Temperature**, **ResponseSize**, **ContextSize**, **Seed** — Generation parameters
-- **ResponseFormat** — JSON mode / structured output, plus
-  `$self->decode_loose_json($text)` for tolerant parsing of
-  prose-wrapped or fenced JSON output (overridable per engine)
-- **Models** — Model selection and defaults
-- **Langfuse** — Observability (traces, spans, generations)
-- **OpenAICompatible** — OpenAI-format request/response handling
-- **OpenAPI** — OpenAPI spec validation
-- **ThinkTag** — Chain-of-thought `<think>` tag filtering
-
-### Core Classes
-
-- **Langertha::Response** — LLM response with metadata, stringifies to
-  content. `tool_calls` is an `ArrayRef[Langertha::ToolCall]` (single
-  source of truth for emitted tool calls — native and synthetic).
-- **Langertha::Stream** / **Stream::Chunk** — Streaming iteration.
-  `Stream::Chunk` carries an optional `tool_calls` field; helper
-  `aggregate_tool_calls(\@chunks)` on `Role::Chat` collects them.
-- **Langertha::ToolCall** — canonical tool invocation produced by an
-  LLM (with `synthetic` flag for forced-tool fallbacks).
-- **Langertha::ToolChoice** — canonical tool-selection policy with
-  per-provider serializers (`to_openai`, `to_anthropic`, `to_gemini`,
-  `to_perplexity`).
-- **Langertha::Tool** — canonical tool definition with cross-provider
-  serializers (`to_openai`, `to_anthropic`, `to_gemini`, `to_mcp`,
-  `to_json_schema`) and accepting constructors (`from_openai`,
-  `from_anthropic`, `from_mcp`, `from_gemini`, `from_hash`).
+- **Langertha::Response** — LLM response (stringifies to content). `tool_calls` is
+  `ArrayRef[Langertha::ToolCall]` — single source of truth, native + synthetic. → **ADR 0003**.
+- **Langertha::Tool / ToolCall / ToolResult / ToolChoice** — canonical tool wire-translation
+  value objects, dispatched by `tool_wire_format`. Definitions, calls, result blocks, and
+  selection policy each own their per-format serializers. → **ADR 0001**, `CONTEXT.md`.
+- **Langertha::Stream / Stream::Chunk** — streaming iteration; `Stream::Chunk` carries
+  `tool_calls`, aggregated by `Role::Chat::aggregate_tool_calls`.
 - **Langertha::Content::Image** — provider-agnostic vision input.
-- **Langertha::Request::HTTP** — Internal HTTP request wrapper
-- **Langertha::Raider** — Autonomous agent (see below)
-- **Langertha::Raider::Result** — Raid result with type handling
+- **Langertha::Raider / Raider::Result** — autonomous agent (below).
 
-### Tool & Structured-Output Flow
+### Tool & structured-output flow
 
-Three inputs combine: caller arguments (`tools`/`tool_choice`/
-`response_format`/`mcp_servers`), method (`chat_f` single-turn vs
-`chat_with_tools_f` multi-turn loop), and engine caps. `chat_f`
-auto-rewrites between forms when the wire reality demands it; every
-case lands as a `Langertha::ToolCall` on `Response.tool_calls`.
+`tool_wire_format` (`openai` | `anthropic` | `gemini` | `ollama` | `responses` | `hermes`) keys
+all tool wire-translation through the value objects; `chat_f` auto-rewrites between
+tools / `tool_choice` / `response_format` when the wire reality demands it (e.g. Perplexity →
+`response_format=json_schema` + synthetic ToolCall; Anthropic structured output → synth tool +
+forced choice). Every case lands as a `Langertha::ToolCall` on `Response.tool_calls`. The full
+decision matrix, the per-provider wire payloads, and the resolved vocabulary (Result envelope,
+Assistant echo) live in **`CONTEXT.md`** and **ADRs 0001–0003** — read those before changing
+the seam, and reconcile any drift (open karr tickets #1, #2).
 
-| Caller passes | Engine has | What `chat_f` does |
-|---|---|---|
-| `tools` only (no choice) | `tools_native` | forwarded to wire (per-provider via `Tool->to_X`) |
-| `tools` only | only `tools_hermes` | only via `chat_with_tools_f` (XML in prompt) |
-| `tools` + `tool_choice={type=>'tool',name=>X}` | `tool_choice_named` | native forced-name |
-| `tools` + `tool_choice={type=>'tool',name=>X}` | only `response_format_json_schema` (Perplexity) | **auto-rewrite**: clears tools/choice, sets `response_format=json_schema` from tool's schema; loose-parses content; attaches synthetic `ToolCall` |
-| `response_format=json_*` | `response_format_json_*` | native (Gemini→`responseSchema`, Ollama→`format`) |
-| `response_format=json_*` | only `tool_choice_named` (Anthropic) | engine-internal: synth tool + forced choice; `tool_use` input lifted into `Response.content` as JSON |
-| `mcp_servers` set | `tools_native` or `tools_hermes` | use `chat_with_tools_f` for multi-turn loop |
+## Raider (autonomous agent)
 
-Per-provider wire payload: OpenAI `tools=[{type=>'function',...}]` /
-`tool_calls` in `choices[0].message`; Anthropic `tools=[{name,input_schema}]`
-/ `tool_use` blocks in `content[]`; Gemini `functionDeclarations` +
-`toolConfig.functionCallingConfig` / `functionCall` parts; Ollama
-OpenAI-shape natively. Hermes engines (NousResearch, AKI, AKIOpenAI)
-inject tools as XML into the system prompt and parse `<tool_call>`
-tags from the model's text output.
+`Langertha::Raider` wraps an engine with conversation history, MCP tools, and a multi-turn
+tool-calling loop.
 
-## Raider (Autonomous Agent)
-
-`Langertha::Raider` wraps an engine with conversation history, MCP tools, and a multi-turn tool-calling loop.
-
-### Key Features
-
-- **Conversation history** persisted across raids (only user + final assistant messages)
-- **Session history** — full archive including tool calls (never compressed)
-- **Auto-compression** — summarizes history when token threshold exceeded
-- **Metrics** — tracks raids, iterations, tool calls, timing
-- **Langfuse integration** — traces, spans, generations per raid
-- **Hermes tool calling** — for models without native tool support
-- **Mid-raid injection** — `inject()` and `on_iteration` callback
-- **Self-tools** (virtual) — `raider_mcp => 1` enables agent-controlled tools:
-  - `raider_ask_user` — ask user questions (sync callback or async pause)
-  - `raider_pause` — pause execution for later resumption
-  - `raider_abort` — abort the raid
-  - `raider_wait` — wait N seconds
-  - `raider_wait_for` — wait for external condition
-  - `raider_session_history` — query/search session history
-  - `raider_manage_mcps` — list/activate/deactivate catalog MCPs
-  - `raider_switch_engine` — switch between catalog engines (requires `engine_catalog`)
-- **Inline tools** — `tools => [...]` for quick tool definitions without MCP server setup
-- **MCP catalog** — `mcp_catalog => {...}` for dynamic MCP server management
-- **Engine catalog** — `engine_catalog => {...}` for runtime engine switching via `switch_engine`/`reset_engine`
-- **Embedding search** — semantic session history search via cosine similarity
-- **Result objects** — `raid_f` returns `Langertha::Raider::Result` (stringifies for backward compat)
-- **Continuation** — `respond_f` resumes after question/pause results
-
-### Raider API
+- **History** — conversation history (user + final assistant) persisted across raids; **session
+  history** (full archive incl. tool calls) never compressed; **auto-compression** summarizes
+  when a token threshold is exceeded; **embedding search** over session history (cosine).
+- **Metrics** (raids, iterations, tool calls, timing) · **Langfuse** traces/spans/generations.
+- **Hermes tool calling** for models without native support.
+- **Mid-raid injection** — `inject()` and `on_iteration` callback.
+- **Self-tools** (virtual, `raider_mcp => 1`): `raider_ask_user`, `raider_pause`,
+  `raider_abort`, `raider_wait`, `raider_wait_for`, `raider_session_history`,
+  `raider_manage_mcps`, `raider_switch_engine`.
+- **Inline tools** (`tools => [...]`) · **MCP catalog** (`mcp_catalog`) · **Engine catalog**
+  (`engine_catalog`, runtime engine switching).
+- **Result objects** — `raid_f` returns `Langertha::Raider::Result` (stringifies for back-compat);
+  `respond_f` resumes after a question/pause.
 
 ```perl
-my $result = await $raider->raid_f(@messages);  # Returns Result
-my $result = $raider->raid(@messages);           # Sync wrapper
+my $result = await $raider->raid_f(@messages);   # Result (sync wrapper: ->raid)
+if ($result->is_question) { my $next = await $raider->respond_f($answer); }
 
-# Interactive self-tools
-if ($result->is_question) {
-    my $next = await $raider->respond_f($answer);
-}
-
-# Engine switching (programmatic API, NOT LLM-controlled)
-$raider->switch_engine('smart');     # Switch to catalog engine
-$raider->reset_engine;               # Back to default engine
-my $engine = $raider->active_engine; # Current engine
+$raider->switch_engine('smart');     # programmatic engine switch (NOT LLM-controlled)
+$raider->reset_engine;               # back to default
 my $info = $raider->engine_info;     # { name, class, model }
-my $list = $raider->list_engines;    # All engines with status
 ```
 
-## OOP Framework
+## Skills map
 
-Moose exclusively. All classes use `__PACKAGE__->meta->make_immutable`.
-
-## Async
-
-`Future::AsyncAwait` (>= 0.66) for all async methods. IO::Async for event loop.
-
-## MCP (Model Context Protocol)
-
-- `Net::Async::MCP` — MCP client
-- `MCP::Server` — MCP server (tool definitions)
-- Tool definitions use `inputSchema` (camelCase) in MCP format
-- Each engine's `format_tools()` converts to provider format
-
-## Testing
-
-- `TEST_LANGERTHA_<ENGINE>_API_KEY` env vars for live tests
-- Live tests cost real money — be selective
-- Unit tests in `t/00-75*.t`, live tests in `t/80-86*.t`
-- Test framework: `Test2::Bundle::More`
-
-## POD
-
-Uses `@Author::GETTY` PodWeaver. `# ABSTRACT:` required on every .pm file. Inline `=attr`, `=method`, `=seealso` directives.
+| Need | Skill |
+|---|---|
+| Engine creation, Raider, MCP, plugin pipeline (architecture) | `perl-ai-langertha` |
+| Moose patterns (attributes, roles, BUILD, immutability) | `perl-moose` |
+| Async (IO::Async, Future, Future::AsyncAwait lifecycle) | `perl-io-async-future` |
+| dist.ini / `[@Author::GETTY]` bundle, POD conventions, next-version | `perl-release-author-getty`, `perl-release-dist-ini` |
+| Commit message conventions | `git-commit-style` |
+| ADR format + backfill method | `langertha-adr` |
+| GitHub public issues (`gh`) guardrails | `langertha-github-issues` |
+| karr board commands | `karr` |
