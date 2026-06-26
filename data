@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-06-26T14:35:00Z
+claimed_by: worker-D
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:39:34Z
+id: 15
+priority: low
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+title: 'New engines worth adding: xAI Grok + Moonshot Kimi (fit existing base classes)'
+updated: 2026-06-26T04:39:34Z
+---
+
+Verified 2026-06-26. Two notable providers absent from Langertha that drop cleanly into existing base classes:
+
+1) xAI Grok — https://api.x.ai/v1, OpenAI-compatible (Bearer, XAI_API_KEY), also has a Responses API. Current flagship grok-4.3 (docs.x.ai/developers/models). Fits Engine::OpenAIBase like Groq/DeepSeek. Real-time X search + vision + tool use.
+
+2) Moonshot Kimi — https://api.moonshot.ai/v1 (OpenAI-compatible) AND https://api.moonshot.ai/anthropic (Anthropic-compatible). Current model kimi-k2.6 (multimodal, OSS, ties GPT-5.5 on coding). Mirrors the MiniMax pattern exactly: a MiniMax (OpenAIBase) + MiniMaxAnthropic (AnthropicBase) pair. Could add Kimi + KimiAnthropic.
+
+Both are optional/low; listed because they fit the mesh with near-zero new wiring. Also notable but lower: Z.ai GLM (GLM-5; already reachable via Cerebras preview zai-glm-4.7 and OpenRouter).
+Added engines. Langertha::Engine::XAI (OpenAIBase+Tools, url https://api.x.ai/v1, LANGERTHA_XAI_API_KEY, default grok-4.3). Langertha::Engine::Moonshot (OpenAIBase+StaticModels+Tools, https://api.moonshot.ai/v1) + Langertha::Engine::MoonshotAnthropic (AnthropicBase+StaticModels, https://api.moonshot.ai/anthropic -> single /v1/messages, applying #18 lesson), LANGERTHA_MOONSHOT_API_KEY, default kimi-k2.6. Class name XAI chosen (uppercase, matches AKI). Endpoints+model ids DOC-VERIFIED 2026-06-26: xAI docs.x.ai/docs/models (grok-4.3 flagship, base api.x.ai/v1); Kimi platform.kimi.ai docs (base api.moonshot.ai/v1, anthropic shim api.moonshot.ai/anthropic, model id kimi-k2.6). Moonshot OpenAI endpoint uses a thinking object not reasoning_effort, so Moonshot clears that capability (mirrors MiniMax). LIVE-UNTESTED (no xAI/Moonshot keys in .env) - gated live stubs added to t/83_live_chat.t will skip. Unit tests added in t/10 + t/50. prove -lr t/ and dzil test (incl author-pod-syntax) both PASS. CLAUDE.md hierarchy table + Changes updated.
