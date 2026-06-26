@@ -1,0 +1,14 @@
+---
+class: standard
+created: 2026-06-26T14:59:38Z
+id: 20
+priority: low
+status: backlog
+tags:
+- engine
+- reasoning
+title: 'Reasoning/caching Slice 3: thinking_budget + provider edge knobs'
+updated: 2026-06-26T14:59:38Z
+---
+
+Deferred from #16 (advisor: low ROI / in-flux). Integer thinking_budget (Gemini thinkingConfig.thinkingBudget; legacy Anthropic budget_tokens — note deprecated on Opus 4.7/4.8/Fable), DeepSeek V3.2 vs V4 toggle hardening + live re-verify of the v3-sniff in DeepSeek.reasoning_kwargs, Groq reasoning_format, and Gemini explicit context caching (cachedContents resource, separate lifecycle). Build on Langertha::Reasoning / Langertha::PromptCache.
