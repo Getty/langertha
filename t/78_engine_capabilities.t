@@ -21,6 +21,8 @@ use Langertha::Engine::Whisper;
   ok $caps->{response_format_json_object}, 'openai response_format_json_object';
   ok $caps->{streaming},                   'openai streaming';
   ok $caps->{reasoning_effort},            'openai reasoning_effort';
+  ok $caps->{prompt_cache_key},            'openai prompt_cache_key (routing hint)';
+  ok !$caps->{prompt_cache},               'openai has no request-side cache enable (automatic)';
   ok $e->supports('tool_choice_named'),    'supports() helper';
   ok !$e->supports('telepathy'),           'supports() returns false for unknown cap';
 }
@@ -34,6 +36,8 @@ use Langertha::Engine::Whisper;
   ok $caps->{response_format_json_schema}, 'perplexity has json_schema';
   ok $caps->{response_format_json_object}, 'perplexity has json_object';
   ok !$caps->{reasoning_effort},           'perplexity wire does not accept reasoning_effort';
+  ok !$caps->{prompt_cache},               'perplexity has no cache enable';
+  ok !$caps->{prompt_cache_key},           'perplexity wire does not accept prompt_cache_key';
 }
 
 # MiniMax (OpenAI endpoint): inherits ReasoningEffort via OpenAIBase but M2.x
@@ -53,6 +57,8 @@ use Langertha::Engine::Whisper;
   ok $caps->{tools_native},      'gemini tools_native';
   ok $caps->{tool_choice_named}, 'gemini tool_choice_named (translated to toolConfig)';
   ok $caps->{reasoning_effort},  'gemini reasoning_effort';
+  ok !$caps->{prompt_cache},     'gemini has no request-side cache enable (implicit caching)';
+  ok !$caps->{prompt_cache_key}, 'gemini has no prompt_cache_key (does not compose PromptCache)';
 }
 
 # OpenAI: full grab-bag of caps from composed roles.
@@ -83,6 +89,8 @@ use Langertha::Engine::Whisper;
   ok $caps->{tool_choice_named}, 'anthropic tool_choice_named';
   ok $caps->{streaming},         'anthropic streaming';
   ok $caps->{reasoning_effort},  'anthropic reasoning_effort';
+  ok $caps->{prompt_cache},      'anthropic prompt_cache (cache_control enable)';
+  ok !$caps->{prompt_cache_key}, 'anthropic has no OpenAI-style prompt_cache_key';
 }
 
 # Whisper extends OpenAI but is really a transcription endpoint —

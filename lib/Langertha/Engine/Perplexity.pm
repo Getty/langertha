@@ -85,17 +85,20 @@ sub _build_static_models {[
   { id => 'sonar-deep-research' },
 ]}
 
-# The classic Sonar /chat/completions path does not accept reasoning_effort
-# (the reasoning models reason on their own, with no request-side knob): clear
-# the capability and never emit the field.
+# The classic Sonar /chat/completions path does not accept the OpenAI-family
+# request-side knobs (the reasoning models reason on their own; caching is fully
+# internal with no prompt_cache_key routing): clear those capabilities and never
+# emit the fields.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete $caps->{reasoning_effort};
+  delete $caps->{prompt_cache_key};
   return $caps;
 };
 
 sub reasoning_kwargs { () }
+sub prompt_cache_kwargs { () }
 
 __PACKAGE__->meta->make_immutable;
 

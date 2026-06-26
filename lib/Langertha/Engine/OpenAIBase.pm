@@ -13,6 +13,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   Models
   Temperature
   ReasoningEffort
+  PromptCache
   ResponseSize
   SystemPrompt
   ResponseFormat
@@ -23,6 +24,16 @@ with map { 'Langertha::Role::'.$_ } qw(
 sub _build_openapi_operations {
   return use_module('Langertha::Spec::OpenAI')->data;
 }
+
+# The OpenAI family caches automatically — there is no request-side enable
+# breakpoint, only the prompt_cache_key routing hint. Clear the Anthropic-style
+# enable flag here so the whole family advertises only the key (ADR 0002).
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{prompt_cache};
+  return $caps;
+};
 
 =head1 SYNOPSIS
 

@@ -61,6 +61,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::ImageGeneration'  => [qw( image_generation )],
   'Langertha::Role::Temperature'      => [qw( temperature )],
   'Langertha::Role::ReasoningEffort'  => [qw( reasoning_effort )],
+  'Langertha::Role::PromptCache'      => [qw( prompt_cache prompt_cache_key )],
   'Langertha::Role::Seed'             => [qw( seed )],
   'Langertha::Role::ContextSize'      => [qw( context_size )],
   'Langertha::Role::ResponseSize'     => [qw( response_size )],
@@ -95,6 +96,15 @@ particular model supports reasoning is a separate runtime concern (every
 reasoning field 400s on a non-reasoning model). Engines whose wire never
 accepts the field clear the flag via C<around engine_capabilities>
 (e.g. MiniMax on its OpenAI endpoint, Perplexity).
+
+Prompt caching is request-side-asymmetric, so it gets B<two> flags rather
+than one: C<prompt_cache> means the wire accepts an explicit cache-enable
+breakpoint (Anthropic's C<cache_control>), while C<prompt_cache_key> means the
+wire accepts an OpenAI-style routing hint (caching itself is automatic there).
+The single C<Langertha::Role::PromptCache> role contributes both; the
+C<OpenAIBase> / C<AnthropicBase> base classes each clear the one that does not
+apply to their wire, so the OpenAI family advertises only the key and the
+Anthropic family only the enable breakpoint.
 
 =cut
 

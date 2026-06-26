@@ -16,6 +16,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   Chat
   Temperature
   ReasoningEffort
+  PromptCache
   ResponseSize
   SystemPrompt
   ResponseFormat
@@ -24,6 +25,16 @@ with map { 'Langertha::Role::'.$_ } qw(
 );
 
 sub _build_reasoning_wire_format { 'anthropic' }
+sub _build_cache_wire_format { 'anthropic' }
+
+# The Anthropic family has the cache_control enable breakpoint but no OpenAI-style
+# routing key. Clear the key flag so only the enable flag is advertised (ADR 0002).
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{prompt_cache_key};
+  return $caps;
+};
 
 # Back-compat: the documented `effort => 'high'` constructor keeps working as an
 # alias of the new normalized `reasoning_effort`. Both attributes stay readable;
@@ -182,6 +193,7 @@ sub chat_request {
     max_tokens => $self->get_response_size, # must be always set
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
     $self->reasoning_kwargs,
+    $self->prompt_cache_kwargs,
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     %extra,
@@ -304,6 +316,7 @@ sub chat_stream_request {
     max_tokens => $self->get_response_size,
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
     $self->reasoning_kwargs,
+    $self->prompt_cache_kwargs,
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     stream => JSON->true,

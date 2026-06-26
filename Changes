@@ -26,6 +26,21 @@ Revision history for Langertha
       but MiniMax composes StaticModels since the #11 refresh, so it now verifies
       the static list (incl. MiniMax-M3) instead.
 
+    - Prompt caching: new request-side caching controls (karr #16 slice 2).
+      New Langertha::Role::PromptCache and Langertha::PromptCache value object,
+      serializing per-wire via a `cache_wire_format` tag. Only the two providers
+      with a real request-side knob compose the role: Anthropic gets
+      `prompt_cache` (bool) + optional `prompt_cache_ttl` (5m|1h), emitted as the
+      top-level auto-place `cache_control:{type:ephemeral[,ttl]}` form; OpenAI
+      gets `prompt_cache_key` (its caching is otherwise automatic), emitted flat.
+      Composed on OpenAIBase and AnthropicBase only (Gemini/DeepSeek/others cache
+      implicitly with no parameter). Two distinct capability flags reflect the
+      asymmetry — `prompt_cache` (Anthropic enable) and `prompt_cache_key` (OpenAI
+      routing); each base clears the one its wire does not accept, and Perplexity
+      clears `prompt_cache_key` (its classic Sonar path takes no request knobs).
+      Live-verified on claude-opus-4-8: a second identical request reads from the
+      prompt cache (cache_read_input_tokens > 0).
+
     - Reasoning effort: new request-side `reasoning_effort` control normalized
       across engines (karr #16 slice 1). New Langertha::Role::ReasoningEffort
       (normalized vocabulary none|minimal|low|medium|high|xhigh|max, emitted
