@@ -154,6 +154,12 @@ has tool_calls => (
   predicate => 'has_tool_calls',
 );
 
+has probes => (
+  is        => 'ro',
+  isa       => 'Maybe[HashRef]',
+  predicate => 'has_probes',
+);
+
 around BUILDARGS => sub {
   my ( $orig, $class, @args ) = @_;
   my $params = $class->$orig(@args);
@@ -246,10 +252,21 @@ L<Langertha::Role::ThinkTag/think_tag_filter> is enabled.
 
 =cut
 
+=attr probes
+
+Provider-specific probe data returned by L<Langertha::Engine::VLLMHook> when a
+vLLM-Hook server captures attention or hidden-state tensors for a request. A
+HashRef keyed by probe cache name (e.g. C<qk_cache>, C<hs_cache>) — each cache
+holding serialized tensors as nested JSON lists, plus an optional C<config>
+block of scalar metadata. C<undef> for every other engine. Survives
+L</clone_with> so it is preserved through C<E<lt>thinkE<gt>> tag filtering.
+
+=cut
+
 sub clone_with {
   my ( $self, %overrides ) = @_;
   my %args = (content => $self->content);
-  for my $attr (qw( raw id model finish_reason usage timing created thinking rate_limit tool_calls )) {
+  for my $attr (qw( raw id model finish_reason usage timing created thinking rate_limit tool_calls probes )) {
     my $pred = "has_$attr";
     $args{$attr} = $self->$attr if $self->$pred;
   }
