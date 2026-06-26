@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-06-26T13:30:52Z
+claimed_by: worker-A
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:38:21Z
+id: 10
+priority: medium
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+- stale
+title: Perplexity static_models stale + new Agent API tool-calling surface
+updated: 2026-06-26T04:38:21Z
+---
+
+Verified 2026-06-26 (https://docs.perplexity.ai/docs/sonar/models).
+
+1) static_models drift: Perplexity.pm lists sonar, sonar-pro, sonar-reasoning, sonar-reasoning-pro. Current official lineup: sonar, sonar-pro, sonar-reasoning-pro, sonar-deep-research. Plain "sonar-reasoning" (non-pro) is GONE from the docs; "sonar-deep-research" is MISSING from code. ACTION: drop sonar-reasoning (verify it 400s first), add sonar-deep-research. Update POD at Perplexity.pm ~40.
+
+2) CAPABILITY (do NOT blindly flip): Perplexity now ships a Function Calling cookbook (https://docs.perplexity.ai/docs/cookbook/articles/function-calling-e2e/README) and the quickstart advertises "tools" — BUT this is on the new Agent API (Responses-style client.responses.create, which can even route to anthropic/claude-sonnet-4-6), NOT confirmed on the classic /chat/completions Sonar path that Langertha::Engine::Perplexity uses (OpenAIBase). Langertha currently strips tool calling for Perplexity; that correction is PROBABLY still right for /chat/completions. ACTION: live-test whether tools work on /chat/completions before changing the capability correction; consider a separate Agent-API surface later.
+DONE. KEY DECISION: tool calling stays DISABLED. LIVE 2026-06-26 raw POST https://api.perplexity.ai/chat/completions model=sonar with a tools array -> HTTP 400 {"message":"Tool calling is not supported for this model","type":"invalid_message"}. So the no-Tools-role correction is correct and kept; added a comment + DESCRIPTION note that function calling lives only on Perplexitys separate Agent API. static_models: dropped sonar-reasoning (live 400 "model has been deprecated and is no longer available") and added sonar-deep-research (docs.perplexity.ai/getting-started/models lineup = sonar, sonar-pro, sonar-reasoning-pro, sonar-deep-research; deep-research not chat-tested due to cost). sonar sanity 200. No new gated live test added (would 400 every run, and be costly) — documented in code instead.
