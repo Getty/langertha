@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-06-26T13:31:07Z
+claimed_by: worker-A
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:38:56Z
+id: 12
+priority: low
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+- stale
+title: "DeepSeek: deepseek-chat/reasoner are now V4 aliases â\x80\x94 expose V4 model
+  ids"
+updated: 2026-06-26T04:38:56Z
+---
+
+Verified 2026-06-26 (https://api-docs.deepseek.com/ + morphllm/chat-deep.ai guides). DeepSeek.pm default_model "deepseek-chat" and "deepseek-reasoner" still WORK but are now legacy compatibility aliases routing to deepseek-v4-flash (non-thinking / thinking). DeepSeek V4 (and V4 Pro / V4 Flash) shipped. RECOMMEND (low): keep deepseek-chat as a stable default, but add the explicit V4 ids (deepseek-v4-flash, V4 Pro) to docs/static models so callers can pin them. No breakage. Confirm exact ids via GET /models with a live key.
+DONE (low). Kept default deepseek-chat — LIVE 2026-06-26 simple_chat(deepseek-chat) OK and response.model came back as deepseek-v4-flash, confirming it is now an alias. deepseek-v4-flash also confirmed directly. GET https://api.deepseek.com/models now returns ONLY deepseek-v4-flash + deepseek-v4-pro (deepseek-chat/reasoner no longer listed but still resolve). POD updated: documents deepseek-v4-flash / deepseek-v4-pro as pinnable ids, with deepseek-chat/reasoner as stable aliases; dropped stale deepseek-v3.2 mention. No static_models (dynamic list). No default/behavior change.
