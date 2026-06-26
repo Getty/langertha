@@ -58,6 +58,23 @@ sub _build_api_key {
 
 sub default_model { 'deepseek-chat' }
 
+# Reasoning effort diverges by DeepSeek model within the shared openai wire
+# format: the current V4 line (deepseek-v4-*, plus the deepseek-chat /
+# deepseek-reasoner aliases that now route to V4) takes a flat reasoning_effort
+# string accepting high|max; the legacy V3.2 line used a thinking:{type:enabled}
+# toggle instead. Sniff the model. (V3.2 mapping flagged for live re-verify.)
+sub reasoning_kwargs {
+  my ( $self ) = @_;
+  return () unless $self->has_reasoning_effort;
+  my $model = $self->chat_model // '';
+  if ( $model =~ /v3/i ) {
+    return ( thinking => { type => 'enabled' } );
+  }
+  my $e = $self->reasoning_effort;
+  return () unless $e eq 'high' || $e eq 'max';
+  return ( reasoning_effort => $e );
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

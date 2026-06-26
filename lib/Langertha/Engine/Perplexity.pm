@@ -85,6 +85,18 @@ sub _build_static_models {[
   { id => 'sonar-deep-research' },
 ]}
 
+# The classic Sonar /chat/completions path does not accept reasoning_effort
+# (the reasoning models reason on their own, with no request-side knob): clear
+# the capability and never emit the field.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{reasoning_effort};
+  return $caps;
+};
+
+sub reasoning_kwargs { () }
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

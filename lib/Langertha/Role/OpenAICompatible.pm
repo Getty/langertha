@@ -287,6 +287,7 @@ sub chat_request {
     $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
     ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : (),
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
+    ( $self->can('reasoning_kwargs') ? $self->reasoning_kwargs : () ),
     stream => JSON->false,
     %extra,
   );
@@ -391,6 +392,7 @@ sub chat_stream_request {
     $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
     ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : (),
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
+    ( $self->can('reasoning_kwargs') ? $self->reasoning_kwargs : () ),
     stream => JSON->true,
     %extra,
   );

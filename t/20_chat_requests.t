@@ -15,7 +15,7 @@ use Langertha::Engine::OpenAI;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(32);
+plan(43);
 
 my $ollama_testurl = 'http://test.url:12345';
 my $ollama = Langertha::Engine::Ollama->new(
@@ -159,5 +159,48 @@ is_deeply($json->decode($aki_data->{chat_context}), [{
 },{
   content => "testprompt", role => "user",
 }], 'Aki chat_context decodes correctly');
+
+# --- reasoning_effort wire translation (karr #16, slice 1) ---
+
+# OpenAI: flat reasoning_effort string
+my $openai_re = Langertha::Engine::OpenAI->new(
+  api_key => 'apikey',
+  model => 'gpt-5.1',
+  reasoning_effort => 'high',
+);
+my $openai_re_data = $json->decode($openai_re->chat('testprompt')->content);
+is($openai_re_data->{reasoning_effort}, 'high', 'OpenAI emits flat reasoning_effort');
+ok(!exists $openai_data->{reasoning_effort}, 'OpenAI omits reasoning_effort when unset');
+
+# Anthropic: output_config.effort + thinking:{type:adaptive}; NO top-level effort
+my $anthropic_re = Langertha::Engine::Anthropic->new(
+  api_key => 'apikey',
+  model => 'claude-opus-4-8',
+  reasoning_effort => 'high',
+);
+my $anthropic_re_data = $json->decode($anthropic_re->chat('testprompt')->content);
+is_deeply($anthropic_re_data->{output_config}, { effort => 'high' },
+  'Anthropic emits output_config.effort');
+is_deeply($anthropic_re_data->{thinking}, { type => 'adaptive' },
+  'Anthropic emits thinking:{type:adaptive}');
+ok(!exists $anthropic_re_data->{effort},
+  'Anthropic regression: old top-level effort key is gone');
+ok(!exists $anthropic_data->{output_config}, 'Anthropic omits output_config when unset');
+ok(!exists $anthropic_data->{thinking}, 'Anthropic omits thinking when unset');
+
+# Back-compat: effort => 'high' constructor lands on the new nested shape
+my $anthropic_alias = Langertha::Engine::Anthropic->new(
+  api_key => 'apikey',
+  model => 'claude-opus-4-8',
+  effort => 'high',
+);
+is($anthropic_alias->reasoning_effort, 'high', 'effort seeds reasoning_effort');
+my $anthropic_alias_data = $json->decode($anthropic_alias->chat('testprompt')->content);
+is_deeply($anthropic_alias_data->{output_config}, { effort => 'high' },
+  'effort alias produces output_config.effort');
+is_deeply($anthropic_alias_data->{thinking}, { type => 'adaptive' },
+  'effort alias produces thinking:{type:adaptive}');
+ok(!exists $anthropic_alias_data->{effort},
+  'effort alias does not emit the old top-level effort key');
 
 done_testing;

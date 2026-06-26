@@ -12,6 +12,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   OpenAPI
   Models
   Temperature
+  ReasoningEffort
   ResponseSize
   SystemPrompt
   ResponseFormat

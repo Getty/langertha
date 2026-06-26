@@ -11,7 +11,7 @@ use Langertha::Engine::Gemini;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(8);
+plan(12);
 
 my $gemini = Langertha::Engine::Gemini->new(
   api_key => 'test_api_key_123',
@@ -64,5 +64,31 @@ is_deeply($gemini_stream_data, {
 
 # Test default model
 is($gemini->default_model, 'gemini-3.5-flash', 'Gemini default model is gemini-3.5-flash');
+
+# --- reasoning_effort -> generationConfig.thinkingConfig.thinkingLevel (karr #16) ---
+ok(!exists $gemini_data->{generationConfig}{thinkingConfig},
+  'Gemini omits thinkingConfig when reasoning_effort unset');
+
+my $gemini_high = Langertha::Engine::Gemini->new(
+  api_key => 'k', model => 'gemini-3.5-flash', reasoning_effort => 'high',
+);
+my $gh = $json->decode($gemini_high->chat('hi')->content);
+is($gh->{generationConfig}{thinkingConfig}{thinkingLevel}, 'high',
+  'high -> thinkingLevel high');
+
+my $gemini_low = Langertha::Engine::Gemini->new(
+  api_key => 'k', model => 'gemini-3.5-flash', reasoning_effort => 'low',
+);
+my $gl = $json->decode($gemini_low->chat('hi')->content);
+is($gl->{generationConfig}{thinkingConfig}{thinkingLevel}, 'low',
+  'low -> thinkingLevel low');
+
+# Binary collapse: medium maps to low (universal low|high mapping, gemini-3-pro safe)
+my $gemini_med = Langertha::Engine::Gemini->new(
+  api_key => 'k', model => 'gemini-3.5-flash', reasoning_effort => 'medium',
+);
+my $gm = $json->decode($gemini_med->chat('hi')->content);
+is($gm->{generationConfig}{thinkingConfig}{thinkingLevel}, 'low',
+  'medium collapses to thinkingLevel low');
 
 done_testing;

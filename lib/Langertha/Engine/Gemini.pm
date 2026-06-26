@@ -14,12 +14,15 @@ with map { 'Langertha::Role::'.$_ } qw(
   Models
   Chat
   Temperature
+  ReasoningEffort
   ResponseSize
   SystemPrompt
   ResponseFormat
   Streaming
   Tools
 );
+
+sub _build_reasoning_wire_format { 'gemini' }
 
 =head1 SYNOPSIS
 
@@ -173,6 +176,11 @@ sub chat_request {
     }
   }
 
+  # Merge reasoning effort -> generationConfig.thinkingConfig.thinkingLevel
+  if ( $self->has_reasoning_effort ) {
+    %generation_config = ( %generation_config, $self->reasoning_kwargs );
+  }
+
   $request_body{generationConfig} = \%generation_config if %generation_config;
 
   return $self->generate_http_request(
@@ -289,6 +297,10 @@ sub chat_stream_request {
   }
   if ($self->has_temperature) {
     $generation_config{temperature} = $self->temperature;
+  }
+
+  if ( $self->has_reasoning_effort ) {
+    %generation_config = ( %generation_config, $self->reasoning_kwargs );
   }
 
   $request_body{generationConfig} = \%generation_config if %generation_config;

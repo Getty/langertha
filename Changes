@@ -2,6 +2,25 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Reasoning effort: new request-side `reasoning_effort` control normalized
+      across engines (karr #16 slice 1). New Langertha::Role::ReasoningEffort
+      (normalized vocabulary none|minimal|low|medium|high|xhigh|max, emitted
+      predicate-gated) and Langertha::Reasoning value object that serializes
+      per-wire via a `reasoning_wire_format` tag (openai flat `reasoning_effort`;
+      responses nested `reasoning:{effort}`; anthropic `output_config.effort` +
+      `thinking:{type:adaptive}`, with the `thinking` field skipped on always-on
+      Fable-class models; gemini `generationConfig.thinkingConfig.thinkingLevel`
+      low|high). Composed on OpenAIBase, AnthropicBase, and Gemini; registered in
+      the capability registry (`supports('reasoning_effort')`). DeepSeek shapes it
+      model-gated (V4 flat reasoning_effort high|max vs legacy V3.2
+      `thinking:{type:enabled}`); MiniMax (OpenAI endpoint) and Perplexity clear
+      the capability and never emit it. Fixes a latent AnthropicBase bug: the
+      `effort` attribute was emitted as a dead top-level body key the Messages API
+      ignores — it is now a back-compat alias of `reasoning_effort` and lands on
+      the correct nested shape (live-verified accepted on claude-opus-4-8).
+      Adjacent fix: OpenAIResponses now sends `max_output_tokens` (not the
+      Responses-API-invalid `max_tokens`).
+
     - Engine model refresh, live-verified 2026-06-26 against each provider's
       API/docs. OpenAI default_model `gpt-4o-mini` -> `gpt-5.4-mini` (the
       4o-mini tier is legacy; POD drops the retired o1 / o3-mini mentions).

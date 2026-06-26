@@ -112,6 +112,17 @@ sub _build_static_models {[
   { id => 'MiniMax-M2' },
 ]}
 
+# M2.x ignores reasoning_effort on the OpenAI-compatible endpoint: clear the
+# capability and never emit the field. (Route reasoning via MiniMaxAnthropic.)
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{reasoning_effort};
+  return $caps;
+};
+
+sub reasoning_kwargs { () }
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

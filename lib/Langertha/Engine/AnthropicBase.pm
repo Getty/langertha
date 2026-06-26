@@ -15,12 +15,28 @@ with map { 'Langertha::Role::'.$_ } qw(
   Models
   Chat
   Temperature
+  ReasoningEffort
   ResponseSize
   SystemPrompt
   ResponseFormat
   Streaming
   Tools
 );
+
+sub _build_reasoning_wire_format { 'anthropic' }
+
+# Back-compat: the documented `effort => 'high'` constructor keeps working as an
+# alias of the new normalized `reasoning_effort`. Both attributes stay readable;
+# only the wire placement changed (top-level `effort` -> output_config.effort +
+# thinking:{type:adaptive}, via Langertha::Reasoning).
+around BUILDARGS => sub {
+  my ( $orig, $class, @args ) = @_;
+  my $args = $class->$orig(@args);
+  if ( exists $args->{effort} && !exists $args->{reasoning_effort} ) {
+    $args->{reasoning_effort} = $args->{effort};
+  }
+  return $args;
+};
 
 =head1 SYNOPSIS
 
@@ -91,13 +107,17 @@ has effort => (
 
 =attr effort
 
-Controls the depth of thinking for reasoning models. Values: C<low>, C<medium>,
-C<high>. When set, passed as the C<effort> parameter in the API request.
+Back-compat alias of L<Langertha::Role::ReasoningEffort/reasoning_effort>.
+Controls the depth of thinking for reasoning models. When set (and
+C<reasoning_effort> is not), it seeds C<reasoning_effort>, which is serialized
+via L<Langertha::Reasoning> to C<output_config.effort> plus
+C<thinking: { type =E<gt> 'adaptive' }> (the current Messages-API shape) rather
+than the legacy top-level C<effort> key.
 
     my $claude = Langertha::Engine::Anthropic->new(
         api_key => $ENV{ANTHROPIC_API_KEY},
         model   => 'claude-opus-4-8',
-        effort  => 'high',
+        effort  => 'high',   # same as reasoning_effort => 'high'
     );
 
 =cut
@@ -161,7 +181,7 @@ sub chat_request {
     messages => \@msgs,
     max_tokens => $self->get_response_size, # must be always set
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    $self->has_effort ? ( effort => $self->effort ) : (),
+    $self->reasoning_kwargs,
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     %extra,
@@ -283,7 +303,7 @@ sub chat_stream_request {
     messages => \@msgs,
     max_tokens => $self->get_response_size,
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    $self->has_effort ? ( effort => $self->effort ) : (),
+    $self->reasoning_kwargs,
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     stream => JSON->true,

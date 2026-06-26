@@ -129,7 +129,29 @@ subtest 'chat_request - temperature and max_tokens' => sub {
     ]);
     my $body = $json->decode( $request->content );
     is( $body->{temperature}, 0.7, 'temperature in body' );
-    is( $body->{max_tokens}, 1024, 'max_tokens in body' );
+    is( $body->{max_output_tokens}, 1024, 'Responses API uses max_output_tokens' );
+    ok( !exists $body->{max_tokens}, 'no legacy max_tokens key (Responses wants max_output_tokens)' );
+};
+
+subtest 'chat_request - reasoning_effort (nested)' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key          => 'test-key',
+        model            => 'gpt-5.5-pro',
+        reasoning_effort => 'high',
+    );
+    my $body = $json->decode(
+        $engine->chat_request([{ role => 'user', content => 'Hello' }])->content
+    );
+    is_deeply( $body->{reasoning}, { effort => 'high' },
+        'Responses emits nested reasoning:{effort}' );
+
+    my $plain = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key', model => 'gpt-5.5-pro',
+    );
+    my $pbody = $json->decode(
+        $plain->chat_request([{ role => 'user', content => 'Hello' }])->content
+    );
+    ok( !exists $pbody->{reasoning}, 'no reasoning when reasoning_effort unset' );
 };
 
 subtest 'chat_response - text response' => sub {

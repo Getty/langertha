@@ -121,11 +121,12 @@ sub chat_request {
         defined $self->chat_model ? ( model => $self->chat_model ) : (),
         $self->has_system_prompt ? ( instructions => $self->system_prompt ) : (),
         scalar(@input) ? ( input => \@input ) : (),
-        $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
+        $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : (),
         ( $self->can('has_response_format') && $self->has_response_format )
             ? ( response_format => $self->response_format )
             : (),
         $self->has_temperature ? ( temperature => $self->temperature ) : (),
+        ( $self->can('reasoning_kwargs') ? $self->reasoning_kwargs : () ),
         stream => JSON->false,
         %extra,
     );
@@ -217,6 +218,9 @@ sub _parse_function_call {
 
 # Tool calling support (MCP) is the tag-driven default in Langertha::Role::Tools.
 sub _build_tool_wire_format { 'responses' }
+
+# Reasoning effort is nested: reasoning => { effort => ... }.
+sub _build_reasoning_wire_format { 'responses' }
 
 sub stream_format { return undef }  # Streaming not supported
 

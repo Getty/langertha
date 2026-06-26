@@ -60,6 +60,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::Transcription'    => [qw( transcription )],
   'Langertha::Role::ImageGeneration'  => [qw( image_generation )],
   'Langertha::Role::Temperature'      => [qw( temperature )],
+  'Langertha::Role::ReasoningEffort'  => [qw( reasoning_effort )],
   'Langertha::Role::Seed'             => [qw( seed )],
   'Langertha::Role::ContextSize'      => [qw( context_size )],
   'Langertha::Role::ResponseSize'     => [qw( response_size )],
@@ -86,6 +87,14 @@ role inventory and sets flags from a static role-to-flags map. Override
 via C<around> on an engine to remove flags for capabilities the wire
 reality cannot deliver, or to add ad-hoc flags an engine wants to
 advertise.
+
+A capability flag means B<the wire accepts the field>, not that any given
+model will honor it. For example C<reasoning_effort> being true says the
+engine's API will accept a reasoning-effort field on the request; whether a
+particular model supports reasoning is a separate runtime concern (every
+reasoning field 400s on a non-reasoning model). Engines whose wire never
+accepts the field clear the flag via C<around engine_capabilities>
+(e.g. MiniMax on its OpenAI endpoint, Perplexity).
 
 =cut
 
