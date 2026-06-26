@@ -1,0 +1,15 @@
+---
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:42:02Z
+id: 17
+priority: low
+status: done
+tags:
+- docs
+- adr
+title: Doc/skill sync for ADRs 0004-0008 + CONTEXT.md vocab
+updated: 2026-06-26T04:42:02Z
+---
+
+Backfill pass added ADRs 0005-0008 (and 0004 earlier). CLAUDE.md "Architecture decisions" section + perl-ai-langertha/langertha-adr skills still list only 0001-0003. (1) Add 0004-0008 to the canonical list. (2) Consider whether CONTEXT.md (currently scoped to the tools wire-translation lane) should grow a Raider/engine-composition section for the settled terms 0005-0008 introduce (auto-rewrite matrix, wire dialect vs capability, working history vs session archive, virtual self-tools) or keep them ADR-local. Source: langertha-adr-auditor backfill pass 2026-06-26.
