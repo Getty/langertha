@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-06-26T17:23:40Z
+claimed_by: worker-recon
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T03:33:34Z
+id: 2
+priority: medium
+started: 2026-06-26
+status: done
+tags:
+- tools
+- wire-format
+- consistency
+title: Give ToolChoice a unified to($fmt) dispatch for value-object symmetry
+updated: 2026-06-26T03:33:34Z
+---
+
+CONTEXT.md calls ToolChoice "the existing exemplar of the value-object pattern the others now follow" — yet ToolChoice is the ONLY tool value object WITHOUT a unified to($fmt) dispatch. Tool->to($fmt), ToolResult->to($fmt) and ToolCall->to_* all gained the tag-keyed dispatch; ToolChoice still exposes only per-format to_openai/to_anthropic/to_perplexity/to_gemini/to_responses. Add ToolChoice->to($fmt) (and document a canonical from form) so all four value objects share one dispatch shape keyed by tool_wire_format. Pure consistency/symmetry, no behaviour change at call sites that already pick the right to_*.
+CONVERGED (branch refactor/tools-value-object-symmetry).
+Added ToolChoice->to($fmt) mirroring the Tool/ToolResult %TO_METHOD tag dispatch. Map covers the four wires that actually carry a tool_choice request parameter: openai/anthropic/gemini/responses. ollama + hermes have NO wire-level tool_choice (hermes forces via prompt injection) so to() croaks for them; perplexity is NOT a tool_wire_format value (its named-tool request is rewritten to response_format by chat_f), so to_perplexity stays a standalone helper OFF the tag dispatch. Migrated engine call sites: AnthropicBase:249, OpenAIResponses:93, Gemini:111+258 now use $tc->to($self->tool_wire_format); OpenAICompatible:273 PINS $tc->to("openai") (shared by Perplexity [no tool_wire_format] and hermes engines [to("hermes") would croak] — wire is always OpenAI-shaped there; same rationale as #1). Note: AnthropicBase:235 is Tool->to_anthropic (a synthetic response_format TOOL, not a ToolChoice) — left untouched, out of scope. Kept all per-format to_* (used by Input::Tools facade + t/76/t/91). Added unit coverage in t/92 (ToolChoice->to per format + croak cases). CONTEXT.md ToolChoice entry updated to describe the unified to($fmt) dispatch. Pure consistency/symmetry — no behaviour change at the call sites (they already picked the right to_*). dzil test PASS incl author-pod-syntax.
+ToolChoice->to($fmt) added (openai/anthropic/gemini/responses); ollama/hermes/perplexity intentionally off the dispatch; call sites migrated; OpenAICompatible pinned to("openai"). Symmetry achieved across all 4 tool value objects. Ready for adr-auditor.
