@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-06-26T13:31:22Z
+claimed_by: worker-A
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:39:11Z
+id: 14
+priority: low
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+- stale
+title: 'T-Systems: verify gpt-oss-120b id + surface new EU-hosted frontier models'
+updated: 2026-06-26T04:39:11Z
+---
+
+Verified 2026-06-26 (https://docs.llmhub.t-systems.net/). Base URL https://llm-server.llmhub.t-systems.net/v2 CONFIRMED correct. default_model "gpt-oss-120b" is offered (page lists "GPT-OSS 120B"; the docs curl example uses model id "Llama-3.3-70B-Instruct" — note capitalized ids). embedding default "text-embedding-bge-m3" maps to listed "BGE-M3". ACTION (low): confirm exact gpt-oss id casing via GET /v2/models with a live key. AIFS now also serves EU-hosted frontier models (Claude 4.6 Opus/Sonnet, GPT-5.2, Gemini 3 Pro/Flash, Qwen3-Next 80B, Mistral Small 4) — worth mentioning in POD for EU/GDPR users since this is a sovereign-EU route to otherwise non-EU frontier models.
+DONE (low). NO code change needed: LIVE 2026-06-26 GET https://llm-server.llmhub.t-systems.net/v2/models confirms default_model "gpt-oss-120b" (exact lowercase) and embedding "text-embedding-bge-m3" (exact) are both present and correct. POD DESCRIPTION updated to surface current EU-hosted frontier models confirmed in the live catalog: GPT-5.2/GPT-5, Claude Sonnet 4.6 / Haiku 4.5, Gemini 3 Pro/Flash, plus T-Cloud Qwen3-Next 80B / Mistral Small 4 / Gemma 4 — framed as a sovereign-EU route to non-EU frontier models. Base URL .../v2 confirmed.
