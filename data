@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T03:33:41Z
+id: 3
+priority: low
+status: done
+tags:
+- adr
+- docs
+title: 'ADR backfill pass: run langertha-adr-auditor for the rest of the architecture'
+updated: 2026-06-26T03:33:41Z
+---
+
+Seed ADRs 0001-0003 cover the tool wire-translation lane (tool_wire_format value objects, capability registry, Response.tool_calls single source of truth). Remaining architecturally-significant decisions still undocumented: chat_f auto-rewrite matrix as its own ADR; Whisper/TranscriptionBase split + whisper accessor credential-lift; Raider conversation-vs-session history + auto-compression model; Content::Image provider-agnostic vision input; the OpenAIBase/AnthropicBase/Remote base-class hierarchy decision. Run the langertha-adr-auditor (audit+write) to backfill, numbering from 0004.
+Done: auditor wrote ADRs 0005-0008 (structured-output rewrite, wire-dialect inheritance, Raider two-tier history, Raider self-tools). HermesTools folding already in 0001; karr #1/#2 left as unsettled drift (not ADR'd). Follow-up doc-sync filed.
