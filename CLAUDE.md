@@ -91,7 +91,7 @@ Engine::Remote              url required, JSON + HTTP
   │     ├── DeepSeek        deepseek-chat/reasoner, structured output
   │     ├── Groq            ultra-fast inference, whisper transcription, structured output
   │     ├── Mistral         EU-hosted, embeddings, structured output
-  │     ├── MiniMax         Shanghai (default), 1M context window, M2.7
+  │     ├── MiniMax         Shanghai (default), ~200K context, M3
   │     ├── NousResearch    Hermes models, <tool_call> XML tool format
   │     ├── Cerebras        wafer-scale chips, fastest inference
   │     ├── OpenRouter      meta-provider, 300+ models, provider/model format

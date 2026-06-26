@@ -63,6 +63,6 @@ is_deeply($gemini_stream_data, {
 }, 'Gemini streaming request body is correct');
 
 # Test default model
-is($gemini->default_model, 'gemini-2.5-flash', 'Gemini default model is gemini-2.5-flash');
+is($gemini->default_model, 'gemini-3.5-flash', 'Gemini default model is gemini-3.5-flash');
 
 done_testing;

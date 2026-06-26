@@ -107,9 +107,9 @@ ok(Langertha::Engine::Gemini->does('Langertha::Role::Tools'), 'Gemini does Tools
 {
   my $g = Langertha::Engine::Gemini->new(api_key => 'test-key');
   is($g->url, 'https://generativelanguage.googleapis.com', 'Gemini url defaults correctly');
-  is($g->default_model, 'gemini-2.5-flash', 'Gemini default_model');
+  is($g->default_model, 'gemini-3.5-flash', 'Gemini default_model');
   my $req = $g->chat('hello');
-  like($req->uri, qr{/v1beta/models/gemini-2\.5-flash:generateContent}, 'Gemini chat endpoint');
+  like($req->uri, qr{/v1beta/models/gemini-3\.5-flash:generateContent}, 'Gemini chat endpoint');
   like($req->uri, qr{key=test-key}, 'Gemini api_key in URL');
 }
 
@@ -347,14 +347,14 @@ test_openai_cloud_engine(
   class => 'Langertha::Engine::OpenAI',
   name => 'OpenAI',
   url => 'https://api.openai.com/v1',
-  model => 'gpt-4o-mini',
+  model => 'gpt-5.4-mini',
   env_var => 'LANGERTHA_OPENAI_API_KEY',
   has_tools => 1,
   has_embedding => 1,
   has_transcription => 1,
   has_response_format => 1,
 );
-is(Langertha::Engine::OpenAI->new(api_key => 'k')->default_model, 'gpt-4o-mini', 'OpenAI default_model');
+is(Langertha::Engine::OpenAI->new(api_key => 'k')->default_model, 'gpt-5.4-mini', 'OpenAI default_model');
 
 # --- DeepSeek ---
 
@@ -462,7 +462,7 @@ ok(Langertha::Engine::MiniMax->does('Langertha::Role::StaticModels'), 'MiniMax d
 {
   my $m = Langertha::Engine::MiniMax->new(api_key => 'test-key');
   is($m->url, 'https://api.minimax.io/v1', 'MiniMax url default correct');
-  is($m->default_model, 'MiniMax-M2.7', 'MiniMax default_model');
+  is($m->default_model, 'MiniMax-M3', 'MiniMax default_model');
 
   local $ENV{LANGERTHA_MINIMAX_API_KEY} = 'env-key-12345';
   my $m2 = Langertha::Engine::MiniMax->new;
@@ -480,7 +480,7 @@ ok(Langertha::Engine::MiniMaxAnthropic->does('Langertha::Role::StaticModels'), '
 {
   my $m = Langertha::Engine::MiniMaxAnthropic->new(api_key => 'test-key');
   is($m->url, 'https://api.minimax.io/anthropic/v1', 'MiniMaxAnthropic url default correct');
-  is($m->default_model, 'MiniMax-M2.7', 'MiniMaxAnthropic default_model');
+  is($m->default_model, 'MiniMax-M3', 'MiniMaxAnthropic default_model');
   my $req = $m->chat('test prompt');
   is($req->method, 'POST', 'MiniMaxAnthropic chat request is POST');
   like($req->uri, qr{/v1/messages$}, 'MiniMaxAnthropic chat endpoint is /v1/messages');

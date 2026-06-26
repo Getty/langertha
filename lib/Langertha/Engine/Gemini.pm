@@ -27,7 +27,7 @@ with map { 'Langertha::Role::'.$_ } qw(
 
     my $gemini = Langertha::Engine::Gemini->new(
         api_key      => $ENV{GEMINI_API_KEY},
-        model        => 'gemini-2.5-flash',
+        model        => 'gemini-3.5-flash',
         response_size => 4096,
         temperature  => 0.7,
     );
@@ -58,10 +58,11 @@ Provides access to Google's Gemini models via the Generative Language API.
 Gemini models support multimodal input (text, code, images) and long context
 windows.
 
-Available models include C<gemini-2.5-flash> (fast with thinking, default),
-C<gemini-2.5-pro> (most capable), and C<gemini-2.0-flash> (previous
-generation). The default API endpoint is
-C<https://generativelanguage.googleapis.com>.
+Available models include C<gemini-3.5-flash> (fast with thinking, default),
+C<gemini-3.1-pro> / C<gemini-pro-latest> (most capable), and the
+C<gemini-flash-latest> alias (always the newest Flash). The C<gemini-2.5-*>
+generation is still served but now classed as previous-generation. The
+default API endpoint is C<https://generativelanguage.googleapis.com>.
 
 B<THIS API IS WORK IN PROGRESS>
 
@@ -94,7 +95,7 @@ has '+url' => (
   default => sub { 'https://generativelanguage.googleapis.com' },
 );
 
-sub default_model { 'gemini-2.5-flash' }
+sub default_model { 'gemini-3.5-flash' }
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;

@@ -2,6 +2,25 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine model refresh, live-verified 2026-06-26 against each provider's
+      API/docs. OpenAI default_model `gpt-4o-mini` -> `gpt-5.4-mini` (the
+      4o-mini tier is legacy; POD drops the retired o1 / o3-mini mentions).
+      Gemini default_model `gemini-2.5-flash` -> `gemini-3.5-flash` (2.5 is now
+      previous-generation). MiniMax and MiniMaxAnthropic add `MiniMax-M3` (now
+      the latest M-series) and default to it; the inaccurate "1M context" note
+      on M2.5 is corrected (~200K standard context; 1M applies only to the M2.5
+      Lightning variant). Perplexity static_models drop the deprecated
+      `sonar-reasoning` and add `sonar-deep-research`; tool calling stays
+      disabled because the classic /chat/completions Sonar path still rejects a
+      `tools` array (live: HTTP 400 "Tool calling is not supported for this
+      model") — Perplexity function calling lives only on its separate Agent
+      API. DeepSeek POD now documents the explicit V4 ids (`deepseek-v4-flash`
+      / `deepseek-v4-pro`) that /models returns, with `deepseek-chat` /
+      `deepseek-reasoner` kept as stable aliases. T-Systems `gpt-oss-120b` and
+      `text-embedding-bge-m3` confirmed correct; POD now surfaces the EU-hosted
+      frontier models (GPT-5.2, Claude Sonnet 4.6, Gemini 3 Pro/Flash).
+      AnthropicBase SYNOPSIS refreshed to `claude-opus-4-8`.
+
     - Engine::Cerebras: default_model is now `gpt-oss-120b`, the current
       production model on Cerebras's public endpoint. The previous default
       `llama3.1-8b` was deprecated (2026-05-27) and dropped from the public

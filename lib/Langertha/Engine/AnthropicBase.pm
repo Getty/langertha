@@ -96,7 +96,7 @@ C<high>. When set, passed as the C<effort> parameter in the API request.
 
     my $claude = Langertha::Engine::Anthropic->new(
         api_key => $ENV{ANTHROPIC_API_KEY},
-        model   => 'claude-opus-4-6',
+        model   => 'claude-opus-4-8',
         effort  => 'high',
     );
 

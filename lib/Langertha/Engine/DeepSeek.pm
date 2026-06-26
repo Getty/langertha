@@ -27,10 +27,12 @@ Provides access to DeepSeek's models via their API. Composes
 L<Langertha::Role::OpenAICompatible> with DeepSeek's endpoint
 (C<https://api.deepseek.com>) and API key handling.
 
-Available models: C<deepseek-chat> (default, general-purpose),
-C<deepseek-reasoner> (chain-of-thought reasoning), and C<deepseek-v3.2>
-(thinking integrated with tool use). Embeddings and transcription are not
-supported. Dynamic model listing via C<list_models()>.
+Available models: C<deepseek-chat> (default, non-thinking) and
+C<deepseek-reasoner> (thinking) are stable compatibility aliases that now
+route to DeepSeek V4. The explicit ids C<deepseek-v4-flash> and
+C<deepseek-v4-pro> can be pinned directly — these are what the C</models>
+endpoint now returns. Embeddings and transcription are not supported.
+Dynamic model listing via C<list_models()>.
 
 Get your API key at L<https://platform.deepseek.com/> and set
 C<LANGERTHA_DEEPSEEK_API_KEY> in your environment.

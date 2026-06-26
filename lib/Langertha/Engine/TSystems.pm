@@ -30,9 +30,12 @@ L<Langertha::Role::OpenAICompatible> with the AIFS endpoint
 
 T-Systems AIFS exposes 30+ open-source and proprietary models behind a single
 OpenAI-compatible API. Models hosted on B<T-Cloud> are processed exclusively
-in Germany (Llama 3.3, Qwen 3, Mistral Small, Teuken, BGE-M3, Jina embeddings,
-Whisper); hyperscaler models (GPT 5/4.1/4o, Claude 4.5 Sonnet, Gemini 2.5/3)
-are processed in the EU. GDPR-compliant.
+in Germany (Llama 3.3, Qwen3-Next 80B, Mistral Small 4, C<gpt-oss-120b>,
+Gemma 4, plus the C<BGE-M3> / C<text-embedding-bge-m3> and Jina embeddings);
+EU-hosted hyperscaler models are processed within the EU and now include
+current frontier models — GPT-5.2 / GPT-5, Claude Sonnet 4.6 / Haiku 4.5, and
+Gemini 3 Pro / Flash. This makes AIFS a sovereign-EU route to otherwise non-EU
+frontier models. GDPR-compliant.
 
 Get a trial API key at L<https://apikey.llmhub.t-systems.net/> and set
 C<LANGERTHA_TSYSTEMS_API_KEY> in your environment.

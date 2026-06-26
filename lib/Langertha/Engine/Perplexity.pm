@@ -37,10 +37,17 @@ LLMs with real-time web access; responses include citations alongside
 generated text.
 
 Available models: C<sonar> (default, fast), C<sonar-pro> (deeper analysis),
-C<sonar-reasoning> (chain-of-thought), C<sonar-reasoning-pro> (most capable).
+C<sonar-reasoning-pro> (chain-of-thought reasoning), C<sonar-deep-research>
+(exhaustive multi-step research). The plain C<sonar-reasoning> model has been
+deprecated by Perplexity and removed.
 
 Limitations: tool calling, embeddings, and transcription are not supported.
-Only chat and streaming are available.
+Only chat and streaming are available. Tool calling is intentionally not
+composed onto this engine: Perplexity's classic C</chat/completions> Sonar
+path rejects a C<tools> array (verified live 2026-06-26: HTTP 400 "Tool
+calling is not supported for this model"). Function calling exists only on
+Perplexity's separate Agent API (a Responses-style surface), which Langertha
+does not yet model.
 
 Get your API key at L<https://www.perplexity.ai/settings/api> and set
 C<LANGERTHA_PERPLEXITY_API_KEY>.
@@ -66,11 +73,16 @@ sub _build_api_key {
 
 sub default_model { 'sonar' }
 
+# Current Sonar API lineup (https://docs.perplexity.ai/getting-started/models,
+# verified 2026-06-26). sonar-reasoning (non-pro) was dropped — it now 400s
+# "model has been deprecated and is no longer available". This engine speaks
+# the classic /chat/completions path only; it deliberately does NOT compose
+# Langertha::Role::Tools because that path rejects a tools array (see DESCRIPTION).
 sub _build_static_models {[
   { id => 'sonar' },
   { id => 'sonar-pro' },
-  { id => 'sonar-reasoning' },
   { id => 'sonar-reasoning-pro' },
+  { id => 'sonar-deep-research' },
 ]}
 
 __PACKAGE__->meta->make_immutable;

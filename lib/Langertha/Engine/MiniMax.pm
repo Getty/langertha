@@ -17,7 +17,7 @@ with map { 'Langertha::Role::'.$_ } qw(
 
     my $minimax = Langertha::Engine::MiniMax->new(
         api_key => $ENV{MINIMAX_API_KEY},
-        model   => 'MiniMax-M2.7',
+        model   => 'MiniMax-M3',
     );
 
     print $minimax->simple_chat('Hello from Perl!');
@@ -50,10 +50,13 @@ B<Available text models:>
 
 =over 4
 
-=item * C<MiniMax-M2.7> — Latest flagship (default).
+=item * C<MiniMax-M3> — Latest flagship (default).
 
-=item * C<MiniMax-M2.5> — 1M context window, SOTA coding (80.2%
-SWE-Bench Verified), agentic tool use, and search.
+=item * C<MiniMax-M2.7> — Previous flagship.
+
+=item * C<MiniMax-M2.5> — ~200K context window, SOTA coding (80.2%
+SWE-Bench Verified), agentic tool use, and search. (The 1M context figure
+applies only to the M2.5 Lightning variant.)
 
 =item * C<MiniMax-M2.5-highspeed> — Same M2.5 performance with lower
 latency. 205K context window.
@@ -95,11 +98,12 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_MINIMAX_API_KEY or api_key set";
 }
 
-sub default_model { 'MiniMax-M2.7' }
+sub default_model { 'MiniMax-M3' }
 
 sub default_response_size { 4096 }
 
 sub _build_static_models {[
+  { id => 'MiniMax-M3' },
   { id => 'MiniMax-M2.7' },
   { id => 'MiniMax-M2.5' },
   { id => 'MiniMax-M2.5-highspeed' },
