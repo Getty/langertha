@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-06-26T04:08:08Z
+id: 5
+priority: low
+status: backlog
+tags:
+- response
+- refactor
+- fragility
+title: Make Response.clone_with attribute-driven instead of a hand-maintained copy-list
+updated: 2026-06-26T04:08:08Z
+---
+
+Langertha::Response::clone_with (Response.pm:269) carries state via a hand-maintained qw(raw id model finish_reason usage timing created thinking rate_limit tool_calls probes) list. Every new Maybe-typed Response attribute (e.g. probes, added for VLLMHook) must be remembered into this list, or it silently drops through any clone_with transformation (ThinkTag <think> filtering rebuilds the Response via clone_with). The probes gap (karr #4) was exactly this: the attr existed but had to be hand-added to the list. Follow-up: drive clone_with off the meta attribute inventory (iterate $self->meta->get_all_attributes, copy where predicate is satisfied) so new attrs are carried automatically. Surfaced by ADR 0004. Non-blocking.
