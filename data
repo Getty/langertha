@@ -1,0 +1,29 @@
+---
+claimed_at: 2026-06-26T13:21:26Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:37:31Z
+id: 6
+priority: high
+status: done
+tags:
+- provider-update
+- stale
+title: "Cerebras default_model retired â\x80\x94 switch to gpt-oss-120b"
+updated: 2026-06-26T04:37:31Z
+---
+
+CURRENT vs CODE (verified 2026-06-26): Cerebras.pm default_model is "llama3.1-8b" and the SYNOPSIS/POD use "llama-3.3-70b" + "qwen-3-235b-a22b-instruct-2507". Live catalog (https://inference-docs.cerebras.ai/models/overview) now lists ONLY gpt-oss-120b (production) and zai-glm-4.7 (preview) on the public/free endpoints. The deprecations page (https://inference-docs.cerebras.ai/support/deprecation) explicitly DEPRECATED llama-3.3-70b and qwen-3-32b, recommending migration to gpt-oss-120b. llama-3.1-8b is no longer in the public catalog (may have moved to Dedicated Endpoints).
+
+RISK: default chat call to the public endpoint likely fails (model not available).
+CHANGE: lib/Langertha/Engine/Cerebras.pm — default_model => "gpt-oss-120b"; update SYNOPSIS (line ~16) and DESCRIPTION model list (lines ~28-29). Add zai-glm-4.7 as a known preview option. Verify with a live key before shipping (gated test).
+DONE (verified live 2026-06-26 against https://inference-docs.cerebras.ai/models/overview + /support/deprecation). Confirmed: llama3.1-8b deprecated 2026-05-27, dropped from public catalog; public endpoint now serves gpt-oss-120b (production) + zai-glm-4.7 (preview). Changes made:
+- lib/Langertha/Engine/Cerebras.pm:53 default_model 'llama3.1-8b' -> 'gpt-oss-120b'
+- Cerebras.pm:17 SYNOPSIS model 'llama-3.3-70b' -> 'gpt-oss-120b'
+- Cerebras.pm:28-30 DESCRIPTION model list -> 'gpt-oss-120b (production, default) + zai-glm-4.7 (preview)'
+- t/10_engine_hierarchy.t:623 default_model assertion -> 'gpt-oss-120b'
+- t/80_live_tool_calling.t:220 live Cerebras model 'llama3.1-8b' -> 'gpt-oss-120b'
+No static model list in the engine (only POD), so nothing else to add. Left as-is: vestigial unused 'model =>' param in test_openai_cloud_engine call (t/10:619) still says llama3.1-8b but the helper never reads it (dead param). Full suite green (1808 tests); Cerebras live test skipped (no key).
+Fixed + tests green; awaiting maintainer review/commit (do not commit per instruction).
+Fixed + merged to main (627f423): default_model -> gpt-oss-120b, POD refreshed. dzil test PASS 1911/0.
