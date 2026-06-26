@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-06-26T13:30:44Z
+claimed_by: worker-A
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:38:13Z
+id: 9
+priority: medium
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+- stale
+title: "Gemini default_model gemini-2.5-flash is now a 'Previous' model â\x80\x94
+  move to gemini-3.5-flash"
+updated: 2026-06-26T04:38:13Z
+---
+
+CURRENT vs CODE (verified 2026-06-26, https://ai.google.dev/gemini-api/docs/models): Gemini.pm default_model is "gemini-2.5-flash". The models page now classes 2.5 Flash/Pro as "Previous models" (still available). Current stable lineup: gemini-3.5-flash (GA 2026-05-19, "most intelligent"), gemini-3-flash, gemini-3.1-pro, plus 3.1 Flash Live/TTS. gemini-2.0-* shut down 2026-06-01; gemini-3-pro-preview shut down.
+
+RISK: low (default still works) but it is now a back-catalog model. RECOMMEND: default_model => "gemini-3.5-flash" (or the gemini-flash-latest alias). default_response_size is 2048 — fine but conservative for Gemini 3 (supports much larger output). Verify with gated live test.
+DONE. default_model gemini-2.5-flash -> gemini-3.5-flash (lib/Langertha/Engine/Gemini.pm:97). SYNOPSIS + DESCRIPTION refreshed (3.1-pro/pro-latest, gemini-flash-latest alias; 2.5 now previous-gen). Tests: t/10_engine_hierarchy.t default assert + generateContent URI regex, t/46_gemini_requests.t default assert, t/83_live_chat.t live model. default_response_size left at 2048 (ticket said fine). LIVE 2026-06-26: GET /v1beta/models lists gemini-3.5-flash (stable) + gemini-flash-latest; simple_chat(gemini-3.5-flash) at default response_size returns "Hello Langertha".
