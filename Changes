@@ -2,6 +2,16 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New engine Langertha::Engine::VLLMHook (a sub-engine of vLLM) for the
+      IBM vLLM-Hook plugin: it arms the attention / hidden-state / steering
+      probes by injecting a top-level `vllm_xargs` field into the chat
+      request, and lifts the captured tensors from the response into a new
+      Langertha::Response `probes` attribute. Langertha::VLLMHook::Config
+      loads vLLM-Hook model_configs JSON (qk / hidden_states / steer) into
+      vllm_xargs. ADR 0004 records the underlying seam: provider-specific
+      wire extras extend the request body and Langertha::Response directly,
+      not a (nonexistent) extra_body passthrough.
+
     - Tool wire-translation is now a single source of truth in the
       Langertha::Tool / ToolCall / ToolResult value objects, keyed by a new
       per-engine `tool_wire_format` tag (openai | anthropic | gemini | ollama |
