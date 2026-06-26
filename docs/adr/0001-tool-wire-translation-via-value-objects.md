@@ -65,9 +65,13 @@ seam (`tool_wire_format`, **Tool**, **ToolCall**, **ToolResult**, **Result envel
 
 ## Future work
 
-- **Reconcile the two inbound entry points.** `ToolCall->extract($fmt, $data)` is the unified
+- **Reconcile the two inbound entry points.** ~~`ToolCall->extract($fmt, $data)` is the unified
   locate+parse API, but the loop (`Role::Tools::response_tool_calls` + `extract_tool_call`)
   uses the lower-level `locate` + `from_fmt` split, and the legacy self-sniffing
   `extract($data)` form duplicates the per-format response-walking already in `locate`. Collapse
-  to one canonical inbound path so there is a single place the per-format walking lives. Tracked
-  on the karr board.
+  to one canonical inbound path so there is a single place the per-format walking lives.~~
+  **Resolved — see ADR 0010.** `extract($fmt, $data)` is now the single canonical inbound entry
+  (per-format walking lives only in `locate`); self-sniffing is the explicitly-named
+  `extract_sniff`; and `ToolChoice` gained the symmetric `to($fmt)` the other three value
+  objects already had. The loop's `locate` / `from_fmt` split is kept deliberately (it threads
+  raw structures to the result-envelope rebuild) — ADR 0010 records why.

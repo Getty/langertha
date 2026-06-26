@@ -50,6 +50,7 @@ refactors:
 - **0007** — Raider keeps a never-compressed session archive plus an auto-compressed working history
 - **0008** — Raider exposes its control surface to the model as virtual self-tools
 - **0009** — request-side control params (reasoning effort, prompt caching) as a per-concern wire-format quartet
+- **0010** — canonical inbound `ToolCall->extract($fmt,$data)` + symmetric `ToolChoice->to($fmt)` complete the value-object seam
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
