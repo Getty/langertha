@@ -102,7 +102,7 @@ use Langertha::ToolChoice;
 
 # extract from openai response
 {
-  my @calls = Langertha::ToolCall->extract({
+  my @calls = Langertha::ToolCall->extract_sniff({
     choices => [{
       message => {
         content => '',
@@ -119,7 +119,7 @@ use Langertha::ToolChoice;
 
 # extract from anthropic response
 {
-  my @calls = Langertha::ToolCall->extract({
+  my @calls = Langertha::ToolCall->extract_sniff({
     content => [
       { type => 'text', text => 'hi' },
       { type => 'tool_use', id => 't1', name => 'first', input => {} },

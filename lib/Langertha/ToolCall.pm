@@ -123,9 +123,9 @@ sub from_gemini {
 sub from_responses {
   my ($class, $block) = @_;
   return undef unless ref($block) eq 'HASH';
-  # The sniffing extract() pre-filters output[] items by type, and a located
-  # call passed to from_fmt may carry no type at all — only reject a block
-  # whose type is present AND wrong.
+  # locate('responses') pre-filters output[] items to function_call, and a
+  # located call passed to from_fmt may carry no type at all — only reject a
+  # block whose type is present AND wrong.
   my $type = $block->{type};
   return undef if defined $type && $type ne 'function_call';
   my $name = $block->{name} // '';
@@ -201,74 +201,47 @@ sub locate {
   croak "Langertha::ToolCall: unknown wire format '$fmt'";
 }
 
-# Pull every tool call out of an upstream response. Two forms:
-#   extract($fmt, $data) — pinned to a format (locate + from_fmt), no sniffing
-#   extract($data)       — legacy self-dispatching sniff across all formats
-# Both return a list of ToolCall objects (possibly empty).
+# THE canonical inbound entry point: pull every tool call out of an upstream
+# response for a given wire format (locate + from_fmt). Engines pass their
+# tool_wire_format. Returns a list of ToolCall objects (possibly empty). The
+# per-format response-walking lives only in locate(). Callers with no format
+# in scope use extract_sniff() instead.
 sub extract {
-  my ( $class, @args ) = @_;
-  if ( @args == 2 ) {
-    my ( $fmt, $data ) = @args;
-    return grep { defined }
-      map { $class->from_fmt( $fmt, $_ ) } @{ $class->locate( $fmt, $data ) };
-  }
-  my ($raw) = @args;
-  return () unless ref($raw) eq 'HASH';
+  my ( $class, $fmt, $data ) = @_;
+  croak "Langertha::ToolCall->extract requires (\$fmt, \$data)" if ref $fmt;
+  return grep { defined }
+    map { $class->from_fmt( $fmt, $_ ) } @{ $class->locate( $fmt, $data ) };
+}
 
-  # OpenAI shape: choices[0].message.tool_calls
-  if ( my $oai_msg = $raw->{choices}[0]{message} ) {
-    if ( ref( $oai_msg->{tool_calls} ) eq 'ARRAY' ) {
-      return grep { defined } map { $class->from_openai($_) } @{ $oai_msg->{tool_calls} };
-    }
-  }
+# Detect the wire format from the top-level shape of a raw response, WITHOUT
+# walking the per-format tool structures (that walking lives only in locate).
+# Probe order matches the legacy self-sniffing extract. Returns a
+# tool_wire_format tag, or undef if the shape matches nothing known.
+my @SNIFF_PROBES = (
+  [ openai    => sub { ref( $_[0]->{choices} )    eq 'ARRAY' } ],
+  [ ollama    => sub { ref( $_[0]->{message} )    eq 'HASH'  } ],
+  [ anthropic => sub { ref( $_[0]->{content} )    eq 'ARRAY' } ],
+  [ gemini    => sub { ref( $_[0]->{candidates} ) eq 'ARRAY' } ],
+  [ responses => sub { ref( $_[0]->{output} )     eq 'ARRAY' } ],
+);
 
-  # Ollama shape: message.tool_calls
-  if ( my $msg = $raw->{message} ) {
-    if ( ref( $msg->{tool_calls} ) eq 'ARRAY' ) {
-      return grep { defined } map { $class->from_ollama($_) } @{ $msg->{tool_calls} };
-    }
+sub sniff_format {
+  my ( $class, $data ) = @_;
+  return undef unless ref($data) eq 'HASH';
+  for my $probe (@SNIFF_PROBES) {
+    return $probe->[0] if $probe->[1]->($data);
   }
+  return undef;
+}
 
-  # Anthropic shape: content[*] where type=tool_use
-  if ( ref( $raw->{content} ) eq 'ARRAY' ) {
-    return grep { defined } map { $class->from_anthropic($_) } @{ $raw->{content} };
-  }
-
-  # Gemini shape: candidates[0].content.parts[*].functionCall
-  if ( ref( $raw->{candidates} ) eq 'ARRAY'
-    && ref( $raw->{candidates}[0]{content}{parts} ) eq 'ARRAY' ) {
-    return grep { defined }
-      map { $class->from_gemini($_) }
-      @{ $raw->{candidates}[0]{content}{parts} };
-  }
-
-  # OpenAI Responses shape: function_call appears either as a top-level
-  # output[] item (real API) or nested under output[type=message].content[]
-  # (older / streaming shape). Walk both.
-  if ( ref( $raw->{output} ) eq 'ARRAY' ) {
-    my @calls;
-    for my $item (@{$raw->{output}}) {
-      next unless ref($item) eq 'HASH';
-      my $type = $item->{type} // '';
-      if ( $type eq 'function_call' ) {
-        if ( my $tc = $class->from_responses($item) ) {
-          push @calls, $tc;
-        }
-      }
-      elsif ( $type eq 'message' ) {
-        for my $block (@{$item->{content} // []}) {
-          if (($block->{type} // '') eq 'function_call') {
-            if (my $tc = $class->from_responses($block)) {
-              push @calls, $tc;
-            }
-          }
-        }
-      }
-    }
-    return @calls if @calls;
-  }
-
-  return ();
+# Format-agnostic inbound for callers that genuinely have no wire format in
+# scope (the Langertha::Output::Tools back-compat facade): sniff the shape,
+# then delegate to extract. Deliberately NOT named extract() so there is
+# exactly one canonical inbound entry point — the format-pinned extract above.
+sub extract_sniff {
+  my ( $class, $data ) = @_;
+  my $fmt = $class->sniff_format($data) or return ();
+  return $class->extract( $fmt, $data );
 }
 
 # Hermes-style XML embedded in plain text. Returns ($cleaned_text, \@calls).

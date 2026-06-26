@@ -108,7 +108,7 @@ sub chat_request {
   if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
     my $tc = Langertha::ToolChoice->from_hash( delete $extra{tool_choice} );
     if ($tc) {
-      my $cfg = $tc->to_gemini;
+      my $cfg = $tc->to( $self->tool_wire_format );
       $extra{toolConfig} = $cfg if $cfg;
     }
   }
@@ -234,7 +234,7 @@ sub chat_response {
     };
   }
 
-  my @tcs = Langertha::ToolCall->extract($data);
+  my @tcs = Langertha::ToolCall->extract( $self->tool_wire_format, $data );
   return Langertha::Response->new(
     content       => $text,
     raw           => $data,
@@ -255,7 +255,7 @@ sub chat_stream_request {
   if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
     my $tc = Langertha::ToolChoice->from_hash( delete $extra{tool_choice} );
     if ($tc) {
-      my $cfg = $tc->to_gemini;
+      my $cfg = $tc->to( $self->tool_wire_format );
       $extra{toolConfig} = $cfg if $cfg;
     }
   }

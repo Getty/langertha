@@ -214,7 +214,7 @@ sub chat_response {
   }
   $timing = undef unless %$timing;
 
-  my @tcs = Langertha::ToolCall->extract($data);
+  my @tcs = Langertha::ToolCall->extract( $self->tool_wire_format, $data );
   return Langertha::Response->new(
     content       => $msg->{content} // '',
     raw           => $data,

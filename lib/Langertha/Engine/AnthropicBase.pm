@@ -246,7 +246,7 @@ sub _normalize_tool_params {
 
   if ( exists $extra->{tool_choice} && defined $extra->{tool_choice} ) {
     if ( my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} ) ) {
-      $extra->{tool_choice} = $tc->to_anthropic;
+      $extra->{tool_choice} = $tc->to( $self->tool_wire_format );
     }
   }
 
@@ -268,7 +268,7 @@ sub chat_response {
   my $text = join('', map { $_->{text} // '' } grep { $_->{type} eq 'text' } @blocks);
   my @thinking = map { $_->{thinking} // '' } grep { $_->{type} eq 'thinking' } @blocks;
   my $thinking = @thinking ? join("\n", @thinking) : undef;
-  my @tcs = Langertha::ToolCall->extract($data);
+  my @tcs = Langertha::ToolCall->extract( $self->tool_wire_format, $data );
 
   # If the caller asked for a response_format and we routed it through a
   # synthesized tool, lift the tool_use input back into the content as

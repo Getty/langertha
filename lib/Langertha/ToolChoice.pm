@@ -2,6 +2,7 @@ package Langertha::ToolChoice;
 # ABSTRACT: Immutable canonical tool-selection policy with cross-provider conversion
 our $VERSION = '0.503';
 use Moose;
+use Carp qw( croak );
 use Moose::Util::TypeConstraints qw( enum );
 
 # Canonical types: 'auto' (let model decide), 'any' (must call any tool),
@@ -147,6 +148,28 @@ sub to_responses {
 sub to_hash {
   my ($self) = @_;
   return { type => $self->type, ( defined $self->name ? ( name => $self->name ) : () ) };
+}
+
+# --- Tag-driven dispatch ---
+
+# Maps a tool_wire_format tag to the per-format serializer. Only the wires that
+# actually carry a tool_choice request parameter are listed: Ollama and Hermes
+# have no wire-level tool_choice (Hermes forces via prompt injection), so to()
+# croaks for them. Perplexity is not a tool_wire_format value — its named-tool
+# request is rewritten to response_format by chat_f — so to_perplexity stays a
+# standalone helper, off the tag dispatch.
+my %TO_METHOD = (
+  openai    => 'to_openai',
+  anthropic => 'to_anthropic',
+  gemini    => 'to_gemini',
+  responses => 'to_responses',
+);
+
+sub to {
+  my ( $self, $fmt ) = @_;
+  my $method = $TO_METHOD{ $fmt // '' }
+    or croak "Langertha::ToolChoice: unknown wire format '" . ( $fmt // '' ) . "'";
+  return $self->$method;
 }
 
 __PACKAGE__->meta->make_immutable;

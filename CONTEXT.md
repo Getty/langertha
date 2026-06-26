@@ -35,9 +35,11 @@ message envelope.
 _Avoid_: "tool output", "tool response"
 
 **ToolChoice**:
-The canonical tool-selection *policy* (none/auto/required/named) with per-format
-serializers. The existing exemplar of the value-object pattern the others now
-follow.
+The canonical tool-selection *policy* (none/auto/required/named). Serializes via
+the same unified `to($fmt)` dispatch as the other value objects, over its
+per-format serializers — keyed by `tool_wire_format`, for the wires that carry a
+tool_choice parameter (openai/anthropic/gemini/responses). The original exemplar
+of the value-object pattern the others now follow.
 _Avoid_: "tool_choice hash"
 
 **Result envelope**:

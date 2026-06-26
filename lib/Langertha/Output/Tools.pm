@@ -42,7 +42,9 @@ sub extract_from_raw {
     $meta{finish_reason} = $raw->{stop_reason} if defined $raw->{stop_reason};
   }
 
-  $meta{tool_calls} = [ map { $_->to_hash } Langertha::ToolCall->extract($raw) ];
+  # This legacy facade has no wire format in scope, so it uses the sniffing
+  # fallback. New code passes a known format to Langertha::ToolCall->extract.
+  $meta{tool_calls} = [ map { $_->to_hash } Langertha::ToolCall->extract_sniff($raw) ];
   return \%meta;
 }
 

@@ -4,6 +4,7 @@ use Test2::Bundle::More;
 use Langertha::Tool;
 use Langertha::ToolCall;
 use Langertha::ToolResult;
+use Langertha::ToolChoice;
 
 # Value-object layer for tool wire-translation: Tool->to / format_list,
 # ToolCall->from_fmt / locate / extract($fmt,$data), ToolResult->to.
@@ -148,6 +149,60 @@ subtest 'ToolResult error flag' => sub {
     id => 'x', content => [ { type => 'text', text => 'boom' } ], is_error => 1,
   );
   ok( $r->to('anthropic')->{is_error}, 'anthropic is_error set on error' );
+};
+
+# ---------------------------------------------------------------------------
+# ToolChoice->to per format (unified tag dispatch over the per-format to_*)
+# ---------------------------------------------------------------------------
+subtest 'ToolChoice->to per format' => sub {
+  my $named = Langertha::ToolChoice->specific('calc');
+
+  is_deeply( $named->to('openai'),    $named->to_openai,    'to(openai)' );
+  is_deeply( $named->to('anthropic'), $named->to_anthropic, 'to(anthropic)' );
+  is_deeply( $named->to('gemini'),    $named->to_gemini,    'to(gemini)' );
+  is_deeply( $named->to('responses'), $named->to_responses, 'to(responses)' );
+
+  is( Langertha::ToolChoice->any->to('openai'), 'required', 'string forms dispatch too' );
+
+  # Wires with no tool_choice parameter (and non-wire perplexity) are not on the
+  # tag dispatch.
+  ok( !eval { $named->to('ollama'); 1 },     'ollama has no wire tool_choice' );
+  ok( !eval { $named->to('hermes'); 1 },     'hermes has no wire tool_choice' );
+  ok( !eval { $named->to('bogus');  1 },     'unknown format dies' );
+  like( $@, qr/unknown wire format 'bogus'/, 'unknown format croaks' );
+};
+
+# ---------------------------------------------------------------------------
+# ToolCall->sniff_format / extract_sniff (format-less back-compat fallback)
+# ---------------------------------------------------------------------------
+subtest 'ToolCall sniff fallback' => sub {
+  my %resp = (
+    openai    => { choices => [ { message => { tool_calls => [
+                     { id => 'c1', type => 'function',
+                       function => { name => 'echo', arguments => '{"m":"hi"}' } } ] } } ] },
+    ollama    => { message => { tool_calls => [
+                     { function => { name => 'echo', arguments => { m => 'hi' } } } ] } },
+    anthropic => { content => [
+                     { type => 'tool_use', id => 't1', name => 'echo', input => { m => 'hi' } } ] },
+    gemini    => { candidates => [ { content => { parts => [
+                     { functionCall => { name => 'echo', args => { m => 'hi' } } } ] } } ] },
+    responses => { output => [
+                     { type => 'function_call', call_id => 'c9', name => 'echo',
+                       arguments => '{"m":"hi"}' } ] },
+  );
+
+  for my $fmt ( sort keys %resp ) {
+    is( Langertha::ToolCall->sniff_format( $resp{$fmt} ), $fmt, "$fmt: sniff_format detects shape" );
+    my @calls = Langertha::ToolCall->extract_sniff( $resp{$fmt} );
+    is( scalar @calls, 1, "$fmt: extract_sniff returns one ToolCall" );
+    is( $calls[0]->name, 'echo', "$fmt: name parsed via sniff" );
+  }
+
+  is( Langertha::ToolCall->sniff_format({}), undef, 'unknown shape sniffs to undef' );
+  is_deeply( [ Langertha::ToolCall->extract_sniff({}) ], [], 'unknown shape extracts nothing' );
+
+  ok( !eval { Langertha::ToolCall->extract({ choices => [] }); 1 },
+    'extract with a hashref as $fmt dies (fail loud on legacy single-arg)' );
 };
 
 done_testing;

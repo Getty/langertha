@@ -270,7 +270,9 @@ sub chat_request {
   # OpenAI-style, and string shorthands).
   if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
     if ( my $tc = Langertha::ToolChoice->from_hash( $extra{tool_choice} ) ) {
-      $extra{tool_choice} = $tc->to_openai;
+      # Wire is always OpenAI-shaped here (see chat_response), so pin to
+      # 'openai' rather than $self->tool_wire_format (hermes engines / Perplexity).
+      $extra{tool_choice} = $tc->to('openai');
     }
   }
 
@@ -309,7 +311,11 @@ sub chat_response {
   my $data = $self->parse_response($response);
   my $choice = $data->{choices}[0];
   my $msg = $choice->{message} || {};
-  my @tcs = Langertha::ToolCall->extract($data);
+  # The OpenAI-compatible response envelope is always OpenAI-shaped, even for
+  # engines whose tool_wire_format is 'hermes' (their calls ride in the message
+  # text, parsed elsewhere) or that compose no Tools role at all (Perplexity).
+  # Pin the structured extractor to 'openai' rather than $self->tool_wire_format.
+  my @tcs = Langertha::ToolCall->extract( 'openai', $data );
   return Langertha::Response->new(
     content       => $msg->{content} // '',
     raw           => $data,

@@ -242,7 +242,7 @@ subtest 'extract_tool_call method' => sub {
 };
 
 subtest 'ToolCall->extract works on Responses format' => sub {
-    my @tcs = Langertha::ToolCall->extract($toolcall_fixture);
+    my @tcs = Langertha::ToolCall->extract('responses', $toolcall_fixture);
     is( scalar @tcs, 1, 'one ToolCall extracted' );
     is( $tcs[0]->name, 'get_weather', 'name correct' );
     is_deeply( $tcs[0]->arguments, { location => 'Paris, France', units => 'celsius' },
@@ -284,7 +284,7 @@ subtest 'response_tool_calls handles top-level function_call' => sub {
 };
 
 subtest 'ToolCall->extract handles top-level function_call' => sub {
-    my @tcs = Langertha::ToolCall->extract($toolcall_toplevel_fixture);
+    my @tcs = Langertha::ToolCall->extract('responses', $toolcall_toplevel_fixture);
     is( scalar @tcs, 1, 'one ToolCall extracted from top-level shape' );
     is( $tcs[0]->name, 'get_weather', 'name correct' );
     is( $tcs[0]->id, 'call_real789', 'call_id correct' );

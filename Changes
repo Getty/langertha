@@ -2,6 +2,22 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Tool wire-translation value-object symmetry (karr #1, #2; ADR 0001/0003).
+      Reconciled the two inbound tool-call entry points ADR 0001 flagged as
+      unsettled: Langertha::ToolCall->extract is now strictly the format-pinned
+      extract($fmt, $data) (locate + from_fmt) — the one canonical inbound entry,
+      with the per-format response-walking living only in locate(). The legacy
+      self-sniffing single-arg form is gone from every engine chat_response (each
+      now passes its tool_wire_format; the OpenAI-compatible envelope is pinned to
+      'openai' since hermes engines carry calls in text and Perplexity composes no
+      Tools role) and survives only behind the Langertha::Output::Tools back-compat
+      facade as the explicit extract_sniff($data) (sniff_format + extract). Also
+      gave Langertha::ToolChoice the unified to($fmt) dispatch the other value
+      objects already had (openai/anthropic/gemini/responses), and migrated the
+      engine tool_choice call sites to it. Behaviour-preserving refactor; the
+      OpenAI Responses dual-shape (top-level + nested function_call) still parses
+      via locate('responses').
+
     - New engines. Langertha::Engine::XAI — xAI Grok via the OpenAI-compatible
       endpoint (https://api.x.ai/v1, LANGERTHA_XAI_API_KEY, default grok-4.3),
       modeled on the Groq/DeepSeek cloud engines with Tools. Langertha::Engine::Moonshot

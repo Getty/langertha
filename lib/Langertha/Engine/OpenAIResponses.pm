@@ -90,7 +90,7 @@ sub chat_request {
     # Normalize tool_choice to Responses format
     if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
         if ( my $tc = Langertha::ToolChoice->from_hash( $extra{tool_choice} ) ) {
-            $extra{tool_choice} = $tc->to_responses;
+            $extra{tool_choice} = $tc->to( $self->tool_wire_format );
         }
     }
 
