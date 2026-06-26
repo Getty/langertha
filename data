@@ -1,0 +1,34 @@
+---
+claimed_at: 2026-06-26T04:09:48Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T03:47:44Z
+id: 4
+priority: high
+started: 2026-06-26
+status: done
+tags:
+- engine
+- vllm
+- wire-format
+title: "Langertha::Engine::VLLMHook â\x80\x94 vLLM-Hook integration"
+updated: 2026-06-26T03:47:44Z
+---
+
+New sub-engine Langertha::Engine::VLLMHook extends Langertha::Engine::vLLM. Activates vLLM-Hook plugins via extra_body.vllm_xargs, reads tensors back from response.probes.
+
+New files: lib/Langertha/Engine/VLLMHook.pm, lib/Langertha/VLLMHook/Config.pm, t/67_vllm_hook.t, t/87_live_vllm_hook.t.
+
+GAP found during planning: Langertha::Response has NO probes attribute. clone_with copy-list (Response.pm:252) does not include probes. Worker must add has probes + add to clone_with list. This is a core Response change beyond the TODO file list.
+
+Branch: feature/vllm-hook. No new CPAN deps. Plan: TODO.md (untracked). Reference repo: ~/dev/vLLM-Hook/.
+IMPLEMENTED + verified by orchestrator. Files: lib/Langertha/Engine/VLLMHook.pm, lib/Langertha/VLLMHook/Config.pm, t/67_vllm_hook.t (41/41), t/87_live_vllm_hook.t (gated), + Response.pm probes attr (gap #1). Full suite PASS 1808/0.
+
+TWO plan-bugs caught & fixed (both verified vs ~/dev/vLLM-Hook source):
+1. extra_body MYTH: Langertha HTTP layer has NO extra_body passthrough — generate_json_body (HTTP.pm:32-34) encodes every %extra kwarg as a literal top-level body key. Engine-specific body fields must go as top-level %extra args. vllm_xargs now top-level (matches what vLLM server sees; Python SDK only flattens extra_body client-side). TODO cite of HTTP.pm:64-97 was wrong.
+2. JSON booleans ride native, only HASH/ARRAY refs JSON-stringified — matches hook_client.py:182 (native True) + plugin decode loop _hook_plugin.py:120-131. Shared encoder also croaks on top-level bool.
+
+NOT committed, NOT handed off (awaiting maintainer review). Candidate ADR: "engine-specific request body fields go via top-level %extra, not a (nonexistent) extra_body passthrough; provider-specific response fields get a first-class Response attr (probes)".
+Implemented + verified + committed (ba383e6 code, ADR 0004 separate). Full suite PASS 1808/0; t/67 41/41; live t/87 gated. Two plan-bugs caught & fixed (extra_body myth, native JSON booleans) — see ADR 0004. Branch feature/vllm-hook, not merged, not released. Ready for maintainer merge.
+Merged to main (ff, 18e5a5d). dzil test PASS Files=63 Tests=1911 0-failed incl. author-pod-syntax. Changes entry under {{$NEXT}}. Not pushed, not released.
