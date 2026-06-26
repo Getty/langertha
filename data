@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-06-26T14:34:42Z
+claimed_by: worker-D
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T13:46:04Z
+id: 18
+priority: high
+started: 2026-06-26
+status: done
+tags:
+- bug
+- provider-update
+title: MiniMaxAnthropic url default produces double /v1 -> 404 on chat
+updated: 2026-06-26T13:46:04Z
+---
+
+Discovered during model-refresh (#11) live testing 2026-06-26. Langertha::Engine::MiniMaxAnthropic sets url default to https://api.minimax.io/anthropic/v1, and Engine::AnthropicBase->chat_request appends /v1/messages, producing https://api.minimax.io/anthropic/v1/v1/messages -> HTTP 404 "404 page not found" for ANY model. Live probe confirms the shim works at the SINGLE-v1 path https://api.minimax.io/anthropic/v1/messages (HTTP 200 with MiniMax-M3). FIX: change MiniMaxAnthropic url default to https://api.minimax.io/anthropic (so AnthropicBase yields /anthropic/v1/messages). Out of scope for the #8-#14 model-refresh pass (separate pre-existing bug); model/static-list changes for #11 were applied regardless. Needs the URL one-liner + a request-URI unit assert + a gated live chat assert.
+Fixed: MiniMaxAnthropic url default https://api.minimax.io/anthropic/v1 -> https://api.minimax.io/anthropic (AnthropicBase appends /v1/messages). Mechanism confirmed in AnthropicBase->chat_request / chat_stream_request ($self->url."/v1/messages"). LIVE-VERIFIED with MINIMAX key: composed URI now https://api.minimax.io/anthropic/v1/messages (single /v1), HTTP 200 on MiniMax-M3, response "Hello Langertha". Added unit asserts in t/10 (exact composed URI + unlike /v1/v1/) and a gated live assert in t/83_live_minimax.t (passes live). prove -lr t/ and dzil test both PASS. NOTE: surfaced pre-existing stale live assert -> karr #19.
