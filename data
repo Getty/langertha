@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-06-26T13:30:37Z
+claimed_by: worker-A
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:37:46Z
+id: 8
+priority: medium
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+- stale
+title: "OpenAI default_model gpt-4o-mini is legacy â\x80\x94 move to GPT-5.x mini"
+updated: 2026-06-26T04:37:46Z
+---
+
+CURRENT vs CODE (verified 2026-06-26, https://developers.openai.com/api/docs/models/all + /deprecations): OpenAI.pm default_model is "gpt-4o-mini". Frontier is now GPT-5.5 / GPT-5.5 Pro; mini tier is gpt-5.4-mini / gpt-5-mini, nano is gpt-5.4-nano. gpt-4o-mini is still listed (NOT yet deprecated) so it works, but base GPT-4o is now Deprecated and the 4-series is being aggressively retired (gpt-4o-2024-05-13 shuts down 2026-10-23). POD also references o1/o3-mini which are Deprecated/retired.
+
+RECOMMEND: default_model => "gpt-5.4-mini" (or gpt-5-mini). Refresh POD model list (drop o1/o3-mini, mention gpt-5.5 / gpt-5.4-mini / gpt-5.4-nano). transcription_model "whisper-1" still valid (newer: gpt-4o-transcribe, gpt-4o-mini-transcribe). NOTE: OpenAIResponses.pm default "gpt-5.5-pro" is CURRENT and correct — no change. Confirm with gated live test.
+DONE. default_model gpt-4o-mini -> gpt-5.4-mini (lib/Langertha/Engine/OpenAI.pm:89). SYNOPSIS + DESCRIPTION refreshed (dropped o1/o3-mini; mention gpt-5.5/5.5-pro/5.4-nano). whisper-1 kept. Tests: t/10_engine_hierarchy.t default assert + helper arg, t/83_live_chat.t live model -> gpt-5.4-mini. LIVE 2026-06-26: GET https://api.openai.com/v1/models lists gpt-5.4-mini, gpt-5.5, gpt-5.5-pro; simple_chat(gpt-5.4-mini) OK -> resolved model gpt-5.4-mini-2026-03-17, content "Hi!". OpenAIResponses left untouched. Default sends no temperature/max_tokens unless set, so gpt-5 series is safe as default.
