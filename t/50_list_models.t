@@ -359,7 +359,7 @@ subtest 'list_models URL correctness for all OpenAICompatible engines' => sub {
     [ 'Langertha::Engine::Cerebras',     qr{cerebras\.ai/v1/models$} ],
     [ 'Langertha::Engine::OpenRouter',   qr{openrouter\.ai/api/v1/models$} ],
     [ 'Langertha::Engine::Replicate',    qr{replicate\.com/v1/models$} ],
-    [ 'Langertha::Engine::AKIOpenAI',    qr{aki\.io/v1/models$} ],
+    [ 'Langertha::Engine::AKIOpenAI',    qr{aki\.io/openai/v1/models$} ],
     [ 'Langertha::Engine::DeepSeek',     qr{deepseek\.com/models$} ],
     [ 'Langertha::Engine::Mistral',      qr{mistral\.ai/v1/models$} ],
     [ 'Langertha::Engine::Scaleway',     qr{scaleway\.ai/v1/models$} ],

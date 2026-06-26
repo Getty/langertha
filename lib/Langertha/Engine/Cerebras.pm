@@ -14,7 +14,7 @@ with 'Langertha::Role::Tools';
 
     my $cerebras = Langertha::Engine::Cerebras->new(
         api_key => $ENV{CEREBRAS_API_KEY},
-        model   => 'llama-3.3-70b',
+        model   => 'gpt-oss-120b',
     );
 
     print $cerebras->simple_chat('Hello from Perl!');
@@ -26,8 +26,8 @@ Composes L<Langertha::Role::OpenAICompatible> with Cerebras's endpoint
 (C<https://api.cerebras.ai/v1>) and API key handling.
 
 Cerebras uses custom wafer-scale chips to deliver extremely fast inference
-speeds. Available models include C<llama3.1-8b> (default), C<qwen-3-235b-a22b-instruct-2507>,
-and C<gpt-oss-120b>.
+speeds. The public endpoint serves C<gpt-oss-120b> (production, the default)
+and C<zai-glm-4.7> (preview).
 
 Supports chat, streaming, and MCP tool calling. Embeddings and transcription
 are not supported.
@@ -50,7 +50,7 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_CEREBRAS_API_KEY or api_key set";
 }
 
-sub default_model { 'llama3.1-8b' }
+sub default_model { 'gpt-oss-120b' }
 
 sub _build_supported_operations {[qw(
   createChatCompletion

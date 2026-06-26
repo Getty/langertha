@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::Cerebras: default_model is now `gpt-oss-120b`, the current
+      production model on Cerebras's public endpoint. The previous default
+      `llama3.1-8b` was deprecated (2026-05-27) and dropped from the public
+      catalog, so the default chat call would fail. POD model mentions
+      refreshed to the live catalog (`gpt-oss-120b` production, `zai-glm-4.7`
+      preview).
+
+    - Engine::AKIOpenAI: base URL corrected from `https://aki.io/v1` to
+      `https://aki.io/openai/v1`, the path used by every working example in
+      AKI.IO's OpenAI-compatibility docs after the Feb 2026 relaunch (the old
+      form now survives only in that page's prose).
+
     - New engine Langertha::Engine::VLLMHook (a sub-engine of vLLM) for the
       IBM vLLM-Hook plugin: it arms the attention / hidden-state / steering
       probes by injecting a top-level `vllm_xargs` field into the chat

@@ -217,7 +217,7 @@ async sub run_tests {
     eval {
       await test_engine('Cerebras', Langertha::Engine::Cerebras->new(
         api_key => $ENV{TEST_LANGERTHA_CEREBRAS_API_KEY},
-        model => 'llama3.1-8b',
+        model => 'gpt-oss-120b',
         mcp_servers => [$mcp],
       ));
     };

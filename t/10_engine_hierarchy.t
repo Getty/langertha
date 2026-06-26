@@ -512,7 +512,7 @@ use Langertha::Engine::AKIOpenAI;
 test_openai_cloud_engine(
   class => 'Langertha::Engine::AKIOpenAI',
   name => 'AKIOpenAI',
-  url => 'https://aki.io/v1',
+  url => 'https://aki.io/openai/v1',
   model => 'llama3_8b_chat',
   env_var => 'LANGERTHA_AKI_API_KEY',
   has_tools => 1,
@@ -620,7 +620,7 @@ test_openai_cloud_engine(
   env_var => 'LANGERTHA_CEREBRAS_API_KEY',
   has_tools => 1,
 );
-is(Langertha::Engine::Cerebras->new(api_key => 'k')->default_model, 'llama3.1-8b', 'Cerebras default_model');
+is(Langertha::Engine::Cerebras->new(api_key => 'k')->default_model, 'gpt-oss-120b', 'Cerebras default_model');
 
 # --- OpenRouter (cloud, meta-provider) ---
 
