@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-06-26T13:31:00Z
+claimed_by: worker-A
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:38:28Z
+id: 11
+priority: medium
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+- stale
+title: 'MiniMax: add M3 to static_models (M3 is now latest); fix ''1M context'' doc
+  claim'
+updated: 2026-06-26T04:38:28Z
+---
+
+Verified 2026-06-26 (https://platform.minimax.io/docs/guides/text-generation + /models-intro). MiniMax.pm and MiniMaxAnthropic.pm static_models top out at MiniMax-M2.7; default is M2.7. MiniMax now states "MiniMax-M3 is the latest M-series language model" (M2.7 and M2 remain available). ACTION: add MiniMax-M3 to both static_models lists; consider default_model => MiniMax-M3 (confirm via live test on both the OpenAI endpoint api.minimax.io/v1 and the Anthropic shim api.minimax.io/anthropic/v1).
+
+DOC: CLAUDE.md engine table says MiniMax "1M context window". M2.x standard context is ~200K (M2.5 = 204800). The 1M figure applies only to the M2.5 Lightning variant. No hardcoded context number exists in code (Role::ContextSize returns undef without default_context_size), so this is a docs-only correction.
+DONE. Added MiniMax-M3 to static_models (prepended) in MiniMax.pm + MiniMaxAnthropic.pm and set default_model -> MiniMax-M3 in both. SYNOPSIS -> M3. Fixed "1M context" claim: MiniMax.pm M2.5 POD now "~200K (1M only on Lightning variant)"; CLAUDE.md engine table line -> "~200K context, M3". Tests: t/10_engine_hierarchy.t both default asserts, t/50_list_models.t adds M3 check (+plan). LIVE 2026-06-26: M3 OK on OpenAI endpoint api.minimax.io/v1 (simple_chat -> model MiniMax-M3); shim path api.minimax.io/anthropic/v1/messages returns 200 with M3. DRIFT: MiniMaxAnthropic engine url default yields DOUBLE /v1 -> 404 (pre-existing, ANY model). Filed as karr #18 (out of scope here).
