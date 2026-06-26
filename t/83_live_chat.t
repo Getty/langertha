@@ -15,6 +15,8 @@ BEGIN {
   push @available, 'mistral'      if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};
   push @available, 'deepseek'     if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
   push @available, 'minimax'      if $ENV{TEST_LANGERTHA_MINIMAX_API_KEY};
+  push @available, 'moonshot'     if $ENV{TEST_LANGERTHA_MOONSHOT_API_KEY};
+  push @available, 'xai'          if $ENV{TEST_LANGERTHA_XAI_API_KEY};
   push @available, 'perplexity'   if $ENV{TEST_LANGERTHA_PERPLEXITY_API_KEY};
   push @available, 'cerebras'     if $ENV{TEST_LANGERTHA_CEREBRAS_API_KEY};
   push @available, 'openrouter'   if $ENV{TEST_LANGERTHA_OPENROUTER_API_KEY};
@@ -116,6 +118,27 @@ if ($ENV{TEST_LANGERTHA_MINIMAX_API_KEY}) {
   require Langertha::Engine::MiniMax;
   test_chat('MiniMax', Langertha::Engine::MiniMax->new(
     api_key => $ENV{TEST_LANGERTHA_MINIMAX_API_KEY},
+  ));
+}
+
+# --- Moonshot (Kimi) ---
+if ($ENV{TEST_LANGERTHA_MOONSHOT_API_KEY}) {
+  require Langertha::Engine::Moonshot;
+  test_chat('Moonshot', Langertha::Engine::Moonshot->new(
+    api_key => $ENV{TEST_LANGERTHA_MOONSHOT_API_KEY},
+  ));
+
+  require Langertha::Engine::MoonshotAnthropic;
+  test_chat('MoonshotAnthropic', Langertha::Engine::MoonshotAnthropic->new(
+    api_key => $ENV{TEST_LANGERTHA_MOONSHOT_API_KEY},
+  ));
+}
+
+# --- XAI (Grok) ---
+if ($ENV{TEST_LANGERTHA_XAI_API_KEY}) {
+  require Langertha::Engine::XAI;
+  test_chat('XAI', Langertha::Engine::XAI->new(
+    api_key => $ENV{TEST_LANGERTHA_XAI_API_KEY},
   ));
 }
 

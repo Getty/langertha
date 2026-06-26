@@ -82,7 +82,8 @@ Engine::Remote              url required, JSON + HTTP
   │
   ├── Engine::AnthropicBase /v1/messages format, x-api-key auth, SSE streaming
   │     ├── Anthropic       Claude models, thinking blocks, tool_use
-  │     ├── MiniMaxAnthropic MiniMax via legacy /anthropic/v1 shim endpoint
+  │     ├── MiniMaxAnthropic MiniMax via legacy /anthropic shim endpoint
+  │     ├── MoonshotAnthropic Moonshot Kimi via /anthropic shim endpoint
   │     └── LMStudioAnthropic LM Studio Anthropic-compatible endpoint
   │
   ├── Engine::OpenAIBase    /chat/completions format, Bearer auth, SSE streaming
@@ -90,8 +91,10 @@ Engine::Remote              url required, JSON + HTTP
   │     ├── OpenAI          gpt-4o, embeddings, whisper transcription, structured output
   │     ├── DeepSeek        deepseek-chat/reasoner, structured output
   │     ├── Groq            ultra-fast inference, whisper transcription, structured output
+  │     ├── XAI             xAI Grok (grok-4.3), 1M context, agentic tool calling
   │     ├── Mistral         EU-hosted, embeddings, structured output
   │     ├── MiniMax         Shanghai (default), ~200K context, M3
+  │     ├── Moonshot        Moonshot Kimi (kimi-k2.6), multimodal, 256K context
   │     ├── NousResearch    Hermes models, <tool_call> XML tool format
   │     ├── Cerebras        wafer-scale chips, fastest inference
   │     ├── OpenRouter      meta-provider, 300+ models, provider/model format

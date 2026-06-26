@@ -26,6 +26,7 @@ use Future::AsyncAwait;
 use Net::Async::MCP;
 use MCP::Server;
 use Langertha::Engine::MiniMax;
+use Langertha::Engine::MiniMaxAnthropic;
 use Langertha::Raider;
 
 my $json = JSON::MaybeXS->new(utf8 => 1);
@@ -42,12 +43,29 @@ ok(length $response > 0, 'simple_chat response is non-empty');
 diag "MiniMax chat response: $response";
 
 # --- list_models ---
-# MiniMax does not provide a /v1/models endpoint, so list_models is expected
-# to fail. Verify it throws rather than silently returning garbage.
+# MiniMax has no /v1/models endpoint, so the engine composes
+# Langertha::Role::StaticModels: list_models returns the hardcoded list
+# (no HTTP) rather than throwing. Mirrors t/50_list_models.t.
 
-eval { $minimax->list_models };
-ok($@, 'list_models fails (MiniMax has no /v1/models endpoint)');
-diag "list_models error (expected): $@";
+my $model_ids = $minimax->list_models;
+is(ref($model_ids), 'ARRAY', 'list_models returns an arrayref (static list, no HTTP)');
+ok(scalar(@$model_ids) > 0, 'list_models is non-empty');
+ok((grep { $_ eq 'MiniMax-M3' } @$model_ids), 'list_models contains MiniMax-M3');
+diag "MiniMax static models: @$model_ids";
+
+# --- MiniMaxAnthropic simple_chat (regression for karr #18) ---
+# The Anthropic-shim url default must compose a single /v1/messages; a double
+# /v1 used to 404 on every model.
+
+my $minimax_anthropic = Langertha::Engine::MiniMaxAnthropic->new(
+  api_key => $ENV{TEST_LANGERTHA_MINIMAX_API_KEY},
+  model   => 'MiniMax-M3',
+);
+
+my $anthropic_response = $minimax_anthropic->simple_chat('Say exactly: Hello Langertha');
+ok(defined $anthropic_response, 'MiniMaxAnthropic simple_chat returns a response');
+ok(length $anthropic_response > 0, 'MiniMaxAnthropic simple_chat response is non-empty');
+diag "MiniMaxAnthropic chat response: $anthropic_response";
 
 # --- Coding Plan web search via Raider ---
 

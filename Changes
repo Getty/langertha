@@ -2,6 +2,30 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New engines. Langertha::Engine::XAI — xAI Grok via the OpenAI-compatible
+      endpoint (https://api.x.ai/v1, LANGERTHA_XAI_API_KEY, default grok-4.3),
+      modeled on the Groq/DeepSeek cloud engines with Tools. Langertha::Engine::Moonshot
+      and Langertha::Engine::MoonshotAnthropic — Moonshot AI Kimi, mirroring the
+      MiniMax dual-engine pair: Moonshot on the native OpenAI endpoint
+      (https://api.moonshot.ai/v1) and MoonshotAnthropic on the Anthropic shim
+      (https://api.moonshot.ai/anthropic), both LANGERTHA_MOONSHOT_API_KEY,
+      default kimi-k2.6. Moonshot's OpenAI endpoint controls reasoning via a
+      Kimi-specific `thinking` object rather than the openai-wire reasoning_effort
+      field, so that engine clears the capability and never emits it (route
+      reasoning via MoonshotAnthropic). Endpoints and model ids doc-verified
+      2026-06-26 against the xAI and Kimi docs; not yet live-tested (no keys).
+
+    - Fix Langertha::Engine::MiniMaxAnthropic double-/v1 -> 404 (karr #18). The
+      url default was https://api.minimax.io/anthropic/v1, and AnthropicBase
+      appends /v1/messages, producing .../anthropic/v1/v1/messages -> HTTP 404
+      for every model. Corrected the default to https://api.minimax.io/anthropic
+      so the composed endpoint is a single .../anthropic/v1/messages
+      (live-verified HTTP 200 on MiniMax-M3). Added a request-URI unit assert and
+      a gated live chat assert. Also fixed a stale live assert in
+      t/83_live_minimax.t (karr #19): it expected MiniMax->list_models to throw,
+      but MiniMax composes StaticModels since the #11 refresh, so it now verifies
+      the static list (incl. MiniMax-M3) instead.
+
     - Reasoning effort: new request-side `reasoning_effort` control normalized
       across engines (karr #16 slice 1). New Langertha::Role::ReasoningEffort
       (normalized vocabulary none|minimal|low|medium|high|xhigh|max, emitted

@@ -22,7 +22,8 @@ with 'Langertha::Role::StaticModels';
 =head1 DESCRIPTION
 
 Provides access to L<MiniMax|https://www.minimax.io/> models via their
-Anthropic-compatible endpoint at C<https://api.minimax.io/anthropic/v1>.
+Anthropic-compatible endpoint at C<https://api.minimax.io/anthropic> (the
+shared L<Langertha::Engine::AnthropicBase> appends the C</v1/messages> path).
 
 B<Historical note:> Until version 0.402 this was the default behavior of
 L<Langertha::Engine::MiniMax>. MiniMax's C</anthropic> endpoint is a shim
@@ -41,9 +42,13 @@ C<LANGERTHA_MINIMAX_API_KEY> in your environment.
 
 =cut
 
+# AnthropicBase->chat_request appends '/v1/messages' to url; the default must
+# therefore stop at '/anthropic' so the composed endpoint is a single
+# '/anthropic/v1/messages' (a '/anthropic/v1' default double-stacks to
+# '/anthropic/v1/v1/messages' -> HTTP 404 on every model).
 has '+url' => (
   lazy => 1,
-  default => sub { 'https://api.minimax.io/anthropic/v1' },
+  default => sub { 'https://api.minimax.io/anthropic' },
 );
 
 sub _build_api_key {

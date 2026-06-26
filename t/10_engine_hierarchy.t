@@ -386,6 +386,21 @@ test_openai_cloud_engine(
   has_response_format => 1,
 );
 
+# --- XAI (Grok) ---
+
+use Langertha::Engine::XAI;
+
+test_openai_cloud_engine(
+  class => 'Langertha::Engine::XAI',
+  name => 'XAI',
+  url => 'https://api.x.ai/v1',
+  model => 'grok-4.3',
+  env_var => 'LANGERTHA_XAI_API_KEY',
+  has_tools => 1,
+  has_response_format => 1,
+);
+is(Langertha::Engine::XAI->new(api_key => 'k')->default_model, 'grok-4.3', 'XAI default_model');
+
 # --- Perplexity (NO tools!) ---
 
 use Langertha::Engine::Perplexity;
@@ -479,12 +494,62 @@ ok(Langertha::Engine::MiniMaxAnthropic->does('Langertha::Role::Tools'), 'MiniMax
 ok(Langertha::Engine::MiniMaxAnthropic->does('Langertha::Role::StaticModels'), 'MiniMaxAnthropic does StaticModels');
 {
   my $m = Langertha::Engine::MiniMaxAnthropic->new(api_key => 'test-key');
-  is($m->url, 'https://api.minimax.io/anthropic/v1', 'MiniMaxAnthropic url default correct');
+  is($m->url, 'https://api.minimax.io/anthropic', 'MiniMaxAnthropic url default correct (no trailing /v1)');
   is($m->default_model, 'MiniMax-M3', 'MiniMaxAnthropic default_model');
   my $req = $m->chat('test prompt');
   is($req->method, 'POST', 'MiniMaxAnthropic chat request is POST');
-  like($req->uri, qr{/v1/messages$}, 'MiniMaxAnthropic chat endpoint is /v1/messages');
+  # Regression for the double-/v1 404 bug (karr #18): AnthropicBase appends
+  # /v1/messages, so the composed URL must carry exactly one /v1.
+  is($req->uri, 'https://api.minimax.io/anthropic/v1/messages', 'MiniMaxAnthropic composed URL has a single /v1');
+  unlike($req->uri, qr{/v1/v1/}, 'MiniMaxAnthropic URL has no double /v1');
   is($req->header('x-api-key'), 'test-key', 'MiniMaxAnthropic uses x-api-key header');
+}
+
+# --- Moonshot (Kimi, OpenAI-compatible endpoint) ---
+
+use Langertha::Engine::Moonshot;
+
+ok(Langertha::Engine::Moonshot->isa('Langertha::Engine::OpenAIBase'), 'Moonshot isa OpenAIBase');
+ok(Langertha::Engine::Moonshot->isa('Langertha::Engine::Remote'), 'Moonshot isa Remote');
+ok(!Langertha::Engine::Moonshot->isa('Langertha::Engine::AnthropicBase'), 'Moonshot is NOT AnthropicBase');
+ok(Langertha::Engine::Moonshot->does('Langertha::Role::Chat'), 'Moonshot does Chat');
+ok(Langertha::Engine::Moonshot->does('Langertha::Role::Streaming'), 'Moonshot does Streaming');
+ok(Langertha::Engine::Moonshot->does('Langertha::Role::Tools'), 'Moonshot does Tools');
+ok(Langertha::Engine::Moonshot->does('Langertha::Role::StaticModels'), 'Moonshot does StaticModels');
+{
+  my $m = Langertha::Engine::Moonshot->new(api_key => 'test-key');
+  is($m->url, 'https://api.moonshot.ai/v1', 'Moonshot url default correct');
+  is($m->default_model, 'kimi-k2.6', 'Moonshot default_model');
+  # OpenAI endpoint controls reasoning via a `thinking` object, not reasoning_effort.
+  ok(!$m->supports('reasoning_effort'), 'Moonshot clears reasoning_effort capability');
+
+  my $req = $m->chat('test prompt');
+  like($req->uri, qr{/chat/completions$}, 'Moonshot chat endpoint is /chat/completions');
+  is($req->header('Authorization'), 'Bearer test-key', 'Moonshot sets Authorization header');
+
+  local $ENV{LANGERTHA_MOONSHOT_API_KEY} = 'env-key-12345';
+  my $m2 = Langertha::Engine::Moonshot->new;
+  is($m2->api_key, 'env-key-12345', 'Moonshot reads api_key from LANGERTHA_MOONSHOT_API_KEY');
+}
+
+# --- MoonshotAnthropic (Kimi via Anthropic-compatible endpoint) ---
+
+use Langertha::Engine::MoonshotAnthropic;
+
+ok(Langertha::Engine::MoonshotAnthropic->isa('Langertha::Engine::AnthropicBase'), 'MoonshotAnthropic isa AnthropicBase');
+ok(!Langertha::Engine::MoonshotAnthropic->isa('Langertha::Engine::OpenAIBase'), 'MoonshotAnthropic is NOT OpenAIBase');
+ok(Langertha::Engine::MoonshotAnthropic->does('Langertha::Role::Tools'), 'MoonshotAnthropic does Tools');
+ok(Langertha::Engine::MoonshotAnthropic->does('Langertha::Role::StaticModels'), 'MoonshotAnthropic does StaticModels');
+{
+  my $m = Langertha::Engine::MoonshotAnthropic->new(api_key => 'test-key');
+  is($m->url, 'https://api.moonshot.ai/anthropic', 'MoonshotAnthropic url default correct (no trailing /v1)');
+  is($m->default_model, 'kimi-k2.6', 'MoonshotAnthropic default_model');
+  my $req = $m->chat('test prompt');
+  is($req->method, 'POST', 'MoonshotAnthropic chat request is POST');
+  # Same single-/v1 invariant as the MiniMaxAnthropic regression (karr #18).
+  is($req->uri, 'https://api.moonshot.ai/anthropic/v1/messages', 'MoonshotAnthropic composed URL has a single /v1');
+  unlike($req->uri, qr{/v1/v1/}, 'MoonshotAnthropic URL has no double /v1');
+  is($req->header('x-api-key'), 'test-key', 'MoonshotAnthropic uses x-api-key header');
 }
 
 # --- NousResearch ---
@@ -741,6 +806,10 @@ for my $class (qw(
   Langertha::Engine::Perplexity
   Langertha::Engine::Mistral
   Langertha::Engine::MiniMax
+  Langertha::Engine::MiniMaxAnthropic
+  Langertha::Engine::Moonshot
+  Langertha::Engine::MoonshotAnthropic
+  Langertha::Engine::XAI
   Langertha::Engine::NousResearch
   Langertha::Engine::AKIOpenAI
   Langertha::Engine::OllamaOpenAI

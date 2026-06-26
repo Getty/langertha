@@ -356,6 +356,7 @@ subtest 'list_models URL correctness for all OpenAICompatible engines' => sub {
   my @engines = (
     [ 'Langertha::Engine::OpenAI',       qr{api\.openai\.com/v1/models$} ],
     [ 'Langertha::Engine::Groq',         qr{groq\.com/openai/v1/models$} ],
+    [ 'Langertha::Engine::XAI',          qr{x\.ai/v1/models$} ],
     [ 'Langertha::Engine::Cerebras',     qr{cerebras\.ai/v1/models$} ],
     [ 'Langertha::Engine::OpenRouter',   qr{openrouter\.ai/api/v1/models$} ],
     [ 'Langertha::Engine::Replicate',    qr{replicate\.com/v1/models$} ],
@@ -433,6 +434,26 @@ subtest 'MiniMax static models' => sub {
   ok((grep { $_ eq 'MiniMax-M3' } @$model_ids), 'Contains MiniMax-M3');
   ok((grep { $_ eq 'MiniMax-M2.5' } @$model_ids), 'Contains MiniMax-M2.5');
   ok((grep { $_ eq 'MiniMax-M2.7' } @$model_ids), 'Contains MiniMax-M2.7');
+
+  # Full mode returns hashrefs
+  my $full = $engine->list_models(full => 1);
+  is(ref($full->[0]), 'HASH', 'Full mode returns model hashrefs');
+};
+
+subtest 'Moonshot static models' => sub {
+  plan tests => 7;
+
+  use_ok('Langertha::Engine::Moonshot');
+
+  my $engine = Langertha::Engine::Moonshot->new(api_key => 'test-key');
+
+  # list_models returns static list without HTTP
+  my $model_ids = $engine->list_models;
+  is(ref($model_ids), 'ARRAY', 'Returns arrayref');
+  ok(scalar(@$model_ids) >= 4, 'Has at least 4 models');
+  ok((grep { $_ eq 'kimi-k2.6' } @$model_ids), 'Contains kimi-k2.6');
+  ok((grep { $_ eq 'kimi-k2.7-code' } @$model_ids), 'Contains kimi-k2.7-code');
+  ok((grep { $_ eq 'moonshot-v1-128k' } @$model_ids), 'Contains moonshot-v1-128k');
 
   # Full mode returns hashrefs
   my $full = $engine->list_models(full => 1);
