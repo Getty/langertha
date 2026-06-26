@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-06-26T14:38:07Z
+claimed_by: worker-D
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T14:34:17Z
+id: 19
+priority: low
+status: done
+tags:
+- bug
+- test
+- reconcile
+title: 'Stale live assert: t/83_live_minimax.t expects MiniMax->list_models to throw'
+updated: 2026-06-26T14:34:17Z
+---
+
+Discovered 2026-06-26 while live-verifying karr #18. t/83_live_minimax.t line ~48-50 asserts ok($@, "list_models fails (MiniMax has no /v1/models endpoint)"). This is stale: Langertha::Engine::MiniMax now composes Langertha::Role::StaticModels (added in the #11 model refresh), so list_models returns the static model list and never throws. The assertion only runs with TEST_LANGERTHA_MINIMAX_API_KEY set, so it was not caught by the keyless suite. Unit test t/50_list_models.t "MiniMax static models" already encodes the correct (static-list) behavior, confirming the contradiction. FIX: drop or invert the stale assertion (expect a non-empty static list). Out of scope for #18 (Anthropic url) and #15 (new engines); not fixed there to keep those changes surgical.
+Fixed on branch chore/new-engines-minimax-fix. t/83_live_minimax.t test 3 rewrote from ok($@, "list_models fails ...") to assert the CURRENT correct behavior: MiniMax->list_models returns the static arrayref (non-empty, contains MiniMax-M3), mirroring t/50_list_models.t "MiniMax static models". Not weakened to a no-op - verifies real static-list behavior. LIVE-VERIFIED with MINIMAX key: t/83_live_minimax.t now PASSES fully (12/12, no failing assert; static list = MiniMax-M3 M2.7 M2.5 M2.5-highspeed M2.1 M2.1-highspeed M2). Keyless prove -lr t/ stays PASS (1883). Changes note added to the #18 block. No commit (staged/unstaged for maintainer review).
