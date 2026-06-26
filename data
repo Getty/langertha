@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-06-26T17:23:10Z
+claimed_by: worker-recon
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T03:33:26Z
+id: 1
+priority: high
+started: 2026-06-26
+status: done
+tags:
+- tools
+- wire-format
+- tech-debt
+title: Reconcile ToolCall inbound entry points (extract vs locate+from_fmt)
+updated: 2026-06-26T03:33:26Z
+---
+
+ADR 0001 follow-up. ToolCall->extract($fmt,$data) is the unified locate+parse API, but the tool loop (Role::Tools::response_tool_calls + extract_tool_call) uses the lower-level locate + from_fmt split. The legacy self-sniffing extract($data) form ALSO duplicates the per-format response-walking already in ToolCall->locate. Three inbound paths, two copies of the per-format walking. Decision to make + apply: pick one canonical inbound path so the per-format walking lives in exactly one place. Likely: route Role::Tools through ToolCall->extract($fmt,$data) and drop/retire the duplicate. Keep hermes (text XML) special-cased as today.
+CONVERGED (branch refactor/tools-value-object-symmetry).
+extract is now strictly extract($fmt,$data) = locate + from_fmt — THE single canonical public inbound entry; per-format response-walking lives only in locate(). Engine chat_response migrated: AnthropicBase/Ollama/Gemini pass $self->tool_wire_format; OpenAICompatible PINS literal "openai" (its response envelope is always OpenAI-shaped even for hermes engines — their calls ride in message text, parsed by the Role::Tools hermes branch — and Perplexity composes no Tools role so has no tool_wire_format method; $self->tool_wire_format there would croak/die). DECISION on Role::Tools:191/208 — KEPT on locate()+from_fmt(): response_tool_calls must return RAW structures because the loop threads them into format_tool_results, which reaches provider-specific raw fields to rebuild the result envelope + assistant echo, and t/60 + t/92 pin the raw shape. Routing it through extract (returns ToolCall objects) would be a larger, behavior-risky change out of this ticket scope. Self-sniffing survives ONLY behind the Output::Tools back-compat facade as the explicit extract_sniff($data) = sniff_format()+extract(); sniff_format does cheap top-level key detection then delegates to extract, so NO duplicate per-format walking remains (ADR 0001 future-work satisfied). Added fail-loud guard: extract croaks if $fmt is a ref (legacy single-arg misuse). CONTEXT.md needed NO change for #1 (its extract($fmt,$data) wording already matched). LIVE (real keys): parsing verified post-refactor across openai (OpenAI/Mistral/DeepSeek/Cerebras/HuggingFace/TSystems/Scaleway=22), anthropic (Anthropic/MiniMax=22), gemini (Gemini=22), responses (gpt-5.5-pro t/85 PASS), hermes (NousResearch=22 isolated). Non-parsing transient failures only: Groq 404, OpenRouter 429, AKI 500/404 (server/rate-limit). prove -lr + dzil test (incl author-pod-syntax) PASS. NOTE for adr-auditor: this resolves the ADR 0001 "Future work" inbound-reconciliation item.
+extract($fmt,$data) is the one canonical inbound; sniff retained as extract_sniff behind Output::Tools facade only; Role::Tools loop kept on locate+from_fmt (needs raw); live-verified across all 4 native formats. Ready for adr-auditor to record.
