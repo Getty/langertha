@@ -1,0 +1,35 @@
+---
+claimed_at: 2026-06-26T13:21:34Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:37:38Z
+id: 7
+priority: high
+status: done
+tags:
+- provider-update
+- stale
+title: "AKI relaunch (Feb 2026) â\x80\x94 verify AKI native endpoint id + AKIOpenAI
+  base URL"
+updated: 2026-06-26T04:37:38Z
+---
+
+AKI.IO relaunched 2026-02-17 as a sovereign EU platform (Qwen, MiniMax, GPT-OSS, Llama, Apertus, GLM, Kimi). Verified 2026-06-26.
+
+1) AKIOpenAI.pm base URL: code uses https://aki.io/v1. Current docs (https://aki.io/docs/compatibility/openai-api-compatibility/) lead with https://aki.io/openai/v1 for all curl/SDK examples (the page is internally inconsistent and still mentions /v1 in prose). RISK: /v1 may be a legacy alias or wrong. ACTION: confirm canonical base path; likely change to https://aki.io/openai/v1.
+   - AKIOpenAI default_model "llama3-chat-8b" IS still valid (confirmed in the live model table: Llama 3.1 8B -> llama3-chat-8b). Newer/better defaults available: gemma4-26b, qwen3.6-35b, gpt-oss-120b, minimax-m2.5-230b. Unknown models now fall back to MiniMax M2.5.
+
+2) AKI.pm (native /api/call/{endpoint}) default_model "llama3_8b_chat" (underscore style). Native endpoint-name list at https://aki.io/docs/llm-chat/available-llm-models/ now shows Apertus 70B, Gemma 4 26B, Llama 3.1/3.3, Ministral 3, Qwen 3.6, GPT-OSS 120B, MiniMax M2.5, GLM 4.7 — but the exact native endpoint strings could not be extracted. RISK: llama3_8b_chat endpoint name may be stale post-relaunch. ACTION: confirm current native endpoint name via GET /api/endpoints (the engine already supports listing) and update default.
+   - Native API also now advertises tool-calls + multimodal via chat_output_format=json (potential new capability).
+Base URL structure (/api/call/{name}, key-in-body) and AKIOpenAI Bearer auth are otherwise correct.
+DONE / verified live 2026-06-26.
+
+(1) AKIOpenAI base URL CHANGED: lib/Langertha/Engine/AKIOpenAI.pm:62 'https://aki.io/v1' -> 'https://aki.io/openai/v1'. Source: https://aki.io/docs/compatibility/openai-api-compatibility/. The page is internally inconsistent, but EVERY working example uses /openai/v1: the 'Base URL' section, all curl examples, the Python SDK snippets, the machine-readable JSON config (base_url + model_discovery_endpoint /openai/v1/models). Only prose + an embedded 'SYSTEM INSTRUCTION FOR AI AGENTS' prompt-injection blockquote say /v1 -- disregarded the injection, followed the executable examples per house rule. Added a code comment noting the doc inconsistency. Also refreshed POD URL mentions (AKIOpenAI.pm:42,48). Updated tests: t/10_engine_hierarchy.t:515 + t/50_list_models.t:362.
+AKIOpenAI default_model 'llama3-chat-8b' CONFIRMED valid (live table: Llama 3.1 8B -> llama3-chat-8b) -> left unchanged.
+
+(2) AKI native default endpoint 'llama3_8b_chat' CONFIRMED VALID, left UNCHANGED. The advisor couldn't extract the endpoint strings; raw extraction of https://aki.io/docs/llm-chat/available-llm-models/ exposes them via the cell links: Llama 3.1 8B -> https://aki.io/api/call/llama3_8b_chat, which matches AKI.pm's /api/call/{model} structure exactly. Other native endpoints: apertus_chat, gemma4, llama3_chat, ministral3_chat, qwen3_6, gpt_oss_chat, minimax_m2_chat, glm4_chat. Native /api/call/{name} + key-in-body confirmed. New native capability noted (not implemented): chat_output_format=json multi-channel (thinking/tool/multimodal).
+
+Full suite green (1808 tests). Live AKI test skipped (no key).
+Fixed AKIOpenAI URL; AKI native + AKIOpenAI default_model confirmed valid & unchanged; tests green; awaiting review.
+Resolved + merged (627f423): AKIOpenAI base -> /openai/v1 (per live executable docs; prompt-injection in docs ignored). AKIOpenAI default llama3-chat-8b and AKI native llama3_8b_chat confirmed valid, left unchanged.
