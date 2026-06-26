@@ -1,0 +1,46 @@
+---
+claimed_at: 2026-06-26T14:10:07Z
+claimed_by: langertha-worker-16
+class: standard
+completed: 2026-06-26
+created: 2026-06-26T04:39:42Z
+id: 16
+priority: medium
+started: 2026-06-26
+status: done
+tags:
+- provider-update
+title: 'Capability gap: thread reasoning_effort / thinking-budget + prompt caching
+  params'
+updated: 2026-06-26T04:39:42Z
+---
+
+Cross-cutting capability drift verified 2026-06-26. The current generation exposes controls Langertha does not thread through chat_f:
+
+1) reasoning effort / thinking budget — OpenAI GPT-5.x take reasoning_effort (it is a top suggested param on developers.openai.com); Anthropic extended-thinking budget_tokens; Gemini 3 thinking; DeepSeek V4 hybrid thinking; MiniMax/GLM reasoning. Langertha has Role::ThinkTag (filtering) but no first-class request-side reasoning-effort knob. Consider a Role::ReasoningEffort (per-engine wire mapping) since most flagship models are now reasoning-first.
+
+2) prompt caching — Anthropic cache_control, OpenAI automatic prompt caching, Gemini context caching. Not surfaced. Relevant for Raider (long system prompts + session history) cost.
+
+Advisory only — scope/shape TBD by worker. Flag so it does not evaporate.
+Advisor pass complete (2026-06-26). Verified per-provider wire shapes + found a latent bug.
+
+KEY FINDING — existing Anthropic effort is on the WRONG wire shape. AnthropicBase.pm has has effort (low/medium/high) emitted as a TOP-LEVEL effort body key (lib/Langertha/Engine/AnthropicBase.pm:86-103,164,287). Current Anthropic API (Opus 4.5+/Sonnet 4.6+/Fable 5) wants output_config.effort (low|medium|high|xhigh|max) AND thinking:{type:adaptive} to actually enable thinking. Top-level effort is at best a no-op, at worst a 400. (inference_geo top-level IS correct - leave it.) Source: platform.claude.com effort + extended-thinking docs, claude-api skill, 2026-06-26.
+
+WIRE SHAPES (reasoning effort):
+- OpenAI chat completions (openai fmt): flat reasoning_effort string; values none|minimal|low|medium|high|xhigh, model-dependent; ONLY on reasoning models (gpt-5.x/o-series) - NOT gpt-4o-mini (Langertha default) -> 400.
+- OpenAIResponses (responses fmt): nested reasoning:{effort:...}. (also: that engine sends max_tokens but Responses wants max_output_tokens - adjacent bug.)
+- Anthropic: output_config.effort + thinking:{type:adaptive}.
+- Gemini 3: generationConfig.thinkingConfig.thinkingLevel (low|high); 2.5 used thinkingBudget int.
+- DeepSeek: V4-pro/flash flat reasoning_effort (high|max); V3.2 toggle thinking:{type:enabled} - model-gated divergence within openai fmt.
+- Groq: reasoning_effort (model-dependent) + reasoning_format. MiniMax: route reasoning via MiniMaxAnthropic (M2.x OpenAI path ignores reasoning_effort).
+
+PROMPT CACHING:
+- Anthropic: cache_control:{type:ephemeral, ttl:5m|1h}; top-level cache_control auto-places on last cacheable block (simplest). Min prefix 4096 tok (Opus), 2048 (Sonnet4.6/Fable). Default TTL cut to 5m on 2026-03-06.
+- OpenAI: implicit/automatic; optional prompt_cache_key string to steer routing.
+- Gemini: implicit (2.5+) auto; explicit context caching = separate cachedContents resource (heavy, defer).
+- DeepSeek: automatic context caching, no param.
+
+PLAN: Slice1 = Role::ReasoningEffort (normalized reasoning_effort -> per-wire via a Langertha::Reasoning value object keyed off base class, ADR0001 style) covering OpenAI/Anthropic(+fix bug)/Gemini/Responses; unit request-body assertions + cap flag in %ROLE_TO_CAPS + around corrections. Slice2 = Role::PromptCache (Anthropic cache_control auto-place + OpenAI prompt_cache_key). Slice3 (defer) = thinking_budget (Gemini/legacy Anthropic), DeepSeek model-gated toggle, Groq reasoning_format, explicit Gemini caching. Full spec handed to orchestrator for worker brief.
+Slice 1 (reasoning_effort) DONE by langertha-worker. New: lib/Langertha/Reasoning.pm + lib/Langertha/Role/ReasoningEffort.pm. Wired on OpenAIBase/AnthropicBase/Gemini/OpenAIResponses; reasoning_wire_format tag (NOT keyed off tool_wire_format). Fixed load-bearing AnthropicBase bug (top-level effort -> output_config.effort + thinking:{type:adaptive}); effort kept as back-compat alias. Fixed OpenAIResponses max_tokens -> max_output_tokens. DeepSeek model-gated (V4 reasoning_effort high|max vs V3.2 thinking:enabled); MiniMax+Perplexity clear cap + drop field. Cap reasoning_effort in %ROLE_TO_CAPS. Unit tests in t/20,t/46,t/60,t/78; gated live test t/86_live_reasoning_effort.t. LIVE-VERIFIED Anthropic claude-opus-4-8 accepts new shape (HTTP 200). Full suite green: 1830 tests. Slice 2 (prompt caching: Anthropic cache_control + OpenAI prompt_cache_key) STILL PENDING. Slice 3 (thinking_budget int / Groq reasoning_format / explicit Gemini caching) deferred.
+Slice 2 (prompt caching) DONE by langertha-worker on branch feature/prompt-caching. New: lib/Langertha/PromptCache.pm (value object) + lib/Langertha/Role/PromptCache.pm (role), mirroring the Slice 1 Reasoning pattern. cache_wire_format tag defaults openai, AnthropicBase overrides to anthropic. Composed on OpenAIBase + AnthropicBase ONLY (Gemini/DeepSeek/others cache implicitly - no role, no no-op). Wire: anthropic top-level cache_control:{type:ephemeral[,ttl]} via prompt_cache(+prompt_cache_ttl 5m|1h); openai flat prompt_cache_key. Emitted (can-guarded in OpenAICompatible, direct in AnthropicBase) in chat_request AND chat_stream_request. Two distinct cap flags chosen (asymmetry): prompt_cache (Anthropic enable) + prompt_cache_key (OpenAI routing); OpenAIBase clears prompt_cache, AnthropicBase clears prompt_cache_key, Perplexity additionally clears prompt_cache_key. Tests: t/20 body asserts, t/78 cap asserts (true on OpenAI key / Anthropic enable; false on Gemini+Perplexity), gated t/86_live_prompt_cache.t. LIVE-VERIFIED claude-opus-4-8: call1 cache_creation=11014, call2 cache_read=11014 (true cache hit). Full suite green: dzil test 2006 tests incl author-pod-syntax. NOT committed. Slice 3 (thinking_budget int / Gemini 2.5 thinkingBudget / DeepSeek V3.2 toggle / Groq reasoning_format / explicit Gemini context caching) STILL DEFERRED.
+Slices 1+2 done & merged (8faa202 reasoning, e50bed3 caching), both live-verified (Anthropic effort 200; cache hit cache_read=11014). Slice 3 (thinking_budget int / Gemini thinkingBudget / DeepSeek V3.2 toggle / Groq reasoning_format / explicit Gemini context caching) deferred -> #20.
