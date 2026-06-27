@@ -2,6 +2,16 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Enforce naming conventions via Perl::Critic. Added a focused .perlcriticrc
+      enabling the NamingConventions::Capitalization and ProhibitAmbiguousNames
+      policies (CamelCase packages, snake_case subs/vars with leading "_" for
+      private/builder subs, ALL_CAPS constants/globals), tuned to pass clean on
+      the current tree so it can serve as a CI gate. Documented the conventions
+      in README ("Coding conventions") and CLAUDE.md. Renamed the camelCase
+      $operationId/$opId locals in Langertha::Role::OpenAPI to snake_case
+      ($operation_id) to match the surrounding style (behaviour-preserving; the
+      OpenAPI spec key and POD term "operationId" are unchanged).
+
     - Tool wire-translation value-object symmetry (karr #1, #2; ADR 0001/0003).
       Reconciled the two inbound tool-call entry points ADR 0001 flagged as
       unsettled: Langertha::ToolCall->extract is now strictly the format-pinned

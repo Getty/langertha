@@ -931,6 +931,34 @@ my $models = $engine->list_models(force_refresh => 1); # Bypass cache
 
 Results are cached for 1 hour (configurable via `models_cache_ttl`).
 
+## Coding conventions
+
+Langertha enforces consistent identifier naming so the codebase stays
+predictable for both human contributors and AI agents. The conventions are the
+de-facto standard already used throughout `lib/`:
+
+| Identifier | Convention | Example |
+|---|---|---|
+| Packages / namespaces | `CamelCase` | `Langertha::Engine::OpenAIBase` |
+| Subroutines & methods | `snake_case` | `from_openai`, `chat_with_tools_f` |
+| Private / builder subs | leading `_` + `snake_case` | `_build_api_key`, `_build__json` |
+| Lexical variables | `snake_case` | `my $tool_choice` |
+| Package globals / constants | `snake_case` or `ALL_CAPS` | `our $VERSION`, `our %ROLE_TO_CAPS` |
+
+These rules are machine-checkable via [Perl::Critic](https://metacpan.org/pod/Perl::Critic).
+A focused [`.perlcriticrc`](.perlcriticrc) at the repo root enables the
+`NamingConventions::Capitalization` and `NamingConventions::ProhibitAmbiguousNames`
+policies (and nothing else, to keep the gate low-noise). The current tree passes
+clean, so it can be wired into CI as an enforcement gate.
+
+```bash
+# One-time: install the linter
+cpanm Perl::Critic
+
+# Lint the shipped code (uses .perlcriticrc automatically)
+perlcritic lib/ bin/
+```
+
 ## Testing
 
 ```bash

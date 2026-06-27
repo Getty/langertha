@@ -35,13 +35,13 @@ sub _build_openapi_operations {
     for my $method (keys %{$paths->{$path}}) {
       next unless ref $paths->{$path}{$method} eq 'HASH';
       my $op = $paths->{$path}{$method};
-      my $opId = $op->{operationId} or next;
+      my $operation_id = $op->{operationId} or next;
       my $ct;
       if ($op->{requestBody} && $op->{requestBody}{content}) {
         $ct = 'application/json' if $op->{requestBody}{content}{'application/json'};
         $ct //= 'multipart/form-data' if $op->{requestBody}{content}{'multipart/form-data'};
       }
-      $operations{$opId} = {
+      $operations{$operation_id} = {
         method       => uc($method),
         path         => $path,
         defined $ct ? (content_type => $ct) : (),
@@ -105,10 +105,10 @@ a limited compatibility mode.
 =cut
 
 sub can_operation {
-  my ( $self, $operationId ) = @_;
+  my ( $self, $operation_id ) = @_;
   return 1 unless scalar @{$self->supported_operations} > 0;
   my %so = map { $_, 1 } @{$self->supported_operations};
-  return $so{$operationId};
+  return $so{$operation_id};
 }
 
 =method can_operation
@@ -121,12 +121,12 @@ returns true when C<supported_operations> is empty (unrestricted mode).
 =cut
 
 sub get_operation {
-  my ( $self, $operationId ) = @_;
+  my ( $self, $operation_id ) = @_;
   croak "".(ref $self)." runs in compatibility mode and is unable to perform this OpenAPI operation"
-    unless ($self->can_operation($operationId));
+    unless ($self->can_operation($operation_id));
   my $ops = $self->openapi_operations;
-  my $op = $ops->{operations}{$operationId}
-    or croak "".(ref $self).": operationId '$operationId' not found in spec";
+  my $op = $ops->{operations}{$operation_id}
+    or croak "".(ref $self).": operationId '$operation_id' not found in spec";
   my $url = $self->url || $ops->{server_url};
   return ( $op->{method}, $url.$op->{path}, $op->{content_type} );
 }
@@ -142,9 +142,9 @@ operation is not in C<supported_operations>.
 =cut
 
 sub generate_request {
-  my ( $self, $operationId, $response_call, %args ) = @_;
-  my ( $method, $url, $content_type ) = $self->get_operation($operationId);
-  $log->debugf("[%s] %s %s (%s)", ref $self, $method, $url, $operationId);
+  my ( $self, $operation_id, $response_call, %args ) = @_;
+  my ( $method, $url, $content_type ) = $self->get_operation($operation_id);
+  $log->debugf("[%s] %s %s (%s)", ref $self, $method, $url, $operation_id);
   $args{content_type} = $content_type if defined $content_type;
   return $self->generate_http_request( $method, $url, $response_call, %args );
 }
