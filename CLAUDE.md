@@ -79,6 +79,10 @@ Test framework: `Test2::Bundle::More`. `dzil release` is forbidden without expli
 - **MCP**: `Net::Async::MCP` (client), `MCP::Server` (tool definitions, `inputSchema` camelCase).
 - **POD**: `@Author::GETTY` PodWeaver. `# ABSTRACT:` required on every `.pm`; inline `=attr`,
   `=method`, `=seealso`. Use the `pod-writer` agent for documentation.
+- **Naming**: `CamelCase` packages, `snake_case` subs/methods/variables (leading `_` for
+  private/builder subs), `ALL_CAPS` for constants/package globals (`$VERSION`, `%ROLE_TO_CAPS`).
+  Enforced by `.perlcriticrc` (NamingConventions policies) — run `perlcritic lib/ bin/`; the
+  tree passes clean. See README "Coding conventions".
 
 ## Architecture
 

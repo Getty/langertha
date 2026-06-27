@@ -1,0 +1,65 @@
+# Perl::Critic configuration for Langertha
+#
+# Scope: this file enforces NAMING CONVENTIONS as machine-checkable rules so
+# that contributors (human and AI agents) get consistent identifiers without
+# relying on review-by-eye. It deliberately runs only the naming-related
+# policies; broader style/complexity policies are left out so the gate stays
+# focused and low-noise. It is tuned to pass clean on the current tree, so it
+# can be wired into CI as an enforcement gate.
+#
+# Conventions enforced (the de-facto standard already used across lib/):
+#   * Packages            StartsWithUpper (CamelCase)  Langertha::Engine::OpenAIBase
+#   * Subroutines         snake_case                   from_openai, chat_with_tools_f
+#                         (leading "_" for private/builder subs allowed:
+#                          _build_api_key, _build__json)
+#   * Lexical variables   snake_case                   my $tool_choice
+#   * Globals / constants snake_case OR ALL_CAPS        our $VERSION, our %ROLE_TO_CAPS
+#
+# Run:  perlcritic lib/ bin/
+# (.perlcriticrc is the default profile lookup path, so no --profile needed)
+
+# Only report violations from the policies explicitly enabled below, and run
+# them regardless of their stock severity.
+severity = 1
+only     = 1
+verbose  = 8
+
+#-----------------------------------------------------------------------------
+# Capitalization: enforce the project's identifier casing.
+# Each option takes a built-in scheme tag (e.g. :starts_with_upper) or a
+# literal regexp the identifier must match. The snake_case regexp below allows
+# leading underscores (private/builder subs) and multi-underscore separators
+# (Moose builders for private attributes, e.g. _build__json -> attr _json).
+#-----------------------------------------------------------------------------
+[NamingConventions::Capitalization]
+severity = 5
+
+# Packages start with an upper-case letter (CamelCase namespaces).
+# package_exemptions matches each "::"-separated component independently and is
+# auto-anchored with \A...\z, so "vLLM" exempts the Langertha::Engine::vLLM
+# namespace whose capitalization mirrors the upstream project's own brand.
+packages           = :starts_with_upper
+package_exemptions = vLLM
+
+# Subroutines: snake_case, optional leading underscore(s) for private helpers
+# and Moose builders. subroutine_exemptions REPLACES the policy's built-in list,
+# so we re-list the Moose/Perl lifecycle + tie/overload methods and add
+# FOREIGNBUILDARGS (MooseX::NonMoose) which Moose dispatches on by exact name.
+subroutines           = _*[a-z][a-z0-9]*(?:_+[a-z0-9]+)*
+subroutine_exemptions = AUTOLOAD BUILD BUILDARGS FOREIGNBUILDARGS CLEAR CLOSE DELETE DEMOLISH DESTROY EXISTS EXTEND FETCH FETCHSIZE FIRSTKEY GETC NEXTKEY POP PRINT PRINTF PUSH READ READLINE SCALAR SHIFT SPLICE STORE STORESIZE TIEARRAY TIEHANDLE TIEHASH TIESCALAR UNSHIFT UNTIE WRITE
+
+# Local lexicals: snake_case (optional leading underscore allowed).
+local_lexical_variables = _*[a-z][a-z0-9]*(?:_+[a-z0-9]+)*
+
+# Package globals & constants: snake_case OR ALL_CAPS
+# (covers our $VERSION, our %ROLE_TO_CAPS, and ordinary package globals).
+global_variables = [a-z][a-z0-9]*(?:_[a-z0-9]+)*|[A-Z][A-Z0-9_]*
+
+#-----------------------------------------------------------------------------
+# Reject deliberately confusing identifier names. The forbid list is the PBP
+# default minus "last", "record", "set", and "left", which appear here with
+# unambiguous, well-scoped meanings (e.g. $last = most recent result).
+#-----------------------------------------------------------------------------
+[NamingConventions::ProhibitAmbiguousNames]
+severity = 5
+forbid   = abstract bases close contract no right second
