@@ -89,8 +89,8 @@ sub _is_deepseek_v3 {
 sub reasoning_kwargs {
   my ( $self ) = @_;
   return () unless $self->has_reasoning_effort;
-  my $model = $self->chat_model // '';
-  if ( $model =~ /v3/i ) {
+  my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
+  if ( _is_deepseek_v3($model) ) {
     return ( thinking => { type => 'enabled' } );
   }
   my $e = $self->reasoning_effort;

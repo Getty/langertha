@@ -92,4 +92,24 @@ SKIP: {
     or diag("DeepSeek live error: $@");
 }
 
+# Gemini 2.5 — generationConfig.thinkingConfig.thinkingBudget (integer).
+# Model-gated: only Gemini 2.5-* accepts the integer budget (Gemini 3 takes
+# thinkingLevel, see subtest above). One tiny call against a 2.5 model
+# to confirm the wire shape is ACCEPTED (HTTP 200), not to assert on output.
+SKIP: {
+  skip 'no TEST_LANGERTHA_GEMINI_API_KEY', 1
+    unless $ENV{TEST_LANGERTHA_GEMINI_API_KEY};
+  require Langertha::Engine::Gemini;
+  my $e = Langertha::Engine::Gemini->new(
+    api_key        => $ENV{TEST_LANGERTHA_GEMINI_API_KEY},
+    model          => 'gemini-2.5-pro',
+    thinking_budget => 256,
+    response_size  => 64,
+  );
+  my $resp = eval { $e->simple_chat('Reply with the single word: ok') };
+  ok( $resp && length("$resp"),
+    'Gemini 2.5 accepts generationConfig.thinkingConfig.thinkingBudget' )
+    or diag("Gemini 2.5 live error: $@");
+}
+
 done_testing;

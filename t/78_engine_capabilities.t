@@ -51,14 +51,26 @@ use Langertha::Engine::Whisper;
 
 # Gemini: composes Tools (so all tool_choice flags are on by default;
 # the engine translates the named form into toolConfig internally).
+# Reasoning knob is model-gated: Gemini 3 (default) advertises
+# reasoning_effort; Gemini 2.5-* advertises thinking_budget; never both.
 {
-  my $e = Langertha::Engine::Gemini->new( api_key => 'x' );
-  my $caps = $e->engine_capabilities;
-  ok $caps->{tools_native},      'gemini tools_native';
-  ok $caps->{tool_choice_named}, 'gemini tool_choice_named (translated to toolConfig)';
-  ok $caps->{reasoning_effort},  'gemini reasoning_effort';
-  ok !$caps->{prompt_cache},     'gemini has no request-side cache enable (implicit caching)';
-  ok !$caps->{prompt_cache_key}, 'gemini has no prompt_cache_key (does not compose PromptCache)';
+  # Default model = gemini-3.5-flash -> Gemini 3 line
+  my $e3 = Langertha::Engine::Gemini->new( api_key => 'x' );
+  my $c3 = $e3->engine_capabilities;
+  ok $c3->{tools_native},      'gemini-3 tools_native';
+  ok $c3->{tool_choice_named},  'gemini-3 tool_choice_named (translated to toolConfig)';
+  ok $c3->{reasoning_effort},   'gemini-3 advertises reasoning_effort (thinkingLevel)';
+  ok !$c3->{thinking_budget},   'gemini-3 does NOT advertise thinking_budget';
+  ok !$c3->{prompt_cache},      'gemini-3 has no request-side cache enable';
+  ok !$c3->{prompt_cache_key},  'gemini-3 has no prompt_cache_key';
+
+  # Gemini 2.5 model: thinking_budget on, reasoning_effort off
+  my $e25 = Langertha::Engine::Gemini->new( api_key => 'x', model => 'gemini-2.5-pro' );
+  my $c25 = $e25->engine_capabilities;
+  ok $c25->{thinking_budget},   'gemini-2.5 advertises thinking_budget';
+  ok !$c25->{reasoning_effort}, 'gemini-2.5 does NOT advertise reasoning_effort (no level vocabulary)';
+  ok $e25->supports('thinking_budget'), 'gemini-2.5 supports() thinking_budget true';
+  ok !$e25->supports('reasoning_effort'), 'gemini-2.5 supports() reasoning_effort false';
 }
 
 # OpenAI: full grab-bag of caps from composed roles.

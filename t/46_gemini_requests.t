@@ -11,7 +11,7 @@ use Langertha::Engine::Gemini;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(12);
+plan(22);
 
 my $gemini = Langertha::Engine::Gemini->new(
   api_key => 'test_api_key_123',
@@ -90,5 +90,103 @@ my $gemini_med = Langertha::Engine::Gemini->new(
 my $gm = $json->decode($gemini_med->chat('hi')->content);
 is($gm->{generationConfig}{thinkingConfig}{thinkingLevel}, 'low',
   'medium collapses to thinkingLevel low');
+
+# --- thinking_budget -> generationConfig.thinkingConfig.thinkingBudget (karr #20) ---
+
+# Gemini 2.5 with integer thinking_budget: emit integer, no level
+my $gemini_25 = Langertha::Engine::Gemini->new(
+  api_key => 'k', model => 'gemini-2.5-pro', thinking_budget => 2048,
+);
+my $g25 = $json->decode($gemini_25->chat('hi')->content);
+is($g25->{generationConfig}{thinkingConfig}{thinkingBudget}, 2048,
+  'gemini-2.5-pro emits integer thinkingBudget');
+ok(!exists $g25->{generationConfig}{thinkingConfig}{thinkingLevel},
+  'gemini-2.5-pro does NOT emit thinkingLevel');
+
+# Gemini 2.5 flash variant
+my $gemini_25f = Langertha::Engine::Gemini->new(
+  api_key => 'k', model => 'gemini-2.5-flash', thinking_budget => 512,
+);
+my $g25f = $json->decode($gemini_25f->chat('hi')->content);
+is($g25f->{generationConfig}{thinkingConfig}{thinkingBudget}, 512,
+  'gemini-2.5-flash emits integer thinkingBudget');
+
+# Gemini 2.5 with NO thinking_budget: nothing emitted
+my $gemini_25_none = Langertha::Engine::Gemini->new(
+  api_key => 'k', model => 'gemini-2.5-pro',
+);
+my $g25n = $json->decode($gemini_25_none->chat('hi')->content);
+ok(!exists $g25n->{generationConfig}{thinkingConfig},
+  'gemini-2.5-pro omits thinkingConfig when thinking_budget unset');
+
+# --- fail-loud wire-truth: exactly one native control per generation ---
+
+# Conflict: effort + thinking_budget together croaks on any model/generation.
+eval {
+  Langertha::Reasoning->new(
+    effort => 'high',
+    thinking_budget => 2048,
+    model => 'gemini-3.5-flash',
+  );
+};
+like($@, qr/mutually exclusive/i,
+  'effort + thinking_budget croaks on Gemini 3');
+
+eval {
+  Langertha::Reasoning->new(
+    effort => 'high',
+    thinking_budget => 2048,
+    model => 'gemini-2.5-pro',
+  );
+};
+like($@, qr/mutually exclusive/i,
+  'effort + thinking_budget croaks on Gemini 2.5 (generation-agnostic)');
+
+# Conflict: thinking_budget on Gemini 3 / non-Gemini-2.5 model croaks.
+eval {
+  Langertha::Reasoning->new(
+    thinking_budget => 2048,
+    model => 'gemini-3.5-flash',
+  );
+};
+like($@, qr/only valid on Gemini 2\.5/i,
+  'thinking_budget on Gemini 3 croaks');
+
+eval {
+  Langertha::Reasoning->new(
+    thinking_budget => 2048,
+    model => 'claude-opus-4-8',
+  );
+};
+like($@, qr/only valid on Gemini 2\.5/i,
+  'thinking_budget on a non-Gemini model croaks');
+
+# Conflict: reasoning_effort on Gemini 2.5 croaks (Gemini 2.5 takes the
+# integer budget, not the level vocabulary). The croak surfaces at request
+# build time (chat_request -> reasoning_kwargs -> Langertha::Reasoning::BUILD),
+# not at engine construction.
+my $bad_g25 = eval {
+  my $e = Langertha::Engine::Gemini->new(
+    api_key => 'k', model => 'gemini-2.5-pro',
+    reasoning_effort => 'high',
+  );
+  $e->chat('hi');    # forces reasoning_kwargs -> Reasoning->new -> BUILD
+  return $e;
+};
+like($@, qr/not valid on Gemini 2\.5/i,
+  'reasoning_effort on Gemini 2.5 croaks at request build (no wire sent)');
+
+# Gemini 2.5 chat() does NOT send thinkingLevel (no level vocabulary on
+# Gemini 2.5; only the budget branch is allowed).
+eval {
+  my $e = Langertha::Engine::Gemini->new(
+    api_key => 'k', model => 'gemini-2.5-pro',
+  );
+  # construction alone is fine — only emit when a knob is set. Confirm no
+  # thinkingConfig leaks when neither field is set.
+  my $body = $json->decode($e->chat('hi')->content);
+  ok(!exists $body->{generationConfig}{thinkingConfig},
+    'gemini-2.5-pro with no knobs emits no thinkingConfig');
+};
 
 done_testing;

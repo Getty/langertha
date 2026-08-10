@@ -24,6 +24,27 @@ with map { 'Langertha::Role::'.$_ } qw(
 
 sub _build_reasoning_wire_format { 'gemini' }
 
+# Gemini splits its reasoning knob by model generation: Gemini 2.5-* takes
+# an integer thinking_budget (no level vocabulary), Gemini 3 takes a binary
+# thinkingLevel. Exactly one native control is honored per model. Reflect that
+# in the capability flags so callers can ask supports('thinking_budget') vs
+# supports('reasoning_effort') and get the truth for the configured model.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
+  if ( $model =~ /\Agemini-2\.5/ ) {
+    $caps->{thinking_budget} = 1;
+    delete $caps->{reasoning_effort};
+  }
+  else {
+    # Gemini 3 (and any future unknown Gemini generation) keeps the
+    # default reasoning_effort cap; thinking_budget is not advertised.
+    delete $caps->{thinking_budget};
+  }
+  return $caps;
+};
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::Gemini;
@@ -176,8 +197,11 @@ sub chat_request {
     }
   }
 
-  # Merge reasoning effort -> generationConfig.thinkingConfig.thinkingLevel
-  if ( $self->has_reasoning_effort ) {
+  # Merge reasoning effort / thinking_budget ->
+  # generationConfig.thinkingConfig.thinkingLevel (Gemini 3) or
+  # thinkingConfig.thinkingBudget (Gemini 2.5). Langertha::Reasoning owns
+  # the per-model placement; this just decides whether to emit anything.
+  if ( $self->has_reasoning_effort || $self->has_thinking_budget ) {
     %generation_config = ( %generation_config, $self->reasoning_kwargs );
   }
 
@@ -299,7 +323,7 @@ sub chat_stream_request {
     $generation_config{temperature} = $self->temperature;
   }
 
-  if ( $self->has_reasoning_effort ) {
+  if ( $self->has_reasoning_effort || $self->has_thinking_budget ) {
     %generation_config = ( %generation_config, $self->reasoning_kwargs );
   }
 
