@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-08-10T15:41:43Z
+claimed_by: claude
+class: standard
+completed: 2026-08-10
+created: 2026-06-26T04:08:08Z
+id: 5
+priority: low
+status: done
+tags:
+- response
+- refactor
+- fragility
+title: Make Response.clone_with attribute-driven instead of a hand-maintained copy-list
+updated: 2026-08-10T15:41:53Z
+---
+
+Langertha::Response::clone_with (Response.pm:269) carries state via a hand-maintained qw(raw id model finish_reason usage timing created thinking rate_limit tool_calls probes) list. Every new Maybe-typed Response attribute (e.g. probes, added for VLLMHook) must be remembered into this list, or it silently drops through any clone_with transformation (ThinkTag <think> filtering rebuilds the Response via clone_with). The probes gap (karr #4) was exactly this: the attr existed but had to be hand-added to the list. Follow-up: drive clone_with off the meta attribute inventory (iterate $self->meta->get_all_attributes, copy where predicate is satisfied) so new attrs are carried automatically. Surfaced by ADR 0004. Non-blocking.
+Replaced hand-maintained qw(raw id model finish_reason usage timing created thinking rate_limit tool_calls probes) list in lib/Langertha/Response.pm:320 with ->meta->get_all_attributes iteration: every ro attribute with a has_* predicate is auto-carried. Required attrs and explicit overrides are still honored. Subclass dispatch via (ref $self)->new preserved. POD updated to document the auto-extension behaviour. New regression gates in t/70_response.t: probes survives single + 2-step clone_with, raw survives clone_with, timing->tool_calls 2-step chain preserves both attrs. Extended t/90_response_timing.t with a full timing->tool_calls->rate_limit 3-step chain test mirroring the chat_f path. Full suite green: 1966 tests, 65 files. Changes entry written under {{NEXT}}.
