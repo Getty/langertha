@@ -11,7 +11,7 @@ use Langertha::Engine::Gemini;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(22);
+plan(40);
 
 my $gemini = Langertha::Engine::Gemini->new(
   api_key => 'test_api_key_123',
@@ -63,33 +63,58 @@ is_deeply($gemini_stream_data, {
 }, 'Gemini streaming request body is correct');
 
 # Test default model
-is($gemini->default_model, 'gemini-3.5-flash', 'Gemini default model is gemini-3.5-flash');
+is($gemini->default_model, 'gemini-3-flash-preview', 'Gemini default model is gemini-3-flash-preview');
 
-# --- reasoning_effort -> generationConfig.thinkingConfig.thinkingLevel (karr #16) ---
+# --- reasoning_effort -> generationConfig.thinkingConfig.thinkingLevel (karr #16, #26) ---
 ok(!exists $gemini_data->{generationConfig}{thinkingConfig},
   'Gemini omits thinkingConfig when reasoning_effort unset');
 
-my $gemini_high = Langertha::Engine::Gemini->new(
-  api_key => 'k', model => 'gemini-3.5-flash', reasoning_effort => 'high',
-);
-my $gh = $json->decode($gemini_high->chat('hi')->content);
-is($gh->{generationConfig}{thinkingConfig}{thinkingLevel}, 'high',
-  'high -> thinkingLevel high');
+# Helper: emit a chat request for model + effort and read back the wire level.
+sub _thinking_level_for {
+  my ( $model, $effort ) = @_;
+  my $e = Langertha::Engine::Gemini->new(
+    api_key => 'k', model => $model, reasoning_effort => $effort,
+  );
+  my $body = $json->decode($e->chat('hi')->content);
+  return $body->{generationConfig}{thinkingConfig}{thinkingLevel};
+}
 
-my $gemini_low = Langertha::Engine::Gemini->new(
-  api_key => 'k', model => 'gemini-3.5-flash', reasoning_effort => 'low',
-);
-my $gl = $json->decode($gemini_low->chat('hi')->content);
-is($gl->{generationConfig}{thinkingConfig}{thinkingLevel}, 'low',
-  'low -> thinkingLevel low');
+# Gemini 3 Flash family: full minimal|low|medium|high vocabulary
+# (ai.google.dev/gemini-api/docs/thinking level table, verified 2026-08-10).
+is(_thinking_level_for('gemini-3-flash-preview', 'high'),    'high',    'gemini-3-flash-preview: high -> high');
+is(_thinking_level_for('gemini-3-flash-preview', 'low'),     'low',     'gemini-3-flash-preview: low -> low');
+is(_thinking_level_for('gemini-3-flash-preview', 'medium'),  'medium',  'gemini-3-flash-preview: medium -> medium');
+is(_thinking_level_for('gemini-3-flash-preview', 'minimal'), 'minimal', 'gemini-3-flash-preview: minimal -> minimal');
+is(_thinking_level_for('gemini-3-flash-preview', 'none'),    'minimal', 'gemini-3-flash-preview: none -> minimal');
+is(_thinking_level_for('gemini-3-flash-preview', 'xhigh'),   'high',    'gemini-3-flash-preview: xhigh -> high');
+is(_thinking_level_for('gemini-3-flash-preview', 'max'),     'high',    'gemini-3-flash-preview: max -> high');
 
-# Binary collapse: medium maps to low (universal low|high mapping, gemini-3-pro safe)
-my $gemini_med = Langertha::Engine::Gemini->new(
-  api_key => 'k', model => 'gemini-3.5-flash', reasoning_effort => 'medium',
-);
-my $gm = $json->decode($gemini_med->chat('hi')->content);
-is($gm->{generationConfig}{thinkingConfig}{thinkingLevel}, 'low',
-  'medium collapses to thinkingLevel low');
+# gemini-3.5-flash (previous default) is also full-vocabulary: medium passes.
+is(_thinking_level_for('gemini-3.5-flash', 'medium'), 'medium',
+  'gemini-3.5-flash: medium -> medium (no more binary collapse on flash)');
+
+# gemini-3.1-pro family: low|medium|high, NO minimal -> minimal/none clamp to low.
+is(_thinking_level_for('gemini-3.1-pro-preview', 'minimal'), 'low',    'gemini-3.1-pro-preview: minimal clamps to low');
+is(_thinking_level_for('gemini-3.1-pro-preview', 'none'),    'low',    'gemini-3.1-pro-preview: none clamps to low');
+is(_thinking_level_for('gemini-3.1-pro-preview', 'low'),     'low',    'gemini-3.1-pro-preview: low -> low');
+is(_thinking_level_for('gemini-3.1-pro-preview', 'medium'),  'medium', 'gemini-3.1-pro-preview: medium -> medium');
+is(_thinking_level_for('gemini-3.1-pro-preview', 'high'),    'high',   'gemini-3.1-pro-preview: high -> high');
+is(_thinking_level_for('gemini-3.1-pro-preview', 'max'),     'high',   'gemini-3.1-pro-preview: max -> high');
+
+# gemini-3-pro family: low|high only -> minimal AND medium clamp to low.
+is(_thinking_level_for('gemini-3-pro-preview', 'minimal'), 'low',  'gemini-3-pro-preview: minimal clamps to low');
+is(_thinking_level_for('gemini-3-pro-preview', 'medium'),  'low',  'gemini-3-pro-preview: medium clamps to low');
+is(_thinking_level_for('gemini-3-pro-preview', 'low'),     'low',  'gemini-3-pro-preview: low -> low');
+is(_thinking_level_for('gemini-3-pro-preview', 'high'),    'high', 'gemini-3-pro-preview: high -> high');
+
+# Non-Gemini-3 / unknown models keep the universally-accepted binary collapse.
+is(_thinking_level_for('gemini-2.0-flash', 'medium'), 'low',  'gemini-2.0-flash: binary fallback medium -> low');
+is(_thinking_level_for('gemini-2.0-flash', 'max'),    'high', 'gemini-2.0-flash: binary fallback max -> high');
+
+# No model at all on the value object: same binary fallback.
+my %no_model_kw = Langertha::Reasoning->new( effort => 'medium' )->to('gemini');
+is($no_model_kw{thinkingConfig}{thinkingLevel}, 'low',
+  'no model: binary fallback medium -> low');
 
 # --- thinking_budget -> generationConfig.thinkingConfig.thinkingBudget (karr #20) ---
 

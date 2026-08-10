@@ -25,10 +25,12 @@ with map { 'Langertha::Role::'.$_ } qw(
 sub _build_reasoning_wire_format { 'gemini' }
 
 # Gemini splits its reasoning knob by model generation: Gemini 2.5-* takes
-# an integer thinking_budget (no level vocabulary), Gemini 3 takes a binary
-# thinkingLevel. Exactly one native control is honored per model. Reflect that
-# in the capability flags so callers can ask supports('thinking_budget') vs
-# supports('reasoning_effort') and get the truth for the configured model.
+# an integer thinking_budget (no level vocabulary), Gemini 3 takes a
+# thinkingLevel (minimal|low|medium|high, clamped to the model family's
+# subset by Langertha::Reasoning). Exactly one native control is honored per
+# model. Reflect that in the capability flags so callers can ask
+# supports('thinking_budget') vs supports('reasoning_effort') and get the
+# truth for the configured model.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
@@ -51,7 +53,7 @@ around engine_capabilities => sub {
 
     my $gemini = Langertha::Engine::Gemini->new(
         api_key      => $ENV{GEMINI_API_KEY},
-        model        => 'gemini-3.5-flash',
+        model        => 'gemini-3-flash-preview',
         response_size => 4096,
         temperature  => 0.7,
     );
@@ -82,9 +84,11 @@ Provides access to Google's Gemini models via the Generative Language API.
 Gemini models support multimodal input (text, code, images) and long context
 windows.
 
-Available models include C<gemini-3.5-flash> (fast with thinking, default),
-C<gemini-3.1-pro> / C<gemini-pro-latest> (most capable), and the
-C<gemini-flash-latest> alias (always the newest Flash). The C<gemini-2.5-*>
+Available models include C<gemini-3-flash-preview> (fast with thinking,
+default), C<gemini-3.1-pro-preview> (most capable), C<gemini-3.1-flash-lite>
+(cost-efficient workhorse), and the image-generation models
+C<gemini-3.1-flash-image-preview> and C<gemini-3-pro-image-preview>. All
+Gemini 3 models are currently served as preview. The C<gemini-2.5-*>
 generation is still served but now classed as previous-generation. The
 default API endpoint is C<https://generativelanguage.googleapis.com>.
 
@@ -119,7 +123,7 @@ has '+url' => (
   default => sub { 'https://generativelanguage.googleapis.com' },
 );
 
-sub default_model { 'gemini-3.5-flash' }
+sub default_model { 'gemini-3-flash-preview' }
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;

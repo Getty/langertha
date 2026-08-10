@@ -35,8 +35,10 @@ vocabulary to what the target wire actually accepts and returns the body kwargs
 to merge into the request.
 
 Gemini splits its reasoning knob by model generation: Gemini 3 accepts a
-collapsed C<thinkingLevel> (C<low>|C<high>) emitted from C<effort>; Gemini 2.5
-takes a C<thinkingBudget> integer instead. Exactly one of the two fields is
+C<thinkingLevel> emitted from C<effort> (vocabulary
+C<minimal>|C<low>|C<medium>|C<high>, clamped to the subset the configured
+model family accepts — see L</to_gemini_level>); Gemini 2.5 takes a
+C<thinkingBudget> integer instead. Exactly one of the two fields is
 emitted per request — never both. C<BUILD> rejects every
 C<effort>/C<thinking_budget> combination that would produce an ambiguous wire
 form (either field on the wrong generation, or both fields together on any
@@ -60,8 +62,10 @@ has effort => (
 The normalized reasoning effort, one of C<none|minimal|low|medium|high|xhigh|max>.
 Optional (must not coexist with C<thinking_budget> on any Gemini generation;
 see L</BUILD>). On Gemini 3, C<effort> is the only knob and emits
-C<thinkingConfig.thinkingLevel>. Setting C<effort> on a Gemini 2.5 model is
-rejected — Gemini 2.5 takes the integer budget, not the level vocabulary.
+C<thinkingConfig.thinkingLevel>, model-gated clamped to the level subset the
+configured model family accepts (L</to_gemini_level>). Setting C<effort> on a
+Gemini 2.5 model is rejected — Gemini 2.5 takes the integer budget, not the
+level vocabulary.
 
 =cut
 
@@ -76,7 +80,8 @@ has model => (
 Optional model name. Used by L</to_anthropic> to detect always-on
 "Fable-class" models (where C<thinking:{type:disabled}> 400s and the
 C<thinking> field must be omitted) and by L</to_gemini> to dispatch between
-Gemini 2.5 (C<thinkingBudget>) and Gemini 3 (C<thinkingLevel>).
+Gemini 2.5 (C<thinkingBudget>) and Gemini 3 (C<thinkingLevel>) and to clamp
+the Gemini 3 level vocabulary to the model family's supported subset.
 
 =cut
 
@@ -145,18 +150,62 @@ sub _is_fable_class {
 # Match the model-id family the way the gemini API does.
 sub _is_gemini_25 { $_[0] =~ /\Agemini-2\.5/ ? 1 : 0 }
 
-# Gemini 3 generationConfig.thinkingConfig.thinkingLevel is low|high
-# (gemini-3-pro is low|high only; flash/3.1-pro add medium). Collapse the
-# normalized vocabulary to the universally-accepted binary, splitting at high.
-sub to_low_high {
+# Gemini 3 generationConfig.thinkingConfig.thinkingLevel vocabulary is
+# minimal|low|medium|high, but which subset a model accepts is model-gated
+# (ai.google.dev/gemini-api/docs/thinking level table, verified 2026-08-10):
+#
+#   gemini-3-flash-preview / gemini-3.5-flash* / *-flash-lite: minimal low medium high
+#   gemini-3.1-pro-*:                                          low medium high (no minimal)
+#   gemini-3-pro-*:                                            low high (binary)
+#
+# The API rejects an unsupported level instead of mapping it, so the
+# normalized vocabulary is clamped to the model family's subset here. Models
+# outside the gemini-3 line (or no model given) keep the universally-accepted
+# low|high collapse. (Gemini 2.5 never reaches this serializer with an effort
+# — BUILD gates it onto the thinkingBudget path.)
+my %GEMINI3_LEVEL = (
+  none    => 'minimal',
+  minimal => 'minimal',
+  low     => 'low',
+  medium  => 'medium',
+  high    => 'high',
+  xhigh   => 'high',
+  max     => 'high',
+);
+
+sub to_gemini_level {
   my ( $self ) = @_;
   my $e = $self->effort;
-  return ( $e eq 'high' || $e eq 'xhigh' || $e eq 'max' ) ? 'high' : 'low';
+  my $model = $self->has_model ? $self->model : '';
+
+  # Unknown or non-Gemini-3 model: binary low|high collapse, the subset every
+  # thinking model accepts.
+  return ( $e eq 'high' || $e eq 'xhigh' || $e eq 'max' ) ? 'high' : 'low'
+    unless $model =~ /\Agemini-3/;
+
+  my $level = $GEMINI3_LEVEL{$e} // 'low';
+
+  # gemini-3.1-pro-* has no minimal; gemini-3-pro-* is low|high only. Clamp
+  # down (never up): an unsupported level would be rejected by the API.
+  if ( $model =~ /\Agemini-3\.1-pro/ ) {
+    $level = 'low' if $level eq 'minimal';
+  }
+  elsif ( $model =~ /\Agemini-3-pro/ ) {
+    $level = 'low' if $level eq 'minimal' || $level eq 'medium';
+  }
+  return $level;
 }
 
-=method to_low_high
+=method to_gemini_level
 
-Collapses the normalized effort to Gemini's binary C<low>/C<high>.
+Maps the normalized effort onto Gemini 3's C<thinkingLevel> vocabulary
+(C<minimal>|C<low>|C<medium>|C<high>): C<none>/C<minimal> become C<minimal>,
+C<high>/C<xhigh>/C<max> become C<high>, C<low> and C<medium> pass through.
+The result is then clamped down to the subset the configured L</model> family
+accepts: C<gemini-3.1-pro-*> drops C<minimal> to C<low> (no C<minimal>
+support), C<gemini-3-pro-*> accepts only C<low>|C<high> and drops C<minimal>
+and C<medium> to C<low>. Models outside the Gemini 3 line (or no model) keep
+the universally-accepted binary C<low>|C<high> collapse, splitting at C<high>.
 
 =cut
 
@@ -195,7 +244,7 @@ sub to_gemini {
     return ( thinkingConfig => { thinkingBudget => $self->thinking_budget } );
   }
   return () unless $self->has_effort;
-  return ( thinkingConfig => { thinkingLevel => $self->to_low_high } );
+  return ( thinkingConfig => { thinkingLevel => $self->to_gemini_level } );
 }
 
 # Maps a reasoning_wire_format tag to the per-format serializer method.

@@ -12,8 +12,10 @@ the field in the request body differs. Reasoning effort is the worst case — th
 normalized intent ("think harder") is a flat `reasoning_effort` string on OpenAI
 `/chat/completions`, a nested `reasoning:{effort}` on the Responses API,
 `output_config.effort` plus `thinking:{type:adaptive}` on Anthropic Messages, and a
-collapsed binary `generationConfig.thinkingConfig.thinkingLevel` (`low`/`high`) on
-Gemini — and each wire accepts only a subset of the normalized value set. Prompt caching
+model-gated `generationConfig.thinkingConfig.thinkingLevel`
+(`minimal`/`low`/`medium`/`high`, with the accepted subset varying by Gemini model
+family) on Gemini — and each wire accepts only a subset of the normalized value set.
+Prompt caching
 is similarly split: Anthropic exposes an explicit `cache_control` enable breakpoint with a
 TTL, while OpenAI caches automatically and the only request-side lever is the
 `prompt_cache_key` routing hint.
@@ -52,7 +54,8 @@ recorded as one decision.
    (`croak` on an unknown tag). Each serializer does two jobs: it **clamps** the
    normalized vocabulary to what that wire accepts (returning an empty list when the value
    has no equivalent — e.g. Anthropic drops `none`/`minimal`, OpenAI drops `max`, Gemini
-   collapses to `low`/`high` split at `high`), and it **places** the field correctly
+   maps onto `minimal`/`low`/`medium`/`high` clamped down to the configured model
+   family's accepted subset), and it **places** the field correctly
    (Anthropic `output_config.effort` + `thinking:{type:adaptive}`; OpenAI flat
    `reasoning_effort`; Responses nested `reasoning:{effort}`; Gemini
    `generationConfig.thinkingConfig.thinkingLevel`; Anthropic `cache_control`; OpenAI

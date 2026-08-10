@@ -54,7 +54,7 @@ use Langertha::Engine::Whisper;
 # Reasoning knob is model-gated: Gemini 3 (default) advertises
 # reasoning_effort; Gemini 2.5-* advertises thinking_budget; never both.
 {
-  # Default model = gemini-3.5-flash -> Gemini 3 line
+  # Default model = gemini-3-flash-preview -> Gemini 3 line
   my $e3 = Langertha::Engine::Gemini->new( api_key => 'x' );
   my $c3 = $e3->engine_capabilities;
   ok $c3->{tools_native},      'gemini-3 tools_native';
