@@ -88,7 +88,7 @@ ok(!Langertha::Engine::Anthropic->does('Langertha::Role::OpenAICompatible'), 'An
 {
   my $a = Langertha::Engine::Anthropic->new(api_key => 'test-key');
   is($a->url, 'https://api.anthropic.com', 'Anthropic url defaults correctly');
-  is($a->default_model, 'claude-sonnet-4-6', 'Anthropic default_model');
+  is($a->default_model, 'claude-sonnet-5', 'Anthropic default_model');
   my $req = $a->chat('hello');
   is($req->header('x-api-key'), 'test-key', 'Anthropic uses x-api-key header');
   is($req->header('content-type'), 'application/json', 'Anthropic sets content-type');
@@ -107,9 +107,9 @@ ok(Langertha::Engine::Gemini->does('Langertha::Role::Tools'), 'Gemini does Tools
 {
   my $g = Langertha::Engine::Gemini->new(api_key => 'test-key');
   is($g->url, 'https://generativelanguage.googleapis.com', 'Gemini url defaults correctly');
-  is($g->default_model, 'gemini-3.5-flash', 'Gemini default_model');
+  is($g->default_model, 'gemini-3-flash-preview', 'Gemini default_model');
   my $req = $g->chat('hello');
-  like($req->uri, qr{/v1beta/models/gemini-3\.5-flash:generateContent}, 'Gemini chat endpoint');
+  like($req->uri, qr{/v1beta/models/gemini-3-flash-preview:generateContent}, 'Gemini chat endpoint');
   like($req->uri, qr{key=test-key}, 'Gemini api_key in URL');
 }
 
@@ -347,14 +347,14 @@ test_openai_cloud_engine(
   class => 'Langertha::Engine::OpenAI',
   name => 'OpenAI',
   url => 'https://api.openai.com/v1',
-  model => 'gpt-5.4-mini',
+  model => 'gpt-5.6-terra',
   env_var => 'LANGERTHA_OPENAI_API_KEY',
   has_tools => 1,
   has_embedding => 1,
   has_transcription => 1,
   has_response_format => 1,
 );
-is(Langertha::Engine::OpenAI->new(api_key => 'k')->default_model, 'gpt-5.4-mini', 'OpenAI default_model');
+is(Langertha::Engine::OpenAI->new(api_key => 'k')->default_model, 'gpt-5.6-terra', 'OpenAI default_model');
 
 # --- DeepSeek ---
 
@@ -364,12 +364,12 @@ test_openai_cloud_engine(
   class => 'Langertha::Engine::DeepSeek',
   name => 'DeepSeek',
   url => 'https://api.deepseek.com',
-  model => 'deepseek-chat',
+  model => 'deepseek-v4-flash',
   env_var => 'LANGERTHA_DEEPSEEK_API_KEY',
   has_tools => 1,
   has_response_format => 1,
 );
-is(Langertha::Engine::DeepSeek->new(api_key => 'k')->default_model, 'deepseek-chat', 'DeepSeek default_model');
+is(Langertha::Engine::DeepSeek->new(api_key => 'k')->default_model, 'deepseek-v4-flash', 'DeepSeek default_model');
 
 # --- Groq ---
 
@@ -519,7 +519,7 @@ ok(Langertha::Engine::Moonshot->does('Langertha::Role::StaticModels'), 'Moonshot
 {
   my $m = Langertha::Engine::Moonshot->new(api_key => 'test-key');
   is($m->url, 'https://api.moonshot.ai/v1', 'Moonshot url default correct');
-  is($m->default_model, 'kimi-k2.6', 'Moonshot default_model');
+  is($m->default_model, 'kimi-k3', 'Moonshot default_model');
   # OpenAI endpoint controls reasoning via a `thinking` object, not reasoning_effort.
   ok(!$m->supports('reasoning_effort'), 'Moonshot clears reasoning_effort capability');
 
@@ -543,7 +543,7 @@ ok(Langertha::Engine::MoonshotAnthropic->does('Langertha::Role::StaticModels'), 
 {
   my $m = Langertha::Engine::MoonshotAnthropic->new(api_key => 'test-key');
   is($m->url, 'https://api.moonshot.ai/anthropic', 'MoonshotAnthropic url default correct (no trailing /v1)');
-  is($m->default_model, 'kimi-k2.6', 'MoonshotAnthropic default_model');
+  is($m->default_model, 'kimi-k3', 'MoonshotAnthropic default_model');
   my $req = $m->chat('test prompt');
   is($req->method, 'POST', 'MoonshotAnthropic chat request is POST');
   # Same single-/v1 invariant as the MiniMaxAnthropic regression (karr #18).

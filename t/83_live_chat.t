@@ -65,7 +65,7 @@ if ($ENV{TEST_LANGERTHA_OPENAI_API_KEY}) {
   require Langertha::Engine::OpenAI;
   test_chat('OpenAI', Langertha::Engine::OpenAI->new(
     api_key => $ENV{TEST_LANGERTHA_OPENAI_API_KEY},
-    model => 'gpt-5.4-mini',
+    model => 'gpt-5.6-terra',
   ));
 }
 
@@ -109,7 +109,7 @@ if ($ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY}) {
   require Langertha::Engine::DeepSeek;
   test_chat('DeepSeek', Langertha::Engine::DeepSeek->new(
     api_key => $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY},
-    model => 'deepseek-chat',
+    model => 'deepseek-v4-flash',
   ));
 }
 

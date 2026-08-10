@@ -48,7 +48,7 @@ SKIP: {
   require Langertha::Engine::OpenAI;
   my $e = Langertha::Engine::OpenAI->new(
     api_key          => $ENV{TEST_LANGERTHA_OPENAI_API_KEY},
-    model            => 'gpt-5.1',   # reasoning model; gpt-5.4-mini default rejects effort
+    model            => 'gpt-5.1',   # reasoning model; pinned explicitly
     reasoning_effort => 'high',
     response_size    => 64,
   );
@@ -75,14 +75,14 @@ SKIP: {
     or diag("Gemini live error: $@");
 }
 
-# DeepSeek — V4 flat reasoning_effort (high|max).
+# DeepSeek — V4 flat reasoning_effort (low|high|max on v4-flash).
 SKIP: {
   skip 'no TEST_LANGERTHA_DEEPSEEK_API_KEY', 1
     unless $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
   require Langertha::Engine::DeepSeek;
   my $e = Langertha::Engine::DeepSeek->new(
     api_key          => $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY},
-    model            => 'deepseek-reasoner',   # routes to V4
+    model            => 'deepseek-v4-flash',
     reasoning_effort => 'high',
     response_size    => 64,
   );
