@@ -5,6 +5,7 @@ use Moose::Role;
 
 use Carp qw( croak );
 use Log::Any qw( $log );
+use Time::HiRes qw( gettimeofday tv_interval );
 use URI;
 use LWP::UserAgent;
 
@@ -188,24 +189,37 @@ sub execute_streaming_request {
   croak "execute_streaming_request requires Langertha::Role::Streaming"
     unless $self->does('Langertha::Role::Streaming');
 
+  my $t0 = [gettimeofday];
   my $response = $self->user_agent->request($request);
 
   croak "".(ref $self)." streaming request failed: ".($response->status_line)
     unless $response->is_success;
 
-  return $self->process_stream_data($response->content, $chunk_callback);
+  my $chunks = $self->process_stream_data($response->content, $chunk_callback);
+  my $total_seconds = tv_interval($t0);
+
+  # Synchronous HTTP via LWP buffers the entire stream before
+  # process_stream_data runs, so a true TTFT (time to first token) is
+  # not observable in this path; only end-to-end wall-clock. Consumers
+  # that need TTFT should switch to the async path
+  # (L<Langertha::Role::Chat/simple_chat_stream_realtime_f>) where
+  # IO::Async delivers chunks incrementally.
+  return ($chunks, { total_seconds => $total_seconds });
 }
 
 =method execute_streaming_request
 
-    my $chunks = $engine->execute_streaming_request($request, $chunk_callback);
-    my $chunks = $engine->execute_streaming_request($request);
+    my ($chunks, $timing) = $engine->execute_streaming_request($request, $chunk_callback);
+    my ($chunks, $timing) = $engine->execute_streaming_request($request);
 
 Executes a streaming HTTP request synchronously using L<LWP::UserAgent> and
 delegates stream parsing to L<Langertha::Role::Streaming/process_stream_data>.
 Requires the engine to also compose L<Langertha::Role::Streaming>. Returns an
-ArrayRef of L<Langertha::Stream::Chunk> objects. If C<$chunk_callback> is
-provided it is called with each chunk as it is parsed.
+ArrayRef of L<Langertha::Stream::Chunk> objects and a timing HashRef with
+C<total_seconds> (Float, seconds). C<ttft_seconds> is omitted because
+L<LWP::UserAgent> buffers the body before parsing — switch to the async path
+for true TTFT. If C<$chunk_callback> is provided it is called with each chunk
+as it is parsed.
 
 =cut
 

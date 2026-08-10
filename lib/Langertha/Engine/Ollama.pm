@@ -212,6 +212,16 @@ sub chat_response {
   for my $k (qw( total_duration load_duration prompt_eval_duration eval_duration )) {
     $timing->{$k} = $data->{$k} if $data->{$k};
   }
+  # Ollama reports the four native durations in nanoseconds. Mirror them
+  # as *_seconds (Float, seconds) so Langertha::Response.ttft_seconds /
+  # total_seconds and downstream observability (Langfuse, Prometheus
+  # scrapers) have a consistent unit. The original *_duration keys are
+  # preserved verbatim for backward compatibility.
+  my $ns_to_s = sub { $_[0] * 1e-9 };
+  $timing->{total_seconds}        = $ns_to_s->( $data->{total_duration}        ) if $data->{total_duration};
+  $timing->{load_seconds}         = $ns_to_s->( $data->{load_duration}         ) if $data->{load_duration};
+  $timing->{prompt_eval_seconds}  = $ns_to_s->( $data->{prompt_eval_duration}  ) if $data->{prompt_eval_duration};
+  $timing->{eval_seconds}         = $ns_to_s->( $data->{eval_duration}         ) if $data->{eval_duration};
   $timing = undef unless %$timing;
 
   my @tcs = Langertha::ToolCall->extract( $self->tool_wire_format, $data );

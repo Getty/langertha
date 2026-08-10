@@ -124,10 +124,10 @@ around 'simple_chat_stream' => sub {
 around 'simple_chat_stream_realtime_f' => sub {
   my ( $orig, $self, @args ) = @_;
   return $self->$orig(@args)->then(sub {
-    my ($content, $chunks) = @_;
-    return Future->done($content, $chunks) unless $self->think_tag_filter;
+    my ( $content, $chunks, $timing ) = @_;
+    return Future->done($content, $chunks, $timing) unless $self->think_tag_filter;
     my ($filtered, $thinking) = $self->filter_think_content($content);
-    return Future->done($filtered, $chunks);
+    return Future->done($filtered, $chunks, $timing);
   });
 };
 

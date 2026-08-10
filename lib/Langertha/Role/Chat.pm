@@ -7,6 +7,7 @@ use Carp qw( croak );
 use JSON::MaybeXS;
 use Log::Any qw( $log );
 use Scalar::Util qw( blessed );
+use Time::HiRes qw( gettimeofday tv_interval );
 use Langertha::ToolChoice;
 use Langertha::Tool;
 use Langertha::Role::Capabilities;
@@ -163,6 +164,19 @@ attribute from L<Langertha::Role::Models>.
 
 =cut
 
+# Adds a key/value pair into an existing timing hashref (or new one).
+# Used to layer client-measured ttft_seconds / total_seconds onto a
+# Response that may already carry provider-native stages (e.g. Ollama's
+# *_seconds). Never overwrites an existing key — first-write-wins so a
+# provider-supplied duration (e.g. Ollama's total_seconds) trumps the
+# client measurement.
+sub _merge_timing_field {
+  my ( $existing, $key, $value ) = @_;
+  my $t = $existing ? { %$existing } : {};
+  $t->{$key} = $value unless exists $t->{$key};
+  return $t;
+}
+
 sub chat {
   my ( $self, @messages ) = @_;
   return $self->chat_request($self->chat_messages(@messages));
@@ -243,11 +257,18 @@ sub simple_chat {
   my ( $self, @messages ) = @_;
   $log->debugf("[%s] simple_chat with %d message(s), model=%s",
     ref $self, scalar @messages, $self->chat_model // 'default');
+  my $t0 = [gettimeofday];
   my $request = $self->chat(@messages);
   my $response = $self->user_agent->request($request);
+  my $elapsed = tv_interval($t0);
   my $result = $request->response_call->($response);
-  if ($self->can('has_rate_limit') && $self->has_rate_limit && ref $result && $result->isa('Langertha::Response')) {
-    $result = $result->clone_with(rate_limit => $self->rate_limit);
+  if (ref $result && $result->isa('Langertha::Response')) {
+    $result = $result->clone_with(
+      timing => _merge_timing_field($result->timing, total_seconds => $elapsed),
+    );
+    if ($self->can('has_rate_limit') && $self->has_rate_limit) {
+      $result = $result->clone_with(rate_limit => $self->rate_limit);
+    }
   }
   return $result;
 }
@@ -285,8 +306,9 @@ sub simple_chat_stream {
     unless ref $callback eq 'CODE';
   $log->debugf("[%s] simple_chat_stream (%s format)", ref $self, $self->stream_format);
   my $request = $self->chat_stream(@messages);
-  my $chunks = $self->execute_streaming_request($request, $callback);
-  $log->debugf("[%s] Stream completed: %d chunks", ref $self, scalar @$chunks);
+  my ( $chunks, $timing ) = $self->execute_streaming_request($request, $callback);
+  $log->debugf("[%s] Stream completed: %d chunks (%.3fs)",
+    ref $self, scalar @$chunks, $timing->{total_seconds} // 0);
   return join('', map { $_->content } @$chunks);
 }
 
@@ -301,7 +323,8 @@ sub simple_chat_stream {
 
 Sends a synchronous streaming chat request. Calls C<$callback> with each
 L<Langertha::Stream::Chunk> as it arrives. Returns the complete concatenated
-content string when done. Blocks until the stream completes.
+content string when done. Blocks until the stream completes. C<total_seconds>
+is logged; for a full breakdown read L</execute_streaming_request>.
 
 =cut
 
@@ -309,7 +332,9 @@ sub simple_chat_stream_iterator {
   my ( $self, @messages ) = @_;
   require Langertha::Stream;
   my $request = $self->chat_stream(@messages);
-  my $chunks = $self->execute_streaming_request($request);
+  my ( $chunks, $timing ) = $self->execute_streaming_request($request);
+  $log->debugf("[%s] Stream completed: %d chunks (%.3fs)",
+    ref $self, scalar @$chunks, $timing->{total_seconds} // 0);
   return Langertha::Stream->new(chunks => $chunks);
 }
 
@@ -397,6 +422,7 @@ async sub chat_f {
     }
   }
 
+  my $t0 = [gettimeofday];
   my $request = $self->chat_request( $self->chat_messages(@messages), %opts );
 
   my $response = await $self->_async_http->do_request( request => $request );
@@ -405,7 +431,14 @@ async sub chat_f {
     die "".(ref $self)." request failed: ".$response->status_line;
   }
 
+  my $elapsed = tv_interval($t0);
   my $result = $request->response_call->($response);
+
+  if ( blessed($result) && $result->isa('Langertha::Response') ) {
+    $result = $result->clone_with(
+      timing => _merge_timing_field( $result->timing, total_seconds => $elapsed ),
+    );
+  }
 
   if ( $synth_tool_name && blessed($result) && $result->isa('Langertha::Response') ) {
     my $args = $self->decode_loose_json( $result->content );
@@ -505,6 +538,8 @@ async sub simple_chat_stream_realtime_f {
   my $buffer = '';
   my $format = $self->stream_format;
   my $response_status;
+  my $t0           = [gettimeofday];
+  my $ttft_seconds;
 
   await $self->_async_http->do_request(
     request => $request,
@@ -520,6 +555,7 @@ async sub simple_chat_stream_realtime_f {
         $buffer .= $data;
         my $chunks = $self->_process_stream_buffer(\$buffer, $format);
         for my $chunk (@$chunks) {
+          $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
           push @all_chunks, $chunk;
           $chunk_callback->($chunk) if $chunk_callback;
         }
@@ -535,13 +571,18 @@ async sub simple_chat_stream_realtime_f {
   if ($buffer ne '') {
     my $chunks = $self->_process_stream_buffer(\$buffer, $format, 1);
     for my $chunk (@$chunks) {
+      $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
       push @all_chunks, $chunk;
       $chunk_callback->($chunk) if $chunk_callback;
     }
   }
 
-  my $content = join('', map { $_->content } @all_chunks);
-  return ($content, \@all_chunks);
+  my $content      = join('', map { $_->content } @all_chunks);
+  my $total_seconds = tv_interval($t0);
+  return ($content, \@all_chunks, {
+    ttft_seconds  => $ttft_seconds,
+    total_seconds => $total_seconds,
+  });
 }
 
 sub aggregate_tool_calls {

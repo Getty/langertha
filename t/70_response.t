@@ -193,6 +193,15 @@ is($ollama_resp->completion_tokens, 10, 'Ollama completion_tokens from eval_coun
 ok($ollama_resp->has_timing, 'Ollama timing populated');
 is($ollama_resp->timing->{total_duration}, 5000000000, 'Ollama timing total_duration');
 is($ollama_resp->timing->{load_duration}, 1000000000, 'Ollama timing load_duration');
+is($ollama_resp->timing->{prompt_eval_duration}, 200000000, 'Ollama timing prompt_eval_duration');
+is($ollama_resp->timing->{eval_duration}, 300000000, 'Ollama timing eval_duration');
+is($ollama_resp->timing->{total_seconds}, 5, 'Ollama timing total_seconds derived from ns');
+is($ollama_resp->timing->{load_seconds}, 1, 'Ollama timing load_seconds derived from ns');
+is($ollama_resp->timing->{prompt_eval_seconds}, 0.2, 'Ollama timing prompt_eval_seconds derived from ns');
+is($ollama_resp->timing->{eval_seconds}, 0.3, 'Ollama timing eval_seconds derived from ns');
+ok($ollama_resp->has_total, 'Ollama has_total from total_seconds');
+is($ollama_resp->total_seconds, 5, 'Ollama total_seconds convenience');
+ok(!$ollama_resp->has_ttft, 'Ollama has_ttft false (sync engine)');
 
 # --- AKI chat_response returns Response ---
 
@@ -216,5 +225,73 @@ is("$aki_resp", 'AKI says hello', 'AKI Response stringifies');
 is($aki_resp->model, 'Meta-Llama-3-8B-Instruct', 'AKI model from model_name');
 ok($aki_resp->has_timing, 'AKI timing populated');
 is($aki_resp->timing->{total_duration}, 0.7, 'AKI timing total_duration');
+
+# --- clone_with: probes survives (the gap that bit karr #4) ---
+
+subtest 'clone_with carries probes through (karr #5 regression gate)' => sub {
+  my $r = Langertha::Response->new(
+    content => 'x',
+    probes  => { qk_cache => [ [1, 2], [3, 4] ], config => { layer => 0 } },
+  );
+  ok($r->has_probes, 'probes set');
+
+  my $r2 = $r->clone_with(content => 'y');
+  ok($r2->has_probes, 'probes survives a content override');
+  is_deeply($r2->probes->{qk_cache}, [ [1, 2], [3, 4] ], 'probes qk_cache intact');
+  is($r2->probes->{config}{layer}, 0, 'probes config intact');
+
+  # Sequential chain: probes → rate_limit (mirrors simple_chat chain)
+  require Langertha::RateLimit;
+  my $rl = Langertha::RateLimit->new(
+    requests_remaining => 50,
+    tokens_remaining   => 2000,
+    raw                => {},
+  );
+  my $r3 = $r2->clone_with(rate_limit => $rl);
+  ok($r3->has_probes, 'probes survives a sequential rate_limit override');
+  ok($r3->has_rate_limit, 'rate_limit applied');
+  is_deeply($r3->probes->{qk_cache}, [ [1, 2], [3, 4] ], 'probes still intact');
+  is($r3->rate_limit->requests_remaining, 50, 'rate_limit value carried');
+};
+
+# --- clone_with: raw survives ---
+
+subtest 'clone_with carries raw through' => sub {
+  my $r = Langertha::Response->new(
+    content => 'hello',
+    raw     => { id => 'r1', nested => { a => 1 } },
+  );
+  ok($r->has_raw, 'raw set');
+
+  my $r2 = $r->clone_with(content => 'world');
+  ok($r2->has_raw, 'raw survives a content override');
+  is($r2->raw->{id}, 'r1', 'raw id intact');
+  is($r2->raw->{nested}{a}, 1, 'raw nested hash intact');
+};
+
+# --- clone_with: timing -> tool_calls chain (karr #5 2-step regression) ---
+
+subtest 'clone_with timing then tool_calls preserves both' => sub {
+  my $r = Langertha::Response->new(content => 'orig');
+  ok(!$r->has_timing, 'no timing initially');
+  ok(!$r->has_tool_calls, 'no tool_calls initially');
+
+  my $r2 = $r->clone_with(timing => { total_seconds => 1.5 });
+  ok($r2->has_timing, 'timing set after first clone');
+  is($r2->total_seconds, 1.5, 'total_seconds readable');
+  ok(!$r2->has_tool_calls, 'no tool_calls yet');
+
+  my $r3 = $r2->clone_with(
+    tool_calls => [{
+      name      => 'extract',
+      arguments => { x => 1 },
+      synthetic => 1,
+    }],
+  );
+  ok($r3->has_timing, 'timing survives second clone');
+  is($r3->total_seconds, 1.5, 'total_seconds survives second clone');
+  ok($r3->has_tool_calls, 'tool_calls set after second clone');
+  is($r3->tool_call('extract')->arguments->{x}, 1, 'tool_calls value reachable');
+};
 
 done_testing;

@@ -510,16 +510,42 @@ after sending. Warns on HTTP errors but does not die.
 # Auto-instrumentation: wraps simple_chat to record a trace and generation
 # for every call when Langfuse is enabled.
 
+# Returns an ISO-8601 timestamp (UTC, ms resolution) at
+# $start_hires + $delta_seconds. Used to compute endTime /
+# completionStartTime from a client-measured total_seconds / ttft_seconds
+# carried on a Langertha::Response, anchored to the moment the simple_chat
+# wrapper entered — not to wall-clock now, which has already advanced
+# past end. Sub-millisecond precision in the underlying hires time is
+# rounded to whole milliseconds to match the rest of Langfuse timestamp
+# formatting.
+sub _langfuse_iso_after {
+  my ( $self, $start_hires, $delta_seconds ) = @_;
+  # Guard against clock skew / monotonic drift producing a negative delta
+  # (Perl's % preserves sign on negatives, which would yield a negative $us
+  # and an out-of-range millisecond field below). Clamp to zero — better
+  # to report a same-instant end_time than a wall-clock trip into the past.
+  $delta_seconds = 0 if $delta_seconds < 0;
+  my ($s, $us) = @$start_hires;
+  my $delta_us = $delta_seconds * 1_000_000;
+  $s += int( ($us + $delta_us) / 1_000_000 );
+  $us = int( ($us + $delta_us) % 1_000_000 );
+  $us = 0 if $us < 0;
+  my @t = gmtime($s);
+  return sprintf("%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+    $t[5]+1900, $t[4]+1, $t[3], $t[2], $t[1], $t[0], int($us/1000));
+}
+
 around simple_chat => sub {
   my ( $orig, $self, @messages ) = @_;
   return $self->$orig(@messages) unless $self->langfuse_enabled;
 
-  my $t0 = $self->_langfuse_timestamp;
-  my $start = [gettimeofday];
+  my $start      = [gettimeofday];
+  my $start_time = $self->_langfuse_timestamp;
 
   my $response = $self->$orig(@messages);
 
-  my $t1 = $self->_langfuse_timestamp;
+  my $t1        = $self->_langfuse_timestamp;
+  my $end_time  = $t1;
 
   # Build usage from Response if available
   my $usage;
@@ -529,6 +555,21 @@ around simple_chat => sub {
       output => $response->completion_tokens,
       total  => $response->total_tokens,
     };
+  }
+
+  # Prefer response-side timing (carries total_seconds and optionally
+  # ttft_seconds) when available. Both are deltas measured from the
+  # same anchor as our wrapper's $start — anchor end / completion_start
+  # to that anchor so the generation event spans the real call window
+  # rather than drifting into the future.
+  my $completion_start_time;
+  if (ref $response && $response->isa('Langertha::Response')) {
+    if ($response->has_total) {
+      $end_time = $self->_langfuse_iso_after($start, $response->total_seconds);
+    }
+    if ($response->has_ttft) {
+      $completion_start_time = $self->_langfuse_iso_after($start, $response->ttft_seconds);
+    }
   }
 
   my $trace_id = $self->langfuse_trace(
@@ -544,8 +585,9 @@ around simple_chat => sub {
                     ? $response->model : $self->chat_model,
     input      => \@messages,
     output     => "$response",
-    start_time => $t0,
-    end_time   => $t1,
+    start_time => $start_time,
+    end_time   => $end_time,
+    defined $completion_start_time ? ( completion_start_time => $completion_start_time ) : (),
     $usage ? ( usage => $usage ) : (),
   );
 

@@ -120,7 +120,63 @@ has timing => (
 
 =attr timing
 
-Timing information as a HashRef. Currently only populated by Ollama.
+Timing information as a HashRef. Holds client-measured
+C<ttft_seconds> and C<total_seconds> (Float, seconds) on every engine,
+plus provider-native stage durations that engines may populate
+engine-specifically — e.g. Ollama's C<total_seconds>, C<load_seconds>,
+C<prompt_eval_seconds>, C<eval_seconds> (all Float, seconds), with its
+original C<*_duration> keys in nanoseconds preserved for backward
+compatibility. See L</ttft_seconds> and L</total_seconds> for the
+standard accessors.
+
+=cut
+
+sub has_ttft {
+  my ($self) = @_;
+  my $t = $self->timing or return 0;
+  return exists $t->{ttft_seconds} && defined $t->{ttft_seconds} ? 1 : 0;
+}
+
+sub ttft_seconds {
+  my ($self) = @_;
+  my $t = $self->timing or return undef;
+  return $t->{ttft_seconds};
+}
+
+sub has_total {
+  my ($self) = @_;
+  my $t = $self->timing or return 0;
+  return exists $t->{total_seconds} && defined $t->{total_seconds} ? 1 : 0;
+}
+
+sub total_seconds {
+  my ($self) = @_;
+  my $t = $self->timing or return undef;
+  return $t->{total_seconds};
+}
+
+=method ttft_seconds
+
+    my $ttft = $response->ttft_seconds;     # Float, undef when unmeasured
+    if ($response->has_ttft) { ... }
+
+Returns time-to-first-token in seconds (Float), measured client-side
+between request send and the first streamed chunk. C<undef> for sync
+(non-streaming) calls and for engines that did not record the metric.
+Use C<has_ttft> to test availability without warnings.
+
+=cut
+
+=method total_seconds
+
+    my $total = $response->total_seconds;   # Float, undef when unmeasured
+    if ($response->has_total) { ... }
+
+Returns end-to-end request time in seconds (Float): wall-clock duration
+from before C<user_agent-E<gt>request> (sync) or C<do_request> (async)
+to after the response body was fully consumed. C<undef> when the
+engine did not record the metric. Use C<has_total> to test
+availability without warnings.
 
 =cut
 
@@ -265,12 +321,17 @@ L</clone_with> so it is preserved through C<E<lt>thinkE<gt>> tag filtering.
 
 sub clone_with {
   my ( $self, %overrides ) = @_;
-  my %args = (content => $self->content);
-  for my $attr (qw( raw id model finish_reason usage timing created thinking rate_limit tool_calls probes )) {
-    my $pred = "has_$attr";
-    $args{$attr} = $self->$attr if $self->$pred;
+  my %args = ( content => $self->content );
+  for my $attr ( $self->meta->get_all_attributes ) {
+    next unless $attr->has_predicate;
+    next unless $attr->get_read_method;
+    next if $attr->is_required;
+    my $name = $attr->name;
+    next if $name eq 'content';
+    next if exists $overrides{$name};
+    $args{$name} = $self->$name if $self->${\"has_$name"};
   }
-  return (ref $self)->new(%args, %overrides);
+  return ( ref $self )->new( %args, %overrides );
 }
 
 =method clone_with
@@ -280,6 +341,14 @@ sub clone_with {
 Returns a new Response with the same attributes as the original, except for
 the overrides provided. Used by L<Langertha::Role::ThinkTag> to produce a
 filtered response while preserving metadata.
+
+Every read-only attribute with a C<has_*> predicate is automatically carried
+forward — the implementation iterates the Moose metaclass rather than
+maintaining a hand-rolled list, so new attributes added to
+L<Langertha::Response> are picked up without further changes here. Required
+attributes (currently just C<content>) are handled explicitly above the
+loop. Attributes whose names appear in C<%overrides> are skipped during the
+copy so the override value is what reaches C<new>.
 
 =cut
 
