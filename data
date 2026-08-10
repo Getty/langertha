@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-08-10T15:35:48Z
+claimed_by: claude
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T00:46:43Z
+id: 30
+priority: normal
+status: done
+tags:
+- observability
+- metrics
+- response
+title: 'Response.timing: extract TTFT and per-stage durations from wire responses'
+updated: 2026-08-10T15:36:01Z
+---
+
+Langertha::Response has a timing attribute but it is currently only populated for Ollama (total_duration, load_duration, prompt_eval_duration, eval_duration in nanoseconds, lib/Langertha/Engine/Ollama.pm:211-215). Provider reality: (a) Anthropic streaming sends message_delta with cumulative usage but NO timing on the wire — TTFT must be measured client-side via Time::HiRes between request send and first chunk. (b) OpenAI streaming has no TTFT field; same client-side measurement. (c) Gemini usageMetadata has no timing either. (d) vLLM/SGLang/LlamaCpp expose fine-grained TTFT and stage durations ONLY via Prometheus /metrics, not on the chat response. Action: add a Response.record_timing helper that derives ttft_seconds (Time::HiRes at first chunk) and total_seconds (Time::HiRes at final chunk), stores both under timing => { ttft_seconds, total_seconds, ...provider_native }; have OpenAI / Anthropic / Gemini engines call it on stream finalisation. Document that for high-fidelity TTFT + queue time + decode time, users should scrape the server /metrics. Source: docs.ollama.com/api/usage; platforms.stitched deep dives (fetched 2026-08-10).
+Implemented across 6 areas: Response convenience methods (has_ttft/total, ttft_seconds/total_seconds), Role::Chat sync + async-stream timing hooks via Time::HiRes, HTTP::execute_streaming_request returns (\@chunks, {total_seconds}), Ollama ns->s conversion preserving legacy *_duration keys, Langfuse::around simple_chat anchors end_time/completionStartTime from $start_hires + response delta. Tests: t/90_response_timing.t (10 subtests) + t/70_response.t Ollama pins migrated. Full suite green: 1962 tests, 65 files. Changes entry written under {{NEXT}}. Two limitations surfaced honestly: live TTFT magnitude verification gated on t/80-86 (cost-bearing); clone_with does not deep-merge (first-write-wins design via _merge_timing_field).
