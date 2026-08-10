@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-08-10T00:54:26Z
+claimed_by: claude
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T00:42:30Z
+id: 27
+priority: normal
+status: done
+tags:
+- llm
+- observability
+- metrics
+- research
+title: 'Metrics audit: Prometheus /metrics, usage details, TTFT/health/model endpoints
+  for self-hosted engines'
+updated: 2026-08-10T00:54:26Z
+---
+
+Maintainer-extended audit. Survey official metrics & telemetry surfaces for vLLM, SGLang, llama.cpp/LlamaCpp, Ollama/OllamaOpenAI, LM Studio, VLLMHook and other self-hosted OpenAI-compatible engines: (a) Prometheus /metrics endpoints (vLLM v1, SGLang built-in, llama.cpp --metrics, Ollama /api/ps, LM Studio developer /metrics); (b) response-usage fields (completion_tokens, prompt_tokens, total_tokens, reasoning_tokens, cached_tokens); (c) streaming usage chunks (OpenAI stream_options.include_usage, Anthropic message_delta usage, Gemini usageMetadata); (d) health/model endpoints (/health, /v1/models, /v1/models/{id}); (e) timing fields (ttft, tokens_per_second, total_duration) on Ollama; (f) custom headers (x-request-id, server-timing); (g) server-side knob exposure (prefix caching, continuous batching, speculative decoding, chunked prefill, structured output grammars). Compare with Langertha::Metrics (deprecated facade), Langertha::Usage, Langertha::Response.timing, Langertha::UsageRecord, Langfuse generation usage/timing, VLLMHook probes. Produce a separate "Metrics & self-hosted runtime features" section in the final report with concrete karr tickets for each gap. No code in this phase. This ticket is the research scoping ticket — engineering tickets follow from findings.
+Research scoping completed in the 2026-08-10 all-engine audit. Findings and implementation split are recorded in #28-#31: Usage depth, Prometheus scraper, Response TTFT/timing, and self-hosted runtime knobs. No code changed in this research ticket.
