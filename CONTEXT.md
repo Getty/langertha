@@ -72,6 +72,33 @@ The per-engine prompt-cache dialect — Anthropic `cache_control` (enable breakp
 vs OpenAI `prompt_cache_key` (routing hint); the two are asymmetric and carry
 distinct capability flags.
 
+### Response-side observability (sibling seam)
+
+Response timing is the response-side parallel to the request-side controls:
+a HashRef that carries both engine-agnostic standard keys and engine-native
+stage keys, layered together via a first-write-wins merge. Canonical
+vocabulary lives in **ADR 0011** (not restated here); named only so the
+parallel is explicit:
+
+**Langertha::Response.timing** (HashRef):
+The response-side timing surface. Holds two classes of keys:
+- *engine-agnostic* (standard): `ttft_seconds`, `total_seconds` — Float,
+  seconds. `ttft_seconds` only meaningful for async streaming (LWP
+  sync streaming buffers the body and cannot observe it).
+- *engine-native* (optional, engine-populated): provider-specific stage
+  durations. Currently Ollama: `total_seconds`/`load_seconds`/
+  `prompt_eval_seconds`/`eval_seconds` (Float, seconds) plus the
+  original `*_duration` keys in nanoseconds preserved for back-compat.
+
+**_merge_timing_field** (Role::Chat private):
+First-write-wins merge primitive. Provider-supplied keys (e.g. Ollama
+server-reported `total_seconds`) trump client-measured values
+(`Time::HiRes tv_interval` around the request). Rationale: server time
+excludes network jitter, which is what model-latency dashboards want.
+Round-trip latency is recoverable from the difference between
+provider-native and client-measured `total_seconds` when both are
+present.
+
 ## Relationships
 
 - An engine declares exactly one **tool_wire_format**; its default follows the

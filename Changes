@@ -2,6 +2,36 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Response timing observability (karr #5). Langertha::Response gains
+      ttft_seconds and total_seconds accessors (Float, seconds) plus
+      has_ttft / has_total predicates on the timing HashRef. Role::Chat
+      measures total_seconds around the request (sync) and both
+      ttft_seconds and total_seconds as streaming chunks arrive (async),
+      layered onto the timing hash via a new _merge_timing_field
+      helper that uses first-write-wins so provider-supplied durations
+      (e.g. Ollama's total_seconds) trump the client measurement.
+      Role::HTTP::execute_streaming_request returns ($chunks, $timing);
+      sync LWP streaming only reports total_seconds because LWP
+      buffers the body before parsing. Engine::Ollama derives
+      *_seconds from its native *_duration (ns) values while
+      preserving the original keys for back-compat. Role::Langfuse
+      around simple_chat anchors end_time and completion_start_time
+      to response-side timing so the generation event spans the real
+      call window instead of drifting into the future, with
+      _langfuse_iso_after clamping negative deltas (clock-skew safety).
+
+    - Langertha::Response::clone_with refactor (karr #5 regression
+      gate). Iterates the Moose metaclass instead of a hand-rolled
+      attribute list, so probes / raw / timing survive any clone
+      chain and new attributes added later are picked up automatically.
+      Locks the previous bug where sequential clone_with(timing => ...)
+      then clone_with(rate_limit => ...) dropped the timing hash on
+      the second clone. t/70_response.t gains three regression
+      subtests (probes / raw / timing-then-tool_calls); t/90_response_timing.t
+      is a new 299-line file locking the timing surface, the streaming
+      return-shape contract, the 3-step clone chain, and the
+      first-write-wins merge contract.
+
     - Tool wire-translation value-object symmetry (karr #1, #2; ADR 0001/0003).
       Reconciled the two inbound tool-call entry points ADR 0001 flagged as
       unsettled: Langertha::ToolCall->extract is now strictly the format-pinned
