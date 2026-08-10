@@ -14,7 +14,7 @@ with 'Langertha::Role::StaticModels';
 
     my $moonshot = Langertha::Engine::MoonshotAnthropic->new(
         api_key => $ENV{MOONSHOT_API_KEY},
-        model   => 'kimi-k2.6',
+        model   => 'kimi-k3',
     );
 
     print $moonshot->simple_chat('Hello from Perl!');
@@ -53,18 +53,15 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_MOONSHOT_API_KEY or api_key set";
 }
 
-sub default_model { 'kimi-k2.6' }
+sub default_model { 'kimi-k3' }
 
 sub default_response_size { 4096 }
 
 sub _build_static_models {[
-  { id => 'kimi-k2.6' },
+  { id => 'kimi-k3' },
   { id => 'kimi-k2.7-code' },
   { id => 'kimi-k2.7-code-highspeed' },
-  { id => 'kimi-k2.5' },
-  { id => 'moonshot-v1-8k' },
-  { id => 'moonshot-v1-32k' },
-  { id => 'moonshot-v1-128k' },
+  { id => 'kimi-k2.6' },
 ]}
 
 __PACKAGE__->meta->make_immutable;
