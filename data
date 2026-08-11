@@ -1,0 +1,42 @@
+---
+class: standard
+completed: 2026-08-11T04:09:16Z
+created: 2026-08-10T20:38:03Z
+id: 35
+priority: normal
+started: 2026-08-11T04:09:16Z
+status: done
+tags:
+- adr
+- architecture
+- timing
+- response
+title: 'ADR-0011: Response timing seam (client-measured + provider-native)'
+updated: 2026-08-11T04:09:16Z
+---
+
+Aus dem Code-Review des Timing-Patches (Commit 5cd8c02):
+
+Die Entscheidungen die im Patch getroffen sind, sind nicht-trivial genug für ein ADR:
+
+1. **Datenshape:** Langertha::Response.timing ist ein HashRef mit zwei Klassen von Keys:
+   - Engine-agnostisch, standard: ttft_seconds, total_seconds (Float, Sekunden)
+   - Engine-spezifisch, optional: provider-native Stage-Durations (z.B. Ollama: total_seconds, load_seconds, prompt_eval_seconds, eval_seconds Float; plus *_duration ns BC)
+
+2. **First-write-wins policy:** Role::Chat::_merge_timing_field bevorzugt Provider-Supplied gegenüber Client-Measured. Im Fall von Ollama gewinnt die Server-Zeit (total_duration/1e9) gegen die Client-Wall-Clock. Begründung im Code-Kommentar: Server-Zeit schließt Network-Jitter aus.
+
+3. **Sync vs Async:** sync LWP-Path kann kein echtes TTFT (buffered), nur total_seconds. Async IO::Async-Path kann beides.
+
+4. **clone_with Refactor:** von handgepflegter Attribut-Liste auf Moose-Metaclass-Iteration umgestellt (karr #5 Regression-Gate). Neue Attribute mit predicate werden automatisch getragen — Contract für künftige Response-Attribute.
+
+ADR sollte:
+- die zwei Klassen von timing-Keys dokumentieren (mit dem _duration/_seconds Split)
+- die first-write-wins Policy explizit machen (siehe karr #32 W1 für offene Frage Server-vs-Client)
+- die sync-vs-async-Lücke markieren
+- auf ADR 0009 (request-side controls) referenzieren — Timing ist response-side, aber symmetrisch strukturiert (HashRef mit engine-agnostischen + engine-spezifischen Keys)
+- TODO: die Sektion über karr #32 verlinken
+
+Format und Methodik: Skill langertha-adr. Backfill über langertha-adr-auditor Agent möglich, aber Patch ist gerade frisch — selbst schreiben ist OK.
+
+Sollte vor dem nächsten Release fertig sein (verlinkt im Changes-Eintrag).
+ADR-0011 delivered via a518e04 (docs/adr/0011-response-timing-seam.md). Status to follow.
