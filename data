@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-08-10T00:39:21Z
+claimed_by: claude
+class: standard
+completed: 2026-08-11T20:36:04Z
+created: 2026-06-26T14:59:38Z
+id: 20
+priority: low
+started: 2026-08-09
+status: done
+tags:
+- engine
+- reasoning
+title: 'Reasoning/caching Slice 3: thinking_budget + provider edge knobs'
+updated: 2026-08-11T20:36:15Z
+---
+
+Deferred from #16 (advisor: low ROI / in-flux). Integer thinking_budget (Gemini thinkingConfig.thinkingBudget; legacy Anthropic budget_tokens — note deprecated on Opus 4.7/4.8/Fable), DeepSeek V3.2 vs V4 toggle hardening + live re-verify of the v3-sniff in DeepSeek.reasoning_kwargs, Groq reasoning_format, and Gemini explicit context caching (cachedContents resource, separate lifecycle). Build on Langertha::Reasoning / Langertha::PromptCache.
+Provider reality revalidated 2026-08-10. Current coherent scope: model-gated Gemini 2.5 integer thinking_budget plus DeepSeek V3/V4 sniff hardening/tests. Do not add legacy Anthropic budget_tokens (rejected on current Claude families); keep adaptive reasoning. Split Groq model-gated reasoning_format/effort and Gemini explicit cachedContents lifecycle into separate follow-ups.
+Revision 2 (2026-08-10 review pass): dropped global 'thinking_budget' cap from %ROLE_TO_CAPS — cap is now engine-gated via Langertha::Engine::Gemini's around engine_capabilities (Gemini 2.5-* shows thinking_budget + clears reasoning_effort; Gemini 3 / default shows reasoning_effort + clears thinking_budget). Reasoning.pm simplified to optional Moose attrs with normal predicates (has_effort / has_thinking_budget); no Maybe[..., default undef], no hand-written predicate. BUILD now croaks on EVERY ambiguous combination: effort+thinking_budget together (any model/generation), thinking_budget on non-Gemini-2.5, and reasoning_effort on Gemini 2.5. 'Exactly one native control per generation' is enforced. DeepSeek V3 sniff trimmed to a minimal family rule (deepseek-v3 / deepseek-v3.2 / deepseek-v3.x-y) — dropped speculative aliases. Trailing newline fixed on Reasoning.pm.
+Committed a9f446d: Gemini 2.5 model-gated thinking_budget, fail-loud invalid combinations, model-gated capabilities, hardened DeepSeek V3 family dispatch. Offline focused tests and prove -lr t/ pass: 64 files, 1924 tests. Live tests remain env-gated and were not run; pending selective maintainer-approved live verification.
+Session 2026-08-11: review pass concluded provider reality check on 2026-08-10; offline tests pass; live verification pending maintainer go-ahead (no TEST_LANGERTHA_*_API_KEY in env). Branch restoration in progress for #23-26 cherry-pick.
+Session 2026-08-11: in active review/cherry-pick pass onto main (combined with #23-#26). Conflict resolution needed at Reasoning.pm (karr #16 effort-attribute + karr #20 thinking_budget coexistence). Live verification still pending maintainer go-ahead — no TEST_LANGERTHA_GEMINI_API_KEY in env. Will be re-verified against Gemini 2.5 + Gemini 3 families post-merge.
+Merged to main as part of 133ea26 (2026-08-11). Cherry-pick Resolution: Langertha::Reasoning:effort dropped 'required => 1' per karr #20 revision 2; BUILD gate is canonical validator. Offline prove -lr t/ = 1982 tests PASS. Awaiting live verification — no TEST_LANGERTHA_GEMINI_API_KEY in env. Live verify TODO = karr #36.
+Closed 2026-08-11 per maintainer explicit instruction (offline-pass waive of live verification). Code on main as part of merge 133ea26. Cherry-pick Resolution: Langertha::Reasoning:effort 'required => 1' dropped per karr #20 rev 2 — BUILD gate is canonical validator. Post-release drift check: karr #36.
