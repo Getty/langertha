@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-08-10T17:05:49Z
+claimed_by: claude
+class: standard
+completed: 2026-08-10
+created: 2026-08-10T00:05:56Z
+id: 21
+priority: low
+status: done
+tags:
+- engine
+- reasoning
+- groq
+title: Groq model-gated reasoning controls
+updated: 2026-08-11T04:19:29Z
+---
+
+Follow-up from #20. Model-aware support for Groq reasoning_effort and response-side reasoning_format/include_reasoning. Current provider reality has disjoint vocabularies (Qwen vs GPT-OSS), mutual exclusion between reasoning_format and include_reasoning, and tool/JSON-mode restrictions. Design and live-verify as a separate slice; do not force it into the generic request-side quartet.
+Implementation: Langertha::Role::GroqReasoning (lib/Langertha/Role/GroqReasoning.pm, 2 attributes + helper), engine override in Langertha::Engine::Groq (model classifier with %GROQ_REASONING_VOCAB + %GROQ_REASONING_NO_VOCAB, around engine_capabilities flip, reasoning_kwargs override), 23 subtests in t/48_groq_reasoning.t (per-family vocabulary clamp, mutex guard, non-reasoning gate, capability flag flip, conservative silence for unknown future models). Full suite: 1989 tests across 66 files. Langertha::Reasoning kept provider-agnostic per ADR 0009; Groq's idiosyncratic sub-controls stay provider-local. Committed as e117f87.
+Session 2026-08-11: commit e117f87 sits on branch karr-23-26-provider-model-updates but was deliberately excluded from cherry-pick into review/karr-23-26-on-main (separate scope: Groq-only, model-gated reasoning). Awaiting maintainer decision: either rebase + merge onto main as standalone, or merge the whole karr-23-26 branch (then #21 lands with #23-26). Already done-status in karr; this note is about branch delivery.
