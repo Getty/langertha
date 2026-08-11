@@ -12,6 +12,7 @@ BEGIN {
   push @available, 'anthropic'    if $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY};
   push @available, 'gemini'       if $ENV{TEST_LANGERTHA_GEMINI_API_KEY};
   push @available, 'groq'         if $ENV{TEST_LANGERTHA_GROQ_API_KEY};
+  push @available, 'hetzner'      if $ENV{TEST_LANGERTHA_HETZNER_API_KEY};
   push @available, 'mistral'      if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};
   push @available, 'deepseek'     if $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
   push @available, 'minimax'      if $ENV{TEST_LANGERTHA_MINIMAX_API_KEY};
@@ -93,6 +94,16 @@ if ($ENV{TEST_LANGERTHA_GROQ_API_KEY}) {
   test_chat('Groq', Langertha::Engine::Groq->new(
     api_key => $ENV{TEST_LANGERTHA_GROQ_API_KEY},
     model => 'llama-3.3-70b-versatile',
+  ));
+}
+
+# --- Hetzner ---
+if ($ENV{TEST_LANGERTHA_HETZNER_API_KEY}) {
+  require Langertha::Engine::Hetzner;
+  my $hetzner_model = $ENV{TEST_LANGERTHA_HETZNER_MODEL} || 'Qwen/Qwen3.6-35B-A3B-FP8';
+  test_chat("Hetzner/$hetzner_model", Langertha::Engine::Hetzner->new(
+    api_key => $ENV{TEST_LANGERTHA_HETZNER_API_KEY},
+    model => $hetzner_model,
   ));
 }
 

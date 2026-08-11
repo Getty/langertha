@@ -2,6 +2,26 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New Langertha::Engine::Hetzner for Hetzner's experimental
+      OpenAI-compatible Inference API at https://inference.hetzner.com/v1
+      (karr #38). Bearer auth via LANGERTHA_HETZNER_API_KEY; default
+      model Qwen/Qwen3.6-35B-A3B-FP8 (smallest MoE of the four, Apache
+      2.0, text + image, 262K context). Composes StaticModels (hardcoded
+      four-model catalog: Qwen/Qwen3.6-35B-A3B-FP8, DeepSeek-V4-Flash-0731,
+      GLM-5.2-NVFP4, Kimi-K2.7-Code) and Tools. Supports chat, streaming,
+      tool calling (advertised per OpenAI-compatible wire; POD notes
+      Hetzner docs do not explicitly confirm server-side tool support),
+      structured output (json_schema / json_object), and image_url
+      vision input on the multimodal models. Embeddings and transcription
+      are not exposed. No ADR: vanilla OpenAI-compatible cloud engine,
+      no architectural decision beyond what ADR 0001/0002/0003 already
+      cover. Offline regression tests in t/48_hetzner.t lock the request
+      envelope (URI, Authorization, body shape for chat / multi-turn /
+      vision / structured-output / tools / tool_choice); live test
+      t/88_live_hetzner.t gated on TEST_LANGERTHA_HETZNER_API_KEY with
+      optional image + tools subtests (TEST_LANGERTHA_HETZNER_IMAGE_URL,
+      TEST_LANGERTHA_HETZNER_TEST_TOOLS).
+
     - Provider default-model migrations (karr #23, #24, #25). OpenAI
       default_model gpt-5.6-terra (mini price-tier successor; gpt-5.6-luna
       is the nano tier — corrected from earlier audit claim); Anthropic
