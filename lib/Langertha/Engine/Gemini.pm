@@ -7,6 +7,7 @@ use JSON::MaybeXS;
 use Langertha::ToolChoice;
 use Langertha::Response;
 use Langertha::ToolCall;
+use Langertha::CachedContent;
 
 extends 'Langertha::Engine::Remote';
 
@@ -20,6 +21,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   ResponseFormat
   Streaming
   Tools
+  CachedContent
 );
 
 sub _build_reasoning_wire_format { 'gemini' }
@@ -31,6 +33,11 @@ sub _build_reasoning_wire_format { 'gemini' }
 # model. Reflect that in the capability flags so callers can ask
 # supports('thinking_budget') vs supports('reasoning_effort') and get the
 # truth for the configured model.
+#
+# The same around also gates cached_content: explicit cachedContent
+# resources are an "on" feature for Gemini 2.5+ and Gemini 3. Older
+# generations (1.x, 2.0) don't accept the cachedContents REST endpoints,
+# so we drop the flag there.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
@@ -38,11 +45,17 @@ around engine_capabilities => sub {
   if ( $model =~ /\Agemini-2\.5/ ) {
     $caps->{thinking_budget} = 1;
     delete $caps->{reasoning_effort};
+    $caps->{cached_content} = 1;
   }
-  else {
+  elsif ( $model =~ /\Agemini-3/ ) {
     # Gemini 3 (and any future unknown Gemini generation) keeps the
     # default reasoning_effort cap; thinking_budget is not advertised.
     delete $caps->{thinking_budget};
+    $caps->{cached_content} = 1;
+  }
+  else {
+    delete $caps->{thinking_budget};
+    delete $caps->{cached_content};
   }
   return $caps;
 };
@@ -123,6 +136,29 @@ has '+url' => (
   default => sub { 'https://generativelanguage.googleapis.com' },
 );
 
+has cached_content => (
+  is        => 'rw',
+  isa       => 'Maybe[Langertha::CachedContent]',
+  predicate => 'has_cached_content',
+  clearer   => 'clear_cached_content',
+);
+
+=attr cached_content
+
+Optional L<Langertha::CachedContent> resource bound to this engine. When
+set, every chat request (C<chat>, C<chat_stream>, C<simple_chat_f>, …)
+injects C<cachedContent =E<gt> '{name}'> into the generateContent body
+so the model serves the request against the cached context.
+
+Lifecycle (create / get / list / update / delete) is on the role —
+L<Langertha::Role::CachedContent/create_cached_content_f> and friends.
+Bind a freshly created resource with C<< $engine->cached_content($cc) >>.
+
+Source URL: L<https://ai.google.dev/api/generate-content> (the
+C<cachedContent> field on a generateContent body).
+
+=cut
+
 sub default_model { 'gemini-3-flash-preview' }
 
 sub chat_request {
@@ -173,6 +209,17 @@ sub chat_request {
     $request_body{systemInstruction} = {
       parts => [{ text => $system_instruction }],
     };
+  }
+
+  # Reference an explicit cachedContent resource by name when one was bound
+  # via $engine->cached_content (karr #22). The REST contract names the field
+  # `cachedContent` and accepts the resource name as a plain string —
+  # https://ai.google.dev/api/generate-content (cachedContent field).
+  if ( $self->can('cached_content') && defined $self->cached_content ) {
+    my $cc = $self->cached_content;
+    croak "Langertha::Engine::Gemini: cached_content must be a Langertha::CachedContent with a 'name'"
+      unless ref($cc) && eval { $cc->isa('Langertha::CachedContent') && $cc->has_name };
+    $request_body{cachedContent} = $cc->name;
   }
 
   # Add generation config
@@ -252,7 +299,9 @@ sub chat_response {
     $finish_reason = $candidate->{finishReason};
   }
 
-  # Normalize Gemini usage metadata
+  # Normalize Gemini usage metadata. cachedContentTokenCount is surfaced
+  # when present so callers can monitor cache-hit rate (karr #22, 22e).
+  # See https://ai.google.dev/api/generate-content (usageMetadata).
   my $usage;
   if (my $um = $data->{usageMetadata}) {
     $usage = {
@@ -260,6 +309,9 @@ sub chat_response {
       completion_tokens => $um->{candidatesTokenCount},
       total_tokens      => $um->{totalTokenCount},
     };
+    if ( defined $um->{cachedContentTokenCount} ) {
+      $usage->{cached_content_token_count} = $um->{cachedContentTokenCount};
+    }
   }
 
   my @tcs = Langertha::ToolCall->extract( $self->tool_wire_format, $data );
@@ -319,6 +371,15 @@ sub chat_stream_request {
     };
   }
 
+  # Reference an explicit cachedContent resource by name when one was bound
+  # via $engine->cached_content (karr #22). Same wire as chat_request.
+  if ( $self->can('cached_content') && defined $self->cached_content ) {
+    my $cc = $self->cached_content;
+    croak "Langertha::Engine::Gemini: cached_content must be a Langertha::CachedContent with a 'name'"
+      unless ref($cc) && eval { $cc->isa('Langertha::CachedContent') && $cc->has_name };
+    $request_body{cachedContent} = $cc->name;
+  }
+
   my %generation_config;
   if ($self->get_response_size) {
     $generation_config{maxOutputTokens} = $self->get_response_size;
@@ -327,7 +388,7 @@ sub chat_stream_request {
     $generation_config{temperature} = $self->temperature;
   }
 
-  if ( $self->has_reasoning_effort || $self->has_thinking_budget ) {
+  if ( $self->has_reasoning_effort ) {
     %generation_config = ( %generation_config, $self->reasoning_kwargs );
   }
 
