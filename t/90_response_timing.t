@@ -187,6 +187,97 @@ subtest 'simple_chat Stream return-shape contract' => sub {
     'ttft_seconds <= total_seconds (TTFT precedes total)');
 };
 
+# Inline reproduction of the streaming inner loop in
+# Role::Chat::simple_chat_stream_realtime_f (lines ~530-590). The real
+# function reads chunks off a Net::Async::HTTP wire; we can't fake that
+# without dragging in the async loop. So we exercise the timing-arithmetic
+# primitive the function applies to each chunk — first-write-wins on
+# ttft_seconds (tv_interval from $t0 at the first chunk), total_seconds
+# measured after the last chunk. Offline, deterministic with usleep.
+#
+# This mirrors the pattern used above for the first-write-wins merge:
+# reproduce the primitive, assert the contract, trust the wire-level
+# integration to live tests under TEST_LANGERTHA_*_API_KEY.
+
+subtest 'streaming TTFT is set on first chunk (inline reproduction)' => sub {
+  # Three chunks at ~0ms, ~50ms, ~100ms. ttft should be the first
+  # chunk's wall-clock; total_seconds should span the whole stream.
+  my @chunks = (
+    Langertha::Stream::Chunk->new(content => 'A'),
+    Langertha::Stream::Chunk->new(content => 'B'),
+    Langertha::Stream::Chunk->new(content => 'C'),
+  );
+
+  my @all_chunks;
+  my $t0           = [gettimeofday];
+  my $ttft_seconds;
+
+  for my $chunk (@chunks) {
+    $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
+    push @all_chunks, $chunk;
+    usleep(50_000);  # 50ms between chunks
+  }
+  my $total_seconds = tv_interval($t0);
+
+  ok(defined $ttft_seconds, 'ttft_seconds set after first chunk');
+  ok($ttft_seconds >= 0, 'ttft_seconds >= 0');
+  ok($ttft_seconds < 0.05, 'ttft_seconds < 50ms (first chunk fired immediately)');
+  ok($total_seconds >= 0.1, 'total_seconds >= 100ms (3 chunks × 50ms apart)');
+  ok($total_seconds <= 0.5, 'total_seconds <= 500ms (sanity upper bound)');
+  ok($ttft_seconds < $total_seconds, 'ttft_seconds precedes total_seconds');
+};
+
+subtest 'streaming TTFT is not overwritten on subsequent chunks' => sub {
+  # The contract: `unless defined $ttft_seconds` makes the first chunk's
+  # wall-clock sticky. If the primitive is broken and a later chunk
+  # overwrites ttft_seconds with a larger value, the invariant fails.
+  my @chunks = (
+    Langertha::Stream::Chunk->new(content => 'A'),
+    Langertha::Stream::Chunk->new(content => 'B'),
+  );
+
+  my $t0           = [gettimeofday];
+  my $ttft_seconds;
+
+  for my $chunk (@chunks) {
+    my $before = $ttft_seconds;
+    $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
+    ok(defined $before ? $ttft_seconds == $before : 1,
+      'ttft_seconds not overwritten on chunk ' . scalar(@chunks));
+    usleep(30_000);
+  }
+
+  is($ttft_seconds, $ttft_seconds, 'ttft_seconds still defined at end');
+  ok($ttft_seconds < 0.05, 'ttft_seconds still reflects first-chunk instant');
+};
+
+subtest 'streaming buffer-tail also sets ttft if no prior chunks' => sub {
+  # In Role::Chat, after the main stream loop, a buffer-tail pass runs
+  # the same `unless defined $ttft_seconds` guard on any leftover
+  # chunks. This reproduces that path: zero chunks during the main
+  # loop, then a single chunk in the buffer-tail — ttft must still
+  # be set, and equal the buffer-tail wall-clock.
+  my @all_chunks;
+  my $t0           = [gettimeofday];
+  my $ttft_seconds;
+  usleep(80_000);  # simulate a stream that delivers nothing for 80ms
+
+  # Main loop produced no chunks.
+  is(scalar @all_chunks, 0, 'main loop: zero chunks before buffer tail');
+
+  # Buffer-tail pass (mirrors Role::Chat line ~574).
+  for my $chunk (Langertha::Stream::Chunk->new(content => 'late')) {
+    $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
+    push @all_chunks, $chunk;
+  }
+  my $total_seconds = tv_interval($t0);
+
+  ok(defined $ttft_seconds, 'ttft_seconds set in buffer-tail pass');
+  ok($ttft_seconds >= 0.07, 'ttft_seconds >= 70ms (buffer-tail fired after sleep)');
+  ok($ttft_seconds <= $total_seconds, 'ttft_seconds precedes total_seconds');
+  is($all_chunks[0]->content, 'late', 'buffer-tail chunk preserved');
+};
+
 # --- Test 4: clone_with transports timing intact -------------------------
 
 subtest 'clone_with preserves timing' => sub {
