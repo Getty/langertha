@@ -1,0 +1,157 @@
+---
+claimed_at: 2026-08-11T20:55:56Z
+claimed_by: claude
+class: standard
+completed: 2026-08-11T22:20:45Z
+created: 2026-08-10T00:46:00Z
+id: 28
+priority: normal
+started: 2026-08-11T20:55:56Z
+status: done
+tags:
+- observability
+- langfuse
+- metrics
+- refactor
+title: Langertha::Metrics deprecation + Langertha::Usage/Pricing/Cost/UsageRecord
+  depth review
+updated: 2026-08-11T22:20:56Z
+---
+
+STATUS 2026-08-11: research done, structured breakdown preserved below
+for maintainer reference. Sub-tickets 28a-28i intentionally NOT
+auto-created — same flow as #22/#29/#31.
+
+Langertha::Metrics appears to be a legacy metrics container not used by
+Role::Langfuse or Response.usage. Deprecation candidate. The deeper
+audit covers Langertha::Usage / Langertha::Pricing / Langertha::Cost /
+Langertha::UsageRecord — these are referenced by Response.usage and
+need careful back-compat if their attribute shape changes.
+
+Proposed sub-tickets:
+  28a — usage stats: determine which of Langertha::Usage, Pricing, Cost,
+        UsageRecord are referenced by Response.usage attributes (callers,
+        tests). Map field-level usage across providers.
+  28b — pricing source-of-truth: identify where per-model pricing
+        constants live, when they were last updated, what would break
+        if a stale constant is referenced (Langertha::Engine::OpenAI has
+        pricing tables — check other engines).
+  28c — Metrics deprecation: confirm Langertha::Metrics has zero
+        internal callers; remove or formally deprecate with a clear
+        timeline.
+  28d — Usage shape audit: validate every (engine, capability)
+        combination emits a consistent Response.usage.usage block
+        (input/output/cache_creation/cache_read/total tokens)
+  28e — Pricing drift: spot-check pricing tables against current
+        per-provider published pricing — same provider-reality-check
+        pattern as karr #23-26.
+  28f — Cost calc path: trace UsageRecord → Pricing → Cost resolution;
+        ensure back-compat for downstream consumers that read raw
+        cost floats.
+  28g — tests: usage-shape regressions per engine; pricing-constant
+        freshness tests; cost calc roundtrip tests.
+  28h — Changes entry: deprecation notice + migration path.
+  28i — ADR candidate: ADRs document WHY pricing/constants are not
+        auto-fetched from provider APIs (network dependency risk,
+        determinism in evaluation).
+
+## Callers map (28a, verified 2026-08-11)
+
+PREMISE REFUTED: Response.usage does NOT use Langertha::Usage. Response.usage
+is a plain Maybe[HashRef] holding raw provider data. The Usage/Pricing/Cost/
+UsageRecord value objects are a SEPARATE, currently-unwired lane.
+
+| Class                  | Callers in lib/            | Callers in t/                       |
+|------------------------|----------------------------|-------------------------------------|
+| Langertha::Usage       | Metrics.pm only            | 90_value_objects.t, (98_metrics.t)  |
+| Langertha::Pricing     | Metrics.pm only            | 90_value_objects.t, (98_metrics.t)  |
+| Langertha::Cost        | Metrics.pm, Pricing.pm     | 90_value_objects.t, (98_metrics.t)  |
+| Langertha::UsageRecord | Metrics.pm only            | 90_value_objects.t, (98_metrics.t)  |
+| Langertha::Metrics     | ZERO                       | 98_metrics.t, 90_value_objects.t, 00_load.t |
+
+Note: the `$raider->metrics` hits in Raider.pm / t/82 / t/83 are an unrelated
+plain HashRef attribute on Raider (raids/iterations/tool_calls/time_ms) — NOT
+Langertha::Metrics. The "zero internal callers" claim for the module is
+CONFIRMED.
+
+Implication: no engine, role, or Response code path constructs a Usage, Cost
+or UsageRecord. The whole value-object lane exists for external consumers
+(Skeid/Knarr) and for Metrics.pm to delegate to. Attribute-shape changes are
+therefore internally free but externally breaking — back-compat risk lives
+outside this dist.
+
+### Per-engine raw Response.usage shapes (28d input, not a full audit)
+
+No engine normalizes; every one passes provider data through verbatim:
+- Role::OpenAICompatible  -> prompt_tokens / completion_tokens / total_tokens
+- Engine::AnthropicBase   -> input_tokens / output_tokens (+ cache_creation_input_tokens, cache_read_input_tokens)
+- Engine::Gemini          -> raw `usageMetadata` (camelCase!)
+- Engine::Ollama          -> prompt_eval_count / eval_count
+- Engine::OpenAIResponses -> pre-normalized hash (only engine that touches it)
+- Engine::LMStudio        -> passthrough
+
+Cross-provider consistency exists ONLY via the Response accessors
+prompt_tokens / completion_tokens / total_tokens. 28d should be re-scoped:
+the invariant to audit is the accessors, not the usage hash. GAP: cache
+tokens have NO normalized accessor — they are reachable only by digging into
+the raw provider-specific hash (see t/86_live_prompt_cache.t).
+
+## Pricing source-of-truth (28b, verified 2026-08-11)
+
+PREMISE REFUTED: there are NO per-model pricing tables in this distribution.
+- `grep` over lib/Langertha/Engine/*.pm finds zero pricing constants. The one
+  hit in Replicate.pm is prose in the POD ("pay-per-use pricing").
+- Langertha::Pricing ships `rules => {}` (EMPTY) and `default_rule => undef`.
+  All prices are CALLER-supplied per call.
+- cost_for() reads only input_per_million / output_per_million; unknown model
+  falls back to default_rule; missing rule yields zero cost (no die).
+- UsageRecord carries a free-form `pricing_version` Str — the dist records
+  which catalog a caller used but never owns one.
+
+Consequences:
+- 28e (pricing drift spot-check) is MOOT as written — nothing to drift. Close
+  it or re-scope to "keep it that way".
+- 28i (ADR: why pricing is not auto-fetched) is still worth writing, and is
+  now really "why Langertha ships NO pricing catalog at all" — determinism,
+  no network dependency, prices are the caller's business domain.
+- GAP for 28f: cost_for ignores cache tokens entirely (cached input is billed
+  at a different rate by Anthropic/OpenAI), and there is no per-model
+  cache-rate concept. Any consumer computing real spend on a cached workload
+  will be wrong. Worth its own ticket.
+
+Last-updated: all five files last touched by 2faa29f (2026-05-16), a
+mechanical $VERSION bump after the 0.502 release — i.e. no substantive change
+since introduction.
+
+## CORRECTION to the per-engine table above (verified in code, 2026-08-11)
+
+Gemini does NOT pass usageMetadata through raw on the non-streaming path —
+`Engine::Gemini` normalizes it to prompt_tokens/completion_tokens/total_tokens
+and DROPS the camelCase originals. Only the STREAMING path
+(Stream::Chunk) carries raw `usageMetadata`. So chat vs. stream disagree on
+usage shape within one engine — worth a 28d finding.
+
+Engine::OpenAIResponses likewise normalizes and in doing so DROPS the whole
+`input_tokens_details` block, i.e. `cached_tokens` never reaches
+Response->usage. Real telemetry hole: Responses API consumers cannot observe
+prompt-cache hits at all (related: karr #18e).
+
+## Work done 2026-08-11 — branch feat/karr-28-metrics-audit (local, unpushed)
+
+- 538db31 — 28c: Langertha::Metrics marked DEPRECATED (ABSTRACT + $DEPRECATED
+  flag + =head1 DEPRECATION with per-method migration map), removal scheduled
+  for 0.504. Module NOT deleted, method behaviour untouched (external
+  Skeid/Knarr consumers).
+- 7748a2a — 28g: new t/91_response_usage.t (Test2::Bundle::More, 12 subtests /
+  75 assertions) locking: raw usage passthrough per wire family, accessor
+  normalization as the real cross-provider contract, cache-token survival,
+  Usage->Pricing->Cost roundtrip incl. default_rule fallback and no-rule path,
+  and the empty-Pricing-rules invariant (trips if anyone hardcodes prices).
+
+prove -lr t/: Files=66, Tests=1994, Result: PASS (live t/80-87* skipped, no
+API keys).
+
+Remaining: 28d (full audit — re-scope to accessors + chat/stream divergence),
+28e (moot, close or re-scope), 28f (cost path ignores cache tokens entirely —
+split out), 28h (Changes entry), 28i (ADR: why no pricing catalog ships).
+Merged to main as 4a362a9 (2026-08-12). Branch feat/karr-28-metrics-audit had 2 commits: 28c (Metrics deprecation) + 28g (t/91_response_usage.t with 12 subtests). Findings documented in ticket body: Response.usage does NOT use Langertha::Usage (premature refutation), no pricing tables in distribution (28e moot), gap inventory for separate tickets (Gemini stream-usage normalization, OpenAIResponses cached_tokens, cache_tokens accessor, Pricing::cost_for cache-aware). prove -lr t/ = 2064 tests PASS.
