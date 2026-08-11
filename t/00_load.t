@@ -26,6 +26,7 @@ my @modules = qw(
   Langertha::Engine::DeepSeek
   Langertha::Engine::Gemini
   Langertha::Engine::Groq
+  Langertha::Engine::Hetzner
   Langertha::Engine::LlamaCpp
   Langertha::Engine::LMStudio
   Langertha::Engine::LMStudioAnthropic
