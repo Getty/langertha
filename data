@@ -1,0 +1,36 @@
+---
+class: standard
+completed: 2026-08-11T04:17:35Z
+created: 2026-08-10T20:37:42Z
+id: 32
+priority: normal
+started: 2026-08-11T04:17:35Z
+status: done
+tags:
+- timing
+- response
+- ollama
+- follow-up
+title: 'W1: Response.total_seconds — server-time vs client-time Kollision mit Ollama'
+updated: 2026-08-11T04:17:35Z
+---
+
+Aus dem Code-Review des Timing-Patches (Commit 5cd8c02):
+
+Langertha::Response.total_seconds returnt bei Ollama den Server-reported Wert (Ollama total_duration / 1e9) — NICHT den client-measured total_seconds den Role::Chat::simple_chat mit Time::HiRes misst. Grund: _merge_timing_field nutzt first-write-wins und der Engine::Ollama-Pfad setzt total_seconds ZUERST (in chat_response), bevor der Chat-Wrapper seinen client-Wert via clone_with reinmerge'd.
+
+Aktuelles Verhalten ist intentional (Kommentar in Role::Chat.pm sagt: "first-write-wins so a provider-supplied duration (e.g. Ollama's total_seconds) trumps the client measurement") — Server-Zeit schließt Network-Jitter aus, ist nützlich für Model-Latency-Dashboards.
+
+ABER: das ist stillschweigend. User die Round-Trip-Latenz (TCP+TLS+Proxy+Queue+Server+Network back) sehen wollen, kriegen sie nicht. Kein Hinweis in der POD von Response.total_seconds.
+
+Mögliche Resolution-Pfade:
+- (A) POD erweitern, Policy dokumentieren (Status quo + Doku)
+- (B) Ollama-Key umbenennen: server_total_seconds (oder model_total_seconds) statt total_seconds; client-Wert gewinnt dann standardmäßig
+- (C) Konfigurierbar pro Engine (default: server wins, opt-in client)
+- (D) Beide Werte behalten mit klarer Semantik (server_total_seconds + client_total_seconds), total_seconds wird Server-Default aber explizit dokumentiert
+
+Braucht ADR-Input. Nicht in den Timing-Patch aufgenommen weil Verhalten-Drift, nicht nur Doku-Fix.
+
+Referenz: Review-Notizen am Ende des Timing-Commits, Role::Chat::_merge_timing_field Kommentar, Engine::Ollama chat_response.
+
+Kann zusammen mit ADR-0011 (Response timing seam) abgearbeitet werden.
