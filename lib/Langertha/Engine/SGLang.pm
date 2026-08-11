@@ -5,7 +5,8 @@ use Moose;
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Tools';
+with 'Langertha::Role::Tools',
+     'Langertha::Role::Runtime::MetricsPoll';
 
 =head1 SYNOPSIS
 

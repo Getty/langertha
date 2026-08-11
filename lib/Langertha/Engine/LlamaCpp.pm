@@ -6,7 +6,9 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Embedding', 'Langertha::Role::Tools';
+with 'Langertha::Role::Embedding',
+     'Langertha::Role::Tools',
+     'Langertha::Role::Runtime::MetricsPoll';
 
 =head1 SYNOPSIS
 
