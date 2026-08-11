@@ -1,0 +1,36 @@
+---
+class: standard
+completed: 2026-08-11T04:17:40Z
+created: 2026-08-10T20:37:50Z
+id: 33
+priority: normal
+started: 2026-08-11T04:17:40Z
+status: done
+tags:
+- timing
+- langfuse
+- test
+- follow-up
+title: 'T3: End-to-End Langfuse around simple_chat timing test'
+updated: 2026-08-11T04:17:40Z
+---
+
+Aus dem Code-Review des Timing-Patches (Commit 5cd8c02):
+
+Aktueller Test in t/90_response_timing.t ("Langfuse around simple_chat carries response timing") prüft nur die Prädikate has_total/has_ttft. Testet NICHT:
+1. dass _langfuse_iso_after korrekte ISO-8601-Timestamps produziert
+2. dass around simple_chat end_time und completion_start_time korrekt in den langfuse_generation Body setzt
+3. dass der negative-delta-Guard greift (B2-Fix)
+
+Langfuse::_langfuse_iso_after ist die fragilste neue Logik (manuelle Zeit-Arithmetik, gmtime + Float-Addition, Modulo mit Vorzeichen — deshalb der B2-Fix). Die sollte direkt getestet werden.
+
+Mögliche Aufbau:
+- Fake-Engine mit langfuse_public_key/secret_key gesetzt
+- user_agent->request returnt Langertha::Response mit timing
+- around simple_chat ausführen
+- _langfuse_batch inspizieren (oder _langfuse_generation mocken)
+- assert end_time / completion_start_time Felder
+
+Oder einfacher: _langfuse_iso_after als isolierte Sub testen (Pure-Function, leicht).
+
+Blockiert nicht den Timing-Patch — der ist committed. Folge-Arbeit.
