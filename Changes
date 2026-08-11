@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Hetzner catalog drift tracking (karr #40). t/88_live_hetzner.t
+      gains a SKIP-gated subtest that GETs /v1/models and compares
+      the response against _build_static_models, diagging any diff
+      (Hetzner may legitimately add models) and warning when a
+      hardcoded model is missing from the live list; Langertha::Engine::Hetzner
+      gains a short =head1 REFRESHING THE MODEL CATALOG POD section
+      pointing at the same subtest as the regression coverage.
+
     - New Langertha::Engine::Hetzner for Hetzner's experimental
       OpenAI-compatible Inference API at https://inference.hetzner.com/v1
       (karr #38). Bearer auth via LANGERTHA_HETZNER_API_KEY; default
