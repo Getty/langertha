@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-08-10T02:30:11Z
+claimed_by: claude
+class: standard
+completed: 2026-08-11T20:36:04Z
+created: 2026-08-10T00:38:57Z
+id: 23
+priority: high
+started: 2026-08-10
+status: done
+tags:
+- llm
+- provider-drift
+- openai
+- anthropic
+title: 'OpenAI/Anthropic default_model stale: GPT-5.6 family + Claude Sonnet 5 are
+  current'
+updated: 2026-08-11T20:36:20Z
+---
+
+OpenAI default_model is gpt-5.4-mini; current per developers.openai.com/models is GPT-5.6 Sol/Terra/Luna (5.6 Luna is the new mini price-tier). Anthropic default_model is claude-sonnet-4-6; current per platform.claude.com/docs/en/about-claude/models/overview is Claude Sonnet 5 (Sonnet 5 + Opus 5 + Fable 5 + Mythos 5 + Haiku 4.5). Update defaults and POD example model lists. Live-regress with TEST_LANGERTHA_OPENAI_API_KEY and TEST_LANGERTHA_ANTHROPIC_API_KEY. Source: developers.openai.com/models, platform.claude.com/docs/en/about-claude/models/overview (fetched 2026-08-10).
+2026-08-10 worker: DONE with audit discrepancy. OpenAI default gpt-5.4-mini -> gpt-5.6-terra. DISCREPANCY: audit claimed Luna = mini price-tier; developers.openai.com model pages state Terra 'roughly corresponds to the mini model tier', Luna to the NANO tier -> chose gpt-5.6-terra (tier-consistent successor of gpt-5.4-mini). Anthropic default claude-sonnet-4-6 -> claude-sonnet-5 (dateless pinned id per platform.claude.com models overview). POD model lists updated on both engines. Default expectations fixed in t/10; live-test ids updated (t/80,t/82,t/83,t/86). prove -lr t/: PASS. Not touched (explicit fixtures, no default assumptions): claude-sonnet-4-6 in t/60,t/70,t/75,t/77,t/12,t/71,t/78 and POD examples in Langertha.pm, Role/Tools.pm, Raider.pm, OpenRouter.pm; gpt-4o-mini in t/80,t/82.
+Committed a114489: OpenAI default gpt-5.6-terra (audit said Luna=mini; official docs say Terra=mini tier, Luna=nano — verified and corrected), Anthropic default claude-sonnet-5.
+Session 2026-08-11: branch review/karr-23-26-on-main ready with all 6 cherry-picked commits (a114489, 4ab8826, e0f0fd1, a9f446d, d46073b, 71cedf7) plus cherry-pick Resolution at d46073b. Offline prove -lr t/ passes on main (1933 tests). Branch awaits maintainer live verification (no TEST_LANGERTHA_OPENAI_API_KEY / TEST_LANGERTHA_ANTHROPIC_API_KEY in env). Commit e117f87 (karr #21 Groq) deliberately excluded from this branch — separate ticket scope.
+Merged to main as part of 133ea26 (2026-08-11). OpenAI gpt-5.6-terra + Anthropic claude-sonnet-5 default model migration. Offline prove -lr t/ = 1982 tests PASS. Awaiting live verification — no TEST_LANGERTHA_OPENAI_API_KEY / TEST_LANGERTHA_ANTHROPIC_API_KEY in env. Live verify TODO = karr #36.
+Closed 2026-08-11 per maintainer explicit instruction (offline-pass waive of live verification). OpenAI gpt-5.6-terra + Anthropic claude-sonnet-5 defaults merged via 133ea26. Post-release drift check + live verify before next release: karr #36.
