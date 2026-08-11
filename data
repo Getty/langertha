@@ -1,0 +1,56 @@
+---
+claimed_at: 2026-08-11T21:18:37Z
+claimed_by: claude
+class: standard
+completed: 2026-08-11T22:20:45Z
+created: 2026-08-10T00:06:17Z
+id: 22
+priority: low
+started: 2026-08-11T21:13:53Z
+status: done
+tags:
+- engine
+- caching
+- gemini
+title: Gemini explicit cachedContents lifecycle
+updated: 2026-08-11T22:20:50Z
+---
+
+STATUS 2026-08-11: documented scope breakdown below. Not started; out of
+session 2026-08-11 scope. Sub-tickets 22a-22e are PROPOSED, intentionally
+not auto-created — wait for maintainer go-ahead before splitting the
+ticket (karr precedent: karr #28 follows the same research-then-break
+flow).
+
+Scope: Gemini explicit cachedContent resource (separate from request-level
+prompt caching covered by Langertha::PromptCache). cachedContent is a
+server-side managed cache of input context with its own lifecycle:
+  - create via POST /v1beta/cachedContents (long-lived resource)
+  - reference in generateContent body via cachedContent field
+  - TTL + expiration managed via separate REST endpoints
+  - usage_metadata.cached_content_token_count surfaces cached vs fresh
+Source: ai.google.dev/gemini-api/docs/caching
+
+Proposed sub-tickets:
+  22a — research: map cachedContents REST endpoints, fields, expiry
+        semantics; cross-check current ai.google.dev/gemini-api/docs
+  22b — value object: Langertha::CachedContent (id, model, ttl,
+        system_instruction)
+  22c — role: Langertha::Role::CachedContent lifecycle wrapper
+        (create/get/list/update/delete; expiry tracking)
+  22d — wire: Langertha::Engine::Gemini request body takes optional
+        cachedContent => {name=>...}; emits cachedContents as body part
+        when set; update role/engine_capabilities to advertise
+        cachedContent on Gemini 2.5+ and Gemini 3
+  22e — telemetry: Langertha::Response.usage surface adds
+        cached_content_token_count when present in response
+  22f — tests (offline + live); offline wire replay using saved
+        generateContent response fixture; live gated on
+        TEST_LANGERTHA_GEMINI_API_KEY
+
+Adjacent (NOT in #22, separate ticket if pursued):
+  - Anthropic prompt caching (covered by Langertha::PromptCache per ADR 0009)
+  - OpenAI automatic caching (no explicit interface)
+DONE 2026-08-11: implemented 22b (db1a001 Langertha::CachedContent value object), 22c (f8bfe10 Langertha::Role::CachedContent lifecycle role), 22d (9e0c8d5 Engine::Gemini wire + capability flag — bundles 22e telemetry), 22f (ebd33f70 offline tests; live tests deferred to follow-up). Note: 22e (Response.usage cached_content_token_count) was bundled into 22d because the wire change is the same hunk in Engine::Gemini. Source URLs relied on: https://ai.google.dev/api/caching (cachedContents REST endpoints, expiration oneof, TTL/expiration semantics); https://ai.google.dev/api/generate-content (cachedContent reference field on generateContent body, usageMetadata.cachedContentTokenCount). Test result: 70/70 in t/47_gemini_cached_content.t pass; full prove -lr t/ = 1993/1993.
+Parent-branch integration commit hashes: d7a0f8a (22b), 720a5b1 (22c), c8c80c4 (22d+22e), be668ff (22f), cf47c51 (restore existing Gemini defaults/reasoning behavior after integration). Source URLs unchanged: https://ai.google.dev/api/caching and https://ai.google.dev/api/generate-content.
+Merged to main as d85a0dc (2026-08-12). Branch feat/karr-22-gemini-cached-contents had 5 commits on top of 133ea26 plus the orphan Changes-commit (dropped by git, byte-identical to f20759f). Files: lib/Langertha/CachedContent.pm (new, 476 lines), lib/Langertha/Role/CachedContent.pm (new, 361 lines), lib/Langertha/Engine/Gemini.pm (modified, 67 lines), lib/Langertha/Role/Capabilities.pm (+1), t/47_gemini_cached_content.t (new, 473 lines). prove -lr t/ = 2064 tests PASS.
