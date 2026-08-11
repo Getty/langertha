@@ -2,6 +2,72 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Provider default-model migrations (karr #23, #24, #25). OpenAI
+      default_model gpt-5.6-terra (mini price-tier successor; gpt-5.6-luna
+      is the nano tier — corrected from earlier audit claim); Anthropic
+      default_model claude-sonnet-5 (dateless pinned id per
+      platform.claude.com/models overview); both engines' POD model lists
+      refreshed to the GPT-5.6 / Sonnet 5 / Opus 5 / Fable 5 / Mythos 5 /
+      Haiku 4.5 families. Moonshot + MoonshotAnthropic default_model
+      kimi-k3; static model lists drop sunset kimi-k2.5 and moonshot-v1-*
+      (sunset 2026-08-31), keep kimi-k2.6 and kimi-k2.7-code as legacy
+      rows; kimi-k3 server-side reasoning_effort default 'max' documented
+      in POD (deliberately NOT wired as a role default — would be an
+      architecture break; engine still emits no reasoning field on
+      kimi-k3, so the server-side max applies). DeepSeek default_model
+      deepseek-v4-flash (aliases deepseek-chat / deepseek-reasoner were
+      retired 2026-07-24); reasoning_kwargs now model-gated per
+      api-docs.deepseek.com/api/create-chat-completion — v4-flash accepts
+      low|high|max (server default high); v4-pro + unknown ids drop low
+      engine-side (server would silently remap low->high). t/47 is a new
+      16-test file for DeepSeek reasoning (new default, gate boundaries,
+      V3.2 legacy path); t/10, t/50 updated for the new defaults; live-
+      test ids in t/80, t/82, t/83, t/86 refreshed.
+
+    - Gemini reasoning-effort model-gating (karr #20, #26; ADR 0009
+      revision). Langertha::Reasoning loses the global 'thinking_budget'
+      cap from %ROLE_TO_CAPS; cap is now engine-gated via
+      Langertha::Engine::Gemini's around engine_capabilities (Gemini 2.5-*
+      shows thinking_budget + clears reasoning_effort; Gemini 3 / default
+      shows reasoning_effort + clears thinking_budget). Langertha::Reasoning
+      simplified to optional Moose attrs with normal predicates
+      (has_effort / has_thinking_budget); no Maybe[..., default undef],
+      no hand-written predicate. BUILD now croaks on EVERY ambiguous
+      combination: effort+thinking_budget together (any model /
+      generation), thinking_budget on non-Gemini-2.5, and reasoning_effort
+      on Gemini 2.5. 'Exactly one native control per generation' is
+      enforced. Default model migrates gemini-3.5-flash ->
+      gemini-3-flash-preview (per ai.google.dev/gemini-api/docs/gemini-3
+      fetched 2026-08-10); to_gemini_level maps minimal|low|medium|high
+      with model-family down-clamps (3.1-pro no minimal, 3-pro low|high
+      only, non-Gemini-3 binary fallback). DeepSeek V3 sniff trimmed to
+      a minimal family rule (deepseek-v3 / deepseek-v3.2 / deepseek-v3.x-y)
+      — dropped speculative aliases. t/46_gemini_requests.t gains 21 new
+      mapping tests + BUILD-gate fail-loud subtests; t/47_deepseek_reasoning.t
+      is a new 16-test file; t/86_live_reasoning_effort.t updated for
+      the new model-gating path. Live verification (gemini-2.5-pro +
+      gemini-3-flash-preview) deferred to karr #36.
+
+    - Response timing first-write-wins policy documented (karr #32).
+      Langertha::Response POD gains explicit documentation of the first-
+      write-wins merge policy in Role::Chat::_merge_timing_field
+      (provider-supplied total_seconds trump client wall-clock
+      measurement); server-vs-client distinction: Ollama total_seconds
+      is server-side model latency (excludes network jitter), not
+      wall-clock RTT — the better signal for model-latency observability.
+      Response.timing / Response.total_seconds POD reference ADR 0011
+      for the rationale. t/90_response_timing.t gains 3 subtests
+      exercising ttft_seconds / total_seconds arithmetic in the
+      streaming path (Role::Chat::simple_chat_stream_realtime_f lines
+      ~558-585): TTFT set on first chunk + not overwritten by subsequent
+      chunks (regression-locks the 'unless defined' guard) + buffer-tail
+      pass also sets TTFT. t/72_langfuse.t gains 26 subtests for
+      _langfuse_iso_after covering zero / sub-second / sub-millisecond
+      positive deltas, whole-second rollover (60s, 86400s, 31-day month
+      roll), us_start + delta overflow into whole seconds, negative-
+      delta clock-skew clamp, and negative-delta with non-zero us_start
+      preserving us_start.
+
     - Response timing observability (karr #5). Langertha::Response gains
       ttft_seconds and total_seconds accessors (Float, seconds) plus
       has_ttft / has_total predicates on the timing HashRef. Role::Chat
