@@ -68,6 +68,44 @@ Revision history for Langertha
       delta clock-skew clamp, and negative-delta with non-zero us_start
       preserving us_start.
 
+
+    - Gemini explicit cachedContent lifecycle (karr #22). New
+      Langertha::CachedContent value object (resource metadata,
+      TTL/expiration, request serialization, response parsing) and
+      Langertha::Role::CachedContent lifecycle wrapper (async + sync
+      create / get / list / update / delete over /v1beta/cachedContents).
+      Langertha::Engine::Gemini emits cachedContent as a sibling body
+      field on chat and streaming requests when set; the
+      cached_content capability flag is registered for Gemini 2.5+ and
+      Gemini 3. usageMetadata.cachedContentTokenCount surfaces as
+      Response.usage.{cached_content_token_count}. t/47_gemini_cached_content.t
+      (473 lines) covers serialization, lifecycle URLs/bodies,
+      capability gating, request injection, expiry behaviour, and
+      telemetry. Live tests deferred until TEST_LANGERTHA_GEMINI_API_KEY
+      is exported.
+
+    - Langertha::Metrics deprecation + usage / cost regression suite
+      (karr #28). Langertha::Metrics marked DEPRECATED (scheduled for
+      removal in 0.504) — ABSTRACT rewritten, $DEPRECATED flag set,
+      =head1 DEPRECATION POD added with a per-method migration map to
+      Langertha::Usage / Pricing / Cost / UsageRecord; module NOT
+      deleted to preserve back-compat for external consumers
+      (Skeid / Knarr). Two ticket premises refuted: Response.usage does
+      NOT use Langertha::Usage (it is a plain Maybe[HashRef] of raw
+      provider data; the value-object lane is currently unwired and has
+      exactly one internal caller, Metrics.pm), and there are no
+      per-model pricing tables in this distribution (Langertha::Pricing
+      ships rules => {}, all prices caller-supplied). Gap inventory
+      written into karr #28 body as candidate separate tickets:
+      Gemini stream-vs-chat usage shape divergence, OpenAIResponses
+      drops input_tokens_details wholesale (cached_tokens never
+      reaches Response->usage), no normalized cache-tokens accessor,
+      and Pricing->cost_for ignores cache tokens entirely. t/91_response_usage.t
+      (391 lines, 12 subtests / 75 assertions) locks: raw usage
+      passthrough per wire family, accessor normalization as the real
+      cross-provider contract, cache-token survival, Usage->Pricing->Cost
+      roundtrip incl. default_rule fallback + no-rule path, and the
+      empty-Pricing-rules invariant (trips if anyone hardcodes prices).
     - Response timing observability (karr #5). Langertha::Response gains
       ttft_seconds and total_seconds accessors (Float, seconds) plus
       has_ttft / has_total predicates on the timing HashRef. Role::Chat
