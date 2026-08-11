@@ -1,0 +1,54 @@
+---
+claimed_at: 2026-08-11T23:15:42Z
+claimed_by: claude
+class: standard
+completed: 2026-08-11T23:15:42Z
+created: 2026-08-10T00:46:19Z
+id: 29
+priority: normal
+started: 2026-08-11T23:05:22Z
+status: done
+tags:
+- observability
+- metrics
+- self-hosted
+- vllm
+- sglang
+- llamacpp
+title: 'Self-hosted runtime metrics: expose Prometheus /metrics scraper for vLLM /
+  SGLang / LlamaCpp'
+updated: 2026-08-11T23:15:42Z
+---
+
+STATUS 2026-08-11: scope breakdown documented. Not started; out of session
+scope. Sub-tickets 29a-29e PROPOSED, not auto-created — maintainer splits
+when ready (precedent: karr #28 same flow).
+
+Scope: Self-hosted inference engines (vLLM, SGLang, LlamaCpp, Ollama)
+expose Prometheus /metrics endpoints. Langfuse observability already
+exists via Role::Langfuse but is connection-side (trace/span). This
+ticket adds a server-side scraper that surfaces inference-runtime metrics
+into Langfuse or compatible OTLP.
+
+Proposed sub-tickets:
+  29a — research: each engine's /metrics endpoint contract
+        vLLM: /metrics (Prometheus text, http.* + vllm:* keys)
+        SGLang: /metrics (Prometheus text, sglang:* keys)
+        LlamaCpp: /metrics (Prometheus text, llama_* keys)
+        Ollama: per /api/ps (JSON, not Prometheus — needs adapter)
+  29b — class: Langertha::Runtime::Metrics — Prometheus text format
+        parser with engine-key allowlist
+  29c — role: Langertha::Role::Runtime::MetricsPoll on
+        Engine::VLLM, Engine::SGLang, Engine::LlamaCpp, Engine::Ollama
+        (using attributes already required for those engines: url, optional api_key)
+  29d — bridge: convert scraped Prometheus → Langfuse OTLP metrics
+        (re-use Role::Langfuse endpoint); alternative is direct
+        Prometheus remote_write adapter (separate ticket)
+  29e — tests: offline scrape-fixture → parse → bridge → asserting
+        metric-name passthrough; live gated on running engine (no API
+        key needed, requires local vLLM/SGLang server)
+
+Out of scope (separate tickets):
+  - Remote-write adapter (push scraped metrics to a Prometheus server)
+  - Langfuse metrics-generation API integration
+  - OpenAI/Anthropic usage accounting (covered by Langertha::Usage/Response.usage)
