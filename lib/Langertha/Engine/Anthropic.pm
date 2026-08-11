@@ -12,7 +12,7 @@ extends 'Langertha::Engine::AnthropicBase';
 
     my $claude = Langertha::Engine::Anthropic->new(
         api_key => $ENV{ANTHROPIC_API_KEY},
-        model   => 'claude-sonnet-4-6',
+        model   => 'claude-sonnet-5',
     );
 
     print $claude->simple_chat('Generate Perl Moose classes for GeoJSON');
@@ -38,7 +38,7 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_ANTHROPIC_API_KEY or api_key set";
 }
 
-sub default_model { 'claude-sonnet-4-6' }
+sub default_model { 'claude-sonnet-5' }
 
 __PACKAGE__->meta->make_immutable;
 

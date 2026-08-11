@@ -117,7 +117,7 @@ async sub run_tests {
     eval {
       await test_engine('Anthropic', Langertha::Engine::Anthropic->new(
         api_key => $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY},
-        model => 'claude-sonnet-4-6', mcp_servers => [$mcp],
+        model => 'claude-sonnet-5', mcp_servers => [$mcp],
       ));
     };
     diag "Anthropic error: $@" if $@;
@@ -177,7 +177,7 @@ async sub run_tests {
     eval {
       await test_engine('DeepSeek', Langertha::Engine::DeepSeek->new(
         api_key => $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY},
-        model => 'deepseek-chat', mcp_servers => [$mcp],
+        model => 'deepseek-v4-flash', mcp_servers => [$mcp],
       ));
     };
     diag "DeepSeek error: $@" if $@;

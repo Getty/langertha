@@ -95,13 +95,13 @@ Engine::Remote              url required, JSON + HTTP
   │
   ├── Engine::OpenAIBase    /chat/completions format, Bearer auth, SSE streaming
   │     │  Cloud providers (url has default, api_key from env)
-  │     ├── OpenAI          gpt-4o, embeddings, whisper transcription, structured output
-  │     ├── DeepSeek        deepseek-chat/reasoner, structured output
+  │     ├── OpenAI          gpt-5.6 family, embeddings, whisper transcription, structured output
+  │     ├── DeepSeek        deepseek-v4-flash/pro, structured output
   │     ├── Groq            ultra-fast inference, whisper transcription, structured output
   │     ├── XAI             xAI Grok (grok-4.3), 1M context, agentic tool calling
   │     ├── Mistral         EU-hosted, embeddings, structured output
   │     ├── MiniMax         Shanghai (default), ~200K context, M3
-  │     ├── Moonshot        Moonshot Kimi (kimi-k2.6), multimodal, 256K context
+  │     ├── Moonshot        Moonshot Kimi (kimi-k3), multimodal, 1M context
   │     ├── NousResearch    Hermes models, <tool_call> XML tool format
   │     ├── Cerebras        wafer-scale chips, fastest inference
   │     ├── OpenRouter      meta-provider, 300+ models, provider/model format

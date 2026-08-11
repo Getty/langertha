@@ -24,6 +24,25 @@ Note this is a request-side control, distinct from L<Langertha::Role::ThinkTag>
 
 =cut
 
+has thinking_budget => (
+  is        => 'ro',
+  isa       => 'Int',
+  predicate => 'has_thinking_budget',
+);
+
+=attr thinking_budget
+
+Optional integer thinking budget, currently consumed only by Gemini 2.5 models
+(L<Langertha::Engine::Gemini>): on C<gemini-2.5-*> the value is emitted as
+C<generationConfig.thinkingConfig.thinkingBudget>. On Gemini 3 models
+C<thinking_budget> is rejected — Gemini 3 takes C<thinkingLevel>, not the
+integer budget; setting both L</reasoning_effort> and C<thinking_budget> on a
+Gemini 3 model croaks at construction (L<Langertha::Reasoning/BUILD>). When
+unset, no budget field is emitted. (Anthropic legacy C<budget_tokens> is
+deliberately not modeled: it 400s on current Claude families.)
+
+=cut
+
 has reasoning_wire_format => (
   is      => 'ro',
   isa     => 'Str',
@@ -51,9 +70,14 @@ C<anthropic>, C<Gemini> to C<gemini>, C<OpenAIResponses> to C<responses>.
 
 sub reasoning_kwargs {
   my ( $self ) = @_;
-  return () unless $self->has_reasoning_effort;
+  return () unless $self->has_reasoning_effort || $self->has_thinking_budget;
   return Langertha::Reasoning->new(
-    effort => $self->reasoning_effort,
+    defined $self->reasoning_effort
+      ? ( effort => $self->reasoning_effort )
+      : (),
+    $self->has_thinking_budget
+      ? ( thinking_budget => $self->thinking_budget )
+      : (),
     ( $self->can('chat_model') ? ( model => $self->chat_model ) : () ),
   )->to( $self->reasoning_wire_format );
 }
@@ -63,11 +87,11 @@ sub reasoning_kwargs {
     my %kwargs = $engine->reasoning_kwargs;
 
 Returns the body kwargs to merge into a chat request for the configured
-C<reasoning_effort>, serialized for L</reasoning_wire_format> via
-L<Langertha::Reasoning>. Empty list when no effort is set, or when the value is
-unsupported on the engine's wire. Engines override this to model wire
-divergence within a shared format (e.g. DeepSeek's model-gated split, or
-MiniMax/Perplexity returning an empty list).
+C<reasoning_effort> and/or L</thinking_budget>, serialized for
+L</reasoning_wire_format> via L<Langertha::Reasoning>. Empty list when neither
+is set, or when the value is unsupported on the engine's wire. Engines
+override this to model wire divergence within a shared format (e.g. DeepSeek's
+model-gated split, or MiniMax/Perplexity returning an empty list).
 
 =cut
 

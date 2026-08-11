@@ -20,7 +20,7 @@ with map { 'Langertha::Role::'.$_ } qw(
 
     my $openai = Langertha::Engine::OpenAI->new(
         api_key      => $ENV{OPENAI_API_KEY},
-        model        => 'gpt-5.4-mini',
+        model        => 'gpt-5.6-terra',
         system_prompt => 'You are a helpful assistant',
         temperature  => 0.7,
     );
@@ -48,8 +48,9 @@ Provides access to OpenAI's APIs, including GPT models, embeddings, and
 Whisper transcription. Composes L<Langertha::Role::OpenAICompatible> for the
 standard OpenAI API format.
 
-Popular models: C<gpt-5.4-mini> (default, fast), C<gpt-5.5> / C<gpt-5.5-pro>
-(most capable), C<gpt-5.4-nano> (smallest/cheapest),
+Popular models: C<gpt-5.6-terra> (default, balances intelligence and cost —
+the GPT-5.6 successor of the former mini tier), C<gpt-5.6> (Sol, frontier),
+C<gpt-5.6-luna> (cost-sensitive, successor of the former nano tier),
 C<text-embedding-3-large> (embeddings), C<whisper-1> (transcription).
 
 Dynamic model listing is supported via L<Langertha::Role::Models/list_models>.
@@ -86,7 +87,7 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_OPENAI_API_KEY or api_key set";
 }
 
-sub default_model { 'gpt-5.4-mini' }
+sub default_model { 'gpt-5.6-terra' }
 
 has whisper => (
   is => 'ro',

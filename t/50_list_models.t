@@ -451,9 +451,9 @@ subtest 'Moonshot static models' => sub {
   my $model_ids = $engine->list_models;
   is(ref($model_ids), 'ARRAY', 'Returns arrayref');
   ok(scalar(@$model_ids) >= 4, 'Has at least 4 models');
-  ok((grep { $_ eq 'kimi-k2.6' } @$model_ids), 'Contains kimi-k2.6');
+  ok((grep { $_ eq 'kimi-k3' } @$model_ids), 'Contains kimi-k3');
   ok((grep { $_ eq 'kimi-k2.7-code' } @$model_ids), 'Contains kimi-k2.7-code');
-  ok((grep { $_ eq 'moonshot-v1-128k' } @$model_ids), 'Contains moonshot-v1-128k');
+  ok((grep { $_ eq 'kimi-k2.6' } @$model_ids), 'Contains kimi-k2.6 (legacy)');
 
   # Full mode returns hashrefs
   my $full = $engine->list_models(full => 1);
