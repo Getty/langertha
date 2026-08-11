@@ -93,6 +93,16 @@ C<LANGERTHA_HETZNER_API_KEY> in your environment.
 
 =cut
 
+=head1 REFRESHING THE MODEL CATALOG
+
+To add or remove a model: edit C<_build_static_models> below, update the
+L</MODELS> POD block to match, add a Changes entry, and run the offline
+tests (C<t/48_hetzner.t>, C<t/00_load.t>). The live drift check in
+C<t/88_live_hetzner.t> (karr #40) compares the hardcoded catalog against
+L<https://inference.hetzner.com/v1/models> and warns on missing models.
+
+=cut
+
 sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
