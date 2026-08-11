@@ -6,14 +6,11 @@ use Future::AsyncAwait;
 use Carp qw( croak );
 use Langertha::CachedContent;
 
-requires qw(
-  url
-  api_key
-  user_agent
-  generate_http_request
-  parse_response
-  json
-);
+# No `requires` here: api_key / url / user_agent / json are typically defined
+# as attributes on the engine *after* role composition, so requiring them at
+# composition time would fail. The role methods do `$self->can('api_key')`
+# guards instead (matches how Langertha::Role::Tools handles optional
+# cross-role seams).
 
 =head1 SYNOPSIS
 
@@ -72,6 +69,19 @@ sub _cached_contents_url {
   return $self->url . '/v1beta/cachedContents';
 }
 
+# Guard: the engine must expose the HTTP / auth / JSON seams the role uses
+# to talk to the cachedContents REST surface. Composed on Engine::Gemini
+# (which extends Engine::Remote -> composes Role::HTTP -> Role::JSON) so
+# this passes; it croaks loudly when the role is composed on an engine
+# without the right surface — better than a "method not found" later.
+sub _assert_http_seam {
+  my ( $self ) = @_;
+  for my $m (qw( url api_key user_agent generate_http_request parse_response json )) {
+    croak "Langertha::Role::CachedContent: consumer must provide '$m'"
+      unless $self->can($m);
+  }
+}
+
 sub _cached_content_url {
   my ( $self, $name ) = @_;
   croak "name must look like cachedContents/{id}; got '$name'"
@@ -111,6 +121,8 @@ Returns the persisted CachedContent.
 
 async sub create_cached_content_f {
   my ( $self, @args ) = @_;
+
+  $self->_assert_http_seam;
 
   my $cc;
   if ( @args == 1 && ref( $args[0] ) && eval { $args[0]->isa('Langertha::CachedContent') } ) {
@@ -157,6 +169,7 @@ Fetch a single cache by C<name> (or bare id).
 
 async sub get_cached_content_f {
   my ( $self, $name ) = @_;
+  $self->_assert_http_seam;
   $name = $self->_normalize_name($name);
 
   my $url = $self->_cached_content_url($name) . '?key=' . $self->api_key;
@@ -187,6 +200,7 @@ Accepts C<page_size> and C<page_token> for one-page control.
 
 async sub list_cached_contents_f {
   my ( $self, %opts ) = @_;
+  $self->_assert_http_seam;
 
   my @all;
   my $token = $opts{page_token};
@@ -238,6 +252,7 @@ the caller is updating.
 
 async sub update_cached_content_f {
   my ( $self, $name, %opts ) = @_;
+  $self->_assert_http_seam;
   $name = $self->_normalize_name($name);
 
   my $body = {};
@@ -286,6 +301,7 @@ Delete a cache. Returns C<1> on success.
 
 async sub delete_cached_content_f {
   my ( $self, $name ) = @_;
+  $self->_assert_http_seam;
   $name = $self->_normalize_name($name);
 
   my $url = $self->_cached_content_url($name) . '?key=' . $self->api_key;

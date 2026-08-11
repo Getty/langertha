@@ -62,6 +62,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::Temperature'      => [qw( temperature )],
   'Langertha::Role::ReasoningEffort'  => [qw( reasoning_effort )],
   'Langertha::Role::PromptCache'      => [qw( prompt_cache prompt_cache_key )],
+  'Langertha::Role::CachedContent'    => [qw( cached_content )],
   'Langertha::Role::Seed'             => [qw( seed )],
   'Langertha::Role::ContextSize'      => [qw( context_size )],
   'Langertha::Role::ResponseSize'     => [qw( response_size )],
