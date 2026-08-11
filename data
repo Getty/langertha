@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-08-10T02:30:05Z
+claimed_by: claude
+class: standard
+completed: 2026-08-11T20:36:04Z
+created: 2026-08-10T00:39:54Z
+id: 25
+priority: high
+started: 2026-08-10
+status: done
+tags:
+- llm
+- provider-drift
+- deepseek
+title: 'DeepSeek: deepseek-chat / deepseek-reasoner retired 2026-07-24 → deepseek-v4-flash'
+updated: 2026-08-11T20:36:30Z
+---
+
+DeepSeek engine default_model is deepseek-chat. Per api-docs.deepseek.com/updates: legacy aliases deepseek-chat + deepseek-reasoner were discontinued 2026-07-24. Current production: deepseek-v4-pro (announced, not yet released) and deepseek-v4-flash (released 2026-07-31, native Responses API support). Action: default_model -> deepseek-v4-flash; reasoning_kwargs V3/V4 sniff (currently a v3 regex per task #20 reduction) needs verification against v4-flash. KARR #20 already covers the sniff hardening as a follow-up — this ticket is the model-name migration only. Source: api-docs.deepseek.com/updates (fetched 2026-08-10).
+2026-08-10 worker: DONE. default_model deepseek-chat -> deepseek-v4-flash (aliases retired 2026-07-24 verified on api-docs.deepseek.com/updates + /quick_start/pricing). reasoning_kwargs now model-gated per api-docs.deepseek.com/api/create-chat-completion: v4-flash accepts low|high|max (server default high); v4-pro + unknown ids only high|max (low dropped engine-side, server would remap low->high). Doc still says v4-pro 'expected ... early August 2026' -> not yet full ladder as of today. t/47 reworked (16 tests: new default, gate boundaries, V3.2 legacy path). POD marks aliases retired. Live-test ids updated (t/80,t/82,t/83,t/86). prove -lr t/: 1929 tests PASS (live skipped, no keys). V3.2 thinking-mapping remains flagged for live re-verify (no live calls made).
+Committed e0f0fd1 on karr-23-26-provider-model-updates: default deepseek-v4-flash, retired aliases documented, model-gated effort gate (low only on v4-flash; v4-pro drops low since the server silently remaps it). Live verification pending maintainer go-ahead.
+Session 2026-08-11: cherry-picked to review/karr-23-26-on-main (e0f0fd1). Reasoning_sniff hardening is part of karr #20 Slice 3 (a9f446d, also cherry-picked). Offline tests pass; live verify pending.
+Merged to main as part of 133ea26 (2026-08-11). DeepSeek default deepseek-v4-flash; v4-flash accepts low|high|max (v4-pro + unknown ids drop low). t/47 expanded to 16 tests covering new default + V3.2 legacy path + effort-ladder gates. Offline prove -lr t/ = 1982 tests PASS. Awaiting live verification — no TEST_LANGERTHA_DEEPSEEK_API_KEY in env. Live verify TODO = karr #36.
+Closed 2026-08-11 per maintainer explicit instruction (offline-pass waive of live verification). DeepSeek default v4-flash merged via 133ea26. V3.2 legacy path preserved. Post-release drift check + live verify before next release: karr #36.
