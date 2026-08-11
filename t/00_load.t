@@ -65,6 +65,8 @@ my @modules = qw(
   Langertha::Output
   Langertha::Output::Tools
   Langertha::Metrics
+  Langertha::Runtime::Metrics
+  Langertha::Role::Runtime::MetricsPoll
   LangerthaX
 );
 

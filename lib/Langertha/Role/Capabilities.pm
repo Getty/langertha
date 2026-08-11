@@ -68,6 +68,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::ResponseSize'     => [qw( response_size )],
   'Langertha::Role::SystemPrompt'     => [qw( system_prompt )],
   'Langertha::Role::ParallelToolUse'  => [qw( parallel_tool_use )],
+  'Langertha::Role::Runtime::MetricsPoll' => [qw( runtime_metrics )],
 );
 
 sub engine_capabilities {
