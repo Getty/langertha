@@ -129,6 +129,22 @@ original C<*_duration> keys in nanoseconds preserved for backward
 compatibility. See L</ttft_seconds> and L</total_seconds> for the
 standard accessors.
 
+=for stopwords first-write-wins
+
+B<Merge policy: first-write-wins.> When both a provider-supplied duration
+(e.g. Ollama's C<total_seconds> derived from C<total_duration>) and a
+client-measured duration (Langertha::Role::Chat wrapper) are available
+for the same key, the provider value wins. See
+L<Langertha::Role::Chat/_merge_timing_field> and ADR 0011 in
+F<docs/adr/0011-response-timing-seam.md> for the rationale — server-side
+duration excludes network jitter and is the better signal for
+model-latency observability. Callers that need the client wall-clock
+(RTT, queue, TLS handshake, network back) should read
+C<$response-E<gt>timing> directly: client-measured deltas are not
+written under C<ttft_seconds> / C<total_seconds> when the provider
+already populated those keys, but L<Langertha::Role::Chat> does not
+delete other timing entries on conflict.
+
 =cut
 
 sub has_ttft {
@@ -172,11 +188,25 @@ Use C<has_ttft> to test availability without warnings.
     my $total = $response->total_seconds;   # Float, undef when unmeasured
     if ($response->has_total) { ... }
 
-Returns end-to-end request time in seconds (Float): wall-clock duration
-from before C<user_agent-E<gt>request> (sync) or C<do_request> (async)
-to after the response body was fully consumed. C<undef> when the
-engine did not record the metric. Use C<has_total> to test
-availability without warnings.
+Returns end-to-end request time in seconds (Float). On engines that
+populate the field from a provider-native metric (currently Ollama,
+from C<total_duration>), this is the B<server-reported> duration —
+time the model actually spent generating, excluding network jitter.
+On engines where only the client wrapper measured, it is the
+B<wall-clock> duration from before C<user_agent-E<gt>request> (sync) or
+C<do_request> (async) to after the response body was fully consumed.
+
+=for stopwords RTT
+
+The two are not interchangeable: server-time answers "how fast is the
+model", wall-clock answers "how long did my call take end-to-end".
+Callers that need the wall-clock RTT should read C<$response-E<gt>timing>
+directly (the client wrapper writes its measurement under a sibling key
+when the provider has not claimed C<total_seconds>; when both are
+present the provider value wins — see L</timing>).
+
+C<undef> when the engine did not record the metric. Use C<has_total>
+to test availability without warnings.
 
 =cut
 
