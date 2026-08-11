@@ -126,6 +126,31 @@ Revision history for Langertha
       cross-provider contract, cache-token survival, Usage->Pricing->Cost
       roundtrip incl. default_rule fallback + no-rule path, and the
       empty-Pricing-rules invariant (trips if anyone hardcodes prices).
+
+    - Self-hosted runtime metrics scraping (karr #29).
+      Langertha::Runtime::Metrics (Prometheus text-format parser returning
+      ArrayRef of { name, type, value, labels } records; histogram /
+      summary bucket/sum/count series inherit the base name's declared
+      type via a progressive-left-to-right lookup; malformed lines are
+      skipped, never fatal; filter_prefix / parse_and_filter for engine
+      allowlists) and Langertha::Role::Runtime::MetricsPoll (async
+      poll_metrics_f via Net::Async::HTTP + sync poll_metrics wrapper;
+      derives the /metrics URL by stripping a trailing /v1 from the
+      engine's url attribute). Composed onto Langertha::Engine::vLLM,
+      Langertha::Engine::SGLang, and Langertha::Engine::LlamaCpp;
+      Langertha::Engine::Ollama deliberately omitted — its /api/ps
+      surface is JSON, not Prometheus, and the JSON-to-Prometheus
+      adapter is tracked as the karr #41 follow-up. The new
+      runtime_metrics capability flag is registered in
+      Langertha::Role::Capabilities::%ROLE_TO_CAPS so callers can gate
+      on ->supports('runtime_metrics'). Per-engine wire contract
+      (allowlist prefixes, URL paths, payload examples) lives in the
+      pure-POD Langertha::Runtime::Metrics::EngineContract. No new
+      ADR — the role follows the established Langfuse / observability
+      pattern. t/49_runtime_metrics.t (offline, 34 subtests) and
+      t/89_runtime_metrics_live.t (live, gated on
+      TEST_LANGERTHA_{VLLM,SGLANG,LLAMACPP}_URL) cover the surface.
+
     - Response timing observability (karr #5). Langertha::Response gains
       ttft_seconds and total_seconds accessors (Float, seconds) plus
       has_ttft / has_total predicates on the timing HashRef. Role::Chat
