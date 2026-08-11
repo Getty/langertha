@@ -1,0 +1,40 @@
+---
+class: standard
+completed: 2026-08-11T20:48:29Z
+created: 2026-08-11T20:39:58Z
+id: 37
+priority: high
+started: 2026-08-11T20:48:29Z
+status: done
+tags:
+- docs
+- release-blocker
+- changes
+title: Add Changes entry for merge 133ea26 (provider updates) before next dzil release
+updated: 2026-08-11T20:48:29Z
+---
+
+Merge 133ea26 (2026-08-11) brought 6 provider-update commits onto main:
+  - 82a1bbd OpenAI/Anthropic default model migration (karr #23)
+  - 5eb8bba Moonshot kimi-k3 (karr #24)
+  - 765812b DeepSeek v4-flash (karr #25)
+  - e4164ca Gemini 2.5 thinking_budget + BUILD gate (karr #20)
+  - 5ab6645 Gemini 3 thinkingLevel vocabulary (karr #26)
+  - b861ba1 test pins + CLAUDE.md sync
+
+None of these commits updated Changes — the merge was done without
+including the {{$NEXT}} entry block. Release prep needs a hand-curated
+Changes entry covering all 5 underlying tickets before the next
+dzil release runs.
+
+Pattern: follow the karr #5 / #1 format that's already in Changes —
+multi-line per-feature entry with karr ticket ref, file scope, behavior
+summary, regression tests.
+
+Suggested split for the entry block (one entry per underlying ticket
+or one combined entry — maintainer's call):
+  - Provider default-model migrations: karr #23, #24, #25
+  - Gemini reasoning-effort model-gating: karr #20, #26 (BUILD gate)
+  - Test model pins + CLAUDE.md sync
+
+Live verification for these changes is tracked in karr #36 (parallel).
