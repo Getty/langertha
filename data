@@ -1,0 +1,56 @@
+---
+claimed_at: 2026-08-11T23:17:25Z
+claimed_by: claude
+class: standard
+completed: 2026-08-11T23:17:25Z
+created: 2026-08-11T22:33:06Z
+id: 40
+priority: low
+started: 2026-08-11T23:05:32Z
+status: done
+tags:
+- hetzner
+- karr-38-followup
+- catalog
+- drift
+title: Track Hetzner static-model catalog drift + add refresh hook
+updated: 2026-08-11T23:17:25Z
+---
+
+Follow-up to karr #38 (Langertha::Engine::Hetzner).
+
+Hetzner's Inference API is experimental — model list may change as it
+stabilises. Currently hardcoded in L<Langertha::Engine::Hetzner>:
+  Qwen/Qwen3.6-35B-A3B-FP8  (default)
+  DeepSeek-V4-Flash-0731
+  GLM-5.2-NVFP4
+  Kimi-K2.7-Code
+
+Drift signals to monitor:
+  - New models appearing in https://inference.hetzner.com/v1/models
+  - Existing models removed (broken default_model expectations)
+  - Default-model guide changed by Hetzner team
+
+Goal:
+1. Look at t/83_live_minimax.t (or similar) for the precedent engine
+   (Moonshot/MiniMax) — both ship with a 'fetch fresh models and warn
+   on drift' pattern that we can mirror.
+2. Add the same drift-check harness to t/88_live_hetzner.t: hit
+   /v1/models with the auth header and compare against
+   _build_static_models. Skip on missing API key (consistent with
+   existing live-test gating).
+3. Set up a recurring karr ticket that re-runs the live matrix at
+   least once per quarter to catch drift before a release shipped with
+   a stale default model.
+4. Document the model refresh procedure in the engine's POD
+   (=head1 MODELS) — single-sentence note about how to add a model
+   (constant in _build_static_models + a Changes entry).
+
+Tickets that depended on karr #38 landing and now benefit from this
+guard: karr #36 (live verification runbook) should reference this
+ticket's drift check as the standing intent.
+
+No merge until the drift harness lands. Files likely touched:
+  - lib/Langertha/Engine/Hetzner.pm  (POD note)
+  - t/88_live_hetzner.t               (drift comparison subtest)
+  - Changes                            (one-line note)
