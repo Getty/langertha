@@ -1,0 +1,81 @@
+---
+claimed_at: 2026-08-11T22:32:47Z
+claimed_by: claude
+class: standard
+completed: 2026-08-11T22:32:47Z
+created: 2026-08-11T22:22:48Z
+id: 38
+priority: medium
+started: 2026-08-11T22:22:56Z
+status: done
+tags:
+- engine
+- provider-drift
+- hetzner
+- openai-compatible
+title: Add Langertha::Engine::Hetzner (Hetzner Inference API)
+updated: 2026-08-11T22:32:47Z
+---
+
+Build new Langertha::Engine::Hetzner extending Langertha::Engine::OpenAIBase.
+
+Source: Hetzner Inference API docs (user pasted 2026-08-12). URL:
+https://inference.hetzner.com/api/v1 — Bearer auth, OpenAI-compatible
+chat/completions + image processing.
+
+Available models (per Hetzner /v1/models):
+  DeepSeek-V4-Flash-0731           MoE 304B/13B  512K ctx  text-only
+  GLM-5.2-NVFP4                    MoE 744B/40B  512K ctx  text-only
+  Kimi-K2.7-Code                   MoE 1T/32B    262K ctx  text+image
+  Qwen/Qwen3.6-35B-A3B-FP8         MoE 35B/3B    262K ctx  text+image
+
+Auth: Authorization: Bearer <token>. Env: LANGERTHA_HETZNER_API_KEY
+(production); live tests gated on TEST_LANGERTHA_HETZNER_API_KEY.
+User has TEST_LANGERTHA_HETZNER_API_KEY in .env as of 2026-08-12 — but
+worker env does not.
+
+API status: experimental, free of charge. Rate limits: 10M input /
+200k output tokens per 60s per API key; 429 on exceed.
+
+Suggested default model: Qwen/Qwen3.6-35B-A3B-FP8 — smallest MoE
+(35B/3B), Apache 2.0, text+image, 262K context. Distinct from existing
+Langertha engines (Moonshot already has kimi-k3).
+
+Capabilities to register:
+  - chat                yes (OpenAI-compatible wire)
+  - vision              yes (per docs, Qwen + Kimi accept image_url)
+  - structured_output   yes (OpenAI-compatible wire)
+  - tools               yes (OpenAI-compatible wire; mark advertised
+                         but note Hetzner docs do NOT explicitly
+                         confirm server-side tool support — flag in POD)
+  - embeddings          NO
+  - transcription       NO
+
+Files to add:
+  - lib/Langertha/Engine/Hetzner.pm    (extends OpenAIBase)
+  - t/48_hetzner.t                      (offline wire tests, mirror
+                                        t/46_gemini_requests.t style)
+  - t/88_live_hetzner.t                 (live tests gated on
+                                        TEST_LANGERTHA_HETZNER_API_KEY)
+  - Changes                             (entry above current karr #5)
+
+Constraints (house rules + [@Author::GETTY] bundle):
+  - Moose exclusively. __PACKAGE__->meta->make_immutable at end.
+  - # ABSTRACT: required on the .pm.
+  - =attr / =method inline POD via PodWeaver.
+  - Future::AsyncAwait (>= 0.66) for all async methods; IO::Async.
+  - Test2::Bundle::More.
+  - No push, no dzil release.
+
+Style: model on Langertha::Engine::Groq / Langertha::Engine::Mistral /
+Langertha::Engine::AKIOpenAI (classic OpenAI-compatible cloud
+engines). Do not introduce a non-OpenAI dialect.
+
+Verify:
+  - prove -lr t/ must remain green.
+  - Live tests skip cleanly without the API key.
+  - Wire body shape verified against hand-crafted POST payload; no real
+    HTTP calls in the worker session.
+
+Branch: feat/karr-38-hetzner-engine off main.
+feat/karr-38-hetzner-engine: 3 commits on top of main. Langertha::Engine::Hetzner (extends OpenAIBase, composes StaticModels + Tools, default Qwen/Qwen3.6-35B-A3B-FP8). Offline tests t/48_hetzner.t (28 subtests, PASS). Live tests t/88_live_hetzner.t (skip_all when key unset). Changes entry above {{NEXT}}. Full suite: 2093 tests PASS. No ADR: vanilla OpenAI-compatible cloud engine.
