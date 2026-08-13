@@ -102,7 +102,7 @@ SKIP: {
   require Langertha::Engine::Gemini;
   my $e = Langertha::Engine::Gemini->new(
     api_key        => $ENV{TEST_LANGERTHA_GEMINI_API_KEY},
-    model          => 'gemini-2.5-pro',
+    model          => 'gemini-2.5-flash',
     thinking_budget => 256,
     response_size  => 64,
   );

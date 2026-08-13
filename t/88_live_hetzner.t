@@ -13,6 +13,10 @@ BEGIN {
 }
 
 use Langertha::Engine::Hetzner;
+# `async` is a compile-time keyword installed by Future::AsyncAwait's import.
+# A runtime `require` (below) cannot register it, so it must be loaded via
+# `use` at the top to make `async sub` in the tool-calling block parse.
+use Future::AsyncAwait;
 
 my $hetzner = Langertha::Engine::Hetzner->new(
   api_key => $ENV{TEST_LANGERTHA_HETZNER_API_KEY},
@@ -135,7 +139,6 @@ SKIP: {
   skip 'tool calling: set TEST_LANGERTHA_HETZNER_TEST_TOOLS=1 to exercise native tools', 1
     unless $ENV{TEST_LANGERTHA_HETZNER_TEST_TOOLS};
 
-  require Future::AsyncAwait;
   require MCP::Server;
   require Net::Async::MCP;
   require IO::Async::Loop;
