@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-08-13T18:15:52Z
+created: 2026-08-13T16:09:53Z
+id: 58
+priority: medium
+started: 2026-08-13T18:15:52Z
+status: done
+tags:
+- test-drift
+- reconciliation
+title: 't/83_live_chat.t: stale OpenRouter meta-llama/llama-3.3-70b-instruct:free
+  (404, same drift as #56)'
+updated: 2026-08-13T18:15:52Z
+---
+
+t/83_live_chat.t subtest 13 uses model 'meta-llama/llama-3.3-70b-instruct:free' which OpenRouter retired (404 Not Found, 'unavailable for free'). Same root cause as karr #56 item 2, but in t/83 (outside #56's t/80 scope). Fix: same replacement as #56 — google/gemma-4-26b-a4b-it:free (verified live 2026-08-13) or drop the :free suffix. Found while verifying #56.
