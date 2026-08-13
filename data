@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-13T18:15:46Z
+created: 2026-08-13T15:59:46Z
+id: 57
+priority: medium
+started: 2026-08-13T18:15:46Z
+status: done
+tags:
+- test-quality
+- reconciliation
+title: t/80 swallows enabled-engine errors (eval+diag keeps suite green on failure)
+updated: 2026-08-13T18:15:46Z
+---
+
+t/80_live_tool_calling.t wraps every engine block in eval + diag, so a broken model/engine makes the suite stay green while the assertion silently never runs. During karr #56 the OpenRouter free tier 429'd in the full run and the suite still passed. Consider a surgical follow-up: when an engine is enabled (key present) and errors, emit an explicit ok(0)/fail so drift is visible. Do NOT rewrite the test structure wholesale. Observed 2026-08-13 while fixing #56.
