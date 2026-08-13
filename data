@@ -1,0 +1,59 @@
+---
+claimed_at: 2026-08-13T03:42:51Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T03:42:51Z
+created: 2026-08-12T22:04:40Z
+id: 44
+priority: low
+started: 2026-08-13T03:32:49Z
+status: done
+tags:
+- engines
+- api
+- introspection
+title: Engines sollten ihren API-Key-ENV-Namen exponieren
+updated: 2026-08-13T03:42:51Z
+---
+
+## Beobachtung
+
+Der Name der API-Key-Umgebungsvariable existiert in jeder Engine nur als
+Literal im Rumpf von `_build_api_key`:
+
+    return $ENV{LANGERTHA_ANTHROPIC_API_KEY} || croak ...
+
+Es gibt keinen Accessor, kein Attribut, nichts in der Metaklasse. Ein
+Konsument, der wissen will "welche Engines koennte ich aus der Umgebung
+konfigurieren", kann das nicht abfragen -- er muss eine eigene Tabelle
+pflegen, die dann driftet.
+
+## Warum eine Namenskonvention nicht reicht
+
+LANGERTHA_<UC(ENGINE)>_API_KEY stimmt nicht durchgaengig:
+  AKIOpenAI        -> LANGERTHA_AKI_API_KEY
+  MiniMaxAnthropic -> LANGERTHA_MINIMAX_API_KEY
+Protokoll-Varianten teilen sich den Key ihres Vendors. Genau diese Faelle
+muss ein Konsument aber unterscheiden koennen, sonst erzeugt er fuer einen
+Key zwei Konfigurationseintraege.
+
+## Vorschlag
+
+Eine Klassenmethode analog zu `default_model` -- z.B. `api_key_env` -- die den
+LANGERTHA_*-Namen nennt, plus optional ein Flag oder eine leere Rueckgabe fuer
+Engines, die gar keinen Key brauchen (LMStudio faellt in `_build_api_key` auf
+den String 'lmstudio' zurueck, vLLM/SGLang/LlamaCpp/Ollama werden per URL
+erreicht). Damit waere auch "braucht diese Engine ueberhaupt Credentials?"
+beantwortbar, was heute nur durch Lesen des Quelltexts geht.
+
+## Woher der Befund kommt
+
+Langertha::Knarr scannt die Umgebung nach konfigurierbaren Engines
+(`knarr init`, `knarr start --from-env`). Die Modell-Defaults zieht Knarr
+inzwischen ueber `$class->default_model` und kann dadurch nicht mehr driften
+(Knarr karr #2). Die ENV-Namen bleiben die verbleibende handgepflegte Haelfte
+genau dieses Katalogs -- 19 Engines, die jemand nachziehen muss, wenn hier
+eine dazukommt.
+
+Kein dringendes Ticket, eher eine Ergonomie-Frage fuer alle Konsumenten, die
+Engines dynamisch entdecken wollen.
