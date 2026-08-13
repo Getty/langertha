@@ -1,0 +1,60 @@
+---
+claimed_at: 2026-08-13T03:42:45Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T03:42:45Z
+created: 2026-08-12T22:03:34Z
+id: 43
+priority: high
+started: 2026-08-13T03:25:10Z
+status: done
+tags:
+- response
+- value-objects
+- api
+title: Response->usage als Langertha::Usage coercen (Asymmetrie zu tool_calls)
+updated: 2026-08-13T03:42:45Z
+---
+
+## Beobachtung
+
+Langertha::Response behandelt seine beiden Value-Objekt-Felder ungleich:
+
+    has tool_calls => ( isa => 'Maybe[ArrayRef[Langertha::ToolCall]]' );
+    around BUILDARGS => ... # upgradet ArrayRef[HashRef] zu ToolCall-Objekten
+
+    has usage      => ( isa => 'Maybe[HashRef]' );   # kein Upgrade
+
+Langertha::Usage existiert und bringt genau das mit, was hier fehlt:
+`from_hash` (normalisiert prompt_tokens/input_tokens), `merge`, `to_hash`,
+`to_openai_format`, `to_anthropic_format`, `to_ollama_format`.
+
+Die drei to_*_format-Methoden hat aktuell praktisch keinen Aufrufer, weil
+niemand an ein Usage-Objekt kommt, ohne es selbst zu bauen.
+
+## Vorschlag
+
+usage in BUILDARGS genauso hochziehen wie tool_calls, isa auf
+`Maybe[Langertha::Usage]`. Engines koennen weiter den rohen Hashref
+durchreichen (Role/OpenAICompatible.pm:169,235), das Upgrade passiert im
+Konstruktor.
+
+Mitziehen muessen die drei Reader in Response.pm, die usage heute als Hashref
+lesen (`$u->{prompt_tokens} // $u->{input_tokens}` in prompt_tokens,
+completion_tokens, total_tokens) -- die wuerden dann auf die Attribute des
+Objekts gehen.
+
+Rueckwaertskompatibilitaet: Aufrufer, die `$response->usage->{prompt_tokens}`
+machen, brechen. Das ist der Grund, warum das eine bewusste Entscheidung sein
+muss und kein Drive-by -- ggf. mit Deprecation-Zyklus wie bei
+Langertha::Metrics, oder mit einem Hash-Overload auf Langertha::Usage.
+
+## Woher der Befund kommt
+
+Langertha::Knarr wurde gegen die erwartete Symmetrie gebaut: dessen
+Knarr::Response deklariert `usage => Maybe[Object]` und die Protocol-Module
+rufen `$usage->to_openai_format`. Ergebnis: bei jeder echten Engine-Antwort mit
+usage stirbt dort der routed Pfad im Konstruktor. Knarr fixt das seinerseits
+durch eigenes Coercen (Knarr karr #7) und ist damit unabhaengig von diesem
+Ticket -- aber die Asymmetrie hier ist die Wurzel und trifft potenziell jeden
+anderen Konsumenten genauso.
