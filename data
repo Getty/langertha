@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-08-13T16:20:59Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T16:20:59Z
+created: 2026-08-13T15:48:42Z
+id: 56
+priority: medium
+started: 2026-08-13T16:20:59Z
+status: done
+tags:
+- tests
+- drift
+title: 't/80 live tool-calling: stale model IDs (Groq 404, OpenRouter :free, AKI)'
+updated: 2026-08-13T16:20:59Z
+---
+
+Live-Findings 2026-08-13 in t/80_live_tool_calling.t — veraltete Modell-IDs, KEINE Engine-Wire-Bugs (per Raw-Probe bestaetigt, Engines liefern 200 mit korrekten Modellen):
+
+(1) Groq: moonshotai/kimi-k2-instruct existiert nicht mehr (404 model_not_found; keinerlei kimi-Modell in Groq-Models-Liste). Ersatz: ein aktuelles Tool-Calling-faehiges Groq-Modell (z.B. llama-3.3-70b-versatile).
+(2) OpenRouter: meta-llama/llama-3.3-70b-instruct:free -> "This model is unavailable for free. The paid version is available now - use this slug instead: meta-llama/llama-3.3-70b-instruct". Entweder :free-Suffix entfernen oder ein anderes :free-Modell waehlen.
+(3) AKIOpenAI: qwen3-chat -> 500 "Response finished before thinking was completed! Try to raise max_gen_tokens" — Test braucht groesseres max_tokens/response_size fuer Qwen3-Thinking.
+(4) AKI-native: qwen3_chat existiert nicht in /api/endpoints (verfuegbar u.a. qwen3_6); nativer Call erwartet zudem anderes Request-Schema (Probe mit key-in-body -> 400 invalid params).
+
+Zusaetzlich: t/80 verschluckt Engine-Fehler per eval+diag statt Test-Fail — bei den Fixes optional ein plan/ok fuer erwartete Engine-Verfuegbarkeit nachziehen. Verifizieren mit prove -lv t/80_live_tool_calling.t + echten Keys.
