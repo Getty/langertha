@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-08-13T03:43:02Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T03:43:02Z
+created: 2026-08-11T23:09:37Z
+id: 41
+priority: low
+started: 2026-08-13T03:22:44Z
+status: done
+tags:
+- observability
+- langfuse
+- metrics
+- karr-29-followup
+title: Bridge scraped Langertha::Runtime::Metrics into Langfuse OTLP metrics
+updated: 2026-08-13T03:43:02Z
+---
+
+karr #29 ships the scraping side (Langertha::Role::Runtime::MetricsPoll -> Langertha::Runtime::Metrics) but stops short of exporting the parsed records anywhere. Langfuse has a metrics-generation API that was fairly new at the time of the original ticket and was deliberately deferred to avoid guessing the wire shape.
+
+What needs doing:
+- Confirm the current Langfuse metrics API surface (HTTP OTLP endpoint or REST) and the payload shape (resourceMetrics / scopeMetrics / metric{ name, type, value, labels }).
+- Add a `bridge_to_langfuse` (or similar) method on Langertha::Role::Runtime::MetricsPoll that takes parsed records + a trace context and submits them, OR an OTLP exporter that the caller can wire up.
+- Decide whether to ship via Langfuse's /api/public/metrics endpoint or generic OTLP HTTP (Langfuse accepts the latter for self-hosted setups).
+- Extend the existing live test to assert against a self-hosted Langfuse if one is up.
+
+Out of scope here:
+- Remote-write adapter to a Prometheus server (separate ticket; the scraping side is generic).
+- Langfuse metrics for non-Prometheus engines (Ollama /api/ps adapter, also separate).
+
+Refs: karr #29
