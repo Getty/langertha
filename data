@@ -1,0 +1,61 @@
+---
+claimed_at: 2026-08-13T03:52:41Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T03:52:41Z
+created: 2026-08-13T00:22:59Z
+id: 50
+priority: medium
+started: 2026-08-13T03:44:05Z
+status: done
+tags:
+- json
+- response
+- value-objects
+title: Response serialisiert backend-abhaengig (Stringify-Ueberladung vs. Exception)
+updated: 2026-08-13T03:52:41Z
+---
+
+Beim Umsetzen von #47 gefunden und dort bewusst nicht angefasst.
+
+## Befund
+
+Langertha::Response verhaelt sich beim JSON-Encoden je nach Backend
+unterschiedlich. Mit convert_blessed eingeschaltet, Objekt in einer Struktur
+verschachtelt:
+
+    Cpanel::JSON::XS 4.40   ->  {"r":"hello"}   (greift auf die ""-Ueberladung zurueck)
+    JSON::XS 4.04           ->  stirbt
+    JSON::PP 4.16           ->  stirbt
+
+Selbst nachgeprueft fuer Cpanel und JSON::PP. JSON::MaybeXS waehlt das Backend
+nach Verfuegbarkeit, dieselbe Anwendung verhaelt sich also auf zwei Maschinen
+verschieden -- einmal serialisiert Response still zu einem nackten String,
+einmal fliegt eine Exception.
+
+## Warum das in #47 nicht mitentschieden wurde
+
+Ein TO_JSON waere die naheliegende Antwort, ist aber keine gute: es wuerde
+bestehende Cpanel-Konsumenten still von "hello" auf einen Metadaten-Hash
+umstellen. Ein TO_JSON, das nur content liefert, wuerde die ""-Ueberladung
+verdoppeln und eine verlustbehaftete Projektion als dauerhaften
+backend-uebergreifenden Vertrag der Klasse festschreiben -- und das eine
+Ticket, bevor #43 usage darunter zum Objekt macht. raw enthaelt die komplette
+Provider-Antwort, probes koennen sehr gross werden, content ist unbegrenzt.
+
+In #47 fiel die Entscheidung deshalb bewusst auf "kein TO_JSON, laut und
+undefiniert schlaegt still und falsch eingefroren", per POD und Test gegen
+versehentliche Reparatur gesichert.
+
+## Was hier zu entscheiden ist
+
+Die Uneinheitlichkeit selbst bleibt aber ein Defekt. Moeglichkeiten:
+
+- ""-Ueberladung entfernen oder einschraenken, damit alle Backends gleich
+  reagieren (bricht Aufrufer, die auf Stringifizierung bauen).
+- Ein bewusst gewaehltes TO_JSON, nachdem #43 durch ist und feststeht, welche
+  Form Response dauerhaft hat.
+- So lassen und die Backend-Abhaengigkeit im POD dokumentieren, damit sie
+  wenigstens niemanden ueberrascht.
+
+Sinnvoll erst nach #43 zu entscheiden.
