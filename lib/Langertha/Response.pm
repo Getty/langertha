@@ -3,6 +3,7 @@ package Langertha::Response;
 our $VERSION = '0.503';
 use Moose;
 use Langertha::ToolCall;
+use Langertha::Usage;
 
 use overload
   '""' => sub { $_[0]->content },
@@ -134,14 +135,18 @@ Provider-specific values are preserved as-is.
 
 has usage => (
   is => 'ro',
-  isa => 'Maybe[HashRef]',
+  isa => 'Maybe[Langertha::Usage]',
   predicate => 'has_usage',
 );
 
 =attr usage
 
-Token usage counts as a HashRef. Keys vary by provider but are normalized
-by the convenience methods.
+Token usage as a L<Langertha::Usage> object. For backward compatibility
+C<BUILDARGS> upgrades a plain HashRef (the raw provider usage block) into a
+C<Langertha::Usage> automatically; new code can construct the object
+directly. The object overloads C<%{}>, so existing callers that dereference
+C<< $response->usage->{prompt_tokens} >> keep working — the overload returns
+the provider-verbatim hash (see L<Langertha::Usage/"HASH OVERLOAD">).
 
 =cut
 
@@ -298,6 +303,13 @@ around BUILDARGS => sub {
       } @{ $params->{tool_calls} }
     ];
   }
+
+  # Accept legacy HashRef usage input by upgrading to a Usage object.
+  if ( defined $params->{usage} ) {
+    $params->{usage} = ( ref( $params->{usage} ) && eval { $params->{usage}->isa('Langertha::Usage') } )
+      ? $params->{usage}
+      : Langertha::Usage->from_hash( $params->{usage} );
+  }
   return $params;
 };
 
@@ -418,43 +430,44 @@ copy so the override value is what reaches C<new>.
 sub prompt_tokens {
   my ( $self ) = @_;
   my $u = $self->usage or return undef;
-  return $u->{prompt_tokens} // $u->{input_tokens};
+  return $u->input_tokens;
 }
 
 =method prompt_tokens
 
-Returns the number of prompt/input tokens. Checks C<prompt_tokens> and
-C<input_tokens> keys in usage.
+Returns the number of prompt/input tokens. Reads the normalized
+C<input_tokens> attribute of the L<Langertha::Usage> object (which
+L<Langertha::Usage/from_hash> maps from C<prompt_tokens>,
+C<input_tokens>, or C<prompt_eval_count>).
 
 =cut
 
 sub completion_tokens {
   my ( $self ) = @_;
   my $u = $self->usage or return undef;
-  return $u->{completion_tokens} // $u->{output_tokens};
+  return $u->output_tokens;
 }
 
 =method completion_tokens
 
-Returns the number of completion/output tokens. Checks C<completion_tokens>
-and C<output_tokens> keys in usage.
+Returns the number of completion/output tokens. Reads the normalized
+C<output_tokens> attribute of the L<Langertha::Usage> object (which
+L<Langertha::Usage/from_hash> maps from C<completion_tokens>,
+C<output_tokens>, or C<eval_count>).
 
 =cut
 
 sub total_tokens {
   my ( $self ) = @_;
   my $u = $self->usage or return undef;
-  return $u->{total_tokens} if defined $u->{total_tokens};
-  my $p = $self->prompt_tokens;
-  my $c = $self->completion_tokens;
-  return undef unless defined $p && defined $c;
-  return $p + $c;
+  return $u->total_tokens;
 }
 
 =method total_tokens
 
-Returns the total token count. Uses C<total_tokens> from usage if available,
-otherwise sums prompt and completion tokens.
+Returns the total token count. Reads the C<total_tokens> attribute of the
+L<Langertha::Usage> object — the provider-supplied value when present,
+otherwise the sum of prompt and completion tokens (lazy builder).
 
 =cut
 

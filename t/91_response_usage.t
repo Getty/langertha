@@ -388,4 +388,55 @@ subtest 'Pricing invariant: empty rules by design' => sub {
     is($cost->total_usd + 0, 0, 'unknown model + no default → zero cost (no exception)');
 };
 
+# =========================================================================
+# 6. karr #43: usage is coerced to a Langertha::Usage object
+# =========================================================================
+#
+# Response->usage is upgraded in BUILDARGS from a raw HashRef to a
+# Langertha::Usage object, symmetric with tool_calls. The %{} overload on
+# Usage keeps `$response->usage->{...}` working verbatim (back-compat), the
+# accessors read the normalised values, and the to_*_format methods become
+# reachable on the object.
+
+subtest 'karr #43: usage coerced to Langertha::Usage' => sub {
+    my $resp = Langertha::Response->new(
+        content => 'x',
+        usage   => {
+            prompt_tokens          => 100,
+            completion_tokens      => 50,
+            total_tokens           => 150,
+            prompt_tokens_details  => { cached_tokens => 0 },
+        },
+    );
+
+    isa_ok($resp->usage, ['Langertha::Usage'], 'raw HashRef usage is coerced to a Usage object');
+
+    # (b) back-compat: hash deref keeps working, raw keys verbatim
+    is($resp->usage->{prompt_tokens}, 100, 'back-compat deref prompt_tokens');
+    is($resp->usage->{prompt_tokens_details}{cached_tokens}, 0,
+        'back-compat deref of provider extras survives');
+
+    # (c) readers read the normalised attributes
+    is($resp->prompt_tokens,     100, 'prompt_tokens reader');
+    is($resp->completion_tokens, 50,  'completion_tokens reader');
+    is($resp->total_tokens,      150, 'total_tokens reader');
+
+    # (d) to_*_format reachable on the object
+    is_deeply($resp->usage->to_openai_format,
+        { prompt_tokens => 100, completion_tokens => 50, total_tokens => 150 },
+        'to_openai_format reachable on the Usage object');
+    is_deeply($resp->usage->to_anthropic_format,
+        { input_tokens => 100, output_tokens => 50 },
+        'to_anthropic_format reachable on the Usage object');
+    is_deeply($resp->usage->to_ollama_format,
+        { prompt_eval_count => 100, eval_count => 50 },
+        'to_ollama_format reachable on the Usage object');
+
+    # A Usage object passed in directly is kept as-is (no double coercion)
+    my $u = Langertha::Usage->new(input_tokens => 7, output_tokens => 3);
+    my $resp2 = Langertha::Response->new(content => 'y', usage => $u);
+    isa_ok($resp2->usage, ['Langertha::Usage'], 'pre-built Usage object kept');
+    is($resp2->usage, $u, 'same object identity (no re-coercion)');
+};
+
 done_testing;
