@@ -71,6 +71,12 @@ sub to_hash {
   };
 }
 
+# Make the object transparent to any JSON encoder configured with
+# convert_blessed => 1 (the house default, see Langertha::Plugin::Langfuse).
+# to_hash is the complete canonical representation, so this is a plain
+# delegator — nothing is dropped.
+sub TO_JSON { shift->to_hash }
+
 sub to_openai_format {
   my ($self) = @_;
   return {

@@ -150,6 +150,12 @@ sub to_hash {
   return { type => $self->type, ( defined $self->name ? ( name => $self->name ) : () ) };
 }
 
+# Make the object transparent to any JSON encoder configured with
+# convert_blessed => 1 (the house default, see Langertha::Plugin::Langfuse).
+# to_hash is the complete canonical representation, so this is a plain
+# delegator — nothing is dropped.
+sub TO_JSON { shift->to_hash }
+
 # --- Tag-driven dispatch ---
 
 # Maps a tool_wire_format tag to the per-format serializer. Only the wires that

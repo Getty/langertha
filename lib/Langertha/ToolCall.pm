@@ -310,5 +310,13 @@ sub to_hash {
   };
 }
 
+# Make the object transparent to any JSON encoder configured with
+# convert_blessed => 1 (the house default, see Langertha::Plugin::Langfuse).
+# Response.tool_calls is an ArrayRef of these, so consumers hit them without
+# ever asking for a ToolCall by name. Plain delegator to to_hash: TO_JSON must
+# not become a second, divergent shape. NOTE: to_hash does not carry
+# `synthetic` — that predates this method and is left alone here.
+sub TO_JSON { shift->to_hash }
+
 __PACKAGE__->meta->make_immutable;
 1;

@@ -36,6 +36,39 @@ Wraps LLM response text content together with all available metadata
 from the API response. Uses C<overload> for string context so existing
 code treating responses as plain strings continues to work.
 
+=head2 No TO_JSON — deliberate
+
+C<Langertha::Response> has B<no> C<TO_JSON> method. That is on purpose; do
+not "fix" it without revisiting the reasoning below.
+
+The nested objects a caller can be surprised by — L<Langertha::Usage>,
+L<Langertha::ToolCall> (L</tool_calls>), L<Langertha::RateLimit>
+(L</rate_limit>) — all carry C<TO_JSON>, because they turn up inside a
+structure the caller assembled from parts and never announced themselves as
+objects. A Response does announce itself: it is the named return value of
+C<simple_chat> / C<chat_f>, and the caller holds it knowingly.
+
+Serializing the aggregate would mean choosing a shape, and there is no honest
+one: L</raw> is the entire provider payload (duplicating every other field,
+including the echoed prompt), L</probes> can hold megabytes of tensor data,
+and L</content> is unbounded text. A C<TO_JSON> that dropped those would
+silently discard most of the object into logs that look complete; one that
+kept them would blow up every trace it touched. Returning just L</content>
+would merely duplicate the string overload while freezing a lossy projection
+as this class's permanent JSON contract.
+
+Serialize the projection you actually want — C<< $response->content >> (or
+the string overload), C<< $response->usage >>, C<< $response->tool_calls >> —
+rather than the aggregate.
+
+=for stopwords Cpanel
+
+B<Caveat, and it is not this class's doing:> what an encoder with
+C<convert_blessed> does with a bare Response depends on the
+L<JSON::MaybeXS> backend. L<Cpanel::JSON::XS> falls back to the C<"">
+overload and emits the content string; L<JSON::XS> and L<JSON::PP> throw.
+Neither is a contract to rely on — encode a projection, not the Response.
+
 =cut
 
 has content => (
