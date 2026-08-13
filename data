@@ -1,0 +1,18 @@
+---
+claimed_at: 2026-08-13T21:20:43Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T21:20:43Z
+created: 2026-08-13T18:16:04Z
+id: 60
+priority: medium
+started: 2026-08-13T21:10:07Z
+status: done
+tags:
+- test-drift
+- reconciliation
+title: 't/64 + t/66 fail: Net::Async::MCP v0.003 protocol-handshake incompatibility'
+updated: 2026-08-13T21:20:43Z
+---
+
+Pre-existing failure on clean tree (found while verifying karr #57): t/64_tool_calling_ollama_mock.t and t/66_tool_calling_hermes.t exit 255 with "MCP error -32602: Missing protocol version at .../Net/Async/MCP.pm line 82". Installed CPAN dependency Net::Async::MCP v0.003 rejects the handshake. Files are byte-identical to HEAD, so unrelated to #57/#58/#59. Options: pin/upgrade Net::Async::MCP, or adapt the mock handshake in the tests.
