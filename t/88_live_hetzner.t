@@ -25,8 +25,8 @@ is(ref($ids), 'ARRAY', 'list_models returns ArrayRef (static, no HTTP)');
 ok(scalar(@$ids) >= 1, 'static model list has at least one entry');
 diag "Hetzner static models: @$ids";
 
-# --- drift check: hardcoded catalog vs live /v1/models (karr #40) ---
-# Mirrors the pattern in t/83_live_minimax.t: hit /v1/models with the auth
+# --- drift check: hardcoded catalog vs live /api/v1/models (karr #40) ---
+# Mirrors the pattern in t/83_live_minimax.t: hit /api/v1/models with the auth
 # header, collect ids, compare against _build_static_models, and diag any
 # diff. Skip cleanly on missing API key, fetch failure, or unexpected shape.
 # Hetzner legitimately may add models; the test passes either way and only
@@ -40,12 +40,12 @@ SKIP: {
   require LWP::UserAgent;
 
   my $ua  = LWP::UserAgent->new(timeout => 30);
-  my $req = HTTP::Request->new(GET => 'https://inference.hetzner.com/v1/models');
+  my $req = HTTP::Request->new(GET => 'https://inference.hetzner.com/api/v1/models');
   $req->header('Authorization' => 'Bearer '.$ENV{TEST_LANGERTHA_HETZNER_API_KEY});
 
   my $resp = eval { $ua->request($req) };
   if (!$resp || !$resp->is_success) {
-    diag "drift check: /v1/models fetch failed (".
+    diag "drift check: /api/v1/models fetch failed (".
       ($resp ? $resp->status_line : 'connection error: '.$@).
       '), skipping';
     pass 'drift check: live fetch skipped (Hetzner unreachable)';
@@ -56,7 +56,7 @@ SKIP: {
                   : ref $data eq 'ARRAY' ? $data
                   : undef;
     if (!$models_aref) {
-      diag "drift check: unexpected /v1/models response shape, skipping";
+      diag "drift check: unexpected /api/v1/models response shape, skipping";
       pass 'drift check: live fetch skipped (unexpected response shape)';
       pass 'drift check: hardcoded vs live catalog skipped';
     } else {
@@ -67,14 +67,14 @@ SKIP: {
       my @missing_from_live = grep { !$live{$_} } @hard;
       my @added_in_live     = grep { !$hard{$_} } @live;
 
-      diag "Hetzner /v1/models returned ".scalar(@live)." model(s): @live";
+      diag "Hetzner /api/v1/models returned ".scalar(@live)." model(s): @live";
       diag "Hardcoded catalog has ".scalar(@hard)." model(s): @hard";
       diag "added in live (not in hardcoded): @added_in_live"
         if @added_in_live;
       diag "WARNING: hardcoded models missing from live: @missing_from_live"
         if @missing_from_live;
 
-      ok(scalar(@live) > 0, 'live /v1/models returned at least one model');
+      ok(scalar(@live) > 0, 'live /api/v1/models returned at least one model');
       pass 'hardcoded vs live catalog drift check complete (see diag)';
     }
   }

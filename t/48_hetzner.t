@@ -25,7 +25,7 @@ my $hetzner = Langertha::Engine::Hetzner->new(
 );
 
 my $req = $hetzner->chat('What is Perl?');
-is($req->uri, 'https://inference.hetzner.com/v1/chat/completions',
+is($req->uri, 'https://inference.hetzner.com/api/v1/chat/completions',
   'Hetzner chat request URI is correct');
 is($req->method, 'POST', 'Hetzner chat request method is POST');
 is($req->header('Authorization'), 'Bearer testkey',

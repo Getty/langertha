@@ -41,7 +41,7 @@ with map { 'Langertha::Role::'.$_ } qw(
 
 Provides access to L<Hetzner Cloud|https://www.hetzner.com/>'s
 L<Inference API|https://inference.hetzner.com/api/v1> via their
-OpenAI-compatible endpoint at C<https://inference.hetzner.com/v1>.
+OpenAI-compatible endpoint at C<https://inference.hetzner.com/api/v1>.
 
 Hetzner's Inference API is currently experimental and free of charge; rate
 limits are 10M input / 200K output tokens per 60 seconds per API key (HTTP 429
@@ -63,7 +63,7 @@ two text-only giants on the catalog (DeepSeek-V4-Flash, GLM-5.2-NVFP4).
 
 =head1 MODELS
 
-The four models currently listed at C</v1/models>:
+The four models currently listed at C</api/v1/models>:
 
 =over 4
 
@@ -99,7 +99,7 @@ To add or remove a model: edit C<_build_static_models> below, update the
 L</MODELS> POD block to match, add a Changes entry, and run the offline
 tests (C<t/48_hetzner.t>, C<t/00_load.t>). The live drift check in
 C<t/88_live_hetzner.t> (karr #40) compares the hardcoded catalog against
-L<https://inference.hetzner.com/v1/models> and warns on missing models.
+L<https://inference.hetzner.com/api/v1/models> and warns on missing models.
 
 =cut
 
@@ -109,7 +109,7 @@ sub _build_supported_operations {[qw(
 
 has '+url' => (
   lazy => 1,
-  default => sub { 'https://inference.hetzner.com/v1' },
+  default => sub { 'https://inference.hetzner.com/api/v1' },
 );
 
 sub _build_api_key {
