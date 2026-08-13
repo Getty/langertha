@@ -1,0 +1,69 @@
+---
+claimed_at: 2026-08-13T00:31:35Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T00:31:35Z
+created: 2026-08-12T22:23:05Z
+id: 47
+priority: medium
+started: 2026-08-12T23:58:05Z
+status: done
+tags:
+- value-objects
+- json
+- api
+title: Value-Objekte brauchen TO_JSON (Usage, RateLimit, ToolCall, Response)
+updated: 2026-08-13T00:31:35Z
+---
+
+## Beobachtung
+
+Langertha::Usage traegt to_hash, aber kein TO_JSON. Ein JSON::MaybeXS-Encode
+mit convert_blessed=>1 ueber eine Struktur, in der ein Usage-Objekt steckt,
+stirbt daher mit:
+
+    encountered object 'Langertha::Usage=HASH(...)', but allow_blessed,
+    allow_stringify or TO_JSON/FREEZE method missing
+
+Geprueft gegen installiert 0.502. Dasselbe gilt fuer die Nachbarn:
+Langertha::RateLimit, Langertha::ToolCall, Langertha::ToolChoice,
+Langertha::Response selbst.
+
+## Warum das mehr als Kosmetik ist
+
+Die Value-Objekte sind genau die Dinge, die ein Konsument in einen Trace, ein
+Log oder eine Queue schreiben will -- also durch einen JSON-Encoder schickt.
+Dass to_hash existiert, hilft nur, wenn der Konsument vorher weiss, dass er
+an dieser Stelle ein Objekt und keinen Hashref hat. Genau diese Annahme ist
+in der Praxis das Problem: der Encoder stirbt tief im Call-Stack, weit weg
+von der Stelle, an der das Objekt entstand.
+
+convert_blessed=>1 ist die verbreitete Encoder-Konfiguration. Ein TO_JSON,
+das schlicht to_hash aufruft, macht die Objekte in dieser Konfiguration
+transparent serialisierbar, ohne fuer irgendeinen bestehenden Aufrufer etwas
+zu aendern.
+
+## Vorschlag
+
+TO_JSON auf den Value-Objekten ergaenzen, jeweils als duenner Delegator auf
+die vorhandene to_hash-Methode. Wo es kein to_hash gibt, vorher entscheiden,
+ob eins sinnvoll ist.
+
+Bei Langertha::RateLimit ist die Frage nicht rein mechanisch: dessen to_hash
+enthaelt raw -- die Roh-Header der Provider-Antwort. Ein TO_JSON, das die
+mitschreibt, kippt Provider-Header in fremde Logs und Traces. Dort waere
+entweder ein raw-freies TO_JSON richtig oder gar keins.
+
+## Woher der Befund kommt
+
+Langertha::Knarr schreibt Response-Metadaten nach Langfuse und in ein
+JSONL-Log. Sobald usage als Objekt ankommt -- was der deklarierte Vertrag
+immer war -- stirbt der Langfuse-Encode und nimmt den laufenden Request mit,
+weil der flush dort nicht in einem eval steht. Knarr flacht das jetzt
+selbst ab (Knarr karr #10) und ist damit unabhaengig von diesem Ticket.
+
+Verwandt: karr #43 (Response->usage als Usage-Objekt coercen). Faellt #43,
+bekommt jeder Konsument Objekte statt Hashrefs -- dann trifft die fehlende
+Serialisierbarkeit deutlich mehr Leute als heute. In der Reihenfolge waere
+dieses Ticket hier das erste von beiden.
+TO_JSON auf Usage, ToolCall, ToolChoice als duenne Delegatoren auf to_hash; RateLimit raw-frei; Response bewusst KEINS. Es gab vorher keine TO_JSON-Konvention im lib, die ist damit gesetzt und die eine Abweichung im POD begruendet. Zwei Praemissen meines Tickets waren falsch und wurden korrigiert: (1) RateLimit-raw enthaelt nicht die vollen Provider-Header, beide Extraktoren whitelisten nur x-ratelimit-* bzw. anthropic-ratelimit-* -- das Leck war schmaler als angenommen, die Entscheidung faellt trotzdem gleich aus, weil TO_JSON implizit aus der aeusseren Struktur feuert und der Aufrufer nicht sieht, was es beigetragen hat. (2) Response stirbt NICHT ueberall: unter Cpanel::JSON::XS greift die Stringify-Ueberladung und liefert den content als String, unter JSON::XS und JSON::PP stirbt es. Selbst nachgeprueft, stimmt. Genau deshalb kein TO_JSON: es wuerde bestehende Cpanel-Konsumenten still von "hello" auf einen Metadaten-Hash umstellen. Der Verzicht ist per Test gegen versehentliche Reparatur gesichert. Neuer Test t/93, 15 Assertions, jede mit echtem encode+decode und Objekt in einer Struktur verschachtelt. Sechs Mutationen, alle rot.
