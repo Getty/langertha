@@ -1,0 +1,16 @@
+---
+class: standard
+completed: 2026-08-13T18:15:58Z
+created: 2026-08-13T16:09:59Z
+id: 59
+priority: medium
+started: 2026-08-13T18:15:58Z
+status: done
+tags:
+- test-drift
+- reconciliation
+title: 't/84_live_imagegen.t: stale dall-e-3 model override (400 Bad Request)'
+updated: 2026-08-13T18:15:58Z
+---
+
+t/84_live_imagegen.t subtest 2 ('ImageGen wrapper with model override') overrides model to 'dall-e-3' and gets 400 Bad Request at OpenAICompatible.pm line 513 (image generation path). OpenAI retired DALL-E 3 in favor of gpt-image-1. Pre-existing drift, unrelated to #55/#56. Found while verifying #56.
