@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-08-13T16:20:53Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T16:20:53Z
+created: 2026-08-13T15:43:43Z
+id: 55
+priority: high
+started: 2026-08-13T16:20:53Z
+status: done
+tags:
+- engine
+- bug
+title: 'OpenAI gpt-5.x: response_size maps to max_tokens, rejected 400 (needs max_completion_tokens)'
+updated: 2026-08-13T16:20:53Z
+---
+
+Live-Finding aus #36 (t/86_live_reasoning_effort.t, 2026-08-13, echter Key).
+
+gpt-5.1 und gpt-5.6-terra lehnen max_tokens mit HTTP 400 ab: "Unsupported parameter: max_tokens is not supported with this model. Use max_completion_tokens instead."
+
+Root-cause per Raw-Probe verifiziert: Wire-Payload korrekt (reasoning_effort high liegt top-level an), nur die response_size -> max_tokens Zuordnung in Engine/OpenAI.pm ist fuer die gpt-5.x-Familie falsch. gpt-4.x/gpt-4o akzeptieren max_tokens weiterhin.
+
+Fix-Richtung: response_size-Mapping modellfamilien-abhaengig (gpt-5* -> max_completion_tokens). Offline-Tests um Familien-Zweig erweitern; t/86 OpenAI-Subtest als Live-Nachweis.
