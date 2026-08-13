@@ -107,4 +107,64 @@ subtest 'llama.cpp scrape' => sub {
   diag "llama.cpp scraped " . scalar(@$records) . " llama_ records";
 };
 
+# OTLP export --------------------------------------------------------------
+# Gated on TEST_LANGERTHA_OTLP_ENDPOINT (any OTLP/HTTP metrics receiver —
+# OpenTelemetry Collector, Prometheus OTLP receiver, Grafana). Note: Langfuse
+# accepts OTLP metrics POSTs but discards them (no metrics ingestion; see
+# Langertha::Runtime::Metrics::OTLP POD), so a Langfuse /api/public/otel
+# endpoint would return 2xx here without storing anything.
+
+subtest 'OTLP export to TEST_LANGERTHA_OTLP_ENDPOINT' => sub {
+  my $endpoint = $ENV{TEST_LANGERTHA_OTLP_ENDPOINT};
+  if (!defined $endpoint || !length $endpoint) {
+    plan skip_all => 'TEST_LANGERTHA_OTLP_ENDPOINT not set';
+    return;
+  }
+
+  # Pick the first configured engine to scrape from.
+  my %engines = (
+    vllm     => [ $ENV{TEST_LANGERTHA_VLLM_URL},      'Langertha::Engine::vLLM',     'vllm:', 'TEST_LANGERTHA_VLLM_URL' ],
+    sglang   => [ $ENV{TEST_LANGERTHA_SGLANG_URL},    'Langertha::Engine::SGLang',   'sglang:', 'TEST_LANGERTHA_SGLANG_URL' ],
+    llamacpp => [ $ENV{TEST_LANGERTHA_LLAMACPP_URL},  'Langertha::Engine::LlamaCpp', 'llama_', 'TEST_LANGERTHA_LLAMACPP_URL' ],
+  );
+  my ($class, $prefix, $url_env);
+  for my $key (qw( vllm sglang llamacpp )) {
+    my ($url, $c, $p, $env) = @{ $engines{$key} };
+    if (defined $url && length $url) { ($class, $prefix, $url_env) = ($c, $p, $env); last; }
+  }
+  if (!$class) {
+    plan skip_all => 'no engine URL configured to scrape from';
+    return;
+  }
+
+  my $engine = eval { $class->new(url => $ENV{$url_env}) };
+  if ($@) { fail "construct $class: $@"; return; }
+
+  my $records;
+  eval {
+    require IO::Async::Loop;
+    my $loop = IO::Async::Loop->new;
+    $records = $loop->await(
+      Future->wrap($engine->poll_metrics_f($prefix))
+    );
+  };
+  if ($@) { fail "poll_metrics_f: $@"; return; }
+  ok(ref($records) eq 'ARRAY' && @$records, "scraped " . scalar(@$records) . " records");
+
+  my $response;
+  eval {
+    require IO::Async::Loop;
+    my $loop = IO::Async::Loop->new;
+    $response = $loop->await(
+      Future->wrap($engine->export_otlp_f($records,
+        endpoint     => $endpoint,
+        service_name => $class,
+      ))
+    );
+  };
+  if ($@) { fail "export_otlp_f: $@"; return; }
+  ok($response->is_success, "OTLP export to $endpoint returned 2xx");
+  diag "OTLP export status: " . $response->status_line;
+};
+
 done_testing;

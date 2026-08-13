@@ -39,6 +39,12 @@ returns the parsed ArrayRef. No filtering is applied by default —
 pass a prefix to L</poll_metrics_f($prefix)> or filter with
 L<Langertha::Runtime::Metrics/filter_prefix> downstream.
 
+The parsed records can be exported to any OTLP/HTTP metrics receiver
+(OpenTelemetry Collector, Prometheus, Grafana) via
+L</export_otlp_f> / L</export_otlp>, which serialize them with
+L<Langertha::Runtime::Metrics::OTLP>. B<Langfuse does not ingest OTLP
+metrics> — see L</export_otlp_f> for the details and sources.
+
 The endpoint path is derived by stripping the trailing C</v1> (or
 any trailing slash) from C<url>, then appending C</metrics>. Engines
 whose C<url> is e.g. C<http://localhost:8000/v1> therefore hit
@@ -179,11 +185,109 @@ async context prefer L</poll_metrics_f>.
 
 =cut
 
+async sub export_otlp_f {
+  my ( $self, $records, %opts ) = @_;
+  my $endpoint = $opts{endpoint}
+    // _croak("export_otlp_f requires an endpoint option");
+
+  require Langertha::Runtime::Metrics::OTLP;
+  my $otlp = Langertha::Runtime::Metrics::OTLP->new;
+  my $body = $otlp->to_json($records, %opts);
+
+  my @headers = ( 'Content-Type' => 'application/json' );
+  push @headers, %{ $opts{headers} || {} };
+
+  require HTTP::Request;
+  my $request = HTTP::Request->new( POST => $endpoint, \@headers, $body );
+
+  $log->debugf("[%s] exporting %d records to %s",
+    ref($self), scalar(@$records), $endpoint);
+
+  my $response = await $self->_async_http->do_request(
+    request => $request,
+  );
+
+  unless ( $response->is_success ) {
+    $log->errorf("[%s] OTLP export failed: %s",
+      ref($self), $response->status_line);
+    _croak("".(ref($self))." OTLP export failed: ".$response->status_line);
+  }
+
+  return $response;
+}
+
+=method export_otlp_f
+
+    my $response = await $engine->export_otlp_f($records,
+        endpoint            => 'http://localhost:4318/v1/metrics',
+        headers             => { Authorization => 'Basic ...' },
+        service_name        => 'vllm',
+        resource_attributes => { trace_id => 'trace-123' },
+    );
+
+Async export. Serializes the parsed records (the ArrayRef from
+L</poll_metrics_f>) into an OTLP/HTTP JSON metrics payload via
+L<Langertha::Runtime::Metrics::OTLP> and POSTs it to C<endpoint>.
+Returns the L<HTTP::Response>. Croaks on a non-success HTTP response.
+
+C<%opts> are passed through to
+L<Langertha::Runtime::Metrics::OTLP/build_payload> (C<service_name>,
+C<resource_attributes>, C<scope_name>, C<timestamp>) plus:
+
+=over 4
+
+=item * C<endpoint> — required. The OTLP/HTTP metrics receiver URL, e.g.
+C<http://localhost:4318/v1/metrics> (OpenTelemetry Collector), a
+Prometheus OTLP receiver, or Grafana.
+
+=item * C<headers> — optional HashRef of extra request headers (e.g.
+C<Authorization> for a protected receiver).
+
+=back
+
+B<Langfuse note:> Langfuse does B<not> ingest OTLP metrics. Its
+C</api/public/otel> endpoint accepts traces only; a POST to
+C</api/public/otel/v1/metrics> is accepted and silently discarded (dummy
+route since langfuse/langfuse#6408), and C</api/public/metrics> is a
+read-only query API over Langfuse's own trace data. Point this exporter
+at a real OTLP metrics backend (Collector, Prometheus, Grafana). Sources:
+L<https://github.com/langfuse/langfuse/issues/6395> and
+L<https://github.com/orgs/langfuse/discussions/10686>.
+
+=cut
+
+sub export_otlp {
+  my ( $self, $records, %opts ) = @_;
+  # Synchronous variant, same private-loop pattern as poll_metrics.
+  my $loop = $self->_async_loop;
+  my $response = $loop->await(
+    Future->wrap(
+      $self->export_otlp_f($records, %opts)
+    )
+  );
+  return $response;
+}
+
+=method export_otlp
+
+    my $response = $engine->export_otlp($records, endpoint => '...');
+
+Synchronous export. Drives L</export_otlp_f> on a private
+L<IO::Async::Loop> and blocks until the response is received.
+Returns the L<HTTP::Response> or croaks on HTTP failure.
+
+Use this only when no event loop is already running. Inside an
+async context prefer L</export_otlp_f>.
+
+=cut
+
 =seealso
 
 =over 4
 
 =item * L<Langertha::Runtime::Metrics> - The parser this role drives
+
+=item * L<Langertha::Runtime::Metrics::OTLP> - OTLP/HTTP JSON serializer used by L</export_otlp_f>
 
 =item * L<Langertha::Runtime::Metrics::EngineContract> - Per-engine wire contract
 

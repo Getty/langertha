@@ -226,6 +226,8 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<Langertha::Role::Runtime::MetricsPoll> - Async scraper that drives this parser
 
+=item * L<Langertha::Runtime::Metrics::OTLP> - Serializes the record shape into an OTLP/HTTP JSON metrics payload
+
 =item * L<https://prometheus.io/docs/instrumenting/exposition_formats/> - Prometheus text exposition format spec
 
 =back
