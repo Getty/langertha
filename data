@@ -1,0 +1,36 @@
+---
+claimed_at: 2026-08-13T03:52:47Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T03:52:47Z
+created: 2026-08-13T00:25:43Z
+id: 53
+priority: low
+started: 2026-08-13T03:44:10Z
+status: done
+tags:
+- gemini
+- streaming
+- drift
+title: 'Gemini: chat_stream_request driftet gegen chat_request'
+updated: 2026-08-13T03:52:47Z
+---
+
+Beim Umsetzen von #48 nebenbei gesehen, nicht angefasst. Zwei Stellen, an
+denen Engine::Gemini::chat_stream_request nicht mehr das tut, was
+chat_request tut:
+
+- Reasoning-Gating: der Streaming-Pfad prueft nur has_reasoning_effort,
+  chat_request prueft has_reasoning_effort || has_thinking_budget. Eine
+  Engine, die nur ein thinking_budget gesetzt hat, verliert es also beim
+  Streamen.
+
+- Der Streaming-Pfad hat den elsif-Zweig fuer bereits Gemini-geformte
+  Nachrichten (message->{parts}) nicht, den chat_request hat.
+
+Beides riecht danach, dass chat_request weiterentwickelt wurde und
+chat_stream_request nicht mitgezogen ist. Vor dem Angleichen pruefen, ob es
+je einen Grund fuer die Abweichung gab -- und ob dieselbe Drift bei anderen
+Engines zwischen den beiden Request-Buildern besteht.
+
+Verwandt: #52 (dieselben zwei Bauer, anderes Feld).
