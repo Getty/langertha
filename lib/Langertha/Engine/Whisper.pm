@@ -40,6 +40,8 @@ sub default_transcription_model { '' }
 
 sub default_model { '' }
 
+sub api_key_env { undef }
+
 has '+url' => (
   required => 1,
 );

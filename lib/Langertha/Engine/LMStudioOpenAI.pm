@@ -50,6 +50,8 @@ defaults to C<lmstudio>.
 sub default_model { 'default' }
 sub default_embedding_model { 'default' }
 
+sub api_key_env { undef }
+
 =attr model
 
 Chat model name. Defaults to C<default>. For real requests, set this to

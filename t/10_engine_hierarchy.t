@@ -789,6 +789,53 @@ ok(Langertha::Engine::LlamaCpp->does('Langertha::Role::Tools'), 'LlamaCpp does T
 }
 
 # ======================================================================
+# Part 6b: api_key_env — class method exposing the API-key env var name
+# (karr #44). Derived from the class name by default; vendor-key-sharing
+# protocol variants and keyless local engines override it.
+# ======================================================================
+
+use Langertha::Engine::Hetzner;
+use Langertha::Engine::OpenAIResponses;
+
+# Regular engines: derivation LANGERTHA_<UC(CLASS)>_API_KEY
+for my $case (
+  [ 'Langertha::Engine::Anthropic', 'LANGERTHA_ANTHROPIC_API_KEY' ],
+  [ 'Langertha::Engine::OpenAI',    'LANGERTHA_OPENAI_API_KEY' ],
+  [ 'Langertha::Engine::DeepSeek',   'LANGERTHA_DEEPSEEK_API_KEY' ],
+  [ 'Langertha::Engine::Gemini',     'LANGERTHA_GEMINI_API_KEY' ],
+  [ 'Langertha::Engine::AKI',        'LANGERTHA_AKI_API_KEY' ],
+  [ 'Langertha::Engine::Hetzner',    'LANGERTHA_HETZNER_API_KEY' ],
+) {
+  my ( $class, $env ) = @$case;
+  is($class->api_key_env, $env, "$class api_key_env derives $env");
+}
+
+# Protocol variants share their vendor's key (derivation would be wrong)
+is(Langertha::Engine::AKIOpenAI->api_key_env, 'LANGERTHA_AKI_API_KEY',
+  'AKIOpenAI api_key_env shares AKI key');
+is(Langertha::Engine::MiniMaxAnthropic->api_key_env, 'LANGERTHA_MINIMAX_API_KEY',
+  'MiniMaxAnthropic api_key_env shares MiniMax key');
+is(Langertha::Engine::MoonshotAnthropic->api_key_env, 'LANGERTHA_MOONSHOT_API_KEY',
+  'MoonshotAnthropic api_key_env shares Moonshot key');
+is(Langertha::Engine::OpenAIResponses->api_key_env, 'LANGERTHA_OPENAI_API_KEY',
+  'OpenAIResponses api_key_env shares OpenAI key');
+
+# Keyless engines: no credentials needed -> undef
+for my $class (qw(
+  Langertha::Engine::Ollama
+  Langertha::Engine::OllamaOpenAI
+  Langertha::Engine::vLLM
+  Langertha::Engine::SGLang
+  Langertha::Engine::LlamaCpp
+  Langertha::Engine::LMStudio
+  Langertha::Engine::LMStudioAnthropic
+  Langertha::Engine::LMStudioOpenAI
+  Langertha::Engine::Whisper
+)) {
+  is($class->api_key_env, undef, "$class api_key_env is undef (no key needed)");
+}
+
+# ======================================================================
 # Part 6: Cross-cutting concerns
 # ======================================================================
 

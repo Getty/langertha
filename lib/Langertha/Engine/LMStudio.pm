@@ -94,6 +94,8 @@ sub update_request {
 sub default_model { 'default' }
 sub default_response_size { 1024 }
 
+sub api_key_env { undef }
+
 sub openapi_file { yaml => dist_file('Langertha','lmstudio.yaml') };
 
 =method openapi_file

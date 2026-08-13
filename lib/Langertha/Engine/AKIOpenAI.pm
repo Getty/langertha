@@ -82,6 +82,8 @@ header. Required.
 
 sub default_model { 'llama3-chat-8b' }
 
+sub api_key_env { 'LANGERTHA_AKI_API_KEY' }
+
 sub _build_supported_operations {[qw( createChatCompletion )]}
 
 __PACKAGE__->meta->make_immutable;

@@ -39,6 +39,25 @@ has '+url' => (
   required => 1,
 );
 
+sub api_key_env {
+  my ( $class ) = @_;
+  (my $name = $class) =~ s/^Langertha::Engine:://;
+  return 'LANGERTHA_'.uc($name).'_API_KEY';
+}
+
+=method api_key_env
+
+    my $env = $class->api_key_env;
+
+Class method returning the name of the environment variable this engine
+reads its API key from (C<LANGERTHA_*_API_KEY>). Derived from the class
+name by default; engines that share a vendor key (e.g.
+L<Langertha::Engine::AKIOpenAI> reads C<LANGERTHA_AKI_API_KEY>) or need
+no credentials at all (e.g. L<Langertha::Engine::Ollama>) override it.
+Returns C<undef> for engines that do not require an API key.
+
+=cut
+
 has _last_rate_limit => (
   is => 'rw',
   isa => 'Maybe[Langertha::RateLimit]',

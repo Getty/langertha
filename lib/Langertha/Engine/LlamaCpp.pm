@@ -44,6 +44,8 @@ B<THIS API IS WORK IN PROGRESS>
 sub default_model { 'default' }
 sub default_embedding_model { 'default' }
 
+sub api_key_env { undef }
+
 sub _build_supported_operations {[qw(
   createChatCompletion
   createEmbedding

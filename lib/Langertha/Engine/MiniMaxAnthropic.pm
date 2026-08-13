@@ -59,6 +59,8 @@ sub _build_api_key {
 
 sub default_model { 'MiniMax-M3' }
 
+sub api_key_env { 'LANGERTHA_MINIMAX_API_KEY' }
+
 sub default_response_size { 4096 }
 
 sub _build_static_models {[

@@ -122,6 +122,8 @@ The optional C<tools> list is passed to C<openai()>.
 sub default_model { 'llama3.3' }
 sub default_embedding_model { 'mxbai-embed-large' }
 
+sub api_key_env { undef }
+
 sub openapi_file { yaml => dist_file('Langertha','ollama.yaml') };
 
 sub _build_openapi_operations {

@@ -63,6 +63,8 @@ has '+url' => (
 sub default_model { croak "".(ref $_[0])." requires model to be set" }
 sub default_embedding_model { 'mxbai-embed-large' }
 
+sub api_key_env { undef }
+
 sub _build_supported_operations {[qw( createChatCompletion createEmbedding )]}
 
 __PACKAGE__->meta->make_immutable;

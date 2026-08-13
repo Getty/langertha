@@ -38,6 +38,8 @@ has '+url' => (
 
 sub default_model { 'default' }
 
+sub api_key_env { undef }
+
 sub _build_supported_operations {[qw(
   createChatCompletion
   createCompletion

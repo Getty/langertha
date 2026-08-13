@@ -49,6 +49,8 @@ no explicit C<api_key> and no C<LANGERTHA_LMSTUDIO_API_KEY> are set.
 
 sub default_model { 'default' }
 
+sub api_key_env { undef }
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

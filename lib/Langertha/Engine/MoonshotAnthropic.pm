@@ -55,6 +55,8 @@ sub _build_api_key {
 
 sub default_model { 'kimi-k3' }
 
+sub api_key_env { 'LANGERTHA_MOONSHOT_API_KEY' }
+
 sub default_response_size { 4096 }
 
 sub _build_static_models {[

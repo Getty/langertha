@@ -219,6 +219,9 @@ sub _parse_function_call {
 # Tool calling support (MCP) is the tag-driven default in Langertha::Role::Tools.
 sub _build_tool_wire_format { 'responses' }
 
+# Protocol variant of OpenAI: shares the vendor's API key.
+sub api_key_env { 'LANGERTHA_OPENAI_API_KEY' }
+
 # Reasoning effort is nested: reasoning => { effort => ... }.
 sub _build_reasoning_wire_format { 'responses' }
 
