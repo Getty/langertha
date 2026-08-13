@@ -73,6 +73,15 @@ Concrete engines extending this class include
 L<Langertha::Engine::Anthropic>, L<Langertha::Engine::MiniMax>, and
 L<Langertha::Engine::LMStudioAnthropic>.
 
+Structured output (C<response_format>) is a non-streaming feature on this
+family: the rewrite in C<_translate_response_format> synthesizes a tool and
+forces C<tool_choice>, and C<chat_response> lifts the resulting C<tool_use>
+input back into C<Response.content>. The streaming path has no Response to
+lift from, so C<chat_stream_request> consumes a C<response_format> (per
+request or engine attribute) and croaks instead of silently streaming
+unstructured text. Use L<Langertha::Role::Chat/chat_f> or C<chat_request>
+for structured output.
+
 B<THIS API IS WORK IN PROGRESS>
 
 =cut
@@ -302,6 +311,31 @@ sub stream_format { 'sse' }
 
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
+
+  # Anthropic has no native response_format, and the streaming path has no
+  # Response to lift a synthesized tool_use back into content from — the
+  # chat_request rewrite (_translate_response_format) depends on
+  # chat_response doing that lift. Rather than silently streaming
+  # unstructured text (karr #52 Folge 1) or leaking response_format onto
+  # the wire (Folge 2), consume the key and refuse loudly: structured
+  # output on Anthropic-family engines is a non-streaming feature.
+  my $rf = exists $extra{response_format}
+    ? delete $extra{response_format}
+    : $self->has_response_format ? $self->response_format : undef;
+  if ( defined $rf && ref($rf) eq 'HASH' ) {
+    my $type = $rf->{type} // '';
+    my $honored = $type eq 'json_object'
+      || ( $type eq 'json_schema'
+        && ref( $rf->{json_schema} ) eq 'HASH'
+        && ref( $rf->{json_schema}{schema} ) eq 'HASH' );
+    if ($honored) {
+      croak "".(ref $self)." cannot stream response_format: Anthropic-family engines "
+        . "route structured output through a synthesized tool whose tool_use input "
+        . "is lifted into Response.content by chat_response, and the streaming path "
+        . "has no Response to lift from. Use chat_f/chat_request for structured output.";
+    }
+  }
+
   $self->_normalize_tool_params(\%extra);
   my @msgs;
   my $system = "";

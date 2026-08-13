@@ -687,6 +687,12 @@ C<response_format> on engines without C<tool_choice_named>); synthesizing a
 C<tool_calls> entry from the accumulated stream text is a separate follow-up
 concern.
 
+C<response_format> is honored on the streaming path only where the engine
+has a native wire form (Gemini C<responseSchema>, Ollama C<format>,
+OpenAI-compatible C<response_format>). Anthropic-family engines have no
+native form and their synthesized-tool rewrite has no streaming lift, so
+they consume the key and croak — use L</chat_f> for structured output there.
+
 =cut
 
 sub _process_stream_buffer {

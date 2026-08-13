@@ -364,11 +364,36 @@ sub stream_format { 'ndjson' }
 
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
+
+  # Translate response_format -> Ollama's format parameter, same wire as
+  # chat_request. Ollama accepts either the literal string 'json' or a
+  # JSON-Schema HashRef. A per-request response_format
+  # (chat_stream_realtime_f) beats the engine attribute, and is removed
+  # from the extras either way: Ollama has no response_format field and
+  # would silently ignore it. Fall back to the legacy json_format
+  # attribute when neither is set.
+  my $rf = exists $extra{response_format}
+    ? delete $extra{response_format}
+    : $self->has_response_format ? $self->response_format : undef;
+  my $format;
+  if ( defined $rf ) {
+    my $type = ref($rf) eq 'HASH' ? ( $rf->{type} // '' ) : '';
+    if ( $type eq 'json_object' ) {
+      $format = 'json';
+    }
+    elsif ( $type eq 'json_schema'
+        && ref( $rf->{json_schema} ) eq 'HASH'
+        && ref( $rf->{json_schema}{schema} ) eq 'HASH' ) {
+      $format = $rf->{json_schema}{schema};
+    }
+  }
+  $format = 'json' if !defined $format && $self->json_format;
+
   return $self->generate_request( chat => sub {},
     model => $self->chat_model,
     messages => $messages,
     stream => JSON->true,
-    $self->json_format ? ( format => 'json' ) : (),
+    defined $format ? ( format => $format ) : (),
     defined $self->get_keep_alive ? ( keep_alive => $self->get_keep_alive ) : (),
     options => {
       $self->has_temperature ? ( temperature => $self->temperature ) : (),

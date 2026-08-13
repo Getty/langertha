@@ -396,6 +396,28 @@ sub chat_stream_request {
     $generation_config{temperature} = $self->temperature;
   }
 
+  # Translate response_format -> Gemini's generationConfig.responseSchema /
+  # responseMimeType. Same wire as chat_request: a per-request
+  # response_format (chat_stream_realtime_f) beats the engine attribute,
+  # and is removed from the extras either way — generateContent has no
+  # top-level response_format field and would carry it as dead weight
+  # while the schema went missing.
+  my $rf = exists $extra{response_format}
+    ? delete $extra{response_format}
+    : $self->has_response_format ? $self->response_format : undef;
+  if ( defined $rf ) {
+    my $type = ref($rf) eq 'HASH' ? ( $rf->{type} // '' ) : '';
+    if ( $type eq 'json_object' ) {
+      $generation_config{responseMimeType} = 'application/json';
+    }
+    elsif ( $type eq 'json_schema'
+        && ref( $rf->{json_schema} ) eq 'HASH'
+        && ref( $rf->{json_schema}{schema} ) eq 'HASH' ) {
+      $generation_config{responseMimeType} = 'application/json';
+      $generation_config{responseSchema}   = $rf->{json_schema}{schema};
+    }
+  }
+
   if ( $self->has_reasoning_effort || $self->has_thinking_budget ) {
     %generation_config = ( %generation_config, $self->reasoning_kwargs );
   }
