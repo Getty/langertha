@@ -1,0 +1,45 @@
+---
+claimed_at: 2026-08-13T00:31:41Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T00:31:41Z
+created: 2026-08-13T00:14:23Z
+id: 48
+priority: high
+started: 2026-08-13T00:15:19Z
+status: done
+tags:
+- bug
+- response-format
+- gemini
+title: 'Gemini ignoriert per-Request response_format (wie #45)'
+updated: 2026-08-13T00:31:41Z
+---
+
+Beim Fix von #45 mitgefunden, bewusst nicht mitrepariert: Engine::Gemini hat
+denselben Defekt in identischer Form.
+
+lib/Langertha/Engine/Gemini.pm:237 prueft `if ( $self->has_response_format )`
+und sieht $extra nie an; %extra wird rund dreissig Zeilen tiefer als letztes
+in den Request-Body gespreadet.
+
+Folge: ein per-Request response_format landet als Top-Level-Feld
+"response_format" auf dem generateContent-Body, und generationConfig.responseSchema
+bleibt leer. Das Format wird also ignoriert, waehrend ein Feld mitgeschickt
+wird, das die API dort nicht kennt.
+
+Gemini advertised response_format_json_object und response_format_json_schema,
+ein aufrufseitiges supports()-Gate greift also auch hier nicht.
+
+Der Fix duerfte dieselbe Form haben wie in #45: Praezedenz per-Request vor
+Engine-Attribut, und den Key aus %extra loeschen, damit er die Wire nicht
+erreicht. Ob Gemini zusaetzlich das Gegenstueck zum content-Lift aus
+AnthropicBase braucht, ist beim Umsetzen zu pruefen -- Gemini routet
+strukturierte Ausgabe ueber generationConfig statt ueber ein synthetisiertes
+Tool, die Konvergenzforderung aus ADR 0005 Paragraph 3 stellt sich dort also
+anders.
+
+Nicht zu verwechseln mit #46: das beschreibt die allgemeine Klasse (chat_f
+reicht %opts als rohe Wire-Kwargs durch). Dieses Ticket hier ist wie #45 der
+konkrete, sofort behebbare Einzelfall.
+Gemini nach demselben Muster wie #45: Praezedenz per-Request vor Engine-Attribut, delete aus %extra. Konvergenzfrage sauber beantwortet und nicht nur behauptet: Gemini braucht KEIN Gegenstueck zum Anthropic-Lift, weil es auf dem anderen Ast von ADR 0005 liegt. AnthropicBase ist Paragraph 2 (Rewrite: synthetisiertes Tool, Modell antwortet mit tool_use statt Text, ohne Lift bliebe content leer). Gemini ist Paragraph 4 (native bleibt native: responseSchema plus responseMimeType, das Modell emittiert gewoehnlichen Text, den chat_response ohnehin schon in content joint). Konvergenz gilt dort also ohne Zusatzcode. Der Worker hat bewusst weder ein rf_routed-Flag durchgefaedelt (haette keinen Konditional zu fuettern, waere toter Code) noch einen synthetischen ToolCall erfunden (ADR 0003: tool_calls ist die Senke fuer EMITTIERTE Calls, und OpenAI emittiert auf diesem Pfad auch keinen) -- und diese Begruendung als letzte Test-Assertion codiert statt als Prosa stehen zu lassen. t/77 erweitert statt dritter Datei, jetzt 28 Assertions. Mutation: 6 rot, die zwei gruen bleibenden sind korrekt (Negativfall und Engine-Attribut-Pfad).
