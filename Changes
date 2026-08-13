@@ -2,6 +2,32 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - chat_f now normalizes a canonical set of per-request controls
+      instead of spreading them as raw target-wire kwargs (karr #46).
+      Previously only messages/tools/tool_choice were normalized; every
+      other option was passed through verbatim, so the same call was
+      correct, ineffective, or a 400 depending on engine family
+      (temperature/max_tokens/seed silently lost on Ollama — they belong
+      under options — response_format a 400 on Anthropic, parallel_tool_use
+      only honored where the engine happened to advertise it). chat_f and
+      chat_stream_realtime_f now extract temperature, max_tokens,
+      response_format, seed, parallel_tool_use, reasoning_effort,
+      thinking_budget, prompt_cache, prompt_cache_ttl and prompt_cache_key
+      into a `controls` hash that each engine's chat_request /
+      chat_stream_request consumes and places on its own wire via the same
+      value objects the engine attributes use (Langertha::Reasoning /
+      Langertha::PromptCache, or the engine's own placement logic: Ollama
+      options, Gemini generationConfig). A per-request control beats the
+      configured engine attribute on a per-key basis; unknown keys still
+      pass straight through as the escape hatch. Engines without a native
+      knob for a control consume it without emitting it — the "not
+      accidentally correct" behavior the ticket asked for. The
+      reasoning_kwargs / prompt_cache_kwargs attribute serializers
+      delegate to new *_for(%args) variants that accept per-request
+      overrides, so the per-request path and the attribute path share one
+      serializer. This unblocks the Knarr per-request control surface
+      (karr #4, #9).
+
     - chat_stream_realtime_f(%opts) is the new streaming counterpart to
       chat_f (karr #42). simple_chat_stream_realtime_f only took
       ($chunk_callback, @messages) and called chat_stream_request without
