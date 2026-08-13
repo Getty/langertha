@@ -105,6 +105,13 @@ async sub test_engine_secret {
   diag "$name secret response: $response";
 }
 
+sub engine_fail {
+  my ($name) = @_;
+  return unless $@;
+  diag "$name error: $@";
+  fail "$name: engine call failed";
+}
+
 async sub run_tests {
   await $mcp->initialize;
 
@@ -120,7 +127,7 @@ async sub run_tests {
         model => 'claude-sonnet-5', mcp_servers => [$mcp],
       ));
     };
-    diag "Anthropic error: $@" if $@;
+    engine_fail('Anthropic');
   }
 
   # --- OpenAI ---
@@ -132,7 +139,7 @@ async sub run_tests {
         model => 'gpt-4o-mini', mcp_servers => [$mcp],
       ));
     };
-    diag "OpenAI error: $@" if $@;
+    engine_fail('OpenAI');
   }
 
   # --- Gemini ---
@@ -144,7 +151,7 @@ async sub run_tests {
         model => 'gemini-2.5-flash', mcp_servers => [$mcp],
       ));
     };
-    diag "Gemini error: $@" if $@;
+    engine_fail('Gemini');
   }
 
   # --- Groq ---
@@ -156,7 +163,7 @@ async sub run_tests {
         model => 'llama-3.3-70b-versatile', mcp_servers => [$mcp],
       ));
     };
-    diag "Groq error: $@" if $@;
+    engine_fail('Groq');
   }
 
   # --- Mistral ---
@@ -168,7 +175,7 @@ async sub run_tests {
         model => 'mistral-small-latest', mcp_servers => [$mcp],
       ));
     };
-    diag "Mistral error: $@" if $@;
+    engine_fail('Mistral');
   }
 
   # --- DeepSeek ---
@@ -180,7 +187,7 @@ async sub run_tests {
         model => 'deepseek-v4-flash', mcp_servers => [$mcp],
       ));
     };
-    diag "DeepSeek error: $@" if $@;
+    engine_fail('DeepSeek');
   }
 
   # --- MiniMax ---
@@ -192,7 +199,7 @@ async sub run_tests {
         mcp_servers => [$mcp],
       ));
     };
-    diag "MiniMax error: $@" if $@;
+    engine_fail('MiniMax');
   }
 
   # --- Perplexity ---
@@ -208,7 +215,7 @@ async sub run_tests {
         model => 'Hermes-4-70B', mcp_servers => [$mcp],
       ));
     };
-    diag "NousResearch error: $@" if $@;
+    engine_fail('NousResearch');
   }
 
   # --- Cerebras ---
@@ -221,7 +228,7 @@ async sub run_tests {
         mcp_servers => [$mcp],
       ));
     };
-    diag "Cerebras error: $@" if $@;
+    engine_fail('Cerebras');
   }
 
   # --- OpenRouter ---
@@ -238,7 +245,7 @@ async sub run_tests {
         model => $or_model, mcp_servers => [$mcp],
       ));
     };
-    diag "OpenRouter/$or_model error: $@" if $@;
+    engine_fail("OpenRouter/$or_model");
   }
 
   # --- Replicate ---
@@ -251,7 +258,7 @@ async sub run_tests {
         model => $rep_model, mcp_servers => [$mcp],
       ));
     };
-    diag "Replicate/$rep_model error: $@" if $@;
+    engine_fail("Replicate/$rep_model");
   }
 
   # --- HuggingFace ---
@@ -264,7 +271,7 @@ async sub run_tests {
         model => $hf_model, mcp_servers => [$mcp],
       ));
     };
-    diag "HuggingFace/$hf_model error: $@" if $@;
+    engine_fail("HuggingFace/$hf_model");
   }
 
   # --- vLLM ---
@@ -281,7 +288,7 @@ async sub run_tests {
         model => $model, mcp_servers => [$mcp],
       ));
     };
-    diag "vLLM/$model error: $@" if $@;
+    engine_fail("vLLM/$model");
   }
 
   # --- TSystems ---
@@ -293,7 +300,7 @@ async sub run_tests {
         model => 'gpt-oss-120b', mcp_servers => [$mcp],
       ));
     };
-    diag "TSystems error: $@" if $@;
+    engine_fail('TSystems');
   }
 
   # --- Scaleway ---
@@ -305,7 +312,7 @@ async sub run_tests {
         model => 'llama-3.1-8b-instruct', mcp_servers => [$mcp],
       ));
     };
-    diag "Scaleway error: $@" if $@;
+    engine_fail('Scaleway');
   }
 
   # --- AKI.IO (via OpenAI-compatible API, HermesTools) ---
@@ -322,7 +329,7 @@ async sub run_tests {
         model => $aki_model, response_size => 1024, mcp_servers => [$mcp],
       ));
     };
-    diag "AKIOpenAI/$aki_model error: $@" if $@;
+    engine_fail("AKIOpenAI/$aki_model");
   }
 
   # --- AKI.IO (native API, HermesTools) ---
@@ -339,7 +346,7 @@ async sub run_tests {
         model => $aki_model, mcp_servers => [$mcp],
       ));
     };
-    diag "AKI-native/$aki_model error: $@" if $@;
+    engine_fail("AKI-native/$aki_model");
   }
 
   # --- Ollama ---
@@ -355,7 +362,7 @@ async sub run_tests {
           model => $model, mcp_servers => [$mcp],
         ));
       };
-      diag "Ollama/$model error: $@" if $@;
+      engine_fail("Ollama/$model");
     }
   }
 }
