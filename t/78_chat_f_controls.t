@@ -153,6 +153,26 @@ sub wire {
   is( $data->{max_tokens}, 77, 'OpenAI: per-request max_tokens beats response_size' );
 }
 
+# --- OpenAI gpt-5.x: completion length uses max_completion_tokens ---------
+# gpt-5.x dropped max_tokens (HTTP 400); the only accepted completion-length
+# key is max_completion_tokens. Older models keep max_tokens (karr #55).
+{
+  my $gpt5_control = wire( openai( model => 'gpt-5.1' ), controls => { max_tokens => 100 } );
+  is( $gpt5_control->{max_completion_tokens}, 100,
+    'OpenAI gpt-5.x: max_tokens control lands as max_completion_tokens' );
+  ok( !exists $gpt5_control->{max_tokens},
+    'OpenAI gpt-5.x: no max_tokens key on the wire' );
+
+  my $gpt5_attr = wire( openai( model => 'gpt-5.6-terra', response_size => 500 ) );
+  is( $gpt5_attr->{max_completion_tokens}, 500,
+    'OpenAI gpt-5.x: response_size lands as max_completion_tokens' );
+
+  my $gpt4 = wire( openai( model => 'gpt-4o', response_size => 500 ) );
+  is( $gpt4->{max_tokens}, 500, 'OpenAI gpt-4o: response_size still lands as max_tokens' );
+  ok( !exists $gpt4->{max_completion_tokens},
+    'OpenAI gpt-4o: no max_completion_tokens key on the wire' );
+}
+
 # --- OpenAI-compatible: unknown keys still pass through --------------------
 {
   my $data = wire( openai(), controls => { temperature => 0.3 }, custom_extra => 'x' );

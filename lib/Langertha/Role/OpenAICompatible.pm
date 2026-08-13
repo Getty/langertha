@@ -263,6 +263,12 @@ floats representing the embedding vector.
 
 sub chat_operation_id { 'createChatCompletion' }
 
+# The completion-length body key is engine-overridable. OpenAI's gpt-5.x line
+# only accepts max_completion_tokens (max_tokens is an HTTP 400 on those
+# models), so Langertha::Engine::OpenAI overrides this for the gpt-5* family;
+# every other OpenAI-compatible engine keeps max_tokens.
+sub _max_tokens_key { 'max_tokens' }
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
@@ -297,8 +303,8 @@ sub chat_request {
     defined $self->chat_model ? ( model => $self->chat_model ) : (),
     messages => $messages,
     exists $controls->{max_tokens}
-      ? ( max_tokens => $controls->{max_tokens} )
-      : ( $self->get_response_size ? ( max_tokens => $self->get_response_size ) : () ),
+      ? ( $self->_max_tokens_key => $controls->{max_tokens} )
+      : ( $self->get_response_size ? ( $self->_max_tokens_key => $self->get_response_size ) : () ),
     exists $controls->{response_format}
       ? ( response_format => $controls->{response_format} )
       : ( ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : () ),
@@ -418,8 +424,8 @@ sub chat_stream_request {
     defined $self->chat_model ? ( model => $self->chat_model ) : (),
     messages => $messages,
     exists $controls->{max_tokens}
-      ? ( max_tokens => $controls->{max_tokens} )
-      : ( $self->get_response_size ? ( max_tokens => $self->get_response_size ) : () ),
+      ? ( $self->_max_tokens_key => $controls->{max_tokens} )
+      : ( $self->get_response_size ? ( $self->_max_tokens_key => $self->get_response_size ) : () ),
     exists $controls->{response_format}
       ? ( response_format => $controls->{response_format} )
       : ( ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : () ),
