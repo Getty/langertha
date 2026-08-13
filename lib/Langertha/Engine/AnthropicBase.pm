@@ -167,7 +167,7 @@ sub chat_request {
   # json_schema response_format hashes into a synthesized tool + forced
   # named tool_choice; the response parser will pull the structured
   # output out of the resulting tool_use block.
-  $self->_translate_response_format(\%extra);
+  my $rf_routed = $self->_translate_response_format(\%extra);
 
   $self->_normalize_tool_params(\%extra);
   my @msgs;
@@ -187,7 +187,7 @@ sub chat_request {
     };
     $system = undef;
   }
-  return $self->generate_http_request( POST => $self->url.'/v1/messages', sub { $self->chat_response(shift) },
+  return $self->generate_http_request( POST => $self->url.'/v1/messages', sub { $self->chat_response(shift, $rf_routed) },
     model => $self->chat_model,
     messages => \@msgs,
     max_tokens => $self->get_response_size, # must be always set
@@ -207,8 +207,13 @@ my $SYNTH_RF_TOOL_NAME = '__langertha_response_format__';
 
 sub _translate_response_format {
   my ( $self, $extra ) = @_;
-  return unless $self->has_response_format;
-  my $rf = $self->response_format;
+
+  # A per-request response_format (chat_f) beats the engine attribute, and
+  # is removed from the extras either way: the Messages API has no
+  # response_format field and answers 400 when one reaches the wire.
+  my $rf = exists $extra->{response_format}
+    ? delete $extra->{response_format}
+    : $self->has_response_format ? $self->response_format : undef;
   return unless ref($rf) eq 'HASH';
   my $type = $rf->{type} // '';
 
@@ -237,6 +242,7 @@ sub _translate_response_format {
   $extra->{tools} ||= [];
   push @{ $extra->{tools} }, $tool;
   $extra->{tool_choice} = { type => 'tool', name => $name };
+  return $name;
 }
 
 # Normalize tool_choice (any accepted format -> Anthropic native) and fold
@@ -262,7 +268,7 @@ sub _normalize_tool_params {
 }
 
 sub chat_response {
-  my ( $self, $response ) = @_;
+  my ( $self, $response, $rf_routed ) = @_;
   my $data = $self->parse_response($response);
   my @blocks = @{$data->{content}};
   my $text = join('', map { $_->{text} // '' } grep { $_->{type} eq 'text' } @blocks);
@@ -273,7 +279,11 @@ sub chat_response {
   # If the caller asked for a response_format and we routed it through a
   # synthesized tool, lift the tool_use input back into the content as
   # JSON so callers can treat it like any other structured-output result.
-  if ( $self->has_response_format && @tcs ) {
+  # chat_request passes the synthesized tool name for both the per-request
+  # and the engine-attribute path; the attribute check stays as the
+  # fallback for callers invoking chat_response directly.
+  $rf_routed = $self->has_response_format unless defined $rf_routed;
+  if ( $rf_routed && @tcs ) {
     $text = $self->json->encode( $tcs[0]->arguments );
   }
   return Langertha::Response->new(

@@ -2,6 +2,69 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Fixed: a per-request response_format passed to chat_f was ignored
+      by Anthropic, Ollama and Gemini (karr #45, #48). All three read
+      only the engine attribute and never looked at the %extra the call
+      forwards, so the value fell through to the generic spread at the
+      end of the request body: Anthropic answered 400 (the Messages API
+      has no such field), Ollama and Gemini carried it as dead weight
+      while the format itself went missing. All three now resolve
+      per-request before engine attribute and delete the key from the
+      extras. Both engines advertise the response_format capabilities,
+      so a caller-side supports() gate could not catch this.
+
+      AnthropicBase needed a second half: it is the rewrite branch of
+      ADR 0005 — response_format becomes a synthesized tool plus a
+      forced tool_choice, and the structured payload has to be lifted
+      back out of the tool_use block into Response.content, or the two
+      rewrite directions converge on different shapes. That lift was
+      conditional on the engine attribute; _translate_response_format
+      now returns the synthesized tool name and chat_request threads it
+      into chat_response, which still falls back to the attribute when
+      called directly. Gemini needs no counterpart: it stays on the
+      native branch (generationConfig.responseSchema), the model emits
+      an ordinary text part, and chat_response already joins those into
+      content — convergence holds there without extra code.
+
+      Not covered: the chat_stream_request side of all three engines
+      ignores response_format entirely (karr #52). An engine-level
+      format is silently dropped when streaming today; the per-request
+      leak only becomes reachable once chat_stream_realtime_f forwards
+      extras (karr #42).
+
+    - Langertha::Usage, ToolCall and ToolChoice gained TO_JSON, so they
+      are transparent to any encoder configured with convert_blessed
+      (karr #47). These objects turn up nested inside structures a
+      caller assembled — Response.tool_calls, a trace payload, a log
+      line — and never announce themselves as objects, so the encode
+      died deep in the call stack, far from where the object came from.
+      Plain delegators to the existing to_hash; TO_JSON must not become
+      a second, divergent shape.
+
+      RateLimit's TO_JSON deliberately differs from its to_hash: it
+      omits raw. TO_JSON fires implicitly from wherever the surrounding
+      structure is encoded, and the caller cannot see what it
+      contributed, so the implicit path carries only normalized fields.
+      A caller who wants the provider's rate-limit headers asks for them
+      via to_hash or raw.
+
+      Langertha::Response deliberately gained no TO_JSON, and the POD
+      now says why at length so it does not get "fixed" later: raw
+      duplicates the whole provider payload, probes can be megabytes,
+      content is unbounded, and returning just content would freeze a
+      lossy projection as the class's permanent JSON contract. Note its
+      behaviour is currently backend-dependent — Cpanel::JSON::XS falls
+      back to the string overload, JSON::XS and JSON::PP throw
+      (karr #50).
+
+    - Fixed: dzil build aborted on a missing PODNAME in
+      Langertha/Runtime/Metrics/EngineContract.pod (karr #49), the only
+      standalone .pod under lib/ and therefore the only file where
+      Pod::Weaver cannot derive the name from a package statement.
+      Present since the runtime-metrics work; it does not show up in
+      prove, so dzil build and dzil release were both broken while the
+      test suite stayed green. Added PODNAME and ABSTRACT.
+
     - Hetzner catalog drift tracking (karr #40). t/88_live_hetzner.t
       gains a SKIP-gated subtest that GETs /v1/models and compares
       the response against _build_static_models, diagging any diff

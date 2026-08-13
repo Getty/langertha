@@ -163,11 +163,15 @@ sub chat_request {
 
   # Translate response_format -> Ollama's format parameter. Ollama
   # accepts either the literal string 'json' or a JSON-Schema HashRef.
-  # Fall back to legacy json_format attribute when response_format is
-  # not set.
+  # A per-request response_format (chat_f) beats the engine attribute,
+  # and is removed from the extras either way: Ollama has no
+  # response_format field and would silently ignore it. Fall back to the
+  # legacy json_format attribute when neither is set.
+  my $rf = exists $extra{response_format}
+    ? delete $extra{response_format}
+    : $self->has_response_format ? $self->response_format : undef;
   my $format;
-  if ( $self->has_response_format ) {
-    my $rf = $self->response_format;
+  if ( defined $rf ) {
     my $type = ref($rf) eq 'HASH' ? ( $rf->{type} // '' ) : '';
     if ( $type eq 'json_object' ) {
       $format = 'json';

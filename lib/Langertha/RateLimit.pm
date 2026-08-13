@@ -151,6 +151,33 @@ Returns a flat HashRef of all defined rate limit fields plus the raw headers.
 
 =cut
 
+sub TO_JSON {
+  my ( $self ) = @_;
+  my $hash = $self->to_hash;
+  delete $hash->{raw};
+  return $hash;
+}
+
+=method TO_JSON
+
+    my $json = JSON::MaybeXS->new(convert_blessed => 1)->encode({ rate_limit => $rl });
+
+Serialization hook for JSON encoders configured with C<convert_blessed>.
+Returns L</to_hash> B<without> the C<raw> key.
+
+C<TO_JSON> fires implicitly, from wherever the surrounding structure happens
+to be encoded — a trace, a log line, a queue message. The caller did not ask
+for this object and cannot see what it contributed, so the implicit path
+carries only the normalized, provider-agnostic fields. C<raw> holds the
+provider's own rate-limit response headers; shipping those into third-party
+sinks by accident is not something a caller should have to opt out of.
+
+A caller who wants the raw headers asks for them explicitly — via L</to_hash>
+or L</raw>. That is the only difference between the two methods, and the
+reason they deliberately do not return the same thing.
+
+=cut
+
 =seealso
 
 =over
