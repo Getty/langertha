@@ -1,0 +1,55 @@
+---
+claimed_at: 2026-08-11T23:05:27Z
+claimed_by: claude
+class: standard
+completed: 2026-08-13T18:36:11Z
+created: 2026-08-10T00:48:02Z
+id: 31
+priority: normal
+started: 2026-08-11T23:05:27Z
+status: done
+tags:
+- self-hosted
+- knobs
+- vllm
+- sglang
+title: 'Self-hosted runtime knobs: expose prefix caching / speculative decoding /
+  continuous batching surface'
+updated: 2026-08-13T18:36:18Z
+---
+
+STATUS 2026-08-11: scope breakdown documented. Not started; out of session
+scope. Sub-tickets 31a-31d PROPOSED, not auto-created — maintainer splits
+when ready.
+
+Scope: Self-hosted inference engines expose runtime knobs that influence
+throughput / latency without affecting model identity:
+  - prefix caching (KV cache reuse across requests) — vLLM, SGLang
+  - speculative decoding (draft model parallel verification) — vLLM,
+    SGLang, possibly LlamaCpp
+  - continuous batching (in-flight batching) — mostly internal, surfaced
+    as a counter, not a knob
+OpenAI/Anthropic don't expose these. Cloud alternatives are model-side
+fixed.
+
+Proposed sub-tickets:
+  31a — research: which knobs are runtime-tunable vs require restart
+        per engine (vLLM, SGLang, LlamaCpp). Source: each engine's docs.
+  31b — value object: Langertha::Runtime::Knobs with engine-gated
+        sub-objects (VLLM::Knobs, SGLang::Knobs, LlamaCpp::Knobs) —
+        each engine declares what it accepts
+  31c — wire: per-engine request body or extra_body extension. vLLM
+        accepts extra_body fields for speculative decoding and prefix
+        cache hints; SGLang similar
+  31d — role: Langertha::Role::RuntimeKnobs on the relevant engines
+        with capabilities gating (prefix_caching, speculative_decoding
+        boolean checks)
+  31e — tests: engine_capabilities test per knob; offline request-body
+        extension test; live gated on running engine
+
+Out of scope (separate tickets):
+  - Continuous-batching visibility (it's an internal scheduler flag,
+    not a user knob)
+  - Multi-LoRA hot-swap (vLLM-specific, different concern)
+RESEARCH 2026-08-13 (llm-advisor, live-verified): speculative_decoding is restart-only on ALL three engines (vLLM --speculative-config, SGLang --speculative-*, llama.cpp --spec-draft-*) — NOT a per-request knob; dropped from the per-request surface, documented as server-launch concern. Continuous batching already out of scope. Per-request surface = prefix-cache isolation/reuse only: vLLM cache_salt; SGLang cache_salt/extra_key/priority/return_cached_tokens_details; llama.cpp cache_prompt/n_cache_reuse/id_slot. 31c corrected: knobs serialize as TOP-LEVEL request-body fields via value object (ADR 0004 forbids extra_body side-channel). llama.cpp old --draft-* flags removed (use --spec-draft-*). Implementation in progress: Langertha::Runtime::Knobs + Role::RuntimeKnobs + OpenAICompatible seam + capabilities prefix_caching + Response cached_tokens.
+IMPLEMENTED 2026-08-13: value object Langertha::Runtime::Knobs + Role::RuntimeKnobs + OpenAICompatible seam + capabilities prefix_caching + Response.cached_tokens + chat_f controls routing. Committed bb782c1. 56 new tests green; full suite 77 files/2353 tests (only pre-existing t/64/t/66 Net::Async::MCP failures, karr #60). Follow-ups: #61 (streaming cached_tokens).
