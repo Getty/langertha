@@ -1,0 +1,18 @@
+---
+claimed_at: 2026-08-13T21:27:12Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T21:27:12Z
+created: 2026-08-13T18:29:03Z
+id: 61
+priority: low
+started: 2026-08-13T21:21:21Z
+status: done
+tags:
+- follow-up
+- reconciliation
+title: 'Streaming path: cached_tokens not surfaced on Stream::Chunk (karr #31 follow-up)'
+updated: 2026-08-13T21:27:12Z
+---
+
+karr #31 delivered Response.cached_tokens populated in OpenAICompatible::chat_response (non-streaming). The streaming path (parse_stream_chunk) does not surface usage.prompt_tokens_details.cached_tokens on Langertha::Stream::Chunk, so a streamed response aggregated via Role::Chat::aggregate_tool_calls / the stream iterator will not populate Response.cached_tokens even when the server reports it (SGLang return_cached_tokens_details, llama.cpp). Fix: surface cached_tokens on Stream::Chunk and aggregate it into the final Response. Low priority — streaming users of the knob lose only the read-back, not the knob itself.
