@@ -172,7 +172,7 @@ if ($ENV{TEST_LANGERTHA_CEREBRAS_API_KEY}) {
 # --- OpenRouter (use :free model) ---
 if ($ENV{TEST_LANGERTHA_OPENROUTER_API_KEY}) {
   require Langertha::Engine::OpenRouter;
-  my $model = $ENV{TEST_LANGERTHA_OPENROUTER_MODEL} || 'meta-llama/llama-3.3-70b-instruct:free';
+  my $model = $ENV{TEST_LANGERTHA_OPENROUTER_MODEL} || 'google/gemma-4-26b-a4b-it:free';
   test_chat("OpenRouter/$model", Langertha::Engine::OpenRouter->new(
     api_key => $ENV{TEST_LANGERTHA_OPENROUTER_API_KEY},
     model => $model,
