@@ -1,0 +1,55 @@
+---
+claimed_at: 2026-08-13T03:52:52Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T03:52:52Z
+created: 2026-08-12T21:44:44Z
+id: 42
+priority: high
+started: 2026-08-13T03:44:07Z
+status: done
+tags:
+- streaming
+- chat
+- api
+title: 'chat_stream_realtime_f: Generation-Parameter im Streaming durchreichen'
+updated: 2026-08-13T03:52:52Z
+---
+
+## Problem
+
+`simple_chat_stream_realtime_f` (lib/Langertha/Role/Chat.pm:530) nimmt nur
+`($chunk_callback, @messages)` und ruft
+
+    $self->chat_stream_request($self->chat_messages(@messages));
+
+ohne %opts. Auf dem Streaming-Pfad gibt es damit kein Pendant zu `chat_f(%opts)`:
+tools, tool_choice, response_format, temperature, max_tokens erreichen den
+Request nie. Streaming und Nicht-Streaming verhalten sich unterschiedlich.
+
+## Die Schicht darunter ist schon bereit
+
+`chat_stream_request($messages, %extra)` nimmt bereits %extra entgegen:
+  - lib/Langertha/Role/OpenAICompatible.pm:394
+  - lib/Langertha/Engine/AnthropicBase.pm:293 (ruft sogar _normalize_tool_params darauf)
+
+Es fehlt nur die Future-Ebene darueber.
+
+## Vorschlag
+
+`async sub chat_stream_realtime_f(%opts)` analog zu `chat_f`: messages aus
+%opts ziehen, Rest an `chat_stream_request` weiterreichen.
+`simple_chat_stream_realtime_f` wird ein duenner Wrapper darauf, damit
+bestehende Aufrufer unveraendert laufen.
+
+Offene Frage: soll der forced-tool-Fallback aus `chat_f` (ToolChoice -> 
+response_format Rewrite bei Engines ohne tool_choice_named, Chat.pm:392ff)
+auf dem Streaming-Pfad ebenfalls greifen? Dort ist die Synthese eines
+tool_calls-Eintrags aus dem akkumulierten Text schwieriger.
+
+## Konsument
+
+Langertha::Knarr routet Streaming ueber `simple_chat_stream_realtime_f` und
+verliert dadurch alle Generation-Parameter -- ein Proxy-Client bekommt mit
+stream:true anderes Verhalten als ohne. Das Knarr-seitige Ticket haengt an
+diesem hier.
