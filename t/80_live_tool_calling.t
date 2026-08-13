@@ -153,7 +153,7 @@ async sub run_tests {
     eval {
       await test_engine('Groq', Langertha::Engine::Groq->new(
         api_key => $ENV{TEST_LANGERTHA_GROQ_API_KEY},
-        model => 'moonshotai/kimi-k2-instruct', mcp_servers => [$mcp],
+        model => 'llama-3.3-70b-versatile', mcp_servers => [$mcp],
       ));
     };
     diag "Groq error: $@" if $@;
@@ -227,7 +227,11 @@ async sub run_tests {
   # --- OpenRouter ---
   if ($ENV{TEST_LANGERTHA_OPENROUTER_API_KEY}) {
     require Langertha::Engine::OpenRouter;
-    my $or_model = $ENV{TEST_LANGERTHA_OPENROUTER_MODEL} || 'meta-llama/llama-3.3-70b-instruct:free';
+    # meta-llama/llama-3.3-70b-instruct:free was retired (API: "unavailable for
+    # free; use meta-llama/llama-3.3-70b-instruct"). gemma-4-26b-a4b-it:free is
+    # a live free tier with tool calling (verified 2026-08-13); a couple of
+    # other :free ids also pass but are slower / more contended.
+    my $or_model = $ENV{TEST_LANGERTHA_OPENROUTER_MODEL} || 'google/gemma-4-26b-a4b-it:free';
     eval {
       await test_engine("OpenRouter/$or_model", Langertha::Engine::OpenRouter->new(
         api_key => $ENV{TEST_LANGERTHA_OPENROUTER_API_KEY},
@@ -307,11 +311,15 @@ async sub run_tests {
   # --- AKI.IO (via OpenAI-compatible API, HermesTools) ---
   if ($ENV{TEST_LANGERTHA_AKI_API_KEY}) {
     require Langertha::Engine::AKIOpenAI;
-    my $aki_model = $ENV{TEST_LANGERTHA_AKI_OPENAI_MODEL} || 'qwen3-chat';
+    # qwen3-chat is retired (500 even with a larger response_size); the current
+    # Qwen chat model is qwen3.6-chat-35b. Qwen models spend tokens thinking
+    # first, so an explicit response_size (max_tokens) is required or the call
+    # dies with "Response finished before thinking was completed!".
+    my $aki_model = $ENV{TEST_LANGERTHA_AKI_OPENAI_MODEL} || 'qwen3.6-chat-35b';
     eval {
       await test_engine_secret("AKIOpenAI/$aki_model", Langertha::Engine::AKIOpenAI->new(
         api_key => $ENV{TEST_LANGERTHA_AKI_API_KEY},
-        model => $aki_model, mcp_servers => [$mcp],
+        model => $aki_model, response_size => 1024, mcp_servers => [$mcp],
       ));
     };
     diag "AKIOpenAI/$aki_model error: $@" if $@;
@@ -320,7 +328,11 @@ async sub run_tests {
   # --- AKI.IO (native API, HermesTools) ---
   if ($ENV{TEST_LANGERTHA_AKI_API_KEY}) {
     require Langertha::Engine::AKI;
-    my $aki_model = $ENV{TEST_LANGERTHA_AKI_NATIVE_MODEL} || 'qwen3_chat';
+    # qwen3_chat does not exist in GET /api/endpoints; kimi_k2 is the strongest
+    # tool-calling endpoint in the live catalog (verified 2026-08-13). The
+    # native wire (key + chat_context + wait_for_result) is unchanged — a raw
+    # messages/max_tokens-shaped POST is what the API rejects.
+    my $aki_model = $ENV{TEST_LANGERTHA_AKI_NATIVE_MODEL} || 'kimi_k2';
     eval {
       await test_engine_secret("AKI-native/$aki_model", Langertha::Engine::AKI->new(
         api_key => $ENV{TEST_LANGERTHA_AKI_API_KEY},
