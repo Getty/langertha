@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - OpenAI gpt-5.x models now get max_completion_tokens instead of
+      max_tokens for response_size and the per-request max_tokens control
+      (karr #55). The gpt-5 line dropped max_tokens entirely — gpt-5.1
+      and gpt-5.6-terra reject it with HTTP 400 ("Use
+      'max_completion_tokens' instead") — while gpt-4.x / gpt-4o still
+      accept it. Role::OpenAICompatible's completion-length body key is
+      now engine-overridable via _max_tokens_key (default 'max_tokens');
+      Engine::OpenAI overrides it for the gpt-5* family by anchored
+      prefix, so gpt-5, gpt-5.1, gpt-5.6-* all hit the new key and
+      unknown future ids keep the safe default. Verified live: the
+      reasoning_effort live test against gpt-5.x now passes.
+
     - Langertha::Engine::Hetzner now defaults to
       https://inference.hetzner.com/api/v1 instead of the dead
       https://inference.hetzner.com/v1 (karr #39). The old path answered
