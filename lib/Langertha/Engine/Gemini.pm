@@ -353,6 +353,9 @@ sub chat_stream_request {
     if ($message->{role} eq 'system') {
       $system_instruction .= "\n\n" if $system_instruction;
       $system_instruction .= $message->{content};
+    } elsif ($message->{parts}) {
+      # Already in Gemini format (e.g. from format_tool_results)
+      push @gemini_contents, $message;
     } else {
       my $role = $message->{role} eq 'assistant' ? 'model' : $message->{role};
       push @gemini_contents, {
@@ -393,7 +396,7 @@ sub chat_stream_request {
     $generation_config{temperature} = $self->temperature;
   }
 
-  if ( $self->has_reasoning_effort ) {
+  if ( $self->has_reasoning_effort || $self->has_thinking_budget ) {
     %generation_config = ( %generation_config, $self->reasoning_kwargs );
   }
 

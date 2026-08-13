@@ -11,7 +11,7 @@ use Langertha::Engine::Gemini;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(40);
+plan(44);
 
 my $gemini = Langertha::Engine::Gemini->new(
   api_key => 'test_api_key_123',
@@ -143,6 +143,35 @@ my $gemini_25_none = Langertha::Engine::Gemini->new(
 my $g25n = $json->decode($gemini_25_none->chat('hi')->content);
 ok(!exists $g25n->{generationConfig}{thinkingConfig},
   'gemini-2.5-pro omits thinkingConfig when thinking_budget unset');
+
+# --- thinking_budget survives in the streaming request (karr #53) ---
+# chat_stream_request used to gate on has_reasoning_effort alone, silently
+# dropping a thinking_budget-only engine's budget on the wire.
+my $gemini_25_stream = Langertha::Engine::Gemini->new(
+  api_key => 'k', model => 'gemini-2.5-pro', thinking_budget => 2048,
+);
+my $g25s = $json->decode($gemini_25_stream->chat_stream('hi')->content);
+is($g25s->{generationConfig}{thinkingConfig}{thinkingBudget}, 2048,
+  'gemini-2.5-pro streaming emits integer thinkingBudget');
+ok(!exists $g25s->{generationConfig}{thinkingConfig}{thinkingLevel},
+  'gemini-2.5-pro streaming does NOT emit thinkingLevel');
+
+# --- already-Gemini-shaped messages pass through (karr #53) ---
+# chat_stream_request lacked the elsif ($message->{parts}) branch that
+# chat_request has, so tool-result messages were re-wrapped as text.
+my $gemini_parts = Langertha::Engine::Gemini->new(
+  api_key => 'k', model => 'gemini-2.0-flash',
+);
+my $parts_msg = {
+  role => 'user',
+  parts => [{ text => 'already shaped' }],
+};
+my $parts_chat = $json->decode($gemini_parts->chat($parts_msg)->content);
+my $parts_stream = $json->decode($gemini_parts->chat_stream($parts_msg)->content);
+is_deeply($parts_chat->{contents}, [ $parts_msg ],
+  'chat passes through already-Gemini-shaped messages');
+is_deeply($parts_stream->{contents}, [ $parts_msg ],
+  'streaming passes through already-Gemini-shaped messages');
 
 # --- fail-loud wire-truth: exactly one native control per generation ---
 
