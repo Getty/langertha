@@ -2,6 +2,66 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Response->usage is now coerced to a Langertha::Usage object in
+      BUILDARGS, symmetric to tool_calls (karr #43). Engines keep passing
+      the raw provider usage HashRef; the constructor upgrades it via
+      Usage->from_hash, so the normalized accessors (input_tokens /
+      output_tokens / total_tokens) and the to_openai_format /
+      to_anthropic_format / to_ollama_format serializers are reachable
+      from every real engine response. The three convenience readers on
+      Response (prompt_tokens / completion_tokens / total_tokens) now
+      read the object's normalized attributes instead of hash keys.
+
+      Backward compatibility is preserved via a %{} overload on Usage
+      backed by a Hash::Util::FieldHash: a naive overload is impossible
+      on a Moose class (it hijacks the $self->{attr} derefs Moose's
+      generated accessors use internally — verified: infinite recursion /
+      SEGV), so the accessors and the overload both route through the
+      field hash. When the object was built from a provider hash, the
+      overload returns that hash verbatim (stored in the new raw
+      attribute), so $response->usage->{prompt_tokens} and provider
+      extras (Anthropic cache tokens, OpenAI token details) keep working
+      exactly as before; exists checks behave identically.
+
+    - Engines now expose their API-key environment variable name via a
+      class method api_key_env, analogous to default_model (karr #44).
+      Derived by default as LANGERTHA_<UC(NAME)>_API_KEY from the class
+      name; engines that share a vendor key override it (AKIOpenAI ->
+      LANGERTHA_AKI_API_KEY, MiniMaxAnthropic -> LANGERTHA_MINIMAX_API_KEY,
+      MoonshotAnthropic -> LANGERTHA_MOONSHOT_API_KEY, OpenAIResponses ->
+      LANGERTHA_OPENAI_API_KEY) and engines that need no credentials at
+      all (Ollama, vLLM, SGLang, LlamaCpp, LMStudio family, Whisper)
+      return undef. Consumers that discover engines dynamically (e.g.
+      Langertha::Knarr) no longer need a hand-maintained table that
+      drifts.
+
+    - Tool, Cost and UsageRecord gained TO_JSON as plain delegators to
+      their to_hash, completing the #47 convention (karr #51). Each
+      class's to_hash was checked to be the complete and safe
+      representation first — unlike RateLimit, none of them carries a
+      raw provider payload, so the plain delegator is correct. ToolCall
+      now always carries synthetic => 0/1 in to_hash (and therefore
+      TO_JSON): a serialized trace can tell a synthesized call (forced-
+      tool fallback in chat_f, response_format rewrite in AnthropicBase)
+      apart from a native one — without it a synthetic call looks exactly
+      like a call the model decided to make. No existing to_hash caller
+      asserts the full shape, so nothing breaks.
+
+    - New Langertha::Runtime::Metrics::OTLP serializer plus
+      export_otlp_f / export_otlp on Role::Runtime::MetricsPoll
+      (karr #41). Parsed Prometheus records ({ name, type, value, labels })
+      serialize into an OTLP/HTTP JSON metrics payload (resourceMetrics /
+      scopeMetrics / metric) and POST to any OTLP metrics receiver —
+      OpenTelemetry Collector, Prometheus OTLP receiver, Grafana. Type
+      mapping: gauge/untyped -> gauge (asDouble), counter -> monotonic
+      cumulative sum, histogram _bucket/_sum/_count series re-grouped
+      into one histogram (buckets sorted by le, +Inf last, explicitBounds
+      as numeric doubles), summary series into one summary with sorted
+      quantileValues. Langfuse deliberately NOT targeted: it does not
+      ingest OTLP metrics (its /api/public/otel endpoint is traces-only;
+      /api/public/metrics is a read-only query API) — documented in the
+      POD with sources, so the exporter points at a real metrics backend.
+
     - Fixed: a per-request response_format passed to chat_f was ignored
       by Anthropic, Ollama and Gemini (karr #45, #48). All three read
       only the engine attribute and never looked at the %extra the call
