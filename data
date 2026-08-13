@@ -1,0 +1,93 @@
+---
+claimed_at: 2026-08-13T15:49:35Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T15:49:35Z
+created: 2026-08-11T19:58:34Z
+id: 36
+priority: high
+started: 2026-08-13T15:49:35Z
+status: done
+tags:
+- live-verify
+- provider-drift
+- release-blocker
+title: 'Live-verify provider updates merged in 133ea26 (karr #20, #23, #24, #25, #26)'
+updated: 2026-08-13T15:49:35Z
+---
+
+STATUS 2026-08-11: 09:30 — retargeted from pre-close gate to POST-MERGE
+post-release drift detector. Underlying tickets #20, #23, #24, #25, #26
+all moved to done at maintainer's explicit instruction. Live verification
+deferred from before-close to before-release (the standard
+provider-reality-check cycle).
+
+RUNBOOK — live-verify the merged 133ea26 provider updates before dzil release.
+Set only the relevant env var per invocation; Test2::Bundle::More skips
+all provider-live files when no TEST_LANGERTHA_*_API_KEY is exported.
+
+```
+# Set only one key at a time (no cross-provider leakage in logs)
+export TEST_LANGERTHA_OPENAI_API_KEY=...
+export TEST_LANGERTHA_ANTHROPIC_API_KEY=...
+export TEST_LANGERTHA_MOONSHOT_API_KEY=...
+export TEST_LANGERTHA_DEEPSEEK_API_KEY=...
+export TEST_LANGERTHA_GEMINI_API_KEY=...
+
+# Run only the live tests; non-live subtests skip cleanly when keys are present
+prove -l t/83_live_chat.t
+prove -l t/80_live_tool_calling.t
+prove -l t/82_live_raider.t
+prove -l t/86_live_reasoning_effort.t
+```
+
+PER-PROVIDER checklist:
+
+OPENAI / GPT-5.6-Terra (karr #23)
+  - t/83_live_chat.t — gpt-5.6-terra responds 200, normal content
+  - t/80_live_tool_calling.t — Tools work on gpt-5.6-terra
+  - t/86_live_reasoning_effort.t — reasoning_effort=low|medium|high emitted
+    in openai wire format, server respects it
+
+ANTHROPIC / Sonnet 5 (karr #23)
+  - t/83_live_chat.t — claude-sonnet-5 responds 200
+  - t/82_live_raider.t — Raider loop holds up on Sonnet 5
+  - t/86_live_reasoning_effort.t — effort=low|medium|high in output_config,
+    thinking:{type:adaptive} emitted on Sonnet 5
+
+MOONSHOT / kimi-k3 (karr #24)
+  - t/83_live_chat.t — kimi-k3 responds 200
+  - t/80_live_tool_calling.t — Tools work on kimi-k3 via OpenAI endpoint
+  - t/82_live_raider.t — Raider loop holds up on kimi-k3
+  - SKIP: reasoning_effort = none on kimi-k3 via OpenAI endpoint
+    (engine doesn't emit it; document-only). The Anthropic shim
+    (MoonshotAnthropic) — kimi-k3 supports reasoning_effort via the
+    shim's native path.
+
+DEEPSEEK / v4-flash (karr #25)
+  - t/83_live_chat.t — deepseek-v4-flash responds 200
+  - t/86_live_reasoning_effort.t — v4-flash accepts low|high|max (low
+    dropped on v4-pro and unknown ids — flag if server actually returns
+    400 here; current model is v4-flash)
+  - FLAG for live re-verify: V3.2 sniff (Reasoning kwargs V3 dispatch
+    for legacy deepseek-v3.2 reasoning=auto) — never had a wire call
+    in this codebase yet
+
+GEMINI 2.5 (karr #20)
+  - t/86_live_reasoning_effort.t — thinking_budget=2048 on gemini-2.5-pro
+    emits thinkingConfig.thinkingBudget=2048 (no thinkingLevel)
+  - t/46_gemini_requests.t — bound + budget-only assertions verified
+    offline; live should confirm wire shape
+
+GEMINI 3 / gemini-3-flash-preview (karr #26)
+  - t/83_live_chat.t — gemini-3-flash-preview responds 200
+  - t/86_live_reasoning_effort.t — effort=minimal|low|medium|high maps
+    to thinkingLevel on gemini-3 family
+  - t/46_gemini_requests.t — vocabulary mapping verified offline;
+    live confirms server accepts thinkingLevel=minimal
+
+RELEASE-READY criterion: every green check above + karr #37 (Changes
+entry for 133ea26) closed + no ProviderReturns XXX drift in upstream
+docs since 2026-08-10.
+Live-Ergebnis 2026-08-13 (echte Keys): t/80 10/10 PASS, t/82 45/45 PASS. Aber t/80 verschluckt 4 Engine-Fehler (eval+diag statt Fail) — alle 4 als Test-Drift root-caused per Raw-Probe, KEINE Engine-Wire-Bugs: (1) Groq nutzt moonshotai/kimi-k2-instruct, existiert nicht mehr (model_not_found, kein kimi in Groq-Models-Liste); (2) OpenRouter meta-llama/llama-3.3-70b-instruct:free -> "unavailable for free", Ersatz-Slug ohne :free; (3) AKIOpenAI 500 "Response finished before thinking was completed" - Qwen3-Thinking braucht groesseres max_tokens als Test-Setup liefert; (4) AKI-native nutzt qwen3_chat, existiert nicht (Endpoints: qwen3_6 u.a.), nativer Call erwartet zudem anderes Request-Schema (400 invalid params bei key-in-body Probe). Empfehlung: t/80-Modell-IDs aktualisieren + AKI-native-Auth-Schema gegen AKI-Doku pruefen.
+FAZIT: Live-Verify 2026-08-13 abgeschlossen. t/82 (Raider, 4 Engines) und t/88 (Hetzner) gruen; t/80 10/10 aber mit 4 verschluckten Test-Drift-Fehlern (-> #56); t/86 bis auf OpenAI-Subtest gruen (OpenAI-Bug -> #55, gemini-2.5-pro retired -> Testfix). Gemini-3.5/DeepSeek-Flakiness (leere Response) nicht reproduziert. Verbleibende Engine-Arbeit in #55 (max_completion_tokens) und #56 (t/80-Modelle), beide bei langertha-worker in Arbeit.
