@@ -7,6 +7,7 @@ use Time::HiRes qw( gettimeofday tv_interval );
 use Carp qw( croak );
 use Module::Runtime qw( use_module );
 use Scalar::Util qw( blessed );
+use JSON::MaybeXS qw( JSON );
 use Langertha::Raider::Result;
 use Langertha::RunContext;
 
@@ -1785,7 +1786,7 @@ async sub _run_raid_loop {
         my ( $error ) = @_;
         Future->done({
           content => [{ type => 'text', text => "Error calling tool '$name': $error" }],
-          isError => JSON::MaybeXS->true,
+          isError => JSON->true,
         });
       });
 
@@ -1881,7 +1882,7 @@ async sub respond_f {
       my ( $error ) = @_;
       Future->done({
         content => [{ type => 'text', text => "Error calling tool '$name': $error" }],
-        isError => JSON::MaybeXS->true,
+        isError => JSON->true,
       });
     });
 

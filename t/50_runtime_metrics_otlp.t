@@ -62,7 +62,7 @@ subtest 'gauge and counter map to OTLP gauge/sum' => sub {
   ok(exists $sum->{sum}, 'counter record maps to OTLP sum');
   is($sum->{sum}{aggregationTemporality}, 'AGGREGATION_TEMPORALITY_CUMULATIVE',
     'counter is cumulative');
-  is($sum->{sum}{isMonotonic}, JSON::MaybeXS->true, 'counter is monotonic');
+  is($sum->{sum}{isMonotonic}, JSON->true, 'counter is monotonic');
   is($sum->{sum}{dataPoints}[0]{asDouble}, 18234, 'counter value as asDouble');
 };
 

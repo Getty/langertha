@@ -4,7 +4,7 @@ our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 use Time::HiRes qw( time );
-use JSON::MaybeXS ();
+use JSON::MaybeXS qw( JSON );
 
 =head1 SYNOPSIS
 
@@ -207,7 +207,7 @@ sub _standalone_metric {
       sum  => {
         dataPoints              => [ $dp ],
         aggregationTemporality  => 'AGGREGATION_TEMPORALITY_CUMULATIVE',
-        isMonotonic             => JSON::MaybeXS->true,
+        isMonotonic             => JSON->true,
       },
     };
   }

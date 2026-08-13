@@ -340,7 +340,7 @@ sub simple_chat_with_tools {
         my ( $error ) = @_;
         Future->done({
           content => [{ type => 'text', text => "Error calling tool '$name': $error" }],
-          isError => JSON::MaybeXS->true,
+          isError => JSON->true,
         });
       })->get;
 
@@ -420,7 +420,7 @@ async sub simple_chat_with_tools_f {
       my $result = await $mcp->call_tool($name, $input)->else(sub {
         Future->done({
           content => [{ type => 'text', text => "Error calling tool '$name': $_[0]" }],
-          isError => JSON::MaybeXS->true,
+          isError => JSON->true,
         });
       });
 

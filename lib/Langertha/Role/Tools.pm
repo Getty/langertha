@@ -421,7 +421,7 @@ async sub chat_with_tools_f {
         my ( $error ) = @_;
         Future->done({
           content => [{ type => 'text', text => "Error calling tool '$name': $error" }],
-          isError => JSON::MaybeXS->true,
+          isError => JSON->true,
         });
       });
 

@@ -4,7 +4,7 @@ our $VERSION = '0.503';
 use Moose::Role;
 use Time::HiRes qw( gettimeofday tv_interval );
 use Carp qw( croak );
-use JSON::MaybeXS ();
+use JSON::MaybeXS qw( JSON );
 use MIME::Base64 qw( encode_base64 );
 
 =head1 SYNOPSIS
@@ -216,7 +216,7 @@ sub langfuse_trace {
       $opts{release}     ? ( release     => $opts{release} )     : (),
       $opts{version}     ? ( version     => $opts{version} )     : (),
       defined $opts{public}
-        ? ( public => $opts{public} ? JSON::MaybeXS->true : JSON::MaybeXS->false ) : (),
+        ? ( public => $opts{public} ? JSON->true : JSON->false ) : (),
       $opts{environment} ? ( environment => $opts{environment} ) : (),
     },
   };
@@ -373,7 +373,7 @@ sub langfuse_update_trace {
       $opts{release}     ? ( release     => $opts{release} )     : (),
       $opts{version}     ? ( version     => $opts{version} )     : (),
       defined $opts{public}
-        ? ( public => $opts{public} ? JSON::MaybeXS->true : JSON::MaybeXS->false ) : (),
+        ? ( public => $opts{public} ? JSON->true : JSON->false ) : (),
       $opts{environment} ? ( environment => $opts{environment} ) : (),
     },
   };
