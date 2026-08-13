@@ -473,6 +473,9 @@ sub parse_stream_chunk {
     defined $finish_reason ? (finish_reason => $finish_reason) : (),
     $data->{model} ? (model => $data->{model}) : (),
     $data->{usage} ? (usage => $data->{usage}) : (),
+    ( $data->{usage} && $data->{usage}{prompt_tokens_details}
+      && defined $data->{usage}{prompt_tokens_details}{cached_tokens}
+      ? ( cached_tokens => $data->{usage}{prompt_tokens_details}{cached_tokens} ) : () ),
   );
 }
 
@@ -482,7 +485,9 @@ sub parse_stream_chunk {
 
 Parses a single SSE data payload from an OpenAI-format stream. Returns
 a L<Langertha::Stream::Chunk> with C<content>, C<is_final>, C<finish_reason>,
-C<model>, and C<usage>, or C<undef> if the chunk has no content.
+C<model>, C<usage>, and C<cached_tokens> (lifted from
+C<usage.prompt_tokens_details.cached_tokens> when present), or C<undef> if
+the chunk has no content.
 
 =cut
 

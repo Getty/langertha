@@ -2,6 +2,20 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Streaming path now surfaces cached_tokens (karr #61). karr #31 shipped
+      Langertha::Response->cached_tokens populated only on the non-streaming
+      OpenAI-compatible path; the streaming path carries usage on the final
+      chunk but never lifted usage.prompt_tokens_details.cached_tokens, so a
+      streamed response lost the prefix-cache read-back even when the server
+      reported it (SGLang return_cached_tokens_details, llama.cpp). Fix:
+      Langertha::Stream::Chunk gains a cached_tokens attribute (predicate
+      has_cached_tokens), Role::OpenAICompatible::parse_stream_chunk lifts it
+      from the usage block exactly like chat_response, and
+      Langertha::Response::BUILDARGS now lifts cached_tokens from the usage
+      hash so any Response assembled from a streamed final chunk's usage
+      carries it (explicit cached_tokens still wins). The knob itself was
+      never affected — only the read-back.
+
     - MCP tool calling speaks the current protocol revision (Rev-2026-07-28)
       via the new Langertha::MCP::Client, a temporary subclass of
       Net::Async::MCP (karr #60). Net::Async::MCP 0.003 hardcodes the obsolete

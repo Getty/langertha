@@ -21,6 +21,7 @@ use Langertha::Engine::SGLang;
 use Langertha::Engine::LlamaCpp;
 use Langertha::Engine::OpenAI;
 use Langertha::Response;
+use Langertha::Stream::Chunk;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
@@ -242,6 +243,84 @@ sub wire {
 
   my $resp2 = $openai->chat_response($http2);
   ok( !$resp2->has_cached_tokens, 'no cached_tokens when detail block absent' );
+}
+
+# --- streaming: parse_stream_chunk surfaces cached_tokens (karr #61) ------
+# The non-streaming lift (above) was the only one karr #31 shipped; the
+# streaming path carries usage on the final chunk but must surface
+# cached_tokens on the chunk itself too, so stream consumers reading the
+# final chunk get the prefix-cache read-back.
+{
+  my $openai = Langertha::Engine::OpenAI->new( api_key => 'x', model => 'gpt-4o-mini' );
+
+  my $chunk = $openai->parse_stream_chunk({
+    choices => [{ delta => { content => '' }, finish_reason => 'stop' }],
+    model   => 'gpt-4o-mini',
+    usage   => {
+      prompt_tokens     => 100,
+      completion_tokens => 50,
+      total_tokens      => 150,
+      prompt_tokens_details => { cached_tokens => 42 },
+    },
+  });
+  isa_ok( $chunk, ['Langertha::Stream::Chunk'], 'final SSE payload parsed into a chunk' );
+  ok( $chunk->has_cached_tokens, 'stream chunk surfaces cached_tokens' );
+  is( $chunk->cached_tokens, 42,
+    'cached_tokens read from usage.prompt_tokens_details.cached_tokens' );
+  ok( $chunk->has_usage, 'usage still surfaced on the final chunk' );
+
+  # No detail block -> no cached_tokens, predicate false.
+  my $plain = $openai->parse_stream_chunk({
+    choices => [{ delta => { content => 'hi' }, finish_reason => 'stop' }],
+    usage   => { prompt_tokens => 10, completion_tokens => 5, total_tokens => 15 },
+  });
+  ok( !$plain->has_cached_tokens, 'no cached_tokens when detail block absent' );
+  is( $plain->cached_tokens, undef, 'cached_tokens undef when detail block absent' );
+
+  # cached_tokens => 0 is a real count — the lift must be defined-checked.
+  my $zero = $openai->parse_stream_chunk({
+    choices => [{ delta => { content => 'hi' }, finish_reason => 'stop' }],
+    usage   => { prompt_tokens => 10, completion_tokens => 5, total_tokens => 15,
+                 prompt_tokens_details => { cached_tokens => 0 } },
+  });
+  ok( $zero->has_cached_tokens, 'cached_tokens => 0 surfaces (defined check, not truthy)' );
+  is( $zero->cached_tokens, 0, 'cached_tokens value 0' );
+}
+
+# --- Response assembled from a streamed final chunk lifts cached_tokens ---
+# The Chat role's streaming methods aggregate into chunks (no final Response
+# object); consumers build one from the final chunk and forward its usage.
+# That forwarding must carry cached_tokens via Response::BUILDARGS (karr #61).
+{
+  my $resp = Langertha::Response->new(
+    content => 'hi',
+    usage   => {
+      prompt_tokens     => 100,
+      completion_tokens => 50,
+      total_tokens      => 150,
+      prompt_tokens_details => { cached_tokens => 7 },
+    },
+  );
+  ok( $resp->has_cached_tokens,
+    'Response built from streamed final-chunk usage carries cached_tokens' );
+  is( $resp->cached_tokens, 7, 'cached_tokens lifted from usage in BUILDARGS' );
+
+  # An explicit cached_tokens parameter always wins over the usage lift.
+  my $explicit = Langertha::Response->new(
+    content       => 'hi',
+    cached_tokens => 9,
+    usage         => { prompt_tokens => 10, completion_tokens => 5, total_tokens => 15,
+                       prompt_tokens_details => { cached_tokens => 7 } },
+  );
+  is( $explicit->cached_tokens, 9, 'explicit cached_tokens param wins over usage lift' );
+
+  # No detail block -> no cached_tokens, and the caller's usage hash is
+  # not polluted by autovivification.
+  my $usage_hash = { prompt_tokens => 10, completion_tokens => 5, total_tokens => 15 };
+  my $plain = Langertha::Response->new( content => 'hi', usage => $usage_hash );
+  ok( !$plain->has_cached_tokens, 'Response without detail block has no cached_tokens' );
+  ok( !exists $usage_hash->{prompt_tokens_details},
+    'BUILDARGS lift does not autovivify prompt_tokens_details into the usage hash' );
 }
 
 done_testing;

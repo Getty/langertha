@@ -303,6 +303,22 @@ around BUILDARGS => sub {
   my ( $orig, $class, @args ) = @_;
   my $params = $class->$orig(@args);
 
+  # Lift cached_tokens from the usage block (karr #61). chat_response used
+  # to be the only lift site; doing it here means ANY Response assembled
+  # from provider usage — including one built from a streamed final chunk's
+  # usage hash — surfaces the prefix-cache read-back. Only when defined
+  # (cached_tokens => 0 is a real count). An explicit cached_tokens
+  # parameter always wins. exists-guards keep the caller's usage hash
+  # free of autovivification.
+  if ( !exists $params->{cached_tokens}
+       && ref( $params->{usage} ) eq 'HASH'
+       && exists $params->{usage}{prompt_tokens_details}
+       && ref( $params->{usage}{prompt_tokens_details} ) eq 'HASH'
+       && exists $params->{usage}{prompt_tokens_details}{cached_tokens}
+       && defined $params->{usage}{prompt_tokens_details}{cached_tokens} ) {
+    $params->{cached_tokens} = $params->{usage}{prompt_tokens_details}{cached_tokens};
+  }
+
   # Accept legacy ArrayRef[HashRef] input by upgrading to ToolCall objects.
   if ( ref( $params->{tool_calls} ) eq 'ARRAY' ) {
     $params->{tool_calls} = [

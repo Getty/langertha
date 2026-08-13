@@ -98,6 +98,12 @@ has usage => (
   predicate => 'has_usage',
 );
 
+has cached_tokens => (
+  is => 'ro',
+  isa => 'Maybe[Int]',
+  predicate => 'has_cached_tokens',
+);
+
 has tool_calls => (
   is        => 'ro',
   isa       => 'Maybe[ArrayRef[Langertha::ToolCall]]',
@@ -118,6 +124,17 @@ chunks have no tool calls — use C<has_tool_calls> to check.
 
 Token usage counts as a HashRef, if provided by the engine on the final
 chunk. Keys vary by provider. Use C<has_usage> to check availability.
+
+=cut
+
+=attr cached_tokens
+
+Number of prompt tokens served from the prefix cache, if reported by the
+provider on the final chunk. Populated from
+C<usage.prompt_tokens_details.cached_tokens> on the OpenAI-compatible wire
+(SGLang with C<return_cached_tokens_details> enabled, and other servers
+that emit the detail block). C<undef> when the provider does not report
+it. Use C<has_cached_tokens> to check availability.
 
 =cut
 
