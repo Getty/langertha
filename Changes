@@ -2,6 +2,45 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - chat_stream_realtime_f(%opts) is the new streaming counterpart to
+      chat_f (karr #42). simple_chat_stream_realtime_f only took
+      ($chunk_callback, @messages) and called chat_stream_request without
+      %opts, so tools, tool_choice, response_format, temperature and
+      max_tokens never reached the streaming request. The new method pulls
+      messages and chunk_callback out of %opts and forwards everything
+      else to chat_stream_request (which already accepted %extra);
+      simple_chat_stream_realtime_f is now a thin wrapper, so existing
+      callers run unchanged. Role::ThinkTag's around moves to
+      chat_stream_realtime_f — the wrapper delegates, so one around covers
+      both entry points (otherwise the new method would bypass think-tag
+      filtering, and keeping both arounds would double-filter). The
+      forced-tool fallback from chat_f is deliberately not applied on the
+      streaming path; synthesizing a tool_calls entry from accumulated
+      stream text is a separate follow-up.
+
+    - Gemini chat_stream_request is aligned with chat_request (karr #53).
+      Two drift sites, both unintentional: a cachedContent refactor
+      (c8c80c4) reverted the reasoning gate to has_reasoning_effort in the
+      same hunk it touched, so a thinking_budget-only engine (gemini-2.5-*)
+      lost its budget when streaming; and the elsif branch for already
+      Gemini-shaped messages (message->{parts}, e.g. from
+      format_tool_results) was added only to chat_request. Both are now
+      aligned. The response_format drift of the same family is tracked
+      separately as karr #52.
+
+    - Response now carries a bounded TO_JSON (delegating to a new to_hash)
+      so every JSON::MaybeXS backend encodes a bare Response identically
+      with convert_blessed (karr #50). Previously Cpanel::JSON::XS fell
+      back to the string overload and emitted the content string while
+      JSON::XS and JSON::PP threw — the same application behaved
+      differently on two machines. The shape is content plus the metadata
+      fields that are present (id, model, finish_reason, usage, timing,
+      created, thinking, rate_limit, tool_calls); raw and probes are
+      deliberately excluded (raw duplicates the whole provider payload,
+      probes can hold megabytes of tensor data). The string overload is
+      unchanged. Decided after karr #43 fixed the permanent shape of the
+      class; the Cpanel behavior was never a contract.
+
     - Response->usage is now coerced to a Langertha::Usage object in
       BUILDARGS, symmetric to tool_calls (karr #43). Engines keep passing
       the raw provider usage HashRef; the constructor upgrades it via
