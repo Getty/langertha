@@ -1,0 +1,50 @@
+---
+claimed_at: 2026-08-13T03:42:57Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T03:42:57Z
+created: 2026-08-13T00:23:48Z
+id: 51
+priority: low
+started: 2026-08-13T03:22:37Z
+status: done
+tags:
+- json
+- value-objects
+- followup
+title: TO_JSON fuer Tool, Cost, UsageRecord; synthetic in ToolCall::to_hash
+updated: 2026-08-13T03:42:57Z
+---
+
+Beim Umsetzen von #47 gefunden, ausserhalb dessen Dateigrenzen gelassen.
+
+## Nachbarn mit to_hash, aber ohne TO_JSON
+
+Langertha::Tool, Langertha::Cost, Langertha::UsageRecord.
+
+Tool ist davon die sichtbarste Asymmetrie: es ist das anfrageseitige
+Gegenstueck zu ToolChoice, und ToolChoice hat seit #47 ein TO_JSON. Wer beide
+zusammen in einen Trace schreibt, bekommt fuer das eine eine Serialisierung
+und fuer das andere eine Exception.
+
+Die in #47 gesetzte Konvention ist ein duenner Delegator auf to_hash. Vor dem
+mechanischen Uebertragen aber je Klasse pruefen, ob to_hash dort wirklich die
+vollstaendige und unbedenkliche Repraesentation ist -- bei RateLimit war
+genau das nicht der Fall (raw), deshalb hat es dort ein abweichendes TO_JSON
+bekommen.
+
+## ToolCall::synthetic fehlt in to_hash
+
+Das Feld sagt aus, ob der Tool-Call vom Modell kam oder von uns synthetisiert
+wurde (forced-tool-Fallback in chat_f, response_format-Rewrite in
+AnthropicBase). Es steht nicht in to_hash und damit auch nicht im neuen
+TO_JSON.
+
+In #47 bewusst nicht ergaenzt: ein reiner Delegator darf nicht nebenbei eine
+zweite Form einfuehren. Aber "hat das Modell dieses Tool aufgerufen oder haben
+wir es untergeschoben" ist genau die Unterscheidung, die man in einem Trace
+sehen will -- sonst sieht ein synthetisierter Call aus wie ein echter.
+
+Zu entscheiden: gehoert synthetic in to_hash (und damit ueberall hin, wo
+to_hash schon benutzt wird), oder nur in die Trace-Repraesentation. Ersteres
+ist konsistenter, aendert aber eine bestehende Ausgabeform.
