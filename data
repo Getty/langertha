@@ -1,0 +1,50 @@
+---
+claimed_at: 2026-08-13T00:31:46Z
+claimed_by: main
+class: standard
+completed: 2026-08-13T00:31:46Z
+created: 2026-08-13T00:19:46Z
+id: 49
+priority: high
+started: 2026-08-13T00:22:05Z
+status: done
+tags:
+- bug
+- build
+- release
+title: 'dzil build ist kaputt: PODNAME fehlt in EngineContract.pod'
+updated: 2026-08-13T00:31:46Z
+---
+
+## Befund
+
+dzil build bricht ab:
+
+    couldn't determine document name for lib/Langertha/Runtime/Metrics/EngineContract.pod
+    Add something like this to lib/Langertha/Runtime/Metrics/EngineContract.pod:
+    # PODNAME: bobby_tables.pl at .../Pod/Weaver.pm line 143.
+
+Damit ist auch dzil release blockiert, und der in CLAUDE.md empfohlene
+dzil-test-Pfad funktioniert derzeit fuer niemanden.
+
+## Ursache
+
+EngineContract.pod ist die einzige reine .pod-Datei unter lib/ -- alles andere
+sind .pm-Dateien, bei denen Pod::Weaver den Namen aus dem package holt. Fuer
+eine .pod-Datei gibt es diese Quelle nicht, deshalb verlangt Pod::Weaver eine
+explizite PODNAME-Zeile.
+
+Eingebracht mit b99b423 (karr #29, self-hosted runtime metrics), seitdem
+unveraendert im Baum. Faellt beim normalen Arbeiten nicht auf, weil
+prove -lr t/ die Datei nicht anfasst.
+
+## Fix
+
+Eine PODNAME-Kommentarzeile am Kopf der Datei. Danach dzil build wieder
+durchlaufen lassen und pruefen, dass die .pod im gebauten Dist landet.
+
+Zu klaeren waere nebenbei, ob eine eigenstaendige .pod-Datei hier ueberhaupt
+die richtige Form ist oder ob der Inhalt besser in die zugehoerige .pm gehoert
+-- aber das ist eine Geschmacksfrage und kein Grund, den Build laenger stehen
+zu lassen.
+PODNAME- und ABSTRACT-Zeile am Kopf von EngineContract.pod ergaenzt. dzil build laeuft wieder durch und ist warnungsfrei; die .pod landet im gebauten Dist unter Langertha-0.503/lib/. Ohne die ABSTRACT-Zeile blieb nach dem PODNAME-Fix noch eine PodWeaver-Warnung stehen -- dieselbe Ursache, deshalb gleich mit erledigt. Die Frage, ob eine eigenstaendige .pod-Datei hier ueberhaupt die richtige Form ist oder der Inhalt in die zugehoerige .pm gehoert, bleibt offen und ist Geschmackssache.
