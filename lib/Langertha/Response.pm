@@ -37,38 +37,37 @@ Wraps LLM response text content together with all available metadata
 from the API response. Uses C<overload> for string context so existing
 code treating responses as plain strings continues to work.
 
-=head2 No TO_JSON — deliberate
+=head2 TO_JSON — the canonical, bounded representation
 
-C<Langertha::Response> has B<no> C<TO_JSON> method. That is on purpose; do
-not "fix" it without revisiting the reasoning below.
+C<Langertha::Response> carries a C<TO_JSON> (delegating to L</to_hash>) so
+that every L<JSON::MaybeXS> backend encodes a bare Response identically when
+C<convert_blessed> is enabled. Decided in karr #50, after karr #43 fixed the
+permanent shape of the class (L</usage> is now a L<Langertha::Usage> object
+with its own C<TO_JSON>).
 
-The nested objects a caller can be surprised by — L<Langertha::Usage>,
-L<Langertha::ToolCall> (L</tool_calls>), L<Langertha::RateLimit>
-(L</rate_limit>) — all carry C<TO_JSON>, because they turn up inside a
-structure the caller assembled from parts and never announced themselves as
-objects. A Response does announce itself: it is the named return value of
-C<simple_chat> / C<chat_f>, and the caller holds it knowingly.
+The shape is deliberately bounded: L</content> plus the metadata fields that
+are present (L</id>, L</model>, L</finish_reason>, L</usage>, L</timing>,
+L</created>, L</thinking>, L</rate_limit>, L</tool_calls>). L</raw> and
+L</probes> are B<not> included — L</raw> is the entire provider payload
+(duplicating every other field, including the echoed prompt) and L</probes>
+can hold megabytes of tensor data. A C<TO_JSON> that kept them would blow up
+every trace it touched; one that dropped them keeps the object's JSON form
+useful without silently discarding the fields a consumer is likely to want.
 
-Serializing the aggregate would mean choosing a shape, and there is no honest
-one: L</raw> is the entire provider payload (duplicating every other field,
-including the echoed prompt), L</probes> can hold megabytes of tensor data,
-and L</content> is unbounded text. A C<TO_JSON> that dropped those would
-silently discard most of the object into logs that look complete; one that
-kept them would blow up every trace it touched. Returning just L</content>
-would merely duplicate the string overload while freezing a lossy projection
-as this class's permanent JSON contract.
-
-Serialize the projection you actually want — C<< $response->content >> (or
-the string overload), C<< $response->usage >>, C<< $response->tool_calls >> —
-rather than the aggregate.
+The string overload is unchanged: C<"$response"> still returns
+L</content>, and the C<TO_JSON> does not replace it.
 
 =for stopwords Cpanel
 
-B<Caveat, and it is not this class's doing:> what an encoder with
-C<convert_blessed> does with a bare Response depends on the
-L<JSON::MaybeXS> backend. L<Cpanel::JSON::XS> falls back to the C<"">
-overload and emits the content string; L<JSON::XS> and L<JSON::PP> throw.
-Neither is a contract to rely on — encode a projection, not the Response.
+B<Backend uniformity is the point.> Before this method existed, what an
+encoder with C<convert_blessed> did with a bare Response depended on the
+L<JSON::MaybeXS> backend: L<Cpanel::JSON::XS> fell back to the C<"">
+overload and emitted the content string, while L<JSON::XS> and L<JSON::PP>
+threw. Consumers on Cpanel silently got C<{"response":"hello"}>, consumers
+on JSON::XS/JSON::PP got an exception — the same application behaved
+differently on two machines. With C<TO_JSON> all three emit the canonical
+hash. The Cpanel behavior was never a contract (it is gone now); callers
+that want the content string should stringify explicitly.
 
 =cut
 
@@ -426,6 +425,36 @@ loop. Attributes whose names appear in C<%overrides> are skipped during the
 copy so the override value is what reaches C<new>.
 
 =cut
+
+=method to_hash
+
+    my $hash = $response->to_hash;
+
+Returns the canonical, bounded HashRef representation of the response:
+C<content> plus every metadata field that is present (L</id>, L</model>,
+L</finish_reason>, L</usage>, L</timing>, L</created>, L</thinking>,
+L</rate_limit>, L</tool_calls>). L</raw> and L</probes> are deliberately
+excluded — see L</"TO_JSON — the canonical, bounded representation">.
+
+=cut
+
+sub to_hash {
+  my ($self) = @_;
+  return {
+    content => $self->content,
+    ( $self->has_id            ? ( id            => $self->id )            : () ),
+    ( $self->has_model         ? ( model         => $self->model )         : () ),
+    ( $self->has_finish_reason ? ( finish_reason => $self->finish_reason ) : () ),
+    ( $self->has_usage         ? ( usage         => $self->usage )         : () ),
+    ( $self->has_timing        ? ( timing        => $self->timing )        : () ),
+    ( $self->has_created       ? ( created       => $self->created )       : () ),
+    ( $self->has_thinking      ? ( thinking      => $self->thinking )      : () ),
+    ( $self->has_rate_limit    ? ( rate_limit    => $self->rate_limit )    : () ),
+    ( $self->has_tool_calls    ? ( tool_calls    => $self->tool_calls )    : () ),
+  };
+}
+
+sub TO_JSON { shift->to_hash }
 
 sub prompt_tokens {
   my ( $self ) = @_;

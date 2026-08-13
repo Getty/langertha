@@ -188,29 +188,82 @@ sub roundtrip { return $json->decode( $json->encode( $_[0] ) ) }
     'Usage encodes through TO_JSON' );
 }
 
-# --- Langertha::Response deliberately has NO TO_JSON ---
-# Not an oversight. raw is the entire provider payload, probes can hold
-# megabytes of tensor data, content is unbounded text — any shape chosen here
-# would silently drop most of the object into logs that look complete. Read
-# "No TO_JSON — deliberate" in Langertha::Response before adding one; a caller
-# serializes the projection it wants (content / usage / tool_calls) instead.
+# --- Langertha::Response TO_JSON: canonical, bounded shape (karr #50) ---
+# A bare Response now encodes identically on every JSON::MaybeXS backend when
+# convert_blessed is on. The shape is content + present metadata; raw and
+# probes are deliberately excluded (raw duplicates everything, probes can hold
+# megabytes of tensor data). See "TO_JSON — the canonical, bounded
+# representation" in Langertha::Response.
 {
-  ok( !Langertha::Response->can('TO_JSON'),
-    'Langertha::Response has no TO_JSON (deliberate — see its POD)' );
-
   my $response = Langertha::Response->new(
-    content => 'hello',
-    raw     => { the => 'whole provider payload' },
+    content       => 'hello',
+    model         => 'claude-sonnet-4-6',
+    id            => 'msg_1',
+    finish_reason => 'end_turn',
+    created       => 1700000000,
+    thinking      => 'let me think',
+    usage         => { input_tokens => 100, output_tokens => 50 },
+    tool_calls    => [ { name => 'ping', arguments => { host => 'example.com' }, id => 'toolu_1' } ],
+    rate_limit    => Langertha::RateLimit->new(
+      requests_remaining => 42,
+      raw                => { 'x-ratelimit-remaining-requests' => '42' },
+    ),
+    timing => { total_seconds => 1.5 },
+    raw    => { the => 'whole provider payload' },
+    probes => { qk_cache => [ [1, 2], [3, 4] ] },
   );
 
-  # What a bare Response does here is backend-dependent and deliberately not
-  # asserted: Cpanel::JSON::XS falls back to the "" overload and emits the
-  # content string, JSON::XS and JSON::PP throw. Both are non-answers. The
-  # invariant that must hold on every backend is that no invented metadata
-  # shape exists for a consumer to start depending on.
-  my $encoded = eval { $json->encode( { response => $response } ) };
-  ok( !defined $encoded || !ref( $json->decode($encoded)->{response} ),
-    'a Response never encodes as a structured metadata object' );
+  my $got = roundtrip( { response => $response } );
+  is( $got->{response}{content}, 'hello', 'TO_JSON carries content' );
+  is( $got->{response}{model}, 'claude-sonnet-4-6', 'TO_JSON carries model' );
+  is( $got->{response}{id}, 'msg_1', 'TO_JSON carries id' );
+  is( $got->{response}{finish_reason}, 'end_turn', 'TO_JSON carries finish_reason' );
+  is( $got->{response}{created}, 1700000000, 'TO_JSON carries created' );
+  is( $got->{response}{thinking}, 'let me think', 'TO_JSON carries thinking' );
+  is( $got->{response}{usage}{total_tokens}, 150, 'TO_JSON carries usage via Usage TO_JSON' );
+  is( $got->{response}{tool_calls}[0]{name}, 'ping', 'TO_JSON carries tool_calls via ToolCall TO_JSON' );
+  is( $got->{response}{rate_limit}{requests_remaining}, 42, 'TO_JSON carries rate_limit via RateLimit TO_JSON' );
+  ok( !exists $got->{response}{rate_limit}{raw}, 'no provider headers leak into the trace payload' );
+  is( $got->{response}{timing}{total_seconds}, 1.5, 'TO_JSON carries timing' );
+  ok( !exists $got->{response}{raw}, 'raw stays out of TO_JSON' );
+  ok( !exists $got->{response}{probes}, 'probes stay out of TO_JSON' );
+
+  # to_hash is the same canonical shape, directly.
+  my $h = $response->to_hash;
+  is( $h->{content}, 'hello', 'to_hash content' );
+  is( $h->{model}, 'claude-sonnet-4-6', 'to_hash model' );
+  ok( !exists $h->{raw}, 'to_hash excludes raw' );
+  ok( !exists $h->{probes}, 'to_hash excludes probes' );
+}
+
+# --- Backend uniformity: every JSON::MaybeXS backend encodes identically ---
+# The defect karr #50 fixes: Cpanel::JSON::XS used to fall back to the ""
+# overload (emitting the content string), JSON::XS and JSON::PP threw. Now all
+# three emit the same canonical hash.
+{
+  my $response = Langertha::Response->new(
+    content => 'hello',
+    model   => 'gpt-4o',
+    usage   => { prompt_tokens => 10, completion_tokens => 5, total_tokens => 15 },
+  );
+
+  my %encoded;
+  for my $mod (qw(Cpanel::JSON::XS JSON::XS JSON::PP)) {
+    ( my $file = $mod ) =~ s{::}{/}g;
+    require "$file.pm";
+    my $enc = $mod->new->convert_blessed(1)->canonical(1);
+    $encoded{$mod} = $enc->encode( { response => $response } );
+  }
+  is( $encoded{'Cpanel::JSON::XS'}, $encoded{'JSON::XS'}, 'Cpanel and JSON::XS encode identically' );
+  is( $encoded{'JSON::XS'}, $encoded{'JSON::PP'}, 'JSON::XS and JSON::PP encode identically' );
+  is( $json->decode( $encoded{'JSON::XS'} )->{response}{content}, 'hello',
+    'uniform shape carries content' );
+}
+
+# --- Stringification still works alongside TO_JSON ---
+{
+  my $response = Langertha::Response->new( content => 'hello' );
+  is( "$response", 'hello', 'string overload still returns content' );
 }
 
 done_testing;
