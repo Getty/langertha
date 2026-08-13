@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-08-13T18:13:10Z
+created: 2026-08-13T03:35:49Z
+id: 54
+priority: low
+started: 2026-08-13T18:13:10Z
+status: done
+tags:
+- process
+- reconciliation
+title: 'Concurrent main-tree editing hazard: stash/reset wiped uncommitted #51 changes'
+updated: 2026-08-13T18:13:10Z
+---
+
+While implementing #51, another agent was editing the MAIN working tree (not a worktree) for #29 (OTLP metrics) and #43 (Usage %{} overload). It ran git stash ("otlp-only") + git reset, which briefly wiped my uncommitted #51 changes from the working tree; they were restored when the stash was popped. The main tree is unstable: t/50_runtime_metrics_otlp.t fails 2/10 subtests and Usage.pm has been mid-edit (deep recursion / SEGV in t/98_metrics.t, t/93_to_json.t, t/90_value_objects.t during full-suite runs). Recommendation: agents editing lib/ should use isolated worktrees (EnterWorktree / git worktree) instead of the shared main tree, or coordinate stash/pop with a lock. #51 itself is verified green in an isolated worktree at the base commit (73 files, 2182 tests).
+RESOLVED 2026-08-13: The SEGVs were transient — caused by karr #43's first naive %{} overload attempt (infinite recursion), not by the OTLP work. Final consolidated state (all four tickets #43/#44/#51/#41) runs 74 files / 2212 tests green, no SEGV. Recommendation stands for future parallel waves: workers must not run git stash/reset/checkout in the shared tree (Wave 2 workers are explicitly instructed to avoid all git operations).
