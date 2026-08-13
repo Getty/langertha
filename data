@@ -1,0 +1,62 @@
+---
+claimed_at: 2026-08-13T00:31:29Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T00:31:29Z
+created: 2026-08-12T22:11:57Z
+id: 45
+priority: high
+started: 2026-08-12T23:57:51Z
+status: done
+tags:
+- bug
+- response-format
+- chat
+title: Per-Request response_format wird von AnthropicBase und Ollama ignoriert
+updated: 2026-08-13T00:31:29Z
+---
+
+## Befund
+
+`chat_f( response_format => {...} )` wirkt bei zwei Engine-Familien nicht,
+weil deren chat_request nur das ENGINE-Attribut liest und %extra nie ansieht.
+
+Engine/AnthropicBase.pm:114-118 (installiert 0.502):
+
+    sub _translate_response_format {
+      my ( $self, $extra ) = @_;
+      return unless $self->has_response_format;    # <-- Engine-Attribut
+      my $rf = $self->response_format;             # <-- Engine-Attribut
+
+$extra ist der Parameter, wird aber nur zum Schreiben benutzt. Ein
+per-Request response_format bleibt damit unuebersetzt und landet als
+Top-Level-Feld auf der Anthropic-Wire -- die API antwortet mit 400.
+
+Engine/Ollama.pm:95-107 hat dieselbe Struktur (`if ( $self->has_response_format )`)
+und damit denselben Defekt, dort aber als stiller No-Op statt als Fehler:
+der Request geht durch, das Format wird ignoriert.
+
+Beide Engines advertisen die response_format-Capabilities, ein aufrufseitiges
+`supports()`-Gate kann den Fall also nicht abfangen.
+
+## Vorschlag
+
+In beiden `_translate_response_format` / `chat_request` zuerst
+`$extra->{response_format}` beruecksichtigen und nur als Fallback auf das
+Engine-Attribut zurueckgreifen -- also die uebliche Praezedenz "per Request
+schlaegt per Engine".
+
+Regressionstest, der chat_request mit einem per-Request response_format
+aufruft und die erzeugte Wire prueft, je einmal fuer Anthropic und Ollama.
+
+## Woher der Befund kommt
+
+Langertha::Knarr reicht response_format aus dem eingehenden Proxy-Request
+per chat_f durch. Auf OpenAI-kompatiblen Engines funktioniert das, weil der
+Wire-Feldname zufaellig identisch ist; auf Anthropic und Ollama nicht.
+Gefunden beim Bau eines capability-basierten Gates fuer response_format
+(Knarr karr #5) -- das Gate ist korrekt und hilft hier trotzdem nicht.
+
+Verwandt, aber getrennt: karr #46 (kanonische per-Request-Controls). Dieses
+Ticket hier ist der konkrete, sofort behebbare Teil.
+AnthropicBase und Ollama loesen response_format jetzt mit Praezedenz per-Request vor Engine-Attribut auf. Das delete aus %extra ist der tragende Teil: ohne es erreicht der Key die Wire und Anthropic antwortet 400. Zusaetzlich noetig war die zweite Haelfte in chat_response -- ADR 0005 Paragraph 3 verlangt, dass beide Rewrite-Richtungen auf derselben Ausgabeform konvergieren; ohne den Lift waere der Request zwar gueltig gewesen, die strukturierte Antwort aber nur in Response.tool_calls gelandet und content leer geblieben. chat_response nimmt den Tool-Namen als drittes Argument, faellt bei undef auf has_response_format zurueck, bleibt fuer Direktaufrufer also unveraendert. Neuer Test t/77, 19 Assertions, drei Mutationsstufen: beide Fixes zurueck 14/19 rot, nur Ollama zurueck 5/19, nur Anthropic zurueck 9/19. Volle Suite prove -lr t/: 2163 Tests, PASS; 13 Live-Dateien mangels API-Keys geskippt.
