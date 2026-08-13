@@ -57,9 +57,9 @@ _Avoid_: "assistant replay", "history echo"
 
 ### Request-side controls (sibling seams)
 
-The same value-object-per-wire-format pattern governs two sibling seams outside
-tool-calling. Their canonical vocabulary lives in **ADR 0009** (not restated here);
-named only so the parallel is explicit:
+The same value-object-per-wire-format pattern governs three sibling seams outside
+tool-calling. Their canonical vocabulary lives in **ADR 0009** and **ADR 0012**
+(not restated here); named only so the parallel is explicit:
 
 **reasoning_wire_format** / **Langertha::Reasoning**:
 The per-engine reasoning dialect (`openai` | `anthropic` | `gemini` | `responses`)
@@ -71,6 +71,18 @@ reasoning (DeepSeek/MiniMax/Groq are all `tool_wire_format=openai`).
 The per-engine prompt-cache dialect — Anthropic `cache_control` (enable breakpoint)
 vs OpenAI `prompt_cache_key` (routing hint); the two are asymmetric and carry
 distinct capability flags.
+
+**knob_wire_format** / **Langertha::Runtime::Knobs**:
+The per-engine self-hosted runtime-knob dialect — `vllm` | `sglang` | `llamacpp` —
+and the value object that clamps + places the prefix-cache isolation/reuse knobs
+(`prefix_cache_salt`, `cache_prompt`, `n_cache_reuse`, `id_slot`, `priority`,
+`return_cached_tokens_details`, `extra_key`) onto it. **No shared default:** an
+`openai` knob dialect does not exist (the OpenAI cloud API has no such knobs), so
+an engine that composes the role must set its tag explicitly or die at first use.
+The three engines share `tool_wire_format=openai` yet accept disjoint knob field
+sets — the knob dialect is a distinct concern from reasoning and caching. The
+`prefix_caching` capability means *the wire accepts the controls*, not that the
+server has caching enabled.
 
 ### Response-side observability (sibling seam)
 
