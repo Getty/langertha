@@ -1,0 +1,68 @@
+---
+claimed_at: 2026-08-13T04:19:43Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T04:19:27Z
+created: 2026-08-12T22:12:46Z
+id: 46
+priority: medium
+started: 2026-08-13T04:00:08Z
+status: done
+tags:
+- architecture
+- chat
+- api
+title: 'chat_f: kanonische per-Request-Controls statt roher Wire-Kwargs'
+updated: 2026-08-13T04:19:43Z
+---
+
+## Beobachtung
+
+`chat_f(%opts)` normalisiert genau drei Dinge -- messages, tools, tool_choice.
+Alles andere wird als rohe Ziel-Wire-Kwargs behandelt: OpenAICompatible und
+AnthropicBase spreaden %extra zuletzt in generate_request, Role::OpenAPI
+validiert nichts, die Keys landen wortwoertlich im HTTP-Body. Das POD sagt es
+selbst: "any other engine-specific extras pass straight through".
+
+Fuer Aufrufer, die mehrere Engine-Familien bedienen, heisst das: derselbe
+Aufruf ist je nach Engine korrekt, wirkungslos oder ein 400. Belegte Faelle:
+
+- temperature / max_tokens auf Engine::Ollama: gehen top-level raus, Ollama
+  liest sie unter `options` (und `num_predict` statt `max_tokens`) --
+  stiller Verlust.
+- response_format auf AnthropicBase: 400, auf Ollama No-Op (karr #45).
+- seed: Capability existiert, aber nur Ollama advertised sie, und dort liegt
+  seed ebenfalls unter `options`.
+- parallel_tool_use: OpenAI top-level `parallel_tool_calls`, Anthropic nur
+  verschachtelt als tool_choice.disable_parallel_tool_use, Ollama gar nicht.
+- reasoning_effort (0.503): openai -> reasoning_effort,
+  anthropic -> output_config+thinking, gemini -> thinkingLevel/thinkingBudget,
+  ollama -> think. Ein Top-Level-Durchreichen waere hier aktiv schaedlich,
+  weil Anthropic die Capability advertised und das Feld trotzdem ungueltig ist.
+
+Die Platzierungslogik existiert bereits -- sie haengt nur an
+Engine-Konstruktions-Attributen (reasoning_kwargs, prompt_cache_kwargs, die
+options-Hashes), die keine Argumente nehmen. Es gibt keinen per-Request-Weg
+dorthin, und Engine-Instanzen haben kein clone_with.
+
+## Vorschlag
+
+Eine benannte Menge kanonischer Controls, die chat_f wie messages/tools
+normalisiert und ueber dieselben Value-Objekte platziert, die die
+Engine-Attribute nutzen -- statt sie in den Body zu spreaden. Kandidaten:
+temperature, max_tokens, response_format, seed, parallel_tool_use,
+reasoning_effort, prompt_cache*.
+
+Unbekannte Keys koennen weiter durchgereicht werden (das ist ein nuetzliches
+Escape-Hatch), aber die kanonischen sollten nicht mehr zufaellig richtig sein.
+
+## Warum das hier auftaucht
+
+Langertha::Knarr ist ein Proxy: er nimmt OpenAI-, Anthropic- und
+Ollama-Requests entgegen und routet sie auf eine beliebige Engine. Genau der
+Anwendungsfall, in dem "Wire-Kwargs durchreichen" nicht traegt. Knarr hat
+seinen eigenen Teil kapazitaets-gegated (Knarr karr #5), aber ein Gate kann
+nur "ob", nicht "wohin" entscheiden.
+
+Blockiert Knarr karr #4 und #9.
+Implemented: canonical controls channel (temperature, max_tokens, response_format, seed, parallel_tool_use, reasoning_effort, thinking_budget, prompt_cache*) extracted by chat_f/chat_stream_realtime_f into a `controls` hash; each engine's chat_request/chat_stream_request places them via the same value objects the attributes use (Reasoning/PromptCache, Ollama options, Gemini generationConfig). Per-request beats attribute per-key; unknown keys pass through. reasoning_kwargs/prompt_cache_kwargs delegate to *_for(%args). New t/78_chat_f_controls.t (53 assertions), full suite 76 files/2321 tests PASS. Commits 7bf6e09 + 9cdc50a.
