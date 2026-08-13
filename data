@@ -1,0 +1,52 @@
+---
+claimed_at: 2026-08-13T15:49:47Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T15:49:47Z
+created: 2026-08-11T22:33:00Z
+id: 39
+priority: medium
+started: 2026-08-13T15:49:47Z
+status: done
+tags:
+- hetzner
+- live-verify
+- karr-38-followup
+- capability
+title: Live-verify Hetzner tool calling against all 4 catalog models
+updated: 2026-08-13T15:49:47Z
+---
+
+Follow-up to karr #38 (Langertha::Engine::Hetzner).
+
+Hetzner's OpenAI-compatible endpoint advertises tools on the wire shape,
+but the Hetzner Inference API docs do NOT explicitly confirm server-side
+tool support. The engine currently ships with tools_native=true (per
+OpenAI-compatible wire) + a POD caveat noting this uncertainty.
+
+Goal:
+1. Run t/88_live_hetzner.t with TEST_LANGERTHA_HETZNER_API_KEY +
+   TEST_LANGERTHA_HETZNER_TEST_TOOLS=1 against each of the four catalog
+   models (Qwen/Qwen3.6-35B-A3B-FP8, DeepSeek-V4-Flash-0731,
+   GLM-5.2-NVFP4, Kimi-K2.7-Code).
+2. Record pass/fail per model in the ticket.
+3. For each model that 400s on tools, add an
+   'around engine_capabilities' override clearing tools_native /
+   tool_choice_* and recording the model-specific tool-list to the
+   pre-existing capability notes (mirrors what engines like Perplexity
+   do today).
+4. If at least one model succeeds, keep tools_native=true and add a
+   clearer POD note ('tool support verified on Qwen+Qwen3.6, not yet
+   on DeepSeek/GLM/Kimi' or similar).
+5. If none succeed, demote tools_native=false and move to a Hermes-style
+   XML fallback (new role composition) — escalate before that.
+
+No merge until at least the live run lands; per karr #36 verification
+runbook format. Live tests cost real money — gate the run behind
+TEST_LANGERTHA_HETZNER_API_KEY and pick one model per chat window.
+
+Files likely touched (kept narrow):
+  - lib/Langertha/Engine/Hetzner.pm  (capability override + POD)
+  - t/88_live_hetzner.t               (extend per-model results table)
+  - Changes                            (one-line note)
+FAZIT: Live-Verify abgeschlossen 2026-08-13 — ROOT CAUSE gefunden und gefixt: default url https://inference.hetzner.com/v1 ist ein toter catch-all-Pfad (antwortet 200 + literal "inference" auf alles). Korrekt: https://inference.hetzner.com/api/v1. Fix committed (0e5bf46: Engine default url + POD + t/48-URI + t/88-URLs). t/88 live: 8/8 PASS inkl. chat_with_tools_f (echo-tool -> "ping") und Drift-Check live /api/v1/models == exakt die 4 Katalog-Modelle (kein Drift). Zusaetzlich pre-existing t/88-Syntax-Bug gefixt (async sub braucht use Future::AsyncAwait zur Compile-Zeit; die Datei kompilierte nur, weil BEGIN-skip_all ohne Key vorher rausging — mit Key war es ein harter Syntax-Error; Fix cc5db55). Bild-Understanding-Subtest bleibt ohne TEST_LANGERTHA_HETZNER_IMAGE_URL geskippt.
