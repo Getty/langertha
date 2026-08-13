@@ -233,9 +233,14 @@ sub chat_request {
 
   # Translate response_format -> Gemini's generationConfig.responseSchema /
   # responseMimeType. Accepts the OpenAI-shape response_format hash so that
-  # callers can hand the same payload to any engine.
-  if ( $self->has_response_format ) {
-    my $rf = $self->response_format;
+  # callers can hand the same payload to any engine. A per-request
+  # response_format (chat_f) beats the engine attribute, and is removed from
+  # the extras either way: generateContent has no top-level response_format
+  # field and would carry it as dead weight while the schema went missing.
+  my $rf = exists $extra{response_format}
+    ? delete $extra{response_format}
+    : $self->has_response_format ? $self->response_format : undef;
+  if ( defined $rf ) {
     my $type = ref($rf) eq 'HASH' ? ( $rf->{type} // '' ) : '';
     if ( $type eq 'json_object' ) {
       $generation_config{responseMimeType} = 'application/json';
