@@ -4,7 +4,10 @@ use Test2::V0;
 use JSON::MaybeXS;
 
 use Langertha::Usage;
+use Langertha::Cost;
+use Langertha::UsageRecord;
 use Langertha::RateLimit;
+use Langertha::Tool;
 use Langertha::ToolCall;
 use Langertha::ToolChoice;
 use Langertha::Response;
@@ -73,8 +76,69 @@ sub roundtrip { return $json->decode( $json->encode( $_[0] ) ) }
       id        => 'call_abc',
       name      => 'search_files',
       arguments => { pattern => '*.pm', depth => 2 },
+      synthetic => 0,
     },
     'ToolCall round-trips with nested arguments' );
+
+  my $synth = roundtrip( {
+    tool_call => Langertha::ToolCall->new(
+      name      => 'extract',
+      arguments => { summary => 'hi' },
+      synthetic => 1,
+    ),
+  } );
+  is( $synth->{tool_call}{synthetic}, 1,
+    'synthetic flag survives the round trip' );
+}
+
+# --- Langertha::Tool ---
+{
+  my $t = Langertha::Tool->new(
+    name         => 'list_files',
+    description  => 'List files',
+    input_schema => { type => 'object', properties => { path => { type => 'string' } } },
+  );
+  my $got = roundtrip( { tool => $t } );
+  is( $got->{tool},
+    {
+      name         => 'list_files',
+      description  => 'List files',
+      input_schema => { type => 'object', properties => { path => { type => 'string' } } },
+    },
+    'Tool round-trips as its canonical hash' );
+}
+
+# --- Langertha::Cost ---
+{
+  my $c = Langertha::Cost->new( input_usd => 0.001, output_usd => 0.002 );
+  my $got = roundtrip( { cost => $c } );
+  is( $got->{cost},
+    {
+      input_cost_usd  => 0.001,
+      output_cost_usd => 0.002,
+      total_cost_usd  => 0.003,
+      currency        => 'USD',
+    },
+    'Cost round-trips as its canonical hash (lazy total included)' );
+}
+
+# --- Langertha::UsageRecord ---
+{
+  my $rec = Langertha::UsageRecord->new(
+    usage      => Langertha::Usage->new( input_tokens => 100, output_tokens => 50 ),
+    cost       => Langertha::Cost->new( input_usd => 0.001, output_usd => 0.002 ),
+    model      => 'gpt-4o-mini',
+    provider   => 'openai',
+    api_key_id => 'tenant-1',
+    tool_calls => 2,
+    tool_names => [ 'list_files', 'read_file' ],
+  );
+  my $got = roundtrip( { record => $rec } );
+  is( $got->{record}{model}, 'gpt-4o-mini', 'UsageRecord model' );
+  is( $got->{record}{input_tokens}, 100, 'UsageRecord tokens flattened' );
+  is( $got->{record}{total_cost_usd} + 0, 0.003, 'UsageRecord cost flattened' );
+  is( $got->{record}{tool_names}[1], 'read_file', 'UsageRecord tool names' );
+  is( $got->{record}{api_key_id}, 'tenant-1', 'UsageRecord api_key_id' );
 }
 
 # --- Langertha::ToolChoice ---

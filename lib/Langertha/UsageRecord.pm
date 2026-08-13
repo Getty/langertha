@@ -50,5 +50,13 @@ sub to_hash {
   };
 }
 
+# Make the object transparent to any JSON encoder configured with
+# convert_blessed => 1 (the house default, see Langertha::Plugin::Langfuse).
+# to_hash is the complete canonical representation — every attribute is
+# flattened into the ledger hash, and api_key_id is a normalized identifier
+# (which key was used), not the credential itself — so this is a plain
+# delegator, nothing is dropped.
+sub TO_JSON { shift->to_hash }
+
 __PACKAGE__->meta->make_immutable;
 1;

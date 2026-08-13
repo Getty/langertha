@@ -141,6 +141,14 @@ use Langertha::ToolChoice;
   is( $calls->[0]->arguments->{x}, 1, 'hermes args' );
 }
 
+# to_hash always carries synthetic, so a trace can tell native from synthesized
+{
+  my $native = Langertha::ToolCall->new( name => 'a', arguments => {} );
+  is( $native->to_hash->{synthetic}, 0, 'native call to_hash synthetic=0' );
+  my $synth = Langertha::ToolCall->new( name => 'a', arguments => {}, synthetic => 1 );
+  is( $synth->to_hash->{synthetic}, 1, 'synthetic call to_hash synthetic=1' );
+}
+
 # --- ToolChoice ---
 {
   is( Langertha::ToolChoice->auto->type, 'auto', 'auto' );

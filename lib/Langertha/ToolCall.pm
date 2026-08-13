@@ -44,6 +44,11 @@ tool into a C<response_format> JSON Schema request and parsed the
 output back into a C<ToolCall>. False (the default) for native model
 output.
 
+C<to_hash> (and therefore C<TO_JSON>) always carries this flag, so a
+serialized trace can tell a synthesized call apart from a native one —
+without it a forced-tool fallback would look exactly like a call the
+model decided to make.
+
 =cut
 
 sub _decode_args {
@@ -307,6 +312,7 @@ sub to_hash {
     id        => $self->id,
     name      => $self->name,
     arguments => $self->arguments,
+    synthetic => $self->synthetic ? 1 : 0,
   };
 }
 
@@ -314,8 +320,7 @@ sub to_hash {
 # convert_blessed => 1 (the house default, see Langertha::Plugin::Langfuse).
 # Response.tool_calls is an ArrayRef of these, so consumers hit them without
 # ever asking for a ToolCall by name. Plain delegator to to_hash: TO_JSON must
-# not become a second, divergent shape. NOTE: to_hash does not carry
-# `synthetic` — that predates this method and is left alone here.
+# not become a second, divergent shape.
 sub TO_JSON { shift->to_hash }
 
 __PACKAGE__->meta->make_immutable;
