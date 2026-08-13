@@ -1,0 +1,18 @@
+---
+claimed_at: 2026-08-13T21:22:09Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T21:22:09Z
+created: 2026-08-13T18:38:39Z
+id: 62
+priority: low
+started: 2026-08-13T21:22:09Z
+status: done
+tags:
+- docs
+- adr
+title: 'CONTEXT.md: name knob_wire_format / Runtime::Knobs in domain language'
+updated: 2026-08-13T21:22:09Z
+---
+
+ADR 0012 (karr #31) records the self-hosted runtime-knob seam as a per-concern wire-format value object, but CONTEXT.md does not yet name knob_wire_format / Langertha::Runtime::Knobs. Same gap ADR 0009 flagged for reasoning/cache: extending the domain language so this sibling seam is a first-class term (not just an analogue of the tools seam) keeps the vocabulary truthful. Flagged by langertha-adr-auditor while writing ADR 0012.
