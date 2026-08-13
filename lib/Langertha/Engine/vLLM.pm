@@ -7,7 +7,13 @@ use Carp qw( croak );
 extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools',
-     'Langertha::Role::Runtime::MetricsPoll';
+     'Langertha::Role::Runtime::MetricsPoll',
+     'Langertha::Role::RuntimeKnobs';
+
+# vLLM's only per-request runtime knob is cache_salt (prefix-cache isolation,
+# vLLM v1.x+). Speculative decoding is a server-launch flag
+# (--speculative-config), not a request knob — see Langertha::Runtime::Knobs.
+sub _build_knob_wire_format { 'vllm' }
 
 =head1 SYNOPSIS
 

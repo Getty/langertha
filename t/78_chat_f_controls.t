@@ -8,9 +8,11 @@
 # only honored where the engine happened to advertise it). chat_f now extracts
 # a canonical control set (temperature, max_tokens, response_format, seed,
 # parallel_tool_use, reasoning_effort, thinking_budget, prompt_cache,
-# prompt_cache_ttl, prompt_cache_key) into a `controls` hash that each engine's
-# chat_request consumes and places via the same value objects the engine
-# attributes use. Unknown keys still pass straight through.
+# prompt_cache_ttl, prompt_cache_key, plus the runtime knobs prefix_cache_salt,
+# cache_prompt, n_cache_reuse, id_slot, priority,
+# return_cached_tokens_details, extra_key) into a `controls` hash that each
+# engine's chat_request consumes and places via the same value objects the
+# engine attributes use. Unknown keys still pass straight through.
 
 use strict;
 use warnings;
@@ -26,6 +28,7 @@ use Langertha::Engine::OpenAI;
 use Langertha::Engine::Anthropic;
 use Langertha::Engine::Ollama;
 use Langertha::Engine::Gemini;
+use Langertha::Engine::vLLM;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
@@ -64,6 +67,14 @@ sub gemini {
   return Langertha::Engine::Gemini->new(
     api_key => 'apikey',
     model   => 'gemini-3-flash-preview',
+    @_,
+  );
+}
+
+sub vllm {
+  return Langertha::Engine::vLLM->new(
+    url   => 'http://test.url:12345/v1',
+    model => 'model',
     @_,
   );
 }
@@ -375,6 +386,58 @@ sub wire {
     'chat_f: no canonical control leaked top-level (raw-extra path not used)' );
   is( $body->{custom_extra}, 'x', 'chat_f: unknown key still passes straight through' );
   ok( !exists $body->{controls}, 'chat_f: controls hash never reaches the wire' );
+}
+
+# --- End-to-end: vLLM knob controls reach the wire via the controls channel --
+# vLLM is the discriminating engine for runtime knobs: prefix_cache_salt is a
+# canonical control that must be translated to the wire name cache_salt. If it
+# were left in %opts as a raw extra it would land top-level as
+# 'prefix_cache_salt' (wrong wire name). The raw-extra escape hatch
+# (chat_f(cache_salt => 'x')) must still pass through unchanged.
+{
+  my $mock = Test::MockAsyncHTTP->new( responses => [
+    Test::MockAsyncHTTP->mock_json_response({
+      choices => [{
+        message => { role => 'assistant', content => 'hello' },
+      }],
+    }),
+  ]);
+
+  my $engine = vllm( _async_http => $mock );
+
+  my $future = $engine->chat_f( prefix_cache_salt => 'x' );
+  my $response = $future->get;
+
+  is( $response->content, 'hello', 'vLLM chat_f returns the response' );
+  is( $mock->request_count, 1, 'vLLM chat_f made exactly one request' );
+
+  my ($request) = $mock->requests;
+  my $body = $json->decode( $request->content );
+  is( $body->{cache_salt}, 'x',
+    'chat_f: prefix_cache_salt control lands top-level as cache_salt' );
+  ok( !exists $body->{prefix_cache_salt},
+    'chat_f: canonical knob name never leaks to the wire' );
+  ok( !exists $body->{controls}, 'chat_f: controls hash never reaches the wire' );
+
+  # Raw-extra escape hatch: cache_salt is not a canonical control, so it stays
+  # in %opts and passes straight through under its own wire name.
+  my $mock2 = Test::MockAsyncHTTP->new( responses => [
+    Test::MockAsyncHTTP->mock_json_response({
+      choices => [{
+        message => { role => 'assistant', content => 'hello' },
+      }],
+    }),
+  ]);
+  my $engine2 = vllm( _async_http => $mock2 );
+
+  my $future2 = $engine2->chat_f( cache_salt => 'y' );
+  $future2->get;
+
+  my ($request2) = $mock2->requests;
+  my $body2 = $json->decode( $request2->content );
+  is( $body2->{cache_salt}, 'y',
+    'chat_f: raw cache_salt extra passes through top-level unchanged' );
+  ok( !exists $body2->{controls}, 'chat_f: raw-extra path leaks no controls hash' );
 }
 
 done_testing;

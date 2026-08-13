@@ -69,6 +69,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::SystemPrompt'     => [qw( system_prompt )],
   'Langertha::Role::ParallelToolUse'  => [qw( parallel_tool_use )],
   'Langertha::Role::Runtime::MetricsPoll' => [qw( runtime_metrics )],
+  'Langertha::Role::RuntimeKnobs'    => [qw( prefix_caching )],
 );
 
 sub engine_capabilities {
@@ -107,6 +108,15 @@ The single C<Langertha::Role::PromptCache> role contributes both; the
 C<OpenAIBase> / C<AnthropicBase> base classes each clear the one that does not
 apply to their wire, so the OpenAI family advertises only the key and the
 Anthropic family only the enable breakpoint.
+
+C<prefix_caching> (from C<Langertha::Role::RuntimeKnobs>, composed on the
+self-hosted vLLM / SGLang / llama.cpp engines) means B<the wire accepts
+prefix-cache isolation/reuse controls> (C<cache_salt>, C<cache_prompt>,
+C<n_cache_reuse>, C<id_slot>, C<priority>, C<return_cached_tokens_details>,
+C<extra_key>) — B<not> that prefix caching is on. Whether the server actually
+caches is launch state the client cannot observe (vLLM C<--enable-prefix-caching>,
+SGLang C<--enable-mixed-prefill> / C<--enable-prefix-caching>, llama.cpp
+C<--cache_prompt>); the flag only says the request body may carry the knobs.
 
 =cut
 

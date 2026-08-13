@@ -314,6 +314,7 @@ sub chat_request {
     exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
     ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
     ( $self->can('prompt_cache_kwargs_for') ? $self->prompt_cache_kwargs_for(%$controls) : () ),
+    ( $self->can('knobs_kwargs_for') ? $self->knobs_kwargs_for(%$controls) : () ),
     stream => JSON->false,
     %extra,
   );
@@ -346,6 +347,9 @@ sub chat_response {
     $data->{model} ? ( model => $data->{model} ) : (),
     defined $choice->{finish_reason} ? ( finish_reason => $choice->{finish_reason} ) : (),
     $data->{usage} ? ( usage => $data->{usage} ) : (),
+    ( $data->{usage} && $data->{usage}{prompt_tokens_details}
+      && defined $data->{usage}{prompt_tokens_details}{cached_tokens}
+      ? ( cached_tokens => $data->{usage}{prompt_tokens_details}{cached_tokens} ) : () ),
     $data->{created} ? ( created => $data->{created} ) : (),
     defined $msg->{reasoning_content} ? ( thinking => $msg->{reasoning_content} ) : (),
     @tcs ? ( tool_calls => [ @tcs ] ) : (),
@@ -435,6 +439,7 @@ sub chat_stream_request {
     exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
     ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
     ( $self->can('prompt_cache_kwargs_for') ? $self->prompt_cache_kwargs_for(%$controls) : () ),
+    ( $self->can('knobs_kwargs_for') ? $self->knobs_kwargs_for(%$controls) : () ),
     stream => JSON->true,
     %extra,
   );

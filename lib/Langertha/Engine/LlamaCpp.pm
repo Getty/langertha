@@ -8,7 +8,13 @@ extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Embedding',
      'Langertha::Role::Tools',
-     'Langertha::Role::Runtime::MetricsPoll';
+     'Langertha::Role::Runtime::MetricsPoll',
+     'Langertha::Role::RuntimeKnobs';
+
+# llama.cpp's per-request runtime knobs: cache_prompt, n_cache_reuse, id_slot.
+# Speculative decoding is a server-launch flag (--spec-draft-*), not a request
+# knob — see Langertha::Runtime::Knobs.
+sub _build_knob_wire_format { 'llamacpp' }
 
 =head1 SYNOPSIS
 

@@ -399,6 +399,13 @@ my %CANONICAL_CONTROLS = map { $_ => 1 } qw(
   prompt_cache
   prompt_cache_ttl
   prompt_cache_key
+  prefix_cache_salt
+  cache_prompt
+  n_cache_reuse
+  id_slot
+  priority
+  return_cached_tokens_details
+  extra_key
 );
 
 sub _extract_controls {

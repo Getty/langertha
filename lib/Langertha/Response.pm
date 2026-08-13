@@ -259,6 +259,22 @@ Unix timestamp of when the response was created.
 
 =cut
 
+has cached_tokens => (
+  is => 'ro',
+  isa => 'Maybe[Int]',
+  predicate => 'has_cached_tokens',
+);
+
+=attr cached_tokens
+
+Number of prompt tokens served from the prefix cache, when the provider
+reports it. Populated from C<usage.prompt_tokens_details.cached_tokens> on
+the OpenAI-compatible wire (SGLang with C<return_cached_tokens_details>
+enabled, and other servers that emit the detail block). C<undef> when the
+provider does not report it.
+
+=cut
+
 has thinking => (
   is => 'ro',
   isa => 'Maybe[Str]',
@@ -432,9 +448,10 @@ copy so the override value is what reaches C<new>.
 
 Returns the canonical, bounded HashRef representation of the response:
 C<content> plus every metadata field that is present (L</id>, L</model>,
-L</finish_reason>, L</usage>, L</timing>, L</created>, L</thinking>,
-L</rate_limit>, L</tool_calls>). L</raw> and L</probes> are deliberately
-excluded — see L</"TO_JSON — the canonical, bounded representation">.
+L</finish_reason>, L</usage>, L</timing>, L</created>, L</cached_tokens>,
+L</thinking>, L</rate_limit>, L</tool_calls>). L</raw> and L</probes> are
+deliberately excluded — see L</"TO_JSON — the canonical, bounded
+representation">.
 
 =cut
 
@@ -448,6 +465,7 @@ sub to_hash {
     ( $self->has_usage         ? ( usage         => $self->usage )         : () ),
     ( $self->has_timing        ? ( timing        => $self->timing )        : () ),
     ( $self->has_created       ? ( created       => $self->created )       : () ),
+    ( $self->has_cached_tokens ? ( cached_tokens => $self->cached_tokens ) : () ),
     ( $self->has_thinking      ? ( thinking      => $self->thinking )      : () ),
     ( $self->has_rate_limit    ? ( rate_limit    => $self->rate_limit )    : () ),
     ( $self->has_tool_calls    ? ( tool_calls    => $self->tool_calls )    : () ),

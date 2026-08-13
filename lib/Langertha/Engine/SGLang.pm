@@ -6,7 +6,13 @@ use Moose;
 extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools',
-     'Langertha::Role::Runtime::MetricsPoll';
+     'Langertha::Role::Runtime::MetricsPoll',
+     'Langertha::Role::RuntimeKnobs';
+
+# SGLang's per-request runtime knobs: cache_salt, extra_key, priority,
+# return_cached_tokens_details. Speculative decoding is a server-launch flag
+# (--speculative-*), not a request knob — see Langertha::Runtime::Knobs.
+sub _build_knob_wire_format { 'sglang' }
 
 =head1 SYNOPSIS
 
