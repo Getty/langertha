@@ -530,10 +530,23 @@ L<Future> that resolves to C<($content, \@chunks)>.
 async sub simple_chat_stream_realtime_f {
   my ($self, $chunk_callback, @messages) = @_;
 
+  return await $self->chat_stream_realtime_f(
+    messages       => \@messages,
+    chunk_callback => $chunk_callback,
+  );
+}
+
+async sub chat_stream_realtime_f {
+  my ( $self, %opts ) = @_;
+
+  my $chunk_callback = delete $opts{chunk_callback};
+  my $messages = delete $opts{messages} // [];
+  my @messages = ref $messages eq 'ARRAY' ? @$messages : ($messages);
+
   croak "".(ref $self)." does not support streaming"
     unless $self->can('chat_stream_request');
 
-  my $request = $self->chat_stream_request($self->chat_messages(@messages));
+  my $request = $self->chat_stream_request($self->chat_messages(@messages), %opts);
   my @all_chunks;
   my $buffer = '';
   my $format = $self->stream_format;
@@ -638,6 +651,41 @@ concatenated text.
 This is the recommended method for real-time streaming in async applications.
 Pass C<undef> as the callback (or use L</simple_chat_stream_f>) if you only
 need the final result.
+
+This is a thin wrapper around L</chat_stream_realtime_f>; existing callers
+keep working unchanged. For requests that need named arguments (tools,
+tool_choice, response_format, temperature, max_tokens, etc.) use
+L</chat_stream_realtime_f> directly.
+
+=cut
+
+=method chat_stream_realtime_f
+
+    my ($content, $chunks) = await $engine->chat_stream_realtime_f(
+        messages       => [ ... ],
+        chunk_callback => sub { print shift->content },
+        temperature    => 0.7,
+        max_tokens     => 512,
+        # any other engine-specific extras pass straight through
+    );
+
+Async I<single-turn> streaming chat with named arguments. C<messages> is
+required (ArrayRef or a single message); C<chunk_callback> is called with each
+L<Langertha::Stream::Chunk> as it arrives from the server. All remaining
+options are passed straight through to L</chat_stream_request> — tools,
+tool_choice, response_format, temperature, max_tokens, and any engine-specific
+extras.
+
+Returns a L<Future> that resolves to C<($content, \@chunks, \%timing)> where
+C<$content> is the full concatenated text, C<\@chunks> the collected
+L<Langertha::Stream::Chunk> objects, and C<\%timing> carries C<ttft_seconds>
+and C<total_seconds>.
+
+This is the streaming counterpart to L</chat_f>. Unlike L</chat_f> it does
+not apply the forced-tool fallback (rewriting a named C<tool_choice> into a
+C<response_format> on engines without C<tool_choice_named>); synthesizing a
+C<tool_calls> entry from the accumulated stream text is a separate follow-up
+concern.
 
 =cut
 

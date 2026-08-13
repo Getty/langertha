@@ -121,7 +121,7 @@ around 'simple_chat_stream' => sub {
   return $filtered;
 };
 
-around 'simple_chat_stream_realtime_f' => sub {
+around 'chat_stream_realtime_f' => sub {
   my ( $orig, $self, @args ) = @_;
   return $self->$orig(@args)->then(sub {
     my ( $content, $chunks, $timing ) = @_;
