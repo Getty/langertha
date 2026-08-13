@@ -441,6 +441,8 @@ SKIP: {
   # Must import async/await at compile time, so we loaded in BEGIN above
   Future::AsyncAwait->import;
   require Test::MockAsyncHTTP;
+  # The MCP client subclass pulls in Net::Async::MCP itself
+  require Langertha::MCP::Client;
 
   my $server = MCP::Server->new(name => 'test', version => '1.0');
 
@@ -463,7 +465,7 @@ SKIP: {
   );
 
   my $loop = IO::Async::Loop->new;
-  my $mcp = Net::Async::MCP->new(server => $server);
+  my $mcp = Langertha::MCP::Client->new(server => $server);
   $loop->add($mcp);
 
   # Hermes-style responses: text with <tool_call> tags

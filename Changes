@@ -2,6 +2,24 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - MCP tool calling speaks the current protocol revision (Rev-2026-07-28)
+      via the new Langertha::MCP::Client, a temporary subclass of
+      Net::Async::MCP (karr #60). Net::Async::MCP 0.003 hardcodes the obsolete
+      top-level protocolVersion '2025-11-25' initialize form and sends no
+      _meta on any request; current MCP servers (MCP::Server 0.15,
+      SUPPORTED_VERSIONS = ['2026-07-28']) require the
+      io.modelcontextprotocol/protocolVersion + clientCapabilities _meta on
+      EVERY request and no longer implement initialize at all (the handshake
+      is server/discover; initialize survives only in the legacy shim, which
+      the in-process transport never engages). The subclass therefore sends
+      server/discover with _meta from initialize (server_info is read from the
+      response _meta) and carries _meta on list_tools / call_tool /
+      list_prompts / get_prompt / list_resources / read_resource / ping. All
+      MCP instantiation sites (Role::Tools, Raider inline MCP, t/64, t/66, and
+      the live tests) construct Langertha::MCP::Client instead of
+      Net::Async::MCP. Revert the call sites once upstream ships a fixed
+      client.
+
     - Self-hosted runtime knobs for the OpenAI-compatible engines vLLM,
       SGLang and llama.cpp (karr #31). The only genuinely per-request knobs
       on these servers are prefix-cache isolation/reuse controls; they now

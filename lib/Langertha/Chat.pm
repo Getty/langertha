@@ -105,7 +105,7 @@ temperature.
 
 =attr mcp_servers
 
-ArrayRef of L<Net::Async::MCP> instances for tool calling.
+ArrayRef of L<Langertha::MCP::Client> instances for tool calling.
 
 =attr tool_max_iterations
 

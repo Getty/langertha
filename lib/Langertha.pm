@@ -200,7 +200,7 @@ B<THIS API IS WORK IN PROGRESS.>
 
 =item * B<Chat, streaming, embeddings, transcription, image generation>
 
-=item * B<MCP tool calling> -- automatic multi-round tool loops via L<Net::Async::MCP>
+=item * B<MCP tool calling> -- automatic multi-round tool loops via L<Langertha::MCP::Client>
 
 =item * B<Raider> -- autonomous agent with history, compression, and plugins
 
@@ -586,7 +586,8 @@ Supported: OpenAI, Groq, Cerebras, OpenRouter, Replicate, HuggingFace
 
 =head2 MCP Tool Calling
 
-Integrates with L<Net::Async::MCP> for automatic multi-round tool calling:
+Integrates with L<Langertha::MCP::Client> (a L<Net::Async::MCP> subclass)
+for automatic multi-round tool calling:
 
     my $engine = Langertha::Engine::OpenAI->new(
         api_key     => $ENV{OPENAI_API_KEY},

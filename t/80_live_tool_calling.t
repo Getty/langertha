@@ -42,7 +42,7 @@ BEGIN {
 
 use IO::Async::Loop;
 use Future::AsyncAwait;
-use Net::Async::MCP;
+use Langertha::MCP::Client;
 use MCP::Server;
 use MCP::Tool;
 
@@ -85,7 +85,7 @@ $server->tool(
 );
 
 my $loop = IO::Async::Loop->new;
-my $mcp = Net::Async::MCP->new(server => $server);
+my $mcp = Langertha::MCP::Client->new(server => $server);
 $loop->add($mcp);
 
 my $prompt = 'What is 7 plus 15? Use the add tool to calculate this. Answer with just the number.';

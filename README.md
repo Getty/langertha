@@ -300,17 +300,17 @@ my ($content, $chunks) = await $engine->simple_chat_stream_realtime_f(
 
 ## MCP Tool Calling
 
-Langertha integrates with [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) servers via [Net::Async::MCP](https://metacpan.org/pod/Net::Async::MCP). LLMs can discover and invoke tools automatically.
+Langertha integrates with [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) servers via [Langertha::MCP::Client](https://metacpan.org/pod/Langertha::MCP::Client), a subclass of [Net::Async::MCP](https://metacpan.org/pod/Net::Async::MCP) that speaks the current protocol revision. LLMs can discover and invoke tools automatically.
 
 ```perl
 use IO::Async::Loop;
-use Net::Async::MCP;
+use Langertha::MCP::Client;
 use Future::AsyncAwait;
 
 my $loop = IO::Async::Loop->new;
 
 # Connect to an MCP server (in-process, stdio, or HTTP)
-my $mcp = Net::Async::MCP->new(
+my $mcp = Langertha::MCP::Client->new(
     command => ['npx', '@anthropic/mcp-server-web-search'],
 );
 $loop->add($mcp);

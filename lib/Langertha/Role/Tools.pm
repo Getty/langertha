@@ -15,13 +15,13 @@ with 'Langertha::Role::ParallelToolUse';
 =head1 SYNOPSIS
 
     use IO::Async::Loop;
-    use Net::Async::MCP;
+    use Langertha::MCP::Client;
     use Future::AsyncAwait;
 
     my $loop = IO::Async::Loop->new;
 
     # Set up an MCP server with tools
-    my $mcp = Net::Async::MCP->new(server => $my_mcp_server);
+    my $mcp = Langertha::MCP::Client->new(server => $my_mcp_server);
     $loop->add($mcp);
     await $mcp->initialize;
 
@@ -84,9 +84,9 @@ has mcp_servers => (
 
     mcp_servers => [$mcp1, $mcp2]
 
-ArrayRef of L<Net::Async::MCP> instances to use as tool providers. Defaults to
-an empty ArrayRef. At least one server must be configured before calling
-L</chat_with_tools_f>.
+ArrayRef of L<Langertha::MCP::Client> instances to use as tool providers.
+Defaults to an empty ArrayRef. At least one server must be configured before
+calling L</chat_with_tools_f>.
 
 =cut
 
@@ -457,7 +457,7 @@ exceeded. Returns a L<Future> that resolves to the final text response.
 
 =item * L<Langertha::Raider> - Autonomous agent with persistent history using tools
 
-=item * L<Net::Async::MCP> - MCP client used as tool provider
+=item * L<Langertha::MCP::Client> - MCP client used as tool provider
 
 =item * L<Langertha::Engine::Anthropic> - Engine with native tool support
 

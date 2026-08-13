@@ -141,6 +141,7 @@ SKIP: {
 
   require MCP::Server;
   require Net::Async::MCP;
+  require Langertha::MCP::Client;
   require IO::Async::Loop;
 
   my $server = MCP::Server->new(name => 'hetzner-tools', version => '1.0');
@@ -159,7 +160,7 @@ SKIP: {
   );
 
   my $loop = IO::Async::Loop->new;
-  my $mcp  = Net::Async::MCP->new(server => $server);
+  my $mcp  = Langertha::MCP::Client->new(server => $server);
   $loop->add($mcp);
 
   async sub test_tools {
