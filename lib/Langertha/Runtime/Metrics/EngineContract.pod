@@ -1,3 +1,6 @@
+# PODNAME: Langertha::Runtime::Metrics::EngineContract
+# ABSTRACT: Wire contract for self-hosted inference engine /metrics endpoints
+
 =pod
 
 =head1 NAME
