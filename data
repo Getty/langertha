@@ -1,0 +1,59 @@
+---
+claimed_at: 2026-08-13T03:59:38Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-13T03:59:38Z
+created: 2026-08-13T00:25:06Z
+id: 52
+priority: medium
+started: 2026-08-13T03:53:21Z
+status: done
+tags:
+- bug
+- response-format
+- streaming
+title: chat_stream_request ignoriert response_format (Anthropic, Ollama, Gemini)
+updated: 2026-08-13T03:59:38Z
+---
+
+Beim Umsetzen von #45 und #48 gefunden, dort bewusst ausserhalb des Scopes
+gelassen: die chat_stream_request-Seite hat denselben Defekt, in allen drei
+Engines.
+
+## Befund
+
+- Engine::Gemini::chat_stream_request behandelt response_format ueberhaupt
+  nicht -- weder per Request noch das Engine-Attribut.
+- Engine::AnthropicBase::chat_stream_request und Engine::Ollama::chat_stream_request
+  ebenso; Ollamas Stream-Builder beruecksichtigt nur das alte json_format.
+
+Zwei getrennte Folgen:
+
+1. Ein Engine-Attribut response_format wird beim Streamen still verworfen.
+   Das ist HEUTE schon erreichbar: wer eine Engine mit response_format
+   konstruiert und dann streamt, bekommt unstrukturierte Ausgabe, ohne
+   Hinweis.
+
+2. Ein per-Request response_format wuerde als Top-Level-Feld auf die Wire
+   lecken. Das ist heute NICHT erreichbar, weil simple_chat_stream_realtime_f
+   gar keine Extras durchreicht -- wird es aber in dem Moment, in dem #42
+   (chat_stream_realtime_f mit %opts) landet. Die beiden Tickets muessen
+   deshalb zusammen gedacht werden: #42 ohne dieses hier oeffnet einen Pfad,
+   auf dem Anthropic mit 400 antwortet.
+
+## Umfang
+
+Alle drei Engines, jeweils dieselbe Aufloesung wie in #45/#48 (per Request
+schlaegt Engine-Attribut, Key aus den Extras loeschen).
+
+Bei AnthropicBase ist zusaetzlich zu klaeren, wie der Rewrite-Pfad aus
+ADR 0005 Paragraph 2 beim Streamen ueberhaupt funktionieren soll: dort wird
+response_format in ein synthetisiertes Tool mit erzwungenem tool_choice
+uebersetzt, und die strukturierte Antwort muss anschliessend aus dem
+tool_use-Block zurueck in content gehoben werden. Beim Streamen gibt es
+keinen fertigen Response, aus dem man heben koennte -- die Konvergenzforderung
+aus Paragraph 3 braucht dort also eine eigene Antwort. Gemini und Ollama sind
+unkritisch, weil beide nativ bleiben.
+
+Regressionstests analog t/77_response_format_per_request.t, aber gegen die
+jeweilige chat_stream_request-Wire.
