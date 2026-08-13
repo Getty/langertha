@@ -2,6 +2,19 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Langertha::Engine::Hetzner now defaults to
+      https://inference.hetzner.com/api/v1 instead of the dead
+      https://inference.hetzner.com/v1 (karr #39). The old path answered
+      HTTP 200 with the literal string "inference" for every request
+      (models, chat, with or without auth), so simple_chat and tool
+      calling both failed to parse the response. Verified live against
+      the Inference API: /api/v1/models returns exactly the four catalog
+      models (Qwen/Qwen3.6-35B-A3B-FP8, DeepSeek-V4-Flash-0731,
+      GLM-5.2-NVFP4, Kimi-K2.7-Code) and tool calling against the Qwen
+      model succeeds. The live test t/88 was also fixed to compile when a
+      Hetzner API key is present (async sub requires Future::AsyncAwait
+      loaded via `use` at compile time, not a runtime require).
+
     - chat_f now normalizes a canonical set of per-request controls
       instead of spreading them as raw target-wire kwargs (karr #46).
       Previously only messages/tools/tool_choice were normalized; every
