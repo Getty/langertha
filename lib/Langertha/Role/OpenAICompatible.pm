@@ -266,6 +266,10 @@ sub chat_operation_id { 'createChatCompletion' }
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  my $controls = delete $extra{controls} // {};
+
   # Normalize tool_choice to OpenAI native format (accepts Anthropic-style,
   # OpenAI-style, and string shorthands).
   if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
@@ -276,21 +280,34 @@ sub chat_request {
     }
   }
 
-  # parallel_tool_use -> OpenAI's parallel_tool_calls (only when tools present)
-  if ( !exists $extra{parallel_tool_calls}
-    && exists $extra{tools}
-    && $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
-    $extra{parallel_tool_calls} = $self->parallel_tool_use ? JSON->true : JSON->false;
+  # parallel_tool_use -> OpenAI's parallel_tool_calls (only when tools present).
+  # A per-request control beats the engine attribute.
+  if ( exists $extra{tools} && !exists $extra{parallel_tool_calls} ) {
+    my $ptu;
+    if ( exists $controls->{parallel_tool_use} ) {
+      $ptu = $controls->{parallel_tool_use};
+    }
+    elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
+      $ptu = $self->parallel_tool_use;
+    }
+    $extra{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
   }
 
   return $self->generate_request( $self->chat_operation_id, sub { $self->chat_response(shift) },
     defined $self->chat_model ? ( model => $self->chat_model ) : (),
     messages => $messages,
-    $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
-    ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : (),
-    $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    ( $self->can('reasoning_kwargs') ? $self->reasoning_kwargs : () ),
-    ( $self->can('prompt_cache_kwargs') ? $self->prompt_cache_kwargs : () ),
+    exists $controls->{max_tokens}
+      ? ( max_tokens => $controls->{max_tokens} )
+      : ( $self->get_response_size ? ( max_tokens => $self->get_response_size ) : () ),
+    exists $controls->{response_format}
+      ? ( response_format => $controls->{response_format} )
+      : ( ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : () ),
+    exists $controls->{temperature}
+      ? ( temperature => $controls->{temperature} )
+      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
+    ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
+    ( $self->can('prompt_cache_kwargs_for') ? $self->prompt_cache_kwargs_for(%$controls) : () ),
     stream => JSON->false,
     %extra,
   );
@@ -393,14 +410,25 @@ select the correct stream parser.
 
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
+
+  # Same canonical-control consumption as chat_request (karr #46).
+  my $controls = delete $extra{controls} // {};
+
   return $self->generate_request( $self->chat_operation_id, sub {},
     defined $self->chat_model ? ( model => $self->chat_model ) : (),
     messages => $messages,
-    $self->get_response_size ? ( max_tokens => $self->get_response_size ) : (),
-    ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : (),
-    $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    ( $self->can('reasoning_kwargs') ? $self->reasoning_kwargs : () ),
-    ( $self->can('prompt_cache_kwargs') ? $self->prompt_cache_kwargs : () ),
+    exists $controls->{max_tokens}
+      ? ( max_tokens => $controls->{max_tokens} )
+      : ( $self->get_response_size ? ( max_tokens => $self->get_response_size ) : () ),
+    exists $controls->{response_format}
+      ? ( response_format => $controls->{response_format} )
+      : ( ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : () ),
+    exists $controls->{temperature}
+      ? ( temperature => $controls->{temperature} )
+      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
+    ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
+    ( $self->can('prompt_cache_kwargs_for') ? $self->prompt_cache_kwargs_for(%$controls) : () ),
     stream => JSON->true,
     %extra,
   );

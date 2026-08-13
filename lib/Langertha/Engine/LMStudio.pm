@@ -286,6 +286,14 @@ sub _normalize_system_prompt {
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
+
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  # LM Studio's native wire only honors temperature and max_output_tokens;
+  # the other canonical controls have no native placement here and are
+  # consumed without being emitted.
+  my $controls = delete $extra{controls} // {};
+
   my $system_prompt = _normalize_system_prompt($messages);
   my $input = _normalize_input($messages);
 
@@ -295,8 +303,12 @@ sub chat_request {
     model => $self->chat_model,
     input => $input,
     $system_prompt ? ( system_prompt => $system_prompt ) : (),
-    $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : (),
+    exists $controls->{temperature}
+      ? ( temperature => $controls->{temperature} )
+      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    exists $controls->{max_tokens}
+      ? ( max_output_tokens => $controls->{max_tokens} )
+      : ( $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : () ),
     $self->has_context_size ? ( context_length => $self->get_context_size ) : (),
     %extra,
   );
@@ -327,6 +339,11 @@ sub stream_format { 'sse' }
 
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
+
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  my $controls = delete $extra{controls} // {};
+
   my $system_prompt = _normalize_system_prompt($messages);
   my $input = _normalize_input($messages);
 
@@ -337,8 +354,12 @@ sub chat_stream_request {
     input => $input,
     $system_prompt ? ( system_prompt => $system_prompt ) : (),
     stream => JSON->true,
-    $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : (),
+    exists $controls->{temperature}
+      ? ( temperature => $controls->{temperature} )
+      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    exists $controls->{max_tokens}
+      ? ( max_output_tokens => $controls->{max_tokens} )
+      : ( $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : () ),
     $self->has_context_size ? ( context_length => $self->get_context_size ) : (),
     %extra,
   );

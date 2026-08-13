@@ -68,18 +68,51 @@ C<anthropic>, C<Gemini> to C<gemini>, C<OpenAIResponses> to C<responses>.
 
 =cut
 
-sub reasoning_kwargs {
-  my ( $self ) = @_;
-  return () unless $self->has_reasoning_effort || $self->has_thinking_budget;
+sub reasoning_kwargs_for {
+  my ( $self, %args ) = @_;
+
+  # Per-request controls (chat_f, karr #46) beat the engine attributes on a
+  # per-key basis: %args may carry effort / thinking_budget (or the canonical
+  # control names reasoning_effort / thinking_budget, so the whole controls
+  # hash can be passed wholesale), and any key it does not carry falls back
+  # to the configured attribute.
+  my %merged = (
+    ( $self->has_reasoning_effort ? ( effort => $self->reasoning_effort ) : () ),
+    ( $self->has_thinking_budget  ? ( thinking_budget => $self->thinking_budget ) : () ),
+    ( exists $args{effort} ? ( effort => $args{effort} ) : () ),
+    ( exists $args{reasoning_effort} ? ( effort => $args{reasoning_effort} ) : () ),
+    ( exists $args{thinking_budget} ? ( thinking_budget => $args{thinking_budget} ) : () ),
+  );
+  return () unless %merged;
   return Langertha::Reasoning->new(
-    defined $self->reasoning_effort
-      ? ( effort => $self->reasoning_effort )
-      : (),
-    $self->has_thinking_budget
-      ? ( thinking_budget => $self->thinking_budget )
-      : (),
+    ( exists $merged{effort} ? ( effort => $merged{effort} ) : () ),
+    ( exists $merged{thinking_budget} ? ( thinking_budget => $merged{thinking_budget} ) : () ),
     ( $self->can('chat_model') ? ( model => $self->chat_model ) : () ),
   )->to( $self->reasoning_wire_format );
+}
+
+=method reasoning_kwargs_for
+
+    my %kwargs = $engine->reasoning_kwargs_for( effort => 'high' );
+    my %kwargs = $engine->reasoning_kwargs_for( %$controls );
+
+Returns the body kwargs to merge into a chat request for the reasoning
+control, serialized for L</reasoning_wire_format> via L<Langertha::Reasoning>.
+C<%args> may carry C<effort> and/or C<thinking_budget> (or the canonical
+control names C<reasoning_effort> / C<thinking_budget>, so the whole controls
+hash from chat_f can be passed wholesale); keys it does not carry fall back to
+the engine attributes, so a per-request control (chat_f, karr #46) beats the
+configured attribute on a per-key basis. Empty list when neither a per-request
+value nor an attribute is set, or when the value is unsupported on the engine's
+wire. Engines override this to model wire divergence within a shared format
+(e.g. DeepSeek's model-gated split, or MiniMax/Perplexity returning an empty
+list).
+
+=cut
+
+sub reasoning_kwargs {
+  my ( $self ) = @_;
+  return $self->reasoning_kwargs_for;
 }
 
 =method reasoning_kwargs
@@ -89,9 +122,8 @@ sub reasoning_kwargs {
 Returns the body kwargs to merge into a chat request for the configured
 C<reasoning_effort> and/or L</thinking_budget>, serialized for
 L</reasoning_wire_format> via L<Langertha::Reasoning>. Empty list when neither
-is set, or when the value is unsupported on the engine's wire. Engines
-override this to model wire divergence within a shared format (e.g. DeepSeek's
-model-gated split, or MiniMax/Perplexity returning an empty list).
+is set, or when the value is unsupported on the engine's wire. Delegates to
+L</reasoning_kwargs_for> with no per-request overrides.
 
 =cut
 

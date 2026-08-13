@@ -215,16 +215,28 @@ and parameter descriptions.
 
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
+
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  # AKI's native wire only honors temperature and max_gen_tokens; the other
+  # canonical controls (response_format, seed, reasoning_effort, ...) have no
+  # native placement here and are consumed without being emitted.
+  my $controls = delete $extra{controls} // {};
+
   my $model = $self->chat_model;
   return $self->generate_http_request(
     POST => $self->url.'/api/call/'.$model,
     sub { $self->chat_response(shift) },
     key => $self->api_key,
     chat_context => $self->json->encode($messages),
-    $self->has_temperature ? ( temperature => $self->temperature ) : (),
+    exists $controls->{temperature}
+      ? ( temperature => $controls->{temperature} )
+      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
     $self->has_top_k ? ( top_k => $self->top_k ) : (),
     $self->has_top_p ? ( top_p => $self->top_p ) : (),
-    $self->has_max_gen_tokens ? ( max_gen_tokens => $self->max_gen_tokens ) : (),
+    exists $controls->{max_tokens}
+      ? ( max_gen_tokens => $controls->{max_tokens} )
+      : ( $self->has_max_gen_tokens ? ( max_gen_tokens => $self->max_gen_tokens ) : () ),
     wait_for_result => JSON->true,
     %extra,
   );

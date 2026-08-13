@@ -164,6 +164,10 @@ sub default_model { 'gemini-3-flash-preview' }
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  my $controls = delete $extra{controls} // {};
+
   # Translate tool_choice (canonical / OpenAI / Anthropic shapes) into
   # Gemini's toolConfig.functionCallingConfig form.
   if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
@@ -224,10 +228,16 @@ sub chat_request {
 
   # Add generation config
   my %generation_config;
-  if ($self->get_response_size) {
+  if ( exists $controls->{max_tokens} ) {
+    $generation_config{maxOutputTokens} = $controls->{max_tokens};
+  }
+  elsif ($self->get_response_size) {
     $generation_config{maxOutputTokens} = $self->get_response_size;
   }
-  if ($self->has_temperature) {
+  if ( exists $controls->{temperature} ) {
+    $generation_config{temperature} = $controls->{temperature};
+  }
+  elsif ($self->has_temperature) {
     $generation_config{temperature} = $self->temperature;
   }
 
@@ -237,9 +247,11 @@ sub chat_request {
   # response_format (chat_f) beats the engine attribute, and is removed from
   # the extras either way: generateContent has no top-level response_format
   # field and would carry it as dead weight while the schema went missing.
-  my $rf = exists $extra{response_format}
-    ? delete $extra{response_format}
-    : $self->has_response_format ? $self->response_format : undef;
+  my $rf = exists $controls->{response_format}
+    ? delete $controls->{response_format}
+    : exists $extra{response_format}
+      ? delete $extra{response_format}
+      : $self->has_response_format ? $self->response_format : undef;
   if ( defined $rf ) {
     my $type = ref($rf) eq 'HASH' ? ( $rf->{type} // '' ) : '';
     if ( $type eq 'json_object' ) {
@@ -256,10 +268,10 @@ sub chat_request {
   # Merge reasoning effort / thinking_budget ->
   # generationConfig.thinkingConfig.thinkingLevel (Gemini 3) or
   # thinkingConfig.thinkingBudget (Gemini 2.5). Langertha::Reasoning owns
-  # the per-model placement; this just decides whether to emit anything.
-  if ( $self->has_reasoning_effort || $self->has_thinking_budget ) {
-    %generation_config = ( %generation_config, $self->reasoning_kwargs );
-  }
+  # the per-model placement; a per-request control (chat_f, karr #46) beats
+  # the engine attribute on a per-key basis.
+  my @reasoning = $self->reasoning_kwargs_for(%$controls);
+  %generation_config = ( %generation_config, @reasoning ) if @reasoning;
 
   $request_body{generationConfig} = \%generation_config if %generation_config;
 
@@ -336,6 +348,10 @@ sub stream_format { 'sse' }
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
 
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  my $controls = delete $extra{controls} // {};
+
   # Same tool_choice translation as chat_request.
   if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
     my $tc = Langertha::ToolChoice->from_hash( delete $extra{tool_choice} );
@@ -389,10 +405,16 @@ sub chat_stream_request {
   }
 
   my %generation_config;
-  if ($self->get_response_size) {
+  if ( exists $controls->{max_tokens} ) {
+    $generation_config{maxOutputTokens} = $controls->{max_tokens};
+  }
+  elsif ($self->get_response_size) {
     $generation_config{maxOutputTokens} = $self->get_response_size;
   }
-  if ($self->has_temperature) {
+  if ( exists $controls->{temperature} ) {
+    $generation_config{temperature} = $controls->{temperature};
+  }
+  elsif ($self->has_temperature) {
     $generation_config{temperature} = $self->temperature;
   }
 
@@ -402,9 +424,11 @@ sub chat_stream_request {
   # and is removed from the extras either way — generateContent has no
   # top-level response_format field and would carry it as dead weight
   # while the schema went missing.
-  my $rf = exists $extra{response_format}
-    ? delete $extra{response_format}
-    : $self->has_response_format ? $self->response_format : undef;
+  my $rf = exists $controls->{response_format}
+    ? delete $controls->{response_format}
+    : exists $extra{response_format}
+      ? delete $extra{response_format}
+      : $self->has_response_format ? $self->response_format : undef;
   if ( defined $rf ) {
     my $type = ref($rf) eq 'HASH' ? ( $rf->{type} // '' ) : '';
     if ( $type eq 'json_object' ) {
@@ -418,9 +442,8 @@ sub chat_stream_request {
     }
   }
 
-  if ( $self->has_reasoning_effort || $self->has_thinking_budget ) {
-    %generation_config = ( %generation_config, $self->reasoning_kwargs );
-  }
+  my @reasoning = $self->reasoning_kwargs_for(%$controls);
+  %generation_config = ( %generation_config, @reasoning ) if @reasoning;
 
   $request_body{generationConfig} = \%generation_config if %generation_config;
 

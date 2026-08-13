@@ -70,13 +70,43 @@ C<anthropic>.
 
 =cut
 
+sub prompt_cache_kwargs_for {
+  my ( $self, %args ) = @_;
+
+  # Per-request controls (chat_f, karr #46) beat the engine attributes on a
+  # per-key basis: %args may carry prompt_cache / prompt_cache_ttl /
+  # prompt_cache_key, and any key it does not carry falls back to the
+  # configured attribute.
+  my %merged = (
+    ( prompt_cache => $self->prompt_cache ),
+    ( $self->has_prompt_cache_ttl ? ( prompt_cache_ttl => $self->prompt_cache_ttl ) : () ),
+    ( $self->has_prompt_cache_key ? ( prompt_cache_key => $self->prompt_cache_key ) : () ),
+    %args,
+  );
+  return () unless $merged{prompt_cache} || defined $merged{prompt_cache_key};
+  return Langertha::PromptCache->new(
+    enable => $merged{prompt_cache},
+    ( defined $merged{prompt_cache_ttl} ? ( ttl => $merged{prompt_cache_ttl} ) : () ),
+    ( defined $merged{prompt_cache_key} ? ( key => $merged{prompt_cache_key} ) : () ),
+  )->to( $self->cache_wire_format );
+}
+
+=method prompt_cache_kwargs_for
+
+    my %kwargs = $engine->prompt_cache_kwargs_for( prompt_cache => 1 );
+
+Returns the body kwargs to merge into a chat request for the caching control,
+serialized for L</cache_wire_format> via L<Langertha::PromptCache>. C<%args> may
+carry C<prompt_cache>, C<prompt_cache_ttl> and/or C<prompt_cache_key>; keys it
+does not carry fall back to the engine attributes, so a per-request control
+(chat_f, karr #46) beats the configured attribute on a per-key basis. Empty
+list when nothing applies to the engine's wire (caching off / no key).
+
+=cut
+
 sub prompt_cache_kwargs {
   my ( $self ) = @_;
-  return Langertha::PromptCache->new(
-    enable => $self->prompt_cache,
-    ( $self->has_prompt_cache_ttl ? ( ttl => $self->prompt_cache_ttl ) : () ),
-    ( $self->has_prompt_cache_key ? ( key => $self->prompt_cache_key ) : () ),
-  )->to( $self->cache_wire_format );
+  return $self->prompt_cache_kwargs_for;
 }
 
 =method prompt_cache_kwargs
@@ -86,6 +116,7 @@ sub prompt_cache_kwargs {
 Returns the body kwargs to merge into a chat request for the configured caching
 options, serialized for L</cache_wire_format> via L<Langertha::PromptCache>.
 Empty list when nothing applies to the engine's wire (caching off / no key).
+Delegates to L</prompt_cache_kwargs_for> with no per-request overrides.
 
 =cut
 

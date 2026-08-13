@@ -87,6 +87,10 @@ override 'chat_operation_id' => sub {
 sub chat_request {
     my ( $self, $messages, %extra ) = @_;
 
+    # Canonical per-request controls (chat_f, karr #46) beat the engine
+    # attributes on a per-key basis; the rest of %extra passes straight through.
+    my $controls = delete $extra{controls} // {};
+
     # Normalize tool_choice to Responses format
     if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
         if ( my $tc = Langertha::ToolChoice->from_hash( $extra{tool_choice} ) ) {
@@ -103,11 +107,17 @@ sub chat_request {
         }
     }
 
-    # parallel_tool_use -> parallel_tool_calls (only when tools present)
-    if ( !exists $extra{parallel_tool_calls}
-        && exists $extra{tools}
-        && $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
-        $extra{parallel_tool_calls} = $self->parallel_tool_use ? JSON->true : JSON->false;
+    # parallel_tool_use -> parallel_tool_calls (only when tools present).
+    # A per-request control beats the engine attribute.
+    if ( exists $extra{tools} && !exists $extra{parallel_tool_calls} ) {
+        my $ptu;
+        if ( exists $controls->{parallel_tool_use} ) {
+            $ptu = $controls->{parallel_tool_use};
+        }
+        elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
+            $ptu = $self->parallel_tool_use;
+        }
+        $extra{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
     }
 
     # Build input array: strip system messages (go to instructions instead)
@@ -121,12 +131,19 @@ sub chat_request {
         defined $self->chat_model ? ( model => $self->chat_model ) : (),
         $self->has_system_prompt ? ( instructions => $self->system_prompt ) : (),
         scalar(@input) ? ( input => \@input ) : (),
-        $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : (),
-        ( $self->can('has_response_format') && $self->has_response_format )
-            ? ( response_format => $self->response_format )
-            : (),
-        $self->has_temperature ? ( temperature => $self->temperature ) : (),
-        ( $self->can('reasoning_kwargs') ? $self->reasoning_kwargs : () ),
+        exists $controls->{max_tokens}
+            ? ( max_output_tokens => $controls->{max_tokens} )
+            : ( $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : () ),
+        exists $controls->{response_format}
+            ? ( response_format => $controls->{response_format} )
+            : ( ($self->can('has_response_format') && $self->has_response_format)
+                ? ( response_format => $self->response_format )
+                : () ),
+        exists $controls->{temperature}
+            ? ( temperature => $controls->{temperature} )
+            : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+        exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
+        ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
         stream => JSON->false,
         %extra,
     );

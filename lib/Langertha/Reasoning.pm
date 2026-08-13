@@ -3,6 +3,7 @@ package Langertha::Reasoning;
 our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
+use JSON::MaybeXS;
 
 =head1 SYNOPSIS
 
@@ -247,12 +248,31 @@ sub to_gemini {
   return ( thinkingConfig => { thinkingLevel => $self->to_gemini_level } );
 }
 
+sub to_ollama {
+  my ( $self ) = @_;
+  return () unless $self->has_effort;
+  # Ollama's only reasoning knob is the boolean options.think; the normalized
+  # vocabulary collapses onto it (any effort level -> on, 'none' -> off).
+  return ( think => $self->effort eq 'none' ? JSON->false : JSON->true );
+}
+
+=method to_ollama
+
+Serializes to Ollama's C<options.think> boolean: any effort level other than
+C<none> turns thinking on, C<none> turns it off. Empty list when no effort is
+set. (Ollama does not compose L<Langertha::Role::ReasoningEffort> — the engine
+calls this serializer directly from its C<chat_request> when a per-request
+C<reasoning_effort> control arrives.)
+
+=cut
+
 # Maps a reasoning_wire_format tag to the per-format serializer method.
 my %TO_METHOD = (
   openai    => 'to_openai',
   responses => 'to_responses',
   anthropic => 'to_anthropic',
   gemini    => 'to_gemini',
+  ollama    => 'to_ollama',
 );
 
 sub to {

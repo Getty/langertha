@@ -382,6 +382,45 @@ async sub simple_chat_f {
   return await $self->chat_f( messages => \@messages );
 }
 
+# Canonical per-request controls (karr #46). chat_f normalizes these like
+# messages/tools instead of spreading them as raw target-wire kwargs: each
+# engine's chat_request consumes the `controls` hash and places them via the
+# same value objects the engine attributes use (Langertha::Reasoning,
+# Langertha::PromptCache) or the engine's own placement logic (Ollama options,
+# Gemini generationConfig). Unknown keys still pass straight through.
+my %CANONICAL_CONTROLS = map { $_ => 1 } qw(
+  temperature
+  max_tokens
+  response_format
+  seed
+  parallel_tool_use
+  reasoning_effort
+  thinking_budget
+  prompt_cache
+  prompt_cache_ttl
+  prompt_cache_key
+);
+
+sub _extract_controls {
+  my ( $self, $opts ) = @_;
+  my %controls;
+  for my $key ( keys %CANONICAL_CONTROLS ) {
+    $controls{$key} = delete $opts->{$key} if exists $opts->{$key};
+  }
+  return \%controls;
+}
+
+=method _extract_controls
+
+    my $controls = $engine->_extract_controls(\%opts);
+
+Removes the canonical per-request controls (karr #46) from C<%opts> and returns
+them as a HashRef. The engine's C<chat_request> receives the hash under the
+C<controls> key and places each control on its wire; unknown keys stay in
+C<%opts> and pass straight through as before.
+
+=cut
+
 async sub chat_f {
   my ( $self, %opts ) = @_;
 
@@ -422,8 +461,14 @@ async sub chat_f {
     }
   }
 
+  # Extract the canonical controls (after the forced-tool fallback, which may
+  # have set response_format) and hand them to chat_request under `controls`.
+  my $controls = $self->_extract_controls(\%opts);
+
   my $t0 = [gettimeofday];
-  my $request = $self->chat_request( $self->chat_messages(@messages), %opts );
+  my $request = $self->chat_request( $self->chat_messages(@messages),
+    ( %$controls ? ( controls => $controls ) : () ),
+    %opts );
 
   my $response = await $self->_async_http->do_request( request => $request );
 
@@ -487,6 +532,8 @@ response_format, etc.) use L</chat_f>; C<simple_chat_f> delegates to it.
       tools          => [ $tool, ... ],
       tool_choice    => { type => 'tool', name => 'extract' },
       response_format => { ... },
+      temperature    => 0.7,
+      max_tokens     => 512,
       # any other engine-specific extras pass straight through
     );
 
@@ -501,6 +548,18 @@ C<tools> in C<chat_f> can be a mix of provider-shape HashRefs
 the per-provider serialization. The L<Langertha::Tool> value object is
 the canonical normalizer (C<from_hash> accepts every shape, the
 C<to_PROVIDER> methods produce the wire payload).
+
+The canonical per-request controls (karr #46) are normalized like
+C<messages>/C<tools> instead of being spread as raw target-wire kwargs:
+C<temperature>, C<max_tokens>, C<response_format>, C<seed>,
+C<parallel_tool_use>, C<reasoning_effort>, C<thinking_budget>,
+C<prompt_cache>, C<prompt_cache_ttl> and C<prompt_cache_key>. Each engine's
+C<chat_request> places them on its own wire (Ollama C<options>, Gemini
+C<generationConfig>, Anthropic C<output_config>+C<thinking>, ...) via the same
+value objects the engine attributes use, so the same call is correct across
+engine families. A per-request control beats the configured engine attribute
+on a per-key basis. Any other key still passes straight through to the wire as
+before.
 
 When the caller asks for a forced named tool on an engine that cannot
 do native named-tool-forcing but supports C<json_schema>
@@ -546,7 +605,12 @@ async sub chat_stream_realtime_f {
   croak "".(ref $self)." does not support streaming"
     unless $self->can('chat_stream_request');
 
-  my $request = $self->chat_stream_request($self->chat_messages(@messages), %opts);
+  # Same canonical-control extraction as chat_f (karr #46).
+  my $controls = $self->_extract_controls(\%opts);
+
+  my $request = $self->chat_stream_request( $self->chat_messages(@messages),
+    ( %$controls ? ( controls => $controls ) : () ),
+    %opts );
   my @all_chunks;
   my $buffer = '';
   my $format = $self->stream_format;
@@ -671,10 +735,13 @@ L</chat_stream_realtime_f> directly.
 
 Async I<single-turn> streaming chat with named arguments. C<messages> is
 required (ArrayRef or a single message); C<chunk_callback> is called with each
-L<Langertha::Stream::Chunk> as it arrives from the server. All remaining
-options are passed straight through to L</chat_stream_request> — tools,
-tool_choice, response_format, temperature, max_tokens, and any engine-specific
-extras.
+L<Langertha::Stream::Chunk> as it arrives from the server. The canonical
+per-request controls (karr #46) — C<temperature>, C<max_tokens>,
+C<response_format>, C<seed>, C<parallel_tool_use>, C<reasoning_effort>,
+C<thinking_budget>, C<prompt_cache>, C<prompt_cache_ttl>, C<prompt_cache_key> —
+are extracted and handed to L</chat_stream_request> under C<controls>, exactly
+as in L</chat_f>. All other options (tools, tool_choice, and any engine-specific
+extras) pass straight through.
 
 Returns a L<Future> that resolves to C<($content, \@chunks, \%timing)> where
 C<$content> is the full concatenated text, C<\@chunks> the collected

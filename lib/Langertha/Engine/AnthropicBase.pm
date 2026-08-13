@@ -172,13 +172,17 @@ sub default_model { croak "".(ref $_[0])." requires model to be set" }
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  my $controls = delete $extra{controls} // {};
+
   # Anthropic has no native response_format. Translate json_object /
   # json_schema response_format hashes into a synthesized tool + forced
   # named tool_choice; the response parser will pull the structured
   # output out of the resulting tool_use block.
-  my $rf_routed = $self->_translate_response_format(\%extra);
+  my $rf_routed = $self->_translate_response_format(\%extra, $controls);
 
-  $self->_normalize_tool_params(\%extra);
+  $self->_normalize_tool_params(\%extra, $controls);
   my @msgs;
   my $system = "";
   for my $message (@{$messages}) {
@@ -199,10 +203,14 @@ sub chat_request {
   return $self->generate_http_request( POST => $self->url.'/v1/messages', sub { $self->chat_response(shift, $rf_routed) },
     model => $self->chat_model,
     messages => \@msgs,
-    max_tokens => $self->get_response_size, # must be always set
-    $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    $self->reasoning_kwargs,
-    $self->prompt_cache_kwargs,
+    exists $controls->{max_tokens}
+      ? ( max_tokens => $controls->{max_tokens} )
+      : ( max_tokens => $self->get_response_size ), # must be always set
+    exists $controls->{temperature}
+      ? ( temperature => $controls->{temperature} )
+      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    $self->reasoning_kwargs_for(%$controls),
+    $self->prompt_cache_kwargs_for(%$controls),
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     %extra,
@@ -215,14 +223,16 @@ sub chat_request {
 my $SYNTH_RF_TOOL_NAME = '__langertha_response_format__';
 
 sub _translate_response_format {
-  my ( $self, $extra ) = @_;
+  my ( $self, $extra, $controls ) = @_;
 
-  # A per-request response_format (chat_f) beats the engine attribute, and
-  # is removed from the extras either way: the Messages API has no
-  # response_format field and answers 400 when one reaches the wire.
-  my $rf = exists $extra->{response_format}
-    ? delete $extra->{response_format}
-    : $self->has_response_format ? $self->response_format : undef;
+  # A per-request response_format (chat_f, karr #46) beats the engine
+  # attribute, and is removed from the extras either way: the Messages API
+  # has no response_format field and answers 400 when one reaches the wire.
+  my $rf = exists $controls->{response_format}
+    ? delete $controls->{response_format}
+    : exists $extra->{response_format}
+      ? delete $extra->{response_format}
+      : $self->has_response_format ? $self->response_format : undef;
   return unless ref($rf) eq 'HASH';
   my $type = $rf->{type} // '';
 
@@ -255,9 +265,11 @@ sub _translate_response_format {
 }
 
 # Normalize tool_choice (any accepted format -> Anthropic native) and fold
-# parallel_tool_use into the tool_choice block as Anthropic expects.
+# parallel_tool_use into the tool_choice block as Anthropic expects. A
+# per-request parallel_tool_use control (chat_f, karr #46) beats the engine
+# attribute.
 sub _normalize_tool_params {
-  my ( $self, $extra ) = @_;
+  my ( $self, $extra, $controls ) = @_;
 
   if ( exists $extra->{tool_choice} && defined $extra->{tool_choice} ) {
     if ( my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} ) ) {
@@ -265,13 +277,21 @@ sub _normalize_tool_params {
     }
   }
 
-  return unless exists $extra->{tools}
-    && $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use;
+  return unless exists $extra->{tools};
+
+  my $ptu;
+  if ( exists $controls->{parallel_tool_use} ) {
+    $ptu = $controls->{parallel_tool_use};
+  }
+  elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
+    $ptu = $self->parallel_tool_use;
+  }
+  return unless defined $ptu;
 
   my $tc = $extra->{tool_choice};
   $tc = { type => 'auto' } unless ref($tc) eq 'HASH';
   unless ( exists $tc->{disable_parallel_tool_use} ) {
-    $tc->{disable_parallel_tool_use} = $self->parallel_tool_use ? JSON->false : JSON->true;
+    $tc->{disable_parallel_tool_use} = $ptu ? JSON->false : JSON->true;
   }
   $extra->{tool_choice} = $tc;
 }
@@ -312,6 +332,10 @@ sub stream_format { 'sse' }
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
 
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  my $controls = delete $extra{controls} // {};
+
   # Anthropic has no native response_format, and the streaming path has no
   # Response to lift a synthesized tool_use back into content from — the
   # chat_request rewrite (_translate_response_format) depends on
@@ -319,9 +343,11 @@ sub chat_stream_request {
   # unstructured text (karr #52 Folge 1) or leaking response_format onto
   # the wire (Folge 2), consume the key and refuse loudly: structured
   # output on Anthropic-family engines is a non-streaming feature.
-  my $rf = exists $extra{response_format}
-    ? delete $extra{response_format}
-    : $self->has_response_format ? $self->response_format : undef;
+  my $rf = exists $controls->{response_format}
+    ? delete $controls->{response_format}
+    : exists $extra{response_format}
+      ? delete $extra{response_format}
+      : $self->has_response_format ? $self->response_format : undef;
   if ( defined $rf && ref($rf) eq 'HASH' ) {
     my $type = $rf->{type} // '';
     my $honored = $type eq 'json_object'
@@ -336,7 +362,7 @@ sub chat_stream_request {
     }
   }
 
-  $self->_normalize_tool_params(\%extra);
+  $self->_normalize_tool_params(\%extra, $controls);
   my @msgs;
   my $system = "";
   for my $message (@{$messages}) {
@@ -357,10 +383,14 @@ sub chat_stream_request {
   return $self->generate_http_request( POST => $self->url.'/v1/messages', sub {},
     model => $self->chat_model,
     messages => \@msgs,
-    max_tokens => $self->get_response_size,
-    $self->has_temperature ? ( temperature => $self->temperature ) : (),
-    $self->reasoning_kwargs,
-    $self->prompt_cache_kwargs,
+    exists $controls->{max_tokens}
+      ? ( max_tokens => $controls->{max_tokens} )
+      : ( max_tokens => $self->get_response_size ), # must be always set
+    exists $controls->{temperature}
+      ? ( temperature => $controls->{temperature} )
+      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    $self->reasoning_kwargs_for(%$controls),
+    $self->prompt_cache_kwargs_for(%$controls),
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     stream => JSON->true,

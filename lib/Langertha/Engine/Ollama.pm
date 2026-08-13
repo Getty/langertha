@@ -8,6 +8,7 @@ use JSON::MaybeXS;
 use Module::Runtime qw( use_module );
 use Langertha::Response;
 use Langertha::ToolCall;
+use Langertha::Reasoning;
 
 use Langertha::Engine::OllamaOpenAI;
 
@@ -163,15 +164,21 @@ sub embedding_response {
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  my $controls = delete $extra{controls} // {};
+
   # Translate response_format -> Ollama's format parameter. Ollama
   # accepts either the literal string 'json' or a JSON-Schema HashRef.
   # A per-request response_format (chat_f) beats the engine attribute,
   # and is removed from the extras either way: Ollama has no
   # response_format field and would silently ignore it. Fall back to the
   # legacy json_format attribute when neither is set.
-  my $rf = exists $extra{response_format}
-    ? delete $extra{response_format}
-    : $self->has_response_format ? $self->response_format : undef;
+  my $rf = exists $controls->{response_format}
+    ? delete $controls->{response_format}
+    : exists $extra{response_format}
+      ? delete $extra{response_format}
+      : $self->has_response_format ? $self->response_format : undef;
   my $format;
   if ( defined $rf ) {
     my $type = ref($rf) eq 'HASH' ? ( $rf->{type} // '' ) : '';
@@ -186,6 +193,16 @@ sub chat_request {
   }
   $format = 'json' if !defined $format && $self->json_format;
 
+  # reasoning_effort -> options.think (Ollama's only reasoning knob). Ollama
+  # does not compose ReasoningEffort, so serialize directly via the value
+  # object rather than advertising the capability.
+  my @reasoning = exists $controls->{reasoning_effort}
+    ? Langertha::Reasoning->new(
+        effort => $controls->{reasoning_effort},
+        ( $self->can('chat_model') ? ( model => $self->chat_model ) : () ),
+      )->to('ollama')
+    : ();
+
   return $self->generate_request( chat => sub { $self->chat_response(shift) },
     model => $self->chat_model,
     messages => $messages,
@@ -193,11 +210,18 @@ sub chat_request {
     defined $format ? ( format => $format ) : (),
     defined $self->get_keep_alive ? ( keep_alive => $self->get_keep_alive ) : (),
     options => {
-      $self->has_temperature ? ( temperature => $self->temperature ) : (),
+      exists $controls->{temperature}
+        ? ( temperature => $controls->{temperature} )
+        : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
       $self->has_context_size ? ( num_ctx => $self->get_context_size ) : (),
-      $self->get_response_size ? ( num_predict => $self->get_response_size ) : (),
-      $self->has_seed ? ( seed => $self->seed )
-        : $self->randomize_seed ? ( seed => $self->random_seed ) : (),
+      exists $controls->{max_tokens}
+        ? ( num_predict => $controls->{max_tokens} )
+        : ( $self->get_response_size ? ( num_predict => $self->get_response_size ) : () ),
+      exists $controls->{seed}
+        ? ( seed => $controls->{seed} )
+        : ( $self->has_seed ? ( seed => $self->seed )
+          : $self->randomize_seed ? ( seed => $self->random_seed ) : () ),
+      @reasoning,
       $extra{options} ? (%{delete $extra{options}}) : (),
     },
     %extra,
@@ -365,6 +389,10 @@ sub stream_format { 'ndjson' }
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
 
+  # Canonical per-request controls (chat_f, karr #46) beat the engine
+  # attributes on a per-key basis; the rest of %extra passes straight through.
+  my $controls = delete $extra{controls} // {};
+
   # Translate response_format -> Ollama's format parameter, same wire as
   # chat_request. Ollama accepts either the literal string 'json' or a
   # JSON-Schema HashRef. A per-request response_format
@@ -372,9 +400,11 @@ sub chat_stream_request {
   # from the extras either way: Ollama has no response_format field and
   # would silently ignore it. Fall back to the legacy json_format
   # attribute when neither is set.
-  my $rf = exists $extra{response_format}
-    ? delete $extra{response_format}
-    : $self->has_response_format ? $self->response_format : undef;
+  my $rf = exists $controls->{response_format}
+    ? delete $controls->{response_format}
+    : exists $extra{response_format}
+      ? delete $extra{response_format}
+      : $self->has_response_format ? $self->response_format : undef;
   my $format;
   if ( defined $rf ) {
     my $type = ref($rf) eq 'HASH' ? ( $rf->{type} // '' ) : '';
@@ -389,6 +419,14 @@ sub chat_stream_request {
   }
   $format = 'json' if !defined $format && $self->json_format;
 
+  # reasoning_effort -> options.think, same wire as chat_request.
+  my @reasoning = exists $controls->{reasoning_effort}
+    ? Langertha::Reasoning->new(
+        effort => $controls->{reasoning_effort},
+        ( $self->can('chat_model') ? ( model => $self->chat_model ) : () ),
+      )->to('ollama')
+    : ();
+
   return $self->generate_request( chat => sub {},
     model => $self->chat_model,
     messages => $messages,
@@ -396,11 +434,18 @@ sub chat_stream_request {
     defined $format ? ( format => $format ) : (),
     defined $self->get_keep_alive ? ( keep_alive => $self->get_keep_alive ) : (),
     options => {
-      $self->has_temperature ? ( temperature => $self->temperature ) : (),
+      exists $controls->{temperature}
+        ? ( temperature => $controls->{temperature} )
+        : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
       $self->has_context_size ? ( num_ctx => $self->get_context_size ) : (),
-      $self->get_response_size ? ( num_predict => $self->get_response_size ) : (),
-      $self->has_seed ? ( seed => $self->seed )
-        : $self->randomize_seed ? ( seed => $self->random_seed ) : (),
+      exists $controls->{max_tokens}
+        ? ( num_predict => $controls->{max_tokens} )
+        : ( $self->get_response_size ? ( num_predict => $self->get_response_size ) : () ),
+      exists $controls->{seed}
+        ? ( seed => $controls->{seed} )
+        : ( $self->has_seed ? ( seed => $self->seed )
+          : $self->randomize_seed ? ( seed => $self->random_seed ) : () ),
+      @reasoning,
       $extra{options} ? (%{delete $extra{options}}) : (),
     },
     %extra,

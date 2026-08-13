@@ -122,10 +122,19 @@ async sub run_tests {
 
     is($opts_engine->last_messages->[0]{role}, 'user', 'messages normalized');
     is($opts_engine->last_messages->[0]{content}, 'hi', 'message content preserved');
-    is($opts_engine->last_extra->{temperature}, 0.7, 'temperature passed through');
-    is($opts_engine->last_extra->{max_tokens}, 100, 'max_tokens passed through');
-    is_deeply($opts_engine->last_extra->{response_format}, { type => 'json_object' },
-      'response_format passed through');
+    # karr #46: canonical generation opts are extracted into the `controls`
+    # hash (chat_stream_request places them on the engine's wire) instead of
+    # being spread as raw target-wire kwargs.
+    is($opts_engine->last_extra->{controls}{temperature}, 0.7,
+      'temperature passed through as a control');
+    is($opts_engine->last_extra->{controls}{max_tokens}, 100,
+      'max_tokens passed through as a control');
+    is_deeply($opts_engine->last_extra->{controls}{response_format}, { type => 'json_object' },
+      'response_format passed through as a control');
+    ok(!exists $opts_engine->last_extra->{temperature}
+      && !exists $opts_engine->last_extra->{max_tokens}
+      && !exists $opts_engine->last_extra->{response_format},
+      'canonical controls not leaked as raw extras');
     ok(!exists $opts_engine->last_extra->{chunk_callback}, 'chunk_callback not leaked to the wire');
     ok(!exists $opts_engine->last_extra->{messages}, 'messages not leaked to the wire');
   };

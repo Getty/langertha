@@ -121,7 +121,7 @@ around engine_capabilities => sub {
   return $caps;
 };
 
-sub reasoning_kwargs { () }
+sub reasoning_kwargs_for { my ( $self, %args ) = @_; () }
 
 __PACKAGE__->meta->make_immutable;
 

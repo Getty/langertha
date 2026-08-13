@@ -86,14 +86,19 @@ sub _is_deepseek_v3 {
 # ids — accepts only high|max, with low treated as high server-side. The
 # engine drops low for non-flash models instead of emitting a value the
 # server would silently remap.
-sub reasoning_kwargs {
-  my ( $self ) = @_;
-  return () unless $self->has_reasoning_effort;
+sub reasoning_kwargs_for {
+  my ( $self, %args ) = @_;
+  # A per-request reasoning_effort control (chat_f, karr #46) beats the
+  # engine attribute; the rest of the model-gated placement is unchanged.
+  my $e = exists $args{reasoning_effort} ? $args{reasoning_effort}
+        : exists $args{effort}           ? $args{effort}
+        : $self->has_reasoning_effort    ? $self->reasoning_effort
+        : undef;
+  return () unless defined $e;
   my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
   if ( _is_deepseek_v3($model) ) {
     return ( thinking => { type => 'enabled' } );
   }
-  my $e = $self->reasoning_effort;
   return () if $e eq 'low' && $model ne 'deepseek-v4-flash';
   return () unless $e eq 'low' || $e eq 'high' || $e eq 'max';
   return ( reasoning_effort => $e );
