@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-08-14T03:18:44Z
+created: 2026-08-13T21:19:52Z
+id: 63
+priority: low
+started: 2026-08-14T03:18:44Z
+status: archived
+tags:
+- upstream
+- reconciliation
+title: 'Upstream: Net::Async::MCP 0.003 speaks obsolete pre-_meta protocol'
+updated: 2026-08-14T03:18:44Z
+---
+
+Net::Async::MCP 0.003 (2026-07-12) hardcodes the obsolete Rev-2025-11-25 initialize form (top-level protocolVersion) and sends no _meta on any request. Current MCP::Server 0.15 / Rev-2026-07-28 requires _meta on every request and has no initialize method (server/discover handshake). Langertha works around it via Langertha::MCP::Client (karr #60, commit 863ab31) — documented as a temporary subclass to remove once upstream ships a fixed client. Follow-up: report upstream, watch for a fix, then revert call sites to Net::Async::MCP.
+Moved to the p5-net-async-mcp board as ticket #1 (2026-08-14) — this is an upstream concern. Keeping this in the langertha board caused it to be tracked as own work; reverting call sites is blocked on upstream fixing Net::Async::MCP.
