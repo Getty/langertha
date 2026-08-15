@@ -2,6 +2,24 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - ADR 0014 (karr #67, #68): canonical role-composition patterns. The
+      `with map { 'Langertha::Role::'.$_ } qw(...)` idiom used by both
+      Engine::OpenAIBase and Engine::AnthropicBase is captured as the
+      "-excludes canon" — the explicit list resolves collisions on
+      _build_*_wire_format / content_format / stream_format and makes
+      the intentional role inventory visible. The per-family
+      engine_capabilities correction is captured as a direction-pair
+      (OpenAI keeps prompt_cache_key and deletes prompt_cache; Anthropic
+      keeps prompt_cache and deletes prompt_cache_key — each is the
+      inapplicable flag for its family). The RuntimeKnobs asymmetry
+      (Role::OpenAICompatible aggregates knobs; Anthropic side inlines
+      them) is recorded as a deliberate dialect split because
+      dialect-aware knobs (response_format -> synth tool, parallel_tool_use
+      -> tool_choice fold, inference_geo, anthropic-version) require
+      the wire envelope in scope. CONTEXT.md gains a "Request-side
+      knobs" sibling-seam entry; CLAUDE.md picks up the -excludes
+      pattern + ADR 0014 in the architecture-decisions list.
+
     - vLLM, SGLang, LMStudioOpenAI POD pass (karr #71, #74). vLLM now composes
       Langertha::Role::Embedding (karr #70) — _build_supported_operations gains
       createEmbedding and default_embedding_model returns 'default' — matching
