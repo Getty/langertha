@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-08-15T08:18:29Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-15T08:18:29Z
+created: 2026-08-15T05:47:21Z
+id: 74
+priority: low
+started: 2026-08-15T05:53:27Z
+status: done
+tags:
+- docs
+- pod
+- engines
+title: 'SGLang + LMStudioOpenAI POD: SYNOPSIS-Drift zu vLLM/LlamaCpp'
+updated: 2026-08-15T08:18:29Z
+---
+
+SGLang und LMStudioOpenAI sind Schwester-Engines zu vLLM/LlamaCpp, aber ihre SYNOPSIS-Beispiele sind viel kürzer. SGLang.pm zeigt nur simple_chat, kein Tool-Calling-Beispiel (obwohl die Engine Langertha::Role::Tools composed), keine Metrics-Beispiel. LMStudioOpenAI.pm zeigt nur simple_chat (obwohl Embedding + Tools verfügbar). Schwester-Engines (LlamaCpp hat Embedding+Tools, Hetzner hat Streaming+Vision+Tools+Reflection auf StaticModels). Bitte SYNOPSIS vereinheitlichen auf das Niveau von vLLM/LlamaCpp/Hetzner.
+Implemented: Langertha::Engine::SGLang SYNOPSIS lifted to vLLM/Hetzner parity — simple_chat, streaming, chat_with_tools_f MCP example, multimodal Langertha::Content::Image, poll_metrics_f (Runtime::MetricsPoll). DESCRIPTION corrected (extends OpenAIBase, composes Tools + Runtime::MetricsPoll, embeddings not exposed). Capabilities section added. Langertha::Engine::LMStudioOpenAI SYNOPSIS now shows embedding + tool-calling examples; DESCRIPTION notes LM Studio does NOT expose Prometheus /metrics, so Runtime::MetricsPoll is intentionally not composed (verified: no /metrics endpoint on LM Studio's HTTP server). Bundled with karr #70, #71, #72, #73.
+Review OK: SGLang.pm hat SYNOPSIS mit Content::Image + poll_metrics_f, DESCRIPTION korrigiert, neue CAPABILITIES-Section (140 Zeilen). LMStudioOpenAI.pm zeigt simple_embedding + chat_with_tools_f, begruendet die bewusste Nicht-Komposition von Runtime::MetricsPoll (LM Studio serviert kein /metrics), CAPABILITIES-Section vorhanden (144 Zeilen).
