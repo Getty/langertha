@@ -88,3 +88,11 @@ The split is also the precondition for ADR 0002 to be truthful: capabilities fol
 - Cross-links: ADR 0001 (`tool_wire_format` default follows this base hierarchy), ADR 0002
   (capabilities derive from the composed role inventory this decision makes the capability
   axis).
+
+## Update (ADR 0013)
+
+The wire *dialect* envelope for the two dominant families is now a composed role,
+symmetrically: `Role::OpenAICompatible` (already) and `Role::AnthropicCompatible` (extracted
+from `AnthropicBase`). Inheritance still encodes the transport *root* (`Remote`); the dialect
+envelope moved to the role axis for OpenAI and Anthropic. NB: the envelope roles are **not**
+self-contained — they assume `url`/`HTTP`/`JSON` come from `extends Remote`. See ADR 0013.

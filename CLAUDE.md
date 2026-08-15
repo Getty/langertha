@@ -51,6 +51,9 @@ refactors:
 - **0008** — Raider exposes its control surface to the model as virtual self-tools
 - **0009** — request-side control params (reasoning effort, prompt caching) as a per-concern wire-format quartet
 - **0010** — canonical inbound `ToolCall->extract($fmt,$data)` + symmetric `ToolChoice->to($fmt)` complete the value-object seam
+- **0011** — response timing: engine-agnostic seconds + engine-native stages, first-write-wins
+- **0012** — self-hosted runtime knobs as a per-concern wire-format value object
+- **0013** — the wire envelope is a composed role (parallel `AnthropicCompatible`), nuancing 0006
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
@@ -148,6 +151,7 @@ Engine::Remote              url required, JSON + HTTP
 - **HermesTools** — `<tool_call>` XML tag names + prompt template for the `hermes` wire format.
 - **Streaming** — SSE / NDJSON streaming. **Embedding**, **Transcription**, **ImageGeneration**.
 - **HTTP** (sync + async via IO::Async) · **JSON** (`$self->json`) · **OpenAICompatible** ·
+  **AnthropicCompatible** (`/v1/messages` envelope, parallel to `OpenAICompatible`) ·
   **OpenAPI** (spec validation) · **ThinkTag** (`<think>` filtering) · **Langfuse** (observability).
 - **SystemPrompt**, **Temperature**, **ResponseSize**, **ContextSize**, **Seed**,
   **ResponseFormat** (`decode_loose_json`), **Models**, **ParallelToolUse**.

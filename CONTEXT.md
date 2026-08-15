@@ -114,7 +114,8 @@ present.
 ## Relationships
 
 - An engine declares exactly one **tool_wire_format**; its default follows the
-  base-class hierarchy (`OpenAIBase`→`openai`, `AnthropicBase`→`anthropic`, …).
+  wire-envelope roles (`Role::OpenAICompatible`→`openai`,
+  `Role::AnthropicCompatible`→`anthropic`, … — see ADR 0013), composed by thin engine bases.
 - **tool_wire_format** keys the dispatch into **Tool**, **ToolCall**, and
   **ToolResult** class methods — no per-engine tool methods remain.
 - A **ToolResult** serializes to one block; the **Result envelope** assembles N
