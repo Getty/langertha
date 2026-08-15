@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-08-15T08:18:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-15T08:18:23Z
+created: 2026-08-15T05:47:41Z
+id: 77
+priority: medium
+started: 2026-08-15T06:09:15Z
+status: done
+tags:
+- vllm
+- docs
+- multimodal
+- reasoning
+title: 'vLLM: multimodal image inputs + Reasoning-Modelle (DeepSeek-R1, QwQ, Qwen3)
+  dokumentieren und ggf. Capabilities korrigieren'
+updated: 2026-08-15T08:18:23Z
+---
+
+vLLM serviert Multimodal-Modelle (LLaVA, Qwen-VL, PaliGemma etc.) via image_url Content-Parts im OpenAI-Chat-Format. Langertha::Content::Image::to_openai produziert genau dieses Format; ein vLLM-User kann also bereits heute Bilder schicken. Das wird in der Doku nirgends erwähnt. Außerdem serviert vLLM Reasoning-Modelle (DeepSeek-R1, QwQ, Qwen3 mit enable_thinking Toggle via chat_template_kwargs) — die Wire-Realität ist reasoning_content im Response-Message (wie OpenAI o1/o3), passt also zum openai reasoning_wire_format-Default. Bitte: (a) Multimodal in vLLM POD/SYNOPSIS erwähnen, (b) Reasoning-Modelle + chat_template_kwargs via top-level %extra (ADR 0004) als Pattern dokumentieren, (c) live test (t/65_*.t / t/80_*.t) auf Wunsch ergänzen.
+Closed (documentation portion): Langertha::Engine::vLLM SYNOPSIS now includes reasoning_effort example; new =head1 REASONING MODELS POD section documents wire reality (reasoning_effort low|medium|high -> enable_thinking=true, none -> false; supported families Qwen3, DeepSeek-R1, DeepSeek-R1-Distill, QwQ-32B, Gemma 4, IBM Granite 3.2; --reasoning-parser server flag requirement; chat_template_kwargs escape hatch via VLLMHook). CAPABILITIES section now flags the --reasoning-parser caveat inline. README updated. New t/65c_vllm_reasoning.t pins the wire dispatch (10 offline tests). Changes {{}} updated. Verified: 541/541 tests pass, perlcritic clean. Follow-up karr ticket created for live test against real vLLM reasoning model.
+Review OK: vLLM.pm hat =head1 REASONING MODELS (:108ff) mit der Wire-Realitaet (reasoning_effort -> enable_thinking, --reasoning-parser-Caveat, Modellfamilien), SYNOPSIS zeigt Content::Image (:42) und reasoning_effort (:55), CAPABILITIES flaggt den Caveat. t/65c_vllm_reasoning.t vorhanden. Live-Test-Teil ist als #79 ausgelagert.
