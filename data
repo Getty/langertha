@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-08-15T08:18:29Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-15T08:18:29Z
+created: 2026-08-15T05:46:50Z
+id: 72
+priority: medium
+started: 2026-08-15T05:53:14Z
+status: done
+tags:
+- vllm
+- docs
+- readme
+title: 'vLLM: README provider table wirbt nicht für Embeddings / Models, obwohl der
+  Server beides anbietet'
+updated: 2026-08-15T08:18:29Z
+---
+
+README.md Zeile 56 listet vLLM nur mit Chat/Streaming/Tools als unterstützt. vLLM serviert /v1/embeddings (für Embedding-Modelle) und /v1/models — beides heute nutzbar via Langertha::Engine::OllamaOpenAI/LlamaCpp/LMStudioOpenAI mit identischer Mechanik. Bitte die README-Tabelle entsprechend erweitern. Auch der Abschnitt "Self-hosted with vLLM" (Zeile 230–240) zeigt nur chat — bitte um ein Tool-Calling-Beispiel und ein Metrics-Beispiel ergänzen.
+Implemented: README provider table vLLM row (line 56) now marks Embeddings :white_check_mark: and Models API :white_check_mark: (matches what the OpenAI-compatible server actually serves). Self-hosted with vLLM section (formerly line 230-240, 9 lines) expanded to cover streaming, MCP tool calling (--enable-auto-tool-choice, --tool-call-parser), /v1/embeddings for embedding models, and Prometheus /metrics via poll_metrics_f. Bundled with karr #70, #71, #73, #74.
+Review OK: README.md:56 vLLM-Zeile fuehrt Embeddings + Models als :white_check_mark:; Abschnitt 'Self-hosted with vLLM' (:230ff) um Streaming, MCP-Tool-Calling, /v1/embeddings und poll_metrics_f erweitert.
