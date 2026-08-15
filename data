@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-08-15T08:18:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-15T08:18:23Z
+created: 2026-08-14T13:07:59Z
+id: 67
+priority: low
+started: 2026-08-15T07:28:22Z
+status: done
+tags:
+- architecture
+- knobs
+- anthropic
+title: 'RuntimeKnobs: Anthropic-side self-hosted dialects lack knobs_kwargs_for'
+updated: 2026-08-15T08:18:23Z
+---
+
+Doku-Audit-Befund 5 (2026-08-14): RuntimeKnobs wird nur von Role::OpenAICompatible genutzt (chat_request/chat_stream_request rufen knobs_kwargs_for). AnthropicCompatible/AnthropicBase kennen keine Runtime-Knobs; selbst-gehostete Anthropic-Dialekte (LMStudioAnthropic) ohne Runtime-Knob-Zweig. Nicht durch Refactor 579d0c8 eingeführt, aber nirgends als bewusste Asymmetrie dokumentiert; ADR 0012 bezieht sich nur auf OpenAI. Entscheidung treffen und dokumentieren.
+Review OK: ADR 0014 Abschnitt 3 ('RuntimeKnobs asymmetry is a deliberate dialect split') dokumentiert die Asymmetrie als bewusste Entscheidung inkl. Future-Refactor-Ziel. Damit ist die Frage entschieden und niedergeschrieben.
