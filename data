@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-08-15T08:18:29Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-15T08:18:29Z
+created: 2026-08-15T05:46:37Z
+id: 70
+priority: medium
+started: 2026-08-15T05:53:37Z
+status: done
+tags:
+- vllm
+- engines
+- embedding
+title: 'vLLM: add /v1/embeddings support'
+updated: 2026-08-15T08:18:29Z
+---
+
+vLLM exposes a fully OpenAI-compatible /v1/embeddings endpoint (for embedding models like intfloat/e5-mistral-7b-instruct, BAAI/bge-* etc.). Sister engines Langertha::Engine::LlamaCpp, Langertha::Engine::OllamaOpenAI, Langertha::Engine::LMStudioOpenAI all compose Langertha::Role::Embedding and advertise the capability. Langertha::Engine::vLLM does not — composing the Embedding role + adding createEmbedding to _build_supported_operations + default_embedding_model would close the gap and match what vLLM serves today. Reference: https://docs.vllm.ai/en/latest/serving/online_serving/ confirms /v1/embeddings is in the OpenAI-compatible surface.
+vLLM composes Embedding role, createEmbedding in _build_supported_operations, default_embedding_model = 'default'. New t/65b_vllm_embeddings.t (11 offline tests) pins POST /v1/embeddings body shape. t/10 + t/65 extended. Bundled with #71/72/73/74.
+Review OK: vLLM.pm:10 composed Role::Embedding, default_embedding_model 'default' (:172), createEmbedding in _build_supported_operations (:177), t/65b_vllm_embeddings.t vorhanden. Commit 11b4038.
