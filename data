@@ -1,0 +1,32 @@
+---
+class: standard
+created: 2026-08-15T06:09:22Z
+id: 79
+priority: medium
+status: backlog
+tags:
+- vllm
+- reasoning
+- live-test
+title: 'vLLM live test: reasoning_effort on real reasoning model server'
+updated: 2026-08-15T08:22:41Z
+---
+
+Live-test the reasoning_effort wire against a real vLLM server. Gated on TEST_LANGERTHA_VLLM_URL (existing) plus a reasoning model name (TEST_LANGERTHA_VLLM_REASONING_MODEL).
+
+Wire reality to verify (per vLLM docs https://docs.vllm.ai/en/latest/features/reasoning_outputs/):
+- reasoning_effort=low|medium|high emits enable_thinking=true in chat template
+- reasoning_effort=none emits enable_thinking=false
+- Server MUST be started with --reasoning-parser <qwen3|deepseek_r1|...> matching the loaded model
+- Response includes reasoning_content (when model emits it) accessible via Langertha::Response->thinking or similar
+
+Scope: small new file t/88_live_vllm_reasoning.t modeled after t/87_live_vllm_hook.t (skip_all without env var). Should:
+1. Send a hard problem (e.g. 'solve 7 factorial step by step') with reasoning_effort=high
+2. Assert response non-empty
+3. Assert reasoning_content present when --reasoning-parser is set
+4. Cross-check with reasoning_effort=none to confirm non-thinking path works
+
+Off the table for this ticket: model-gated capability refinement (capability currently engine-wide; some vLLM models do not honor reasoning_effort). Filed as a separate follow-up if real users hit it.
+
+Relates: karr #77 (documentation portion of the vLLM reasoning-model coverage audit).
+Nicht ausfuehrbar ohne Infrastruktur (orchestrator, 2026-08-15): braucht einen laufenden vLLM-Server mit geladenem Reasoning-Modell (Qwen3 / DeepSeek-R1 / QwQ) und --reasoning-parser. Offline-Abdeckung existiert bereits als t/65c_vllm_reasoning.t. Bleibt im Backlog bis eine Testinstanz bereitsteht.
