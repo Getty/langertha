@@ -184,9 +184,10 @@ This ADR layers the *mechanics* on top:
   until Anthropic wire-envelope lives in a role). ADR 0009 (request-side
   controls are themselves a "dialect-aware knob" surfaced via a value
   object — same shape as the RuntimeKnobs split).
-- **CONTEXT.md** gets a short sibling-seam entry for RuntimeKnobs under
-  "Response-side observability" and a "Request-side knobs" pointer, so the
-  vocabulary is fixed without restating the rationale.
+- **CONTEXT.md** gets a new sibling-seam entry, "Request-side knobs
+  (RuntimeKnobs split)", placed between the existing "Request-side
+  controls" and "Response-side observability" sections. The vocabulary is
+  fixed without restating the rationale (link only).
 - **Comment updates** in `Engine::OpenAIBase.pm:31-36` and
   `Engine::AnthropicBase.pm:32-37` — replace the existing per-direction
   comments with a pointer to this ADR plus a single-line reference to the
