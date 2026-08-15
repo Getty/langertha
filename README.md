@@ -241,8 +241,11 @@ print $vllm->simple_chat('Hello!');
 
 vLLM's OpenAI-compatible endpoint also serves streaming, MCP tool calling
 (start the server with `--enable-auto-tool-choice` and a matching
-`--tool-call-parser`), and `/v1/embeddings` for embedding models. The
-Prometheus `/metrics` surface is exposed via `poll_metrics_f`:
+`--tool-call-parser`), `/v1/embeddings` for embedding models, and the
+`reasoning_effort` knob on reasoning-model families (Qwen3,
+DeepSeek-R1, QwQ, Gemma 4, IBM Granite 3.2) when the server is started
+with the matching `--reasoning-parser` flag. The Prometheus `/metrics`
+surface is exposed via `poll_metrics_f`:
 
 ```perl
 use Future::AsyncAwait;
@@ -256,6 +259,13 @@ my $vllm = Langertha::Engine::vLLM->new(
 
 # Tool calling
 my $r = await $vllm->chat_with_tools_f('Add 7 and 15');
+
+# Reasoning models — wire reasoning_effort honors OpenAI format
+# (low/medium/high map to enable_thinking=true; none -> false)
+$vllm->simple_chat(
+    'Solve step by step: 7 factorial',
+    reasoning_effort => 'high',
+);
 
 # Embeddings (BAAI/bge-*, intfloat/e5-*, …)
 my $vec = $vllm->simple_embedding('Some text');

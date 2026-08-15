@@ -8,7 +8,12 @@ Revision history for Langertha
       what /v1/embeddings serves today (BAAI/bge-*, intfloat/e5-*, ...).
       SYNOPSIS lifted to LlamaCpp / Hetzner parity: simple_chat, streaming,
       chat_with_tools_f, multimodal Langertha::Content::Image input, embeddings,
-      poll_metrics_f (Runtime::MetricsPoll), and a VLLMHook sub-engine pointer.
+      poll_metrics_f (Runtime::MetricsPoll), reasoning models
+      (reasoning_effort for Qwen3 / DeepSeek-R1 / QwQ / Gemma 4 / Granite 3.2
+      when the server is started with the matching --reasoning-parser flag —
+      karr #77), and a VLLMHook sub-engine pointer. New =head1 REASONING MODELS
+      section documents the wire reality and the chat_template_kwargs escape
+      hatch for reasoning knobs that do not map cleanly to reasoning_effort.
       SGLang SYNOPSIS adds the tool-calling + poll_metrics_f examples it was
       missing (both roles are composed); LMStudioOpenAI SYNOPSIS adds the
       embedding + tool-calling examples and explicitly notes that LM Studio
@@ -39,7 +44,11 @@ Revision history for Langertha
       the existing tool-calling suite. New t/65b_vllm_embeddings.t is an
       11-test offline file pinning the embedding request envelope:
       POST /v1/embeddings, body { model: 'default', input: '...' }, and the
-      explicit embedding_model override path.
+      explicit embedding_model override path. New t/65c_vllm_reasoning.t
+      (karr #77) is a 10-test offline file pinning reasoning_effort wire
+      dispatch: default_model, reasoning_wire_format=openai, capability flag,
+      flat low/medium/high emission, no-leakage when unset, no thinking_budget
+      on the openai wire, and the VLLMHook chat_template_kwargs escape hatch.
 
     - Perl::Critic enforcement via .perlcriticrc (naming + always-on policies),
       wired into dzil test via Dist::Zilla::Plugin::Test::Perl::Critic. The vLLM
