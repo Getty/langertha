@@ -96,7 +96,7 @@ aggregates them) and `Role::AnthropicCompatible` (which inlines them) is a
 (Anthropic's `response_format` translation to a synthetic tool,
 `tool_choice` ↔ `parallel_tool_use` folding, `inference_geo`,
 `anthropic-version`) require the wire envelope in scope; a wire-agnostic
-helper can only be extracted once both dialenct roles have a stable
+helper can only be extracted once both dialect roles have a stable
 shape. → **ADR 0015**.
 
 _Avoid_: "RuntimeKnobs" used as a literal type — it's the audit nickname
