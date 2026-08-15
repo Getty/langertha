@@ -28,4 +28,6 @@ on test => sub {
   requires 'Test2::Suite';
   requires 'Module::Runtime';
   requires 'Math::Vector::Similarity';
+  requires 'Perl::Critic', '>= 1.156';
+  requires 'Test::Perl::Critic';
 };

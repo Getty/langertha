@@ -113,7 +113,7 @@ sub build_record {
   my $pricing = Langertha::Pricing->new( default_rule => $pricing_rule );
   my $cost = $pricing->cost_for( $usage, $args{model} );
 
-  my $record = Langertha::UsageRecord->new(
+  my $usage_record = Langertha::UsageRecord->new(
     usage           => $usage,
     cost            => $cost,
     provider        => $args{provider},
@@ -128,7 +128,7 @@ sub build_record {
     tool_names      => $tool->{tool_names},
     pricing_version => $args{pricing_version},
   );
-  return $record->to_hash;
+  return $usage_record->to_hash;
 }
 
 1;

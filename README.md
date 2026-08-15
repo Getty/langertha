@@ -931,6 +931,26 @@ my $models = $engine->list_models(force_refresh => 1); # Bypass cache
 
 Results are cached for 1 hour (configurable via `models_cache_ttl`).
 
+## Coding Conventions
+
+Langertha follows Perl::Critic-enforced conventions checked on every `dzil test`:
+
+- **Packages** — `CamelCase` (e.g. `Langertha::Engine::OpenAI`). The `vLLM` brand
+  capitalization is exempt.
+- **Subroutines & methods** — `snake_case`. Moose lifecycle methods (`BUILD`,
+  `BUILDARGS`, `DEMOLISH`, `FOREIGNBUILDARGS`, tied-method names) are exempt.
+- **Variables** — `snake_case` for lexical, package, and global variables
+  (including `$VERSION`, `@ISA`, `%EXPORT_TAGS`, `%ROLE_TO_CAPS`, `%ENV`, `%SIG`).
+- **Prohibited** — ambiguous single-letter names (`$x`, `$obj`, `$data`, …).
+- **Always-on** — no trailing whitespace, consistent newlines, no stringy `eval`.
+
+The full configuration lives in [`.perlcriticrc`](.perlcriticrc) and is embedded
+into the generated `t/author-critic.t` test. Run perlcritic locally:
+
+```bash
+perlcritic --profile .perlcriticrc lib/ bin/ maint/
+```
+
 ## Testing
 
 ```bash

@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Perl::Critic enforcement via .perlcriticrc (naming + always-on policies),
+      wired into dzil test via Dist::Zilla::Plugin::Test::Perl::Critic. The vLLM
+      brand capitalization and Moose lifecycle methods (BUILD, FOREIGNBUILDARGS,
+      DEMOLISH, ...) are exempt. Run `perlcritic --profile .perlcriticrc lib/ bin/
+      maint/` locally. Renamed $operationId/$opId to $operation_id/$op_id in
+      Langertha::Role::OpenAPI.
+
     - Streaming path now surfaces cached_tokens (karr #61). karr #31 shipped
       Langertha::Response->cached_tokens populated only on the non-streaming
       OpenAI-compatible path; the streaming path carries usage on the final

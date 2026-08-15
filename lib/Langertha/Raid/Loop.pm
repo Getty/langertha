@@ -88,7 +88,7 @@ async sub run_f {
   $ctx = $self->_coerce_context($ctx);
 
   my $limit = $self->_loop_limit;
-  my $last = Langertha::Result->final($ctx->input // '');
+  my $last_result = Langertha::Result->final($ctx->input // '');
 
   $ctx->add_trace({
     node      => ref($self),
@@ -114,7 +114,7 @@ async sub run_f {
       return $self->_with_context_result($result, $ctx);
     }
 
-    $last = $result;
+    $last_result = $result;
 
     if ($self->has_continue_while) {
       my $continue = $self->continue_while->($ctx, $iteration, $result);
@@ -123,7 +123,7 @@ async sub run_f {
   }
 
   $ctx->metadata->{loop_iterations} = $ctx->state->{loop_iteration} // 0;
-  return $self->_with_context_result($last, $ctx);
+  return $self->_with_context_result($last_result, $ctx);
 }
 
 =method run_f

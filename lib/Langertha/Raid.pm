@@ -151,7 +151,7 @@ async sub _run_steps_sequentially_f {
   my ( $self, $ctx, %opts ) = @_;
   my @steps = @{$self->steps};
 
-  my $last = Langertha::Result->final($ctx->input // '');
+  my $last_result = Langertha::Result->final($ctx->input // '');
 
   for my $idx (0..$#steps) {
     my $step = $steps[$idx];
@@ -190,7 +190,7 @@ async sub _run_steps_sequentially_f {
 
     if ($result->is_final) {
       $self->_apply_final_result_to_context($ctx, $result, step_name => $step_name);
-      $last = $result;
+      $last_result = $result;
       next;
     }
 
@@ -199,7 +199,7 @@ async sub _run_steps_sequentially_f {
     return $self->_with_context_result($result, $ctx);
   }
 
-  return $self->_with_context_result($last, $ctx);
+  return $self->_with_context_result($last_result, $ctx);
 }
 
 =method _run_steps_sequentially_f

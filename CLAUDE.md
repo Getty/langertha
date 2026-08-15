@@ -82,6 +82,11 @@ Test framework: `Test2::Bundle::More`. `dzil release` is forbidden without expli
 - **MCP**: `Net::Async::MCP` (client), `MCP::Server` (tool definitions, `inputSchema` camelCase).
 - **POD**: `@Author::GETTY` PodWeaver. `# ABSTRACT:` required on every `.pm`; inline `=attr`,
   `=method`, `=seealso`. Use the `pod-writer` agent for documentation.
+- **Naming** (enforced by `.perlcriticrc` on every `dzil test`): packages are
+  `CamelCase` (`vLLM` brand exempt), subroutines and variables are `snake_case`.
+  Moose lifecycle methods (`BUILD`, `DEMOLISH`, `FOREIGNBUILDARGS`, …) and tied-method
+  names are exempt. Ambiguous single-letter names (`$x`, `$obj`, …) are prohibited.
+  Run `perlcritic --profile .perlcriticrc lib/ bin/ maint/` locally.
 
 ## Architecture
 
