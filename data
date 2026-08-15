@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-08-15T08:18:29Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-15T08:18:29Z
+created: 2026-08-15T05:46:57Z
+id: 73
+priority: low
+started: 2026-08-15T05:53:21Z
+status: done
+tags:
+- docs
+- pod
+- engines
+title: 'Engine-Doku-Drift: OpenAIBase.pm und OpenAICompatible.pm listen nicht alle
+  echten Sub-Engines auf'
+updated: 2026-08-15T08:18:29Z
+---
+
+lib/Langertha/Engine/OpenAIBase.pm POD (Zeile 70–85) listet die "concrete engines that extend this class". Real extenden (grep "extends \"Langertha::Engine::OpenAIBase\""): AKIOpenAI, Cerebras, DeepSeek, Groq, Hetzner, HuggingFace, LlamaCpp, LMStudioOpenAI, MiniMax, Mistral, Moonshot, NousResearch, OllamaOpenAI, OpenAI, OpenRouter, Perplexity, Replicate, Scaleway, SGLang, TSystems, vLLM, XAI. Aus der POD-Liste fehlen: Hetzner (Cloud/DE), Moonshot (Cloud/CN), XAI (Grok). lib/Langertha/Role/OpenAICompatible.pm POD (Zeile 56–60) "Engines using this role" ist ähnlich unvollständig — fehlen Hetzner, LlamaCpp, LMStudioOpenAI, MiniMax, Moonshot, OpenRouter, Replicate, SGLang, Scaleway, Cerebras, TSystems, XAI. Beide Listen korrigieren.
+Implemented: Langertha::Engine::OpenAIBase 'concrete engines that extend this class' POD list corrected — added Hetzner (Cloud/DE), Moonshot (Cloud/CN), XAI (Grok) under cloud providers. Langertha::Role::OpenAICompatible 'Engines using this role' POD list is now grouped cloud / self-hosted like OpenAIBase and complete (adds Cerebras, Hetzner, LlamaCpp, LMStudioOpenAI, MiniMax, Moonshot, OpenRouter, Replicate, Scaleway, SGLang, TSystems, XAI). Verified by grep 'extends "Langertha::Engine::OpenAIBase"' against all real extenders.
+Review OK: nachgezaehlt gegen grep 'extends Langertha::Engine::OpenAIBase' - 22 reale Extender. OpenAIBase POD (:73-85) listet 17 Cloud + 5 self-hosted = alle 22, inkl. der zuvor fehlenden Hetzner/Moonshot/XAI. Role::OpenAICompatible POD ebenso vollstaendig und gleich gruppiert.
