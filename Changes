@@ -2,6 +2,45 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - vLLM, SGLang, LMStudioOpenAI POD pass (karr #71, #74). vLLM now composes
+      Langertha::Role::Embedding (karr #70) — _build_supported_operations gains
+      createEmbedding and default_embedding_model returns 'default' — matching
+      what /v1/embeddings serves today (BAAI/bge-*, intfloat/e5-*, ...).
+      SYNOPSIS lifted to LlamaCpp / Hetzner parity: simple_chat, streaming,
+      chat_with_tools_f, multimodal Langertha::Content::Image input, embeddings,
+      poll_metrics_f (Runtime::MetricsPoll), and a VLLMHook sub-engine pointer.
+      SGLang SYNOPSIS adds the tool-calling + poll_metrics_f examples it was
+      missing (both roles are composed); LMStudioOpenAI SYNOPSIS adds the
+      embedding + tool-calling examples and explicitly notes that LM Studio
+      does not expose Prometheus /metrics, so Runtime::MetricsPoll is not
+      composed. Engine capabilities section added to all three. Offending
+      "B<THIS API IS WORK IN PROGRESS>" banners dropped on vLLM and SGLang
+      (live tests, sub-engine, MetricsPoll role exist now); kept on
+      LMStudioOpenAI pending further maturity.
+
+    - Engine-Doku-Drift fixes (karr #73). Langertha::Engine::OpenAIBase
+      "concrete engines" POD list gains the three missing cloud providers
+      (Hetzner / Moonshot / XAI) and is reordered cloud-first to match the
+      actual extends graph; Langertha::Role::OpenAICompatible "Engines using
+      this role" POD list is now grouped cloud / self-hosted like OpenAIBase
+      and complete (adds Cerebras, Hetzner, LlamaCpp, LMStudioOpenAI, MiniMax,
+      Moonshot, OpenRouter, Replicate, Scaleway, SGLang, TSystems, XAI).
+
+    - README updates (karr #72). Provider table: vLLM row now marks
+      Embeddings and Models API as supported (matches what the
+      OpenAI-compatible server actually serves); "Self-hosted with vLLM"
+      section expanded to cover streaming, MCP tool calling, /v1/embeddings,
+      and Prometheus /metrics scraping.
+
+    - Tests: t/10_engine_hierarchy.t vLLM section asserts Embedding role
+      composition, Runtime::MetricsPoll composition, createEmbedding in
+      _build_supported_operations, and default_embedding_model = 'default'.
+      t/65_tool_calling_vllm.t adds the same Embedding assertions alongside
+      the existing tool-calling suite. New t/65b_vllm_embeddings.t is an
+      11-test offline file pinning the embedding request envelope:
+      POST /v1/embeddings, body { model: 'default', input: '...' }, and the
+      explicit embedding_model override path.
+
     - Perl::Critic enforcement via .perlcriticrc (naming + always-on policies),
       wired into dzil test via Dist::Zilla::Plugin::Test::Perl::Critic. The vLLM
       brand capitalization and Moose lifecycle methods (BUILD, FOREIGNBUILDARGS,

@@ -54,6 +54,7 @@ refactors:
 - **0011** — response timing: engine-agnostic seconds + engine-native stages, first-write-wins
 - **0012** — self-hosted runtime knobs as a per-concern wire-format value object
 - **0013** — the wire envelope is a composed role (parallel `AnthropicCompatible`), nuancing 0006
+- **0014** — self-hosted engines expose runtime metrics via `Role::Runtime::MetricsPoll` (Prometheus `/metrics` scrape)
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
@@ -119,9 +120,11 @@ Engine::Remote              url required, JSON + HTTP
   │     ├── AKIOpenAI       EU/Germany, GDPR-compliant
   │     ├── TSystems        T-Systems AIFS / LLM Hub, T-Cloud Germany + EU hyperscaler models
   │     ├── Scaleway        EU-hosted Generative APIs, drop-in OpenAI replacement
+  │     ├── Hetzner         Hetzner Inference (DE, OpenAI-compatible, vision on multimodal models)
   │     │  Self-hosted (url required, no api_key)
   │     ├── OllamaOpenAI    Ollama /v1 endpoint, embeddings
   │     ├── vLLM            high-throughput inference, single-model server
+  │     │     └── VLLMHook  vLLM + IBM vLLM-Hook plugin (attention/hidden-state/steering probes)
   │     ├── SGLang          SGLang OpenAI-compatible server, fast structured output
   │     ├── LlamaCpp        llama.cpp server, embeddings
   │     └── LMStudioOpenAI  LM Studio's OpenAI-compatible endpoint
@@ -158,6 +161,10 @@ Engine::Remote              url required, JSON + HTTP
 - **HTTP** (sync + async via IO::Async) · **JSON** (`$self->json`) · **OpenAICompatible** ·
   **AnthropicCompatible** (`/v1/messages` envelope, parallel to `OpenAICompatible`) ·
   **OpenAPI** (spec validation) · **ThinkTag** (`<think>` filtering) · **Langfuse** (observability).
+- **Runtime::MetricsPoll** — async Prometheus `/metrics` scrape for self-hosted engines
+  (vLLM, SGLang, llama.cpp). URL derived by stripping the trailing `/v1` from the engine's
+  `url`; Ollama is intentionally not composed (its stats live at `/api/ps` in JSON).
+  → **ADR 0014**.
 - **SystemPrompt**, **Temperature**, **ResponseSize**, **ContextSize**, **Seed**,
   **ResponseFormat** (`decode_loose_json`), **Models**, **ParallelToolUse**.
 - **ReasoningEffort** (`reasoning_effort`) · **PromptCache** (`prompt_cache` / `prompt_cache_key`)

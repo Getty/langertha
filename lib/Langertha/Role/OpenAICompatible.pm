@@ -53,11 +53,29 @@ B<Engines should also compose these roles:>
 
 =back
 
-B<Engines using this role:> L<Langertha::Engine::OpenAI>, L<Langertha::Engine::DeepSeek>,
-L<Langertha::Engine::Groq>, L<Langertha::Engine::Mistral>, L<Langertha::Engine::vLLM>,
-L<Langertha::Engine::NousResearch>, L<Langertha::Engine::Perplexity>,
-L<Langertha::Engine::HuggingFace>, L<Langertha::Engine::OllamaOpenAI>,
-L<Langertha::Engine::AKIOpenAI>.
+B<Engines using this role:>
+
+=over 4
+
+=item * Cloud providers — L<Langertha::Engine::OpenAI>,
+L<Langertha::Engine::DeepSeek>, L<Langertha::Engine::Groq>,
+L<Langertha::Engine::Hetzner>, L<Langertha::Engine::MiniMax>,
+L<Langertha::Engine::Mistral>, L<Langertha::Engine::Moonshot>,
+L<Langertha::Engine::XAI>, L<Langertha::Engine::Cerebras>,
+L<Langertha::Engine::NousResearch>, L<Langertha::Engine::OpenRouter>,
+L<Langertha::Engine::Replicate>, L<Langertha::Engine::HuggingFace>,
+L<Langertha::Engine::Perplexity>, L<Langertha::Engine::AKIOpenAI>,
+L<Langertha::Engine::TSystems>, L<Langertha::Engine::Scaleway>
+
+=item * Self-hosted — L<Langertha::Engine::OllamaOpenAI>,
+L<Langertha::Engine::vLLM>, L<Langertha::Engine::SGLang>,
+L<Langertha::Engine::LlamaCpp>, L<Langertha::Engine::LMStudioOpenAI>
+
+=back
+
+The base classes L<Langertha::Engine::OpenAIBase> and
+L<Langertha::Engine::OpenAI> also compose this role (and so every engine
+that extends them inherits it without listing it explicitly).
 
 =cut
 

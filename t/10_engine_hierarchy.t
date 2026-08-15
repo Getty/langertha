@@ -615,6 +615,8 @@ use Langertha::Engine::vLLM;
 
 ok(Langertha::Engine::vLLM->isa('Langertha::Engine::OpenAIBase'), 'vLLM isa OpenAIBase');
 ok(Langertha::Engine::vLLM->does('Langertha::Role::Tools'), 'vLLM does Tools');
+ok(Langertha::Engine::vLLM->does('Langertha::Role::Embedding'), 'vLLM does Embedding (karr #70)');
+ok(Langertha::Engine::vLLM->does('Langertha::Role::Runtime::MetricsPoll'), 'vLLM does Runtime::MetricsPoll');
 
 {
   # url required, no default
@@ -627,6 +629,13 @@ ok(Langertha::Engine::vLLM->does('Langertha::Role::Tools'), 'vLLM does Tools');
   my $req = $v->chat('hello');
   is($req->header('Authorization'), undef, 'vLLM no Authorization header');
   like($req->uri, qr{/chat/completions$}, 'vLLM uses /chat/completions');
+
+  # karr #70: createEmbedding is now in _build_supported_operations
+  my $ops = $v->_build_supported_operations;
+  ok((grep { $_ eq 'createEmbedding' } @$ops),
+    'vLLM _build_supported_operations contains createEmbedding');
+  is($v->default_embedding_model, 'default',
+    'vLLM default_embedding_model returns default');
 }
 
 # --- SGLang ---

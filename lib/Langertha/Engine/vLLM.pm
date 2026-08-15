@@ -7,6 +7,7 @@ use Carp qw( croak );
 extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools',
+     'Langertha::Role::Embedding',
      'Langertha::Role::Runtime::MetricsPoll',
      'Langertha::Role::RuntimeKnobs';
 
@@ -19,6 +20,7 @@ sub _build_knob_wire_format { 'vllm' }
 
     use Langertha::Engine::vLLM;
 
+    # 1. Simple chat
     my $vllm = Langertha::Engine::vLLM->new(
         url           => 'http://localhost:8000/v1',
         system_prompt => 'You are a helpful assistant',
@@ -26,7 +28,12 @@ sub _build_knob_wire_format { 'vllm' }
 
     print $vllm->simple_chat('Say something nice');
 
-    # MCP tool calling (requires server started with tool-call-parser)
+    # 2. Streaming
+    $vllm->simple_chat_stream(sub {
+        print shift->content;
+    }, 'Write a haiku about Perl');
+
+    # 3. MCP tool calling (requires server started with tool-call-parser)
     use Future::AsyncAwait;
 
     my $vllm = Langertha::Engine::vLLM->new(
@@ -37,23 +44,80 @@ sub _build_knob_wire_format { 'vllm' }
 
     my $response = await $vllm->chat_with_tools_f('Add 7 and 15');
 
+    # 4. Multimodal input (vision-capable models: LLaVA, Qwen-VL, PaliGemma)
+    use Langertha::Content::Image;
+
+    my $img  = Langertha::Content::Image->from_url('https://example.com/cat.jpg');
+    my $resp = await $vllm->simple_chat_f({
+        role    => 'user',
+        content => [ 'What is in this image?', $img ],
+    });
+
+    # 5. Embeddings (for embedding models: BAAI/bge-*, intfloat/e5-*, …)
+    my $vector = $vllm->simple_embedding('Some text to embed');
+
+    # 6. Prometheus /metrics scraping (Runtime::MetricsPoll)
+    my $records = await $vllm->poll_metrics_f('vllm:');
+    # Returns ArrayRef of { name, type, value, labels } parsed from
+    # GET <url-stripped-of-/v1>/metrics.
+
+    # 7. vLLM-Hook sub-engine (IBM vLLM-Hook plugin: hidden states, qk, steer)
+    use Langertha::Engine::VLLMHook;
+    my $hooked = Langertha::Engine::VLLMHook->new(
+        url        => 'http://localhost:8770/v1',
+        vllm_xargs => { output_hidden_states => JSON::MaybeXS::true() },
+    );
+
 =head1 DESCRIPTION
 
 Provides access to vLLM, a high-throughput inference engine for large
-language models. Composes L<Langertha::Role::OpenAICompatible> since vLLM
-exposes an OpenAI-compatible API.
+language models. Extends L<Langertha::Engine::OpenAIBase> (which composes
+L<Langertha::Role::OpenAICompatible>, L<Langertha::Role::OpenAPI>,
+L<Langertha::Role::Models>, L<Langertha::Role::Temperature>,
+L<Langertha::Role::ResponseSize>, L<Langertha::Role::SystemPrompt>,
+L<Langertha::Role::ResponseFormat>, L<Langertha::Role::Streaming>,
+L<Langertha::Role::Chat>, L<Langertha::Role::ReasoningEffort>, and
+L<Langertha::Role::PromptCache>); vLLM itself additionally composes
+L<Langertha::Role::Tools> (MCP tool calling), L<Langertha::Role::Embedding>
+(OpenAI-compatible C</v1/embeddings> for embedding models), and
+L<Langertha::Role::Runtime::MetricsPoll> (Prometheus C</metrics> scrape).
+
+Supports chat, streaming, tool calling, embeddings, multimodal input,
+reasoning models, and Prometheus /metrics scraping.
 
 Only C<url> is required. The URL must include the C</v1> path prefix
 (e.g., C<http://localhost:8000/v1>). Since vLLM serves exactly one model
 (configured at server startup), no model name or API key is needed.
 
+=head1 TOOL CALLING
+
 MCP tool calling requires the vLLM server to be started with
 C<--enable-auto-tool-choice> and C<--tool-call-parser> matching the model
 (C<hermes> for Qwen2.5/Hermes, C<llama3> for Llama, C<mistral> for Mistral).
 
-See L<https://docs.vllm.ai/> for installation and configuration details.
+=head1 EMBEDDINGS
 
-B<THIS API IS WORK IN PROGRESS>
+Composes L<Langertha::Role::Embedding>. vLLM exposes an OpenAI-compatible
+C</v1/embeddings> endpoint when started with an embedding model
+(BAAI/bge-*, intfloat/e5-*, …); pass an explicit C<embedding_model> for
+those setups. C<default_embedding_model> is C<'default'> to match the
+single-model convention.
+
+=head1 METRICS
+
+Composes L<Langertha::Role::Runtime::MetricsPoll>. vLLM serves Prometheus
+text-format metrics at C<GET <url-stripped-of-/v1>/metrics>; pass a prefix
+to L</poll_metrics_f> (e.g. C<'vllm:'> for the engine's own gauges) or
+filter downstream via L<Langertha::Runtime::Metrics/filter_prefix>.
+
+=head1 SUB-ENGINE: VLLMHook
+
+L<Langertha::Engine::VLLMHook> extends this engine for servers running the
+IBM vLLM-Hook plugin (hidden_states / qk / steer probes); it injects a
+top-level C<vllm_xargs> field and lifts captured tensors onto
+L<Langertha::Response/probes>. See ADR 0004 for the seam.
+
+See L<https://docs.vllm.ai/> for installation and configuration details.
 
 =cut
 
@@ -62,15 +126,46 @@ has '+url' => (
 );
 
 sub default_model { 'default' }
+sub default_embedding_model { 'default' }
 
 sub api_key_env { undef }
 
 sub _build_supported_operations {[qw(
   createChatCompletion
   createCompletion
+  createEmbedding
 )]}
 
 __PACKAGE__->meta->make_immutable;
+
+=head1 CAPABILITIES
+
+Advertised flags (derived from composed roles via L<Langertha::Role::Capabilities>):
+
+=over 4
+
+=item * C<chat> — L<Langertha::Role::Chat>
+
+=item * C<streaming> — L<Langertha::Role::Streaming>
+
+=item * C<tools_native> + C<tool_choice_{auto,any,none,named}> — L<Langertha::Role::Tools>
+
+=item * C<embedding> — L<Langertha::Role::Embedding>
+
+=item * C<runtime_metrics> — L<Langertha::Role::Runtime::MetricsPoll>
+
+=item * C<response_format_{json_object,json_schema}> — L<Langertha::Role::ResponseFormat>
+
+=item * C<temperature> — L<Langertha::Role::Temperature>
+
+=item * C<reasoning_effort> — L<Langertha::Role::ReasoningEffort>
+
+=item * C<response_size>, C<system_prompt>, C<parallel_tool_use>, C<context_size>, C<seed>
+— generation-parameter knobs the engine will honour
+
+=back
+
+=cut
 
 =seealso
 
@@ -78,11 +173,23 @@ __PACKAGE__->meta->make_immutable;
 
 =item * L<https://docs.vllm.ai/> - vLLM documentation
 
+=item * L<Langertha::Engine::OpenAIBase> - Base class for OpenAI-compatible engines
+
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
 
-=item * L<Langertha::Engine::OllamaOpenAI> - Another self-hosted OpenAI-compatible engine
+=item * L<Langertha::Role::Embedding> - Embedding request/response interface
+
+=item * L<Langertha::Role::Runtime::MetricsPoll> - Prometheus /metrics scraper
+
+=item * L<Langertha::Engine::VLLMHook> - Sub-engine for the IBM vLLM-Hook plugin
+
+=item * L<Langertha::Engine::LlamaCpp> - Sister self-hosted OpenAI-compatible engine (also Embedding + MetricsPoll)
+
+=item * L<Langertha::Engine::SGLang> - Sister self-hosted OpenAI-compatible engine (also MetricsPoll)
+
+=item * L<Langertha::Engine::OllamaOpenAI> - Ollama's OpenAI-compatible endpoint
 
 =back
 

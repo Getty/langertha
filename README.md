@@ -53,7 +53,7 @@
 | [OpenRouter](https://openrouter.ai/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [Replicate](https://replicate.com/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [HuggingFace](https://huggingface.co/) :us: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
-| [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
+| [vLLM](https://docs.vllm.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
 | [SGLang](https://docs.sglang.ai/) | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | |
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | |
 | [LM Studio](https://lmstudio.ai/) | :white_check_mark: | :white_check_mark: | | | | | :white_check_mark: |
@@ -237,6 +237,31 @@ my $vllm = Langertha::Engine::vLLM->new(
     model => 'meta-llama/Llama-3.3-70B-Instruct',
 );
 print $vllm->simple_chat('Hello!');
+```
+
+vLLM's OpenAI-compatible endpoint also serves streaming, MCP tool calling
+(start the server with `--enable-auto-tool-choice` and a matching
+`--tool-call-parser`), and `/v1/embeddings` for embedding models. The
+Prometheus `/metrics` surface is exposed via `poll_metrics_f`:
+
+```perl
+use Future::AsyncAwait;
+use Langertha::Engine::vLLM;
+
+my $vllm = Langertha::Engine::vLLM->new(
+    url   => $ENV{VLLM_URL},
+    model => 'Qwen/Qwen2.5-3B-Instruct',
+    mcp_servers => [$mcp],
+);
+
+# Tool calling
+my $r = await $vllm->chat_with_tools_f('Add 7 and 15');
+
+# Embeddings (BAAI/bge-*, intfloat/e5-*, …)
+my $vec = $vllm->simple_embedding('Some text');
+
+# Prometheus /metrics
+my $records = await $vllm->poll_metrics_f('vllm:');
 ```
 
 ### Local Models with LM Studio (native API)

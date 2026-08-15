@@ -30,6 +30,29 @@ is($vllm->api_key, undef, 'api_key defaults to undef');
 # Test: composes OpenAICompatible
 ok($vllm->does('Langertha::Role::OpenAICompatible'), 'vLLM composes OpenAICompatible');
 
+# Test: composes Embedding (karr #70)
+ok($vllm->does('Langertha::Role::Embedding'), 'vLLM composes Embedding');
+
+# Test: composes Runtime::MetricsPoll
+ok($vllm->does('Langertha::Role::Runtime::MetricsPoll'), 'vLLM composes Runtime::MetricsPoll');
+
+# Test: _build_supported_operations contains createEmbedding (karr #70)
+{
+  my $ops = $vllm->_build_supported_operations;
+  ok((grep { $_ eq 'createEmbedding' } @$ops),
+    '_build_supported_operations contains createEmbedding');
+  ok((grep { $_ eq 'createChatCompletion' } @$ops),
+    '_build_supported_operations contains createChatCompletion');
+}
+
+# Test: default_embedding_model returns 'default' (single-model server, karr #70)
+is($vllm->default_embedding_model, 'default',
+  'default_embedding_model returns default');
+
+# Test: embedding_model resolves to default_embedding_model when unset
+is($vllm->embedding_model, 'default',
+  'embedding_model defaults to default_embedding_model');
+
 # Test: tool calling methods available
 ok($vllm->can('format_tools'), 'has format_tools');
 ok($vllm->can('response_tool_calls'), 'has response_tool_calls');

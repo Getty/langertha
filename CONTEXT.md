@@ -84,15 +84,13 @@ sets — the knob dialect is a distinct concern from reasoning and caching. The
 `prefix_caching` capability means *the wire accepts the controls*, not that the
 server has caching enabled.
 
-### Response-side observability (sibling seam)
+### Response-side observability (sibling seams)
 
-Response timing is the response-side parallel to the request-side controls:
-a HashRef that carries both engine-agnostic standard keys and engine-native
-stage keys, layered together via a first-write-wins merge. Canonical
-vocabulary lives in **ADR 0011** (not restated here); named only so the
-parallel is explicit:
+Two sibling seams sit on the response side. Their canonical vocabularies
+live in the ADRs (not restated here); named only so the parallels are
+explicit:
 
-**Langertha::Response.timing** (HashRef):
+**Langertha::Response.timing** (HashRef) — **ADR 0011**:
 The response-side timing surface. Holds two classes of keys:
 - *engine-agnostic* (standard): `ttft_seconds`, `total_seconds` — Float,
   seconds. `ttft_seconds` only meaningful for async streaming (LWP
@@ -110,6 +108,21 @@ excludes network jitter, which is what model-latency dashboards want.
 Round-trip latency is recoverable from the difference between
 provider-native and client-measured `total_seconds` when both are
 present.
+
+**runtime_metrics** capability — **ADR 0014**:
+The self-hosted observability seam. Engines that serve a Prometheus
+`GET /metrics` endpoint (vLLM, SGLang, llama.cpp's built-in server)
+compose `Langertha::Role::Runtime::MetricsPoll` and advertise the
+`runtime_metrics` capability flag via `engine_capabilities`. The
+role's `poll_metrics_f` (async, IO::Async) and sync `poll_metrics`
+scrape the endpoint and return parsed
+`Langertha::Runtime::Metrics` records; the URL is derived
+mechanically by stripping the trailing `/v1` from the engine's
+`url`. Ollama is intentionally not composed — its runtime stats
+live at `/api/ps` in JSON, not at `/metrics` in Prometheus text.
+The asymmetry between chat-shape flags (request body fields) and
+the observability-shape flag (`runtime_metrics`) is documented in
+ADR 0014.
 
 ## Relationships
 

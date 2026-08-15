@@ -71,12 +71,14 @@ Concrete engines that extend this class:
 =over 4
 
 =item * Cloud providers — L<Langertha::Engine::OpenAI>, L<Langertha::Engine::DeepSeek>,
-L<Langertha::Engine::Groq>, L<Langertha::Engine::Mistral>,
-L<Langertha::Engine::Cerebras>, L<Langertha::Engine::MiniMax>,
-L<Langertha::Engine::NousResearch>, L<Langertha::Engine::OpenRouter>,
-L<Langertha::Engine::Replicate>, L<Langertha::Engine::HuggingFace>,
-L<Langertha::Engine::Perplexity>, L<Langertha::Engine::AKIOpenAI>,
-L<Langertha::Engine::TSystems>, L<Langertha::Engine::Scaleway>
+L<Langertha::Engine::Groq>, L<Langertha::Engine::Hetzner>,
+L<Langertha::Engine::MiniMax>, L<Langertha::Engine::Mistral>,
+L<Langertha::Engine::Moonshot>, L<Langertha::Engine::XAI>,
+L<Langertha::Engine::Cerebras>, L<Langertha::Engine::NousResearch>,
+L<Langertha::Engine::OpenRouter>, L<Langertha::Engine::Replicate>,
+L<Langertha::Engine::HuggingFace>, L<Langertha::Engine::Perplexity>,
+L<Langertha::Engine::AKIOpenAI>, L<Langertha::Engine::TSystems>,
+L<Langertha::Engine::Scaleway>
 
 =item * Self-hosted — L<Langertha::Engine::OllamaOpenAI>,
 L<Langertha::Engine::vLLM>, L<Langertha::Engine::SGLang>,
