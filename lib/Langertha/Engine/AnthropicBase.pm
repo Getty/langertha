@@ -65,7 +65,8 @@ thin composition shell: the request/response/auth/stream/rate-limit envelope
 for the Anthropic dialect is owned by the role.
 
 Concrete engines extending this class include
-L<Langertha::Engine::Anthropic>, L<Langertha::Engine::MiniMax>, and
+L<Langertha::Engine::Anthropic>, L<Langertha::Engine::MiniMaxAnthropic>,
+L<Langertha::Engine::MoonshotAnthropic>, and
 L<Langertha::Engine::LMStudioAnthropic>.
 
 Structured output (C<response_format>) is a non-streaming feature on this
