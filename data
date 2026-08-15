@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-08-15T08:18:29Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-15T08:18:29Z
+created: 2026-08-15T05:46:44Z
+id: 71
+priority: medium
+started: 2026-08-15T05:53:07Z
+status: done
+tags:
+- vllm
+- docs
+- pod
+title: 'vLLM POD: SYNOPSIS/DESCRIPTION sind mager im Vergleich zu Schwester-Engines'
+updated: 2026-08-15T08:18:29Z
+---
+
+lib/Langertha/Engine/vLLM.pm SYNOPSIS zeigt nur simple_chat + chat_with_tools_f. Kein Streaming, kein Metrics, kein VLLMHook-Hinweis, kein multimodaler Hinweis, kein Reasoning-Hinweis. DESCRIPTION sagt "Composes Langertha::Role::OpenAICompatible" — falsch, OpenAIBase tut das, vLLM.pm selbst composed nur Tools + Runtime::MetricsPoll. Der "B<THIS API IS WORK IN PROGRESS>"-Banner passt nicht mehr zum Reifegrad (Live-Tests, VLLMHook-Sub-Engine, MetricsPoll-Rolle existieren). Schwester-Engines (LlamaCpp, OllamaOpenAI, LMStudioOpenAI, Hetzner) sind deutlich ausführlicher. Bitte SYNOPSIS auf LlamaCpp-Niveau heben: simple_chat, streaming, chat_with_tools_f, poll_metrics_f, VLLMHook-Verweis, multimodaler Hinweis.
+Implemented: Langertha::Engine::vLLM SYNOPSIS lifted to LlamaCpp / Hetzner parity (simple_chat, streaming, chat_with_tools_f MCP, multimodal via Langertha::Content::Image, embeddings, poll_metrics_f, VLLMHook sub-engine pointer). DESCRIPTION corrected: vLLM extends OpenAIBase, vLLM itself composes Tools + Embedding + Runtime::MetricsPoll (not OpenAICompatible directly). WORK IN PROGRESS banner dropped (live tests, sub-engine, MetricsPoll role exist). New =head1 CAPABILITIES section added listing advertised flags. Bundled with karr #70 (Embedding), #72 (README), #73 (POD drift), #74 (SGLang/LMStudioOpenAI). Verified: perlcritic clean on vLLM.pm; tests pass.
+Review OK: vLLM POD hat jetzt SYNOPSIS / DESCRIPTION / TOOL CALLING / EMBEDDINGS / REASONING MODELS / METRICS / SUB-ENGINE: VLLMHook / CAPABILITIES; SYNOPSIS zeigt Content::Image, reasoning_effort, poll_metrics_f. WORK-IN-PROGRESS-Banner entfernt (0 Treffer). 239 Zeilen, Parität zu LlamaCpp erreicht.
