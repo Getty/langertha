@@ -150,7 +150,7 @@ sub new_engine {
 
     my $ollama = Langertha::Engine::Ollama->new(
         url           => 'http://127.0.0.1:11434',
-        model         => 'llama3.1',
+        model         => 'a small chat model you have pulled locally',
         system_prompt => $system_prompt,
     );
     print $ollama->simple_chat('Do you wanna build a snowman?');
@@ -160,7 +160,7 @@ sub new_engine {
 
     my $openai = Langertha::Engine::OpenAI->new(
         api_key       => $ENV{OPENAI_API_KEY},
-        model         => 'gpt-4o-mini',
+        model         => 'a small fast model from your provider',
         system_prompt => $system_prompt,
     );
     print $openai->simple_chat('Do you wanna build a snowman?');
@@ -170,7 +170,7 @@ sub new_engine {
 
     my $claude = Langertha::Engine::Anthropic->new(
         api_key => $ENV{ANTHROPIC_API_KEY},
-        model   => 'claude-sonnet-4-6',
+        model   => 'a frontier chat model from your provider',
     );
     print $claude->simple_chat('Generate Perl Moose classes to represent GeoJSON data.');
 
@@ -179,7 +179,7 @@ sub new_engine {
 
     my $gemini = Langertha::Engine::Gemini->new(
         api_key => $ENV{GEMINI_API_KEY},
-        model   => 'gemini-2.5-flash',
+        model   => 'a fast model from your provider',
     );
     print $gemini->simple_chat('Explain the difference between Moose and Moo.');
 
