@@ -7,6 +7,10 @@ use Langertha::Usage;
 
 use overload
   '""' => sub { $_[0]->content },
+  # An object that exists is true. Without this, `fallback => 1` derives bool
+  # from the '""' overload, and a Response whose content is the empty string --
+  # a tool-call-only reply -- would be false. See "Boolean context" (karr #100).
+  'bool' => sub { 1 },
   fallback => 1;
 
 =head1 SYNOPSIS
@@ -36,6 +40,37 @@ use overload
 Wraps LLM response text content together with all available metadata
 from the API response. Uses C<overload> for string context so existing
 code treating responses as plain strings continues to work.
+
+=head2 Boolean context — a Response is always true
+
+C<Langertha::Response> overloads C<bool> to a constant true: the object exists,
+so it is true, whatever L</content> happens to hold. This is not cosmetic. With
+only the C<""> overload and C<fallback =E<gt> 1>, Perl derives boolean context
+from stringification, so a Response whose content is the empty string was
+B<false> — and that is exactly the shape of a tool-call-only reply (an
+Anthropic turn that is pure C<tool_use>, an Ollama reply with empty
+C<message.content> plus a C<tool_calls> array), as well as of a model that
+legitimately answers C<"0">. Callers writing
+
+    my $resp = $engine->simple_chat(@messages);
+    if ($resp) { ... }             # entered now; silently skipped before
+    $resp or die "no response";    # no longer dies on a perfectly good Response
+
+used to drop precisely the responses that carry L</tool_calls>. Decided in
+karr #100.
+
+Asking whether the B<content> is empty is a different question, and keeps its
+own spelling:
+
+    if ( length "$resp" )         { ... }   # the model produced text
+    if ( $resp->has_tool_calls )  { ... }   # the model emitted tool calls
+
+The C<""> overload is unchanged — C<"$response"> is still L</content>, and
+C<eq>, C<ne> and concatenation keep routing through it. The change also makes
+this class agree with the rest of the distribution: L<Langertha::ToolCall>,
+L<Langertha::Usage> and L<Langertha::Stream::Chunk> are already
+true-because-they-exist. L<Langertha::Result> got the same treatment for the
+same reason.
 
 =head2 TO_JSON — the canonical, bounded representation
 

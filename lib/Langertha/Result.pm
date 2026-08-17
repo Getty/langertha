@@ -5,6 +5,11 @@ use Moose;
 
 use overload
   '""' => sub { $_[0]->text // '' },
+  # An object that exists is true. Without this, `fallback => 1` derives bool
+  # from the '""' overload, and every text-less result -- question, pause,
+  # abort, which carry `content` rather than `text` -- would be false. See
+  # "Boolean context" (karr #100).
+  'bool' => sub { 1 },
   fallback => 1;
 
 =head1 SYNOPSIS
@@ -36,6 +41,28 @@ Represents one of four high-level outcomes:
 
 L<Langertha::Raider::Result> subclasses this class for backward-compatible
 Raider behavior.
+
+=head2 Boolean context — a Result is always true
+
+C<Langertha::Result> overloads C<bool> to a constant true: the object exists,
+so it is true, whatever L</text> happens to hold. With only the C<""> overload
+and C<fallback =E<gt> 1>, Perl derives boolean context from stringification,
+and a C<question>, C<pause> or C<abort> carries its message in L</content>
+rather than L</text> — so every result that actually needs handling was
+B<false>, and a caller writing
+
+    my $r = $raider->raid(@messages);
+    if ($r) { ... }                # entered now; silently skipped before
+
+dropped exactly those. The same applied to a C<final> whose text is C<"0">.
+Decided in karr #100, together with the identical fix on
+L<Langertha::Response/"Boolean context — a Response is always true">.
+
+Type is still asked with the predicates (L</is_final>, L</is_question>,
+L</is_pause>, L</is_abort>), and emptiness of the text with C<length "$r">
+or L</has_text>. The C<""> overload is unchanged: C<"$r"> is still L</text>
+(or the empty string), and C<eq> / C<ne> / concatenation keep routing
+through it.
 
 =cut
 

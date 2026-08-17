@@ -401,4 +401,47 @@ subtest 'Ollama created_at normalization (karr #92)' => sub {
   }
 };
 
+# --- Boolean context (karr #100) ---
+#
+# `use overload '""' => ..., fallback => 1` makes Perl derive bool from the
+# string overload, so a Response whose content is the empty string was FALSE --
+# exactly the shape of a tool-call-only reply (see the Ollama fixture subtest
+# above) and of an Anthropic reply that is pure tool_use. A caller writing
+# `if (my $resp = $engine->simple_chat(...))` silently skipped a perfectly good
+# response. An explicit bool overload separates "this object exists" from "its
+# content is non-empty"; callers who mean the latter ask `length "$resp"`.
+
+subtest 'Response is true in boolean context whatever its content (karr #100)' => sub {
+  my $tool_only = Langertha::Response->new(
+    content    => '',
+    tool_calls => [
+      { name => 'get_weather', arguments => { city => 'Berlin' }, id => 'call_1' },
+    ],
+  );
+
+  ok($tool_only, 'tool-call-only Response (empty content) is true');
+  ok(!!$tool_only, 'double negation stays true');
+  is(($tool_only ? 'taken' : 'skipped'), 'taken', 'ternary takes the true branch');
+  is(scalar @{ $tool_only->tool_calls }, 1,
+    'the tool call a false Response would have hidden is reachable');
+
+  ok(Langertha::Response->new(content => ''), 'empty content, no tool calls: still true');
+  ok(Langertha::Response->new(content => '0'),
+    q{content '0' is true -- the classic Perl false-string trap does not leak through});
+
+  # The stringification contract is the part nobody may break.
+  is("$tool_only", '', 'empty-content Response still stringifies to the empty string');
+  is("" . Langertha::Response->new(content => '0'), '0', q{content '0' still stringifies to '0'});
+  is(length("$tool_only"), 0, 'length() over the stringification still reports emptiness');
+  ok(!length("$tool_only"), 'emptiness stays testable -- that is what length is for');
+
+  # Comparison and concatenation keep routing through the '""' overload.
+  my $hello = Langertha::Response->new(content => 'hello');
+  ok($hello eq 'hello', 'eq against a plain string works');
+  ok($hello ne 'goodbye', 'ne against a plain string works');
+  ok($tool_only eq '', 'empty-content Response is still eq to the empty string');
+  is($hello . '!', 'hello!', 'concatenation still uses the content');
+};
+
+
 done_testing;

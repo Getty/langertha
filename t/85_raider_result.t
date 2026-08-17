@@ -7,6 +7,7 @@ use warnings;
 use Test2::Bundle::More;
 
 use Langertha::Raider::Result;
+use Langertha::Result;
 
 # --- Stringification ---
 
@@ -70,5 +71,34 @@ ok(!$pause_no_opts->has_options, 'no has_options when not set');
 my $result = Langertha::Raider::Result->new(type => 'final', text => 'test123');
 like("$result", qr/test123/, 'final result matches regex via stringification');
 is(length("$result"), 7, 'length works via stringification');
+
+# --- Boolean context (karr #100) ---
+#
+# `use overload '""' => sub { $_[0]->text // '' }, fallback => 1` in
+# Langertha::Result made Perl derive bool from the string overload, so every
+# text-less result was FALSE -- and question/pause/abort carry `content`, not
+# `text`. A caller writing `if (my $r = $raider->raid(...))` therefore dropped
+# exactly the results that need handling. An explicit bool overload separates
+# "this object exists" from "its text is non-empty"; emptiness stays `length`.
+
+ok($final, 'final result is true in boolean context');
+ok($question, 'question result (no text) is true in boolean context');
+ok($abort, 'abort result (no text) is true in boolean context');
+ok($pause_no_opts, 'pause result (no text) is true in boolean context');
+is(($question ? 'taken' : 'skipped'), 'taken', 'ternary takes the true branch');
+
+# The base class is where the overload lives; check it directly, not only
+# through the Raider subclass that inherits it.
+ok(Langertha::Result->new(type => 'question', content => 'which?'),
+  'Langertha::Result (base class) question is true in boolean context');
+
+# Stringification is unchanged -- that is the contract nobody may break.
+is("$question", '', 'question still stringifies to the empty string');
+ok(!length("$question"), 'emptiness stays testable via length');
+my $zero_text = Langertha::Raider::Result->new(type => 'final', text => '0');
+ok($zero_text, q{final result whose text is '0' is true});
+is("$zero_text", '0', q{text '0' still stringifies to '0'});
+ok($final eq 'Hello world', 'eq against a plain string still works');
+
 
 done_testing;
