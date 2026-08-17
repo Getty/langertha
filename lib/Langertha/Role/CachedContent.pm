@@ -250,7 +250,12 @@ async sub list_cached_contents_f {
   my $token = $opts{page_token};
   my $page_size = $opts{page_size};
 
-  do {
+  # A real loop block, not a do{}while: the two exits below are `last`, and
+  # `last` inside a do-BLOCK-while is fatal at runtime ("Can't last outside a
+  # loop block") — it killed both one-page options after the request had
+  # already gone on the wire (karr #104, t/49). while(1) keeps the do{}while
+  # semantics (always issue at least one request) with working exits.
+  while (1) {
     my $url = $self->gemini_url( $self->_cached_contents_path );
 
     # Pagination goes on with URI rather than through the seam's query list:
@@ -280,7 +285,10 @@ async sub list_cached_contents_f {
 
     # If the caller constrained to one page, stop after the first response.
     last if defined $opts{page_token} || defined $opts{page_size};
-  } while ( defined $token && length $token );
+
+    # Otherwise walk on for as long as the server hands out a next page.
+    last unless defined $token && length $token;
+  }
 
   return @all;
 }
