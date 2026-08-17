@@ -42,8 +42,11 @@ L<Langertha::Role::OpenAICompatible> for the standard OpenAI format.
 
 C<url> is required and must include the C</v1> path prefix (e.g.,
 C<http://localhost:11434/v1>). When using L<Langertha::Engine::Ollama/openai>,
-the C</v1> suffix is appended automatically. The API key defaults to
-C<'ollama'> since Ollama does not require authentication.
+the C</v1> suffix is appended automatically.
+
+Authentication is optional. A local server needs none; Ollama Cloud
+(C<https://ollama.com/v1>) requires a bearer token — set L</api_key> or
+C<LANGERTHA_OLLAMA_API_KEY>.
 
 Supports chat completions (SSE streaming), embeddings (default:
 C<mxbai-embed-large>), MCP tool calling, and dynamic model listing.
@@ -63,7 +66,22 @@ has '+url' => (
 sub default_model { croak "".(ref $_[0])." requires model to be set" }
 sub default_embedding_model { 'mxbai-embed-large' }
 
+# Credentials are optional here too — see Langertha::Engine::Ollama.
 sub api_key_env { undef }
+
+sub _build_api_key {
+  return $ENV{LANGERTHA_OLLAMA_API_KEY};
+}
+
+=attr api_key
+
+Optional bearer token, shared with L<Langertha::Engine::Ollama>. A local
+server needs none; Ollama Cloud rejects unauthenticated requests with
+HTTP 401. If not provided, reads from C<LANGERTHA_OLLAMA_API_KEY>. When
+undefined, L<Langertha::Role::OpenAICompatible> sends no C<Authorization>
+header.
+
+=cut
 
 sub _build_supported_operations {[qw( createChatCompletion createEmbedding )]}
 

@@ -602,6 +602,10 @@ ok(Langertha::Engine::OllamaOpenAI->does('Langertha::Role::Embedding'), 'OllamaO
 ok(Langertha::Engine::OllamaOpenAI->does('Langertha::Role::Tools'), 'OllamaOpenAI does Tools');
 
 {
+  # The optional Ollama Cloud key must not leak into the local-server
+  # assertions (see t/13_ollama_auth.t).
+  delete local $ENV{LANGERTHA_OLLAMA_API_KEY};
+
   # url required, no default
   eval { Langertha::Engine::OllamaOpenAI->new(model => 'test') };
   like($@, qr/url/, 'OllamaOpenAI requires url');

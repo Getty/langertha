@@ -66,6 +66,16 @@ Supports chat, embeddings, streaming, MCP tool calling (OpenAI-compatible
 format), and an OpenAI-compatible API via L</openai>. Not all models support
 tool calling; known working models include C<qwen3:8b> and C<llama3.2:3b>.
 
+Authentication is optional. A local server needs none; Ollama Cloud
+(C<https://ollama.com>) serves the same native dialect but requires a
+bearer token — set L</api_key> or C<LANGERTHA_OLLAMA_API_KEY>:
+
+    my $cloud = Langertha::Engine::Ollama->new(
+        url     => 'https://ollama.com',
+        api_key => $ENV{LANGERTHA_OLLAMA_API_KEY},
+        model   => 'gpt-oss:120b',
+    );
+
 For Hermes-format tool calling in models without API-level tool support,
 compose L<Langertha::Role::HermesTools>. See L<Langertha::Role::HermesTools>
 for details.
@@ -79,6 +89,7 @@ sub openai {
   return Langertha::Engine::OllamaOpenAI->new(
     url => $self->url.'/v1',
     model => $self->model,
+    defined $self->api_key ? ( api_key => $self->api_key ) : (),
     $self->embedding_model ? ( embedding_model => $self->embedding_model ) : (),
     $self->chat_model ? ( chat_model => $self->chat_model ) : (),
     $self->has_system_prompt ? ( system_prompt => $self->system_prompt ) : (),
@@ -94,8 +105,8 @@ sub openai {
 
 Returns a L<Langertha::Engine::OllamaOpenAI> instance configured for Ollama's
 C</v1> OpenAI-compatible endpoint, inheriting the current model, embedding
-model, system prompt, and temperature settings. Supports streaming, embeddings,
-and MCP tool calling.
+model, API key, system prompt, and temperature settings. Supports streaming,
+embeddings, and MCP tool calling.
 
 =cut
 
@@ -123,7 +134,44 @@ The optional C<tools> list is passed to C<openai()>.
 sub default_model { 'llama3.3' }
 sub default_embedding_model { 'mxbai-embed-large' }
 
+# Credentials are optional, so this stays undef like the other
+# local-first engines (LMStudio, vLLM, LlamaCpp): a consumer scanning the
+# environment must not conclude that Ollama needs a key to be usable.
 sub api_key_env { undef }
+
+has api_key => (
+  is => 'ro',
+  lazy_build => 1,
+);
+
+sub _build_api_key {
+  return $ENV{LANGERTHA_OLLAMA_API_KEY};
+}
+
+=attr api_key
+
+Optional bearer token. A local Ollama server needs none; Ollama Cloud
+(C<https://ollama.com>) rejects unauthenticated requests with HTTP 401.
+If not provided, reads from C<LANGERTHA_OLLAMA_API_KEY>. When undefined,
+no C<Authorization> header is sent.
+
+=cut
+
+sub update_request {
+  my ( $self, $request ) = @_;
+  my $key = $self->api_key;
+  $request->header('Authorization', 'Bearer '.$key) if defined $key;
+}
+
+=method update_request
+
+    $ollama->update_request($http_request);
+
+Adds C<Authorization: Bearer {api_key}> to outgoing requests when an API
+key is configured. Skipped entirely when C<api_key> is C<undef>, keeping
+unauthenticated local servers working.
+
+=cut
 
 sub openapi_file { yaml => dist_file('Langertha','ollama.yaml') };
 

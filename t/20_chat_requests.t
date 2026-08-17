@@ -92,6 +92,10 @@ is_deeply($anthropic_data, {
   model => 'claude-3-5-sonnet-20240620',
 }, 'Anthropic request body is correct');
 
+# These are local-server expectations: an Ollama Cloud key in the environment
+# would add a Bearer header (see t/13_ollama_auth.t).
+delete local $ENV{LANGERTHA_OLLAMA_API_KEY};
+
 my $ollama_openai_testurl = 'http://test.openai.url:12345';
 my $ollama_for_openai = Langertha::Engine::Ollama->new(
   url => $ollama_openai_testurl,
