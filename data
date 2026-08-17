@@ -1,0 +1,70 @@
+---
+claimed_at: 2026-08-17T01:32:57Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T01:32:57Z
+created: 2026-08-14T13:07:50Z
+id: 66
+priority: low
+started: 2026-08-17T01:08:30Z
+status: done
+tags:
+- architecture
+- roles
+- symmetry
+title: Future symmetric wire-envelope roles for Gemini/Ollama/AKI/LMStudio
+updated: 2026-08-17T01:32:57Z
+---
+
+Doku-Audit-Befund 7 (2026-08-14): Gemini, Ollama (native), AKI, LMStudio (native) tragen ihre Wire-Envelope weiterhin inline in der eigenen Klasse (extends Remote + Rollen), wie Anthropic es bis Commit 579d0c8 tat. Kein Handling als offene Symmetrie-Arbeit dokumentiert (ADR 0013 nennt nur den bewusst nicht gemachten Role::Engine::*-Rebrand). Kandidat für künftige Extraktion analog Role::AnthropicCompatible. Nicht blockieren.
+SONDIERUNG RESULT (2026-08-17, worker): recommend NO extraction for any of the four. Structural analysis + live provider verification (langertha-llm-advisor) agree.
+
+Per engine - second consumer for the DIALECT?
+  Gemini    : YES today (Vertex AI express/standard, Gemini-native gateways e.g. LiteLLM)
+  Ollama    : YES today (Ollama Cloud; AMD Lemonade Server; Docker Model Runner)
+  AKI native: NO, and none plausible (key-in-body /api/call/{model}, single vendor)
+  LMStudio  : NO, and none plausible (/api/v1 is the LM Studio app control surface itself)
+
+But for Gemini/Ollama the delta between consumers is ALWAYS auth scheme + base URL/model path,
+NEVER the envelope. That is precisely what ADR 0006 inheritance already covers: Engine::VertexGemini
+/ Engine::OllamaCloud would naturally extend the existing engine. A role earns its keep only when a
+consumer needs the envelope while descending from a DIFFERENT parent - the Anthropic case of ADR
+0013 (4, now 5, shims), not this one.
+
+Structural reasons the analogy to 579d0c8 does not carry:
+ 1. On the OpenAI/Anthropic side the composition shell ALREADY existed as a separate class with
+    multiple children; the extraction moved base -> role. Here envelope + shell + leaf are one class
+    because there is exactly one leaf. Extraction would CREATE the shell, not free it.
+ 2. has "+url" is not supported in Moose roles, and the model-family around engine_capabilities must
+    stay on the class (composition-order trap, ADR 0013). So the split line would run through tightly
+    coupled code (Gemini around inspects chat_model and toggles cached_content).
+ 3. Cost: +4 files, ~1400 lines relocated, plus new -excludes collision resolutions (Gemini 3:
+    _build_tool_wire_format/Tools, _build_reasoning_wire_format/ReasoningEffort, content_format/Chat;
+    Ollama 1; AKI 1; LMStudio 0) - for zero reuse and two files per dialect to read instead of one.
+ 4. Testability unchanged: tests instantiate engines and assert request bodies; nothing composes an
+    envelope role standalone.
+
+The real symmetry gap for these engines is NOT "envelope not in a role", it is "auth + endpoint URL
+welded into the method bodies" - that is what actually blocks a second consumer. Split out into #87
+(Ollama Cloud has no Bearer path at all - user-facing gap), #88 (Gemini ?key= hardcoded at lines
+205/386/489). #89 records AKI.IO new Anthropic-compatible endpoint = 5th consumer of
+Role::AnthropicCompatible.
+
+Proposed rule to record (ADR 0016, auditor lane - NOT written by me): the wire envelope becomes a
+Role::<X>Compatible at the moment a second consumer needs it from a different parent; until then it
+stays in the engine. That is exactly the Anthropic history (extraction came after the shims existed).
+
+Code changes made under this ticket: none structural. Two leftovers from the exemplar commit 579d0c8
+fixed in lib/Langertha/Role/AnthropicCompatible.pm (POD C<gem::Remote> -> L<Langertha::Engine::Remote>;
+removed an orphaned cache-flag comment that the extraction stranded above default_response_size - it
+belongs to the around engine_capabilities that stayed in AnthropicBase). Suite green: 80 files /
+2444 tests, perlcritic clean.
+BEGRUENDET ABGELEHNT (2026-08-17) - keine Extraktion, fuer keine der vier Engines. Sondierung + Gegenpruefung durch langertha-llm-advisor kommen unabhaengig zum selben Schluss.
+
+Kern: Bei Gemini und Ollama gibt es reale zweite Konsumenten (Vertex AI / Gemini-Gateways bzw. Ollama Cloud, AMD Lemonade, Docker Model Runner), sie unterscheiden sich aber AUSSCHLIESSLICH in Auth-Schema und Base-URL, nie im Envelope - das deckt ADR 0006 per Vererbung ab (Engine::VertexGemini wuerde die bestehende Engine schlicht extends-en). AKI und LMStudio (beide nativ) haben keinen plausiblen zweiten Konsumenten. Eine Rolle verdient sich ihren Platz erst, wenn ein Konsument den Envelope von einem ANDEREN Parent aus braucht - das war der Anthropic-Fall (4, inzwischen 5 Shims), und die Extraktion kam dort NACH den Shims.
+
+Strukturell traegt die Analogie zu 579d0c8 nicht: dort existierte die Kompositions-Shell bereits als eigene Klasse mit mehreren Kindern, die Extraktion verschob Base -> Rolle. Hier sind Envelope + Shell + Leaf EINE Klasse - die Extraktion wuerde die Shell erst erzeugen. Kosten: +4 Dateien, ~1400 verschobene Zeilen, neue -excludes-Aufloesungen (Gemini 3, Ollama 1, AKI 1), null Wiederverwendung. Hausregel 2.
+
+Die echte Luecke ist eine andere und wurde vom Orchestrator im Code verifiziert: Auth + Endpoint sind in die Methodenrumpfe eingeschweisst. Engine::Ollama hat api_key_env { undef }, kein api_key-Attribut, kein update_request - Ollama Cloud ist gar nicht erreichbar (karr #87). Engine::Gemini hat ?key= hartcodiert an :205, :386, :489 (karr #88). Fuer Single-Consumer-Dialekte ist der Auth-/Endpoint-Seam die Symmetrie-Achse, nicht die Rolle.
+
+Nebenfund committet als e4e1e64 (POD-Textschaden 'gem::Remote' + verwaister Kommentar in Role::AnthropicCompatible, beide aus 579d0c8). Folgetickets: #86, #87, #88, #89. Die Regel wird als ADR 0016 festgehalten (Auditor-Lane), damit das Ticket nicht wiederkehrt.
