@@ -58,9 +58,10 @@ The doku audit also flagged that `Role::OpenAICompatible::chat_request` /
 `chat_stream_request` assemble the generation parameters (temperature,
 response_format, response_size, reasoning / cache kwargs) through a small
 boilerplate pattern (`$self->has_temperature ? ( temperature => ... ) : ()`,
-`$self->reasoning_kwargs`, `$self->prompt_cache_kwargs`, ...). The Anthropic
-dialect base duplicates this exact pattern inline in `chat_request` /
-`chat_stream_request` because no shared generation-parameter helper exists yet.
+`$self->reasoning_kwargs_for`, `$self->prompt_cache_kwargs_for`, ...). The
+Anthropic dialect role `Role::AnthropicCompatible` duplicates this exact pattern
+inline in `chat_request` / `chat_stream_request` because no shared
+generation-parameter helper exists yet.
 
 This is not a bug — it's a deliberate split between *wire-aware* assembly
 (Anthropic folds `parallel_tool_use` into `tool_choice`, translates
@@ -126,13 +127,13 @@ form so the symmetry is discoverable from one place.
 ### 3. The generation-parameter block asymmetry is a deliberate dialect split (and a future refactor target)
 
 The boilerplate generation-parameter emission in `Role::OpenAICompatible` (`has_temperature`,
-`reasoning_kwargs`, `prompt_cache_kwargs`, `stream`, …) is *duplicated* into
+`reasoning_kwargs_for`, `prompt_cache_kwargs_for`, `stream`, …) is *duplicated* into
 `Role::AnthropicCompatible` rather than shared through a common helper,
 because **the dialect-aware fields (`response_format` translation to a synthetic
 tool, `tool_choice` ↔ `parallel_tool_use` folding, `inference_geo`,
 `anthropic-version`) all require the wire envelope in scope**. Extracting
-the wire-agnostic subset (e.g. `temperature`, `reasoning_kwargs`,
-`prompt_cache_kwargs`) into a shared helper is a worthwhile follow-up
+the wire-agnostic subset (e.g. `temperature`, `reasoning_kwargs_for`,
+`prompt_cache_kwargs_for`) into a shared helper is a worthwhile follow-up
 (working name `Langertha::Role::GenerationParams`, or a
 `generation_kwargs_for` method on each base — *not* `knobs_kwargs_for`, which
 `Langertha::Role::RuntimeKnobs` already owns for the self-hosted prefix-cache
@@ -143,20 +144,26 @@ boilerplate as drift.
 
 Concretely:
 
-- **Status quo** — `AnthropicBase::chat_request` / `chat_stream_request`
-  emit the generation parameters inline because they share scope with the
-  wire-aware blocks.
-  `OpenAICompatible::chat_request` / `chat_stream_request` emit a similar
-  set in the same shape, also inline, also dialect-agnostic at the
-  emission level but also dialect-aware (the `stream => JSON->true/false`
+- **Status quo** — `Role::AnthropicCompatible::chat_request:180-187` /
+  `chat_stream_request:406-413` emit the generation parameters inline because
+  they share scope with the wire-aware blocks. Until the wire-envelope
+  extraction (579d0c8, ADR 0013) this block sat in `Engine::AnthropicBase`; the
+  move changed its address, not its shape.
+  `Role::OpenAICompatible::chat_request:323-335` / `chat_stream_request:448-460`
+  emit a similar set in the same shape, also inline, also dialect-agnostic at
+  the emission level but also dialect-aware (the `stream => JSON->true/false`
   placement, the `parallel_tool_calls` placement differ).
 - **Future refactor** — extract the wire-agnostic subset
-  (`temperature`, `reasoning_kwargs`, `prompt_cache_kwargs`,
+  (`temperature`, `reasoning_kwargs_for`, `prompt_cache_kwargs_for`,
   `has_response_format`) into a `Langertha::Role::GenerationParams` helper or a
-  `generation_kwargs_for` method on each base, *only after* #64 has given
-  `AnthropicCompatible` a stable home, *and only after* `Role::OpenAICompatible`
-  has its generation-parameter block reformulated as a call to the helper. Tracked as
-  implicit follow-up; no karr ticket today (would block on #64 + tests).
+  `generation_kwargs_for` method on each base. The first precondition is
+  **met**: #64 landed (579d0c8, ADR 0013) and `Role::AnthropicCompatible` is
+  that stable home, so both dialect sides are roles composed into thin bases.
+  What remains is the second precondition — `Role::OpenAICompatible`
+  reformulating its own generation-parameter block as a call to the helper —
+  plus tests proving the request bodies are identical before and after. The
+  extraction is therefore concretely actionable follow-up work, not blocked
+  work.
 
 ## Rationale
 
@@ -176,16 +183,17 @@ This ADR layers the *mechanics* on top:
   Naming "the generation-parameter block is duplicated because the
   dialect-aware fields around it need wire context" is the right level for
   now — a future `Langertha::Role::GenerationParams` helper becomes possible
-  the day both bases can hand the helper a fully resolved wire context, which
-  is post-#64.
+  the day both dialect sides can hand the helper a fully resolved wire context,
+  which #64 delivered (579d0c8, ADR 0013).
 
 ## Consequences
 
 - **Cross-links.** ADR 0002 (capabilities from role inventory + the
   `around engine_capabilities` escape hatch this ADR extends). ADR 0006
   (the wire-dialect × capability split that makes `#64`-style refactors
-  possible — the generation-parameter asymmetry would not be safely
-  *future-extractable* until Anthropic wire-envelope lives in a role). ADR 0009
+  possible — the generation-parameter asymmetry only became safely
+  *extractable* once the Anthropic wire envelope moved into a role, which
+  ADR 0013 records). ADR 0009
   (request-side controls are themselves dialect-aware parameters surfaced via a
   value object — same shape as the generation-parameter block split).
 - **CONTEXT.md** gets a new entry, "Request-side generation parameters
@@ -195,17 +203,18 @@ This ADR layers the *mechanics* on top:
   (karr #82): the entry first shipped under the audit nickname "RuntimeKnobs
   split", which collides with the real `Langertha::Role::RuntimeKnobs` (ADR
   0012) — the canonical term is now* **generation-parameter block**.
-- **Comment updates** in `Engine::OpenAIBase.pm:31-36` and
-  `Engine::AnthropicBase.pm:32-37` — replace the existing per-direction
-  comments with a pointer to this ADR plus a single-line reference to the
-  partner direction. *Not done in this ADR*; tracked as a follow-up so the
-  diff stays scoped.
+- **Comment updates** in `Engine::OpenAIBase.pm:28-33` and
+  `Engine::AnthropicBase.pm:21-25` — the per-direction comments carry a pointer
+  to this ADR plus a single-line reference to the partner direction. Kept out
+  of this ADR's own diff to stay scoped; *done since* in karr #80 (9715189).
 - **Git-native kanban.** ADR 0015 closes doku-audit findings 4 (the
   `-excludes` canon) and 6 (the per-family capability correction), and
   makes finding 5 (the generation-parameter block asymmetry) an *accepted*
-  asymmetry rather than silent drift. New follow-up tickets (open issues):
+  asymmetry rather than silent drift. Follow-up work:
   - karr #68 finding-1/2 implementation: update the per-direction code
     comments in `OpenAIBase.pm` / `AnthropicBase.pm` to point at this
-    ADR + the partner direction.
-  - Future: `Role::GenerationParams` extraction (track when #64 lands and
-    `Langertha::Role::AnthropicCompatible` has a stable home).
+    ADR + the partner direction. *Done* — karr #80 (9715189).
+  - `Role::GenerationParams` extraction — no longer gated on #64, which
+    landed in 579d0c8 and made `Langertha::Role::AnthropicCompatible` the
+    stable home. Open work, not an open blocker; decision 3 names the one
+    remaining precondition.
