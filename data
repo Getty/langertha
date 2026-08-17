@@ -1,0 +1,40 @@
+---
+claimed_at: 2026-08-17T05:12:28Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T05:12:28Z
+created: 2026-08-17T03:46:38Z
+id: 103
+priority: low
+started: 2026-08-17T05:08:01Z
+status: done
+tags:
+- engines
+- aki
+- anthropic
+- tests
+title: 'AKIAnthropic follow-ups: 00_load entry, AKI->anthropic shortcut, live smoke
+  test'
+updated: 2026-08-17T05:12:28Z
+---
+
+Leftovers from #89 (Engine::AKIAnthropic), deliberately out of that change's file scope.
+
+1. t/00_load.t: the module smoketest list does not carry Langertha::Engine::AKIAnthropic —
+   and it is already missing Langertha::Engine::MoonshotAnthropic (pre-existing drift; the
+   list does have MiniMaxAnthropic and LMStudioAnthropic). One-line additions each.
+
+2. Engine::AKI has an ->openai convenience returning a pre-configured AKIOpenAI (and
+   Engine::LMStudio has ->anthropic returning LMStudioAnthropic). AKI now has three faces
+   sharing one key, so an ->anthropic counterpart on Engine::AKI would be symmetric.
+   Caveat that already applies to ->openai: native model ids do not map to /anthropic model
+   ids, so the same carp-and-use-default behaviour would be needed.
+
+3. No live test covers /anthropic. A t/8x file gated on TEST_LANGERTHA_AKI_API_KEY (pattern:
+   t/81_live_aki.t) would confirm the three unverified points: that the endpoint answers at
+   all, whether it accepts an Anthropic tools array, and whether the documented silent
+   fallback to MiniMax M2.5 shows up in Response.model for an unknown model id.
+
+4. Docs the worker was not allowed to touch: CLAUDE.md engine tree (AnthropicBase branch +
+   the AKI-family note) and lib/Langertha.pm / README engine lists need the AKIAnthropic
+   entry.
