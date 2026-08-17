@@ -196,7 +196,7 @@ B<THIS API IS WORK IN PROGRESS.>
 
 =over 4
 
-=item * B<24 engines> -- unified API across cloud and local LLM providers
+=item * B<35 engines> -- unified API across cloud and local LLM providers
 
 =item * B<Chat, streaming, embeddings, transcription, image generation>
 
@@ -293,11 +293,19 @@ Resolves and constructs an engine instance in one call.
 
 =head2 Engine Modules
 
+Each module below is a ready-to-use engine. They are built on the abstract
+bases L<Langertha::Engine::Remote>, L<Langertha::Engine::OpenAIBase> and
+L<Langertha::Engine::AnthropicBase>, which are not listed here because they
+are meant for subclassing (including third-party engines in the C<LangerthaX>
+namespace) rather than for direct use.
+
 =over 4
 
 =item * L<Langertha::Engine::Anthropic> - Claude models (Sonnet, Opus, Haiku)
 
 =item * L<Langertha::Engine::OpenAI> - GPT-4, GPT-4o, GPT-3.5, o1, embeddings
+
+=item * L<Langertha::Engine::OpenAIResponses> - OpenAI Responses API for reasoning models
 
 =item * L<Langertha::Engine::Ollama> - Local LLM hosting via L<https://ollama.com/>
 
@@ -311,9 +319,17 @@ Resolves and constructs an engine instance in one call.
 
 =item * L<Langertha::Engine::MiniMaxAnthropic> - MiniMax via legacy Anthropic-compatible endpoint
 
+=item * L<Langertha::Engine::Moonshot> - Moonshot AI Kimi models via OpenAI-compatible endpoint
+
+=item * L<Langertha::Engine::MoonshotAnthropic> - Moonshot AI Kimi via Anthropic-compatible endpoint
+
 =item * L<Langertha::Engine::Gemini> - Google Gemini models (Flash, Pro)
 
+=item * L<Langertha::Engine::XAI> - xAI Grok models
+
 =item * L<Langertha::Engine::vLLM> - vLLM inference server
+
+=item * L<Langertha::Engine::VLLMHook> - vLLM inference server with vLLM-Hook probe capture
 
 =item * L<Langertha::Engine::SGLang> - SGLang inference server
 
@@ -343,9 +359,13 @@ Resolves and constructs an engine instance in one call.
 
 =item * L<Langertha::Engine::AKIOpenAI> - AKI.IO via OpenAI-compatible API
 
+=item * L<Langertha::Engine::AKIAnthropic> - AKI.IO via Anthropic-compatible API
+
 =item * L<Langertha::Engine::TSystems> - T-Systems AI Foundation Services / LLM Hub (EU/Germany)
 
 =item * L<Langertha::Engine::Scaleway> - Scaleway Generative APIs (EU)
+
+=item * L<Langertha::Engine::Hetzner> - Hetzner Inference API (EU/Germany, OpenAI-compatible)
 
 =item * L<Langertha::Engine::TranscriptionBase> - Slim base for OpenAI-shape
 transcription-only engines (no chat / tools / embeddings / image generation).
@@ -359,7 +379,8 @@ transcription server (extends TranscriptionBase)
 
 =head2 Roles
 
-Roles provide composable functionality to engines:
+Roles provide composable functionality to engines, and - where noted - to the
+Raider/Raid layer:
 
 =over 4
 
@@ -371,6 +392,9 @@ including C<chat_f(messages =E<gt> [...], tools =E<gt> [...], tool_choice
 =E<gt> ..., response_format =E<gt> ...)> for single-turn structured
 calls and C<aggregate_tool_calls(\@chunks)> for streaming
 
+=item * L<Langertha::Role::ThinkTag> - Configurable C<E<lt>thinkE<gt>> tag
+filtering for reasoning models, composed by L<Langertha::Role::Chat>
+
 =item * L<Langertha::Role::HTTP> - HTTP request/response handling
 
 =item * L<Langertha::Role::Streaming> - Streaming response processing
@@ -378,6 +402,8 @@ calls and C<aggregate_tool_calls(\@chunks)> for streaming
 =item * L<Langertha::Role::JSON> - JSON encode/decode
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI-compatible API behaviour
+
+=item * L<Langertha::Role::AnthropicCompatible> - Anthropic-compatible API behaviour
 
 =item * L<Langertha::Role::SystemPrompt> - System prompt attribute
 
@@ -387,11 +413,21 @@ calls and C<aggregate_tool_calls(\@chunks)> for streaming
 
 =item * L<Langertha::Role::ResponseFormat> - Response format (JSON mode)
 
+=item * L<Langertha::Role::ReasoningEffort> - Request-side reasoning-effort control
+
+=item * L<Langertha::Role::PromptCache> - Request-side prompt-caching control
+
+=item * L<Langertha::Role::CachedContent> - Explicit cached-content resource
+lifecycle (create/get/list/update/delete)
+
 =item * L<Langertha::Role::ContextSize> - Context window size parameter
 
 =item * L<Langertha::Role::Seed> - Deterministic seed parameter
 
 =item * L<Langertha::Role::Models> - Model listing
+
+=item * L<Langertha::Role::StaticModels> - Model listing from a hardcoded list,
+for providers without a models endpoint
 
 =item * L<Langertha::Role::Embedding> - Embedding generation
 
@@ -402,13 +438,25 @@ calls and C<aggregate_tool_calls(\@chunks)> for streaming
 =item * L<Langertha::Role::HermesTools> - Hermes-style tool calling via
 C<E<lt>tool_callE<gt>> XML tags for models without native API tool support
 
+=item * L<Langertha::Role::ParallelToolUse> - Parallel tool calling control
+
 =item * L<Langertha::Role::ImageGeneration> - Image generation
 
 =item * L<Langertha::Role::KeepAlive> - Keep-alive duration for local models
 
+=item * L<Langertha::Role::RuntimeKnobs> - Per-request prefix-cache runtime knobs
+for self-hosted engines
+
+=item * L<Langertha::Role::Runtime::MetricsPoll> - Async Prometheus C</metrics>
+scraper for self-hosted engines
+
 =item * L<Langertha::Role::PluginHost> - Plugin system for wrapper classes and Raider
 
-=item * L<Langertha::Role::Langfuse> - Langfuse observability integration (engine-level)
+=item * L<Langertha::Role::Runnable> - Common async execution contract, composed by
+L<Langertha::Raider> and L<Langertha::Raid> rather than by engines
+
+=item * L<Langertha::Role::Langfuse> - Engine-level Langfuse observability,
+composed by L<Langertha::Role::Chat>
 
 =item * L<Langertha::Role::OpenAPI> - OpenAPI spec support
 
@@ -613,9 +661,35 @@ calling, context compression, session history, and a plugin system:
 
 =head2 Langfuse Observability
 
-Every engine has L<Langfuse|https://langfuse.com/> observability built in.
-Set C<LANGFUSE_PUBLIC_KEY> and C<LANGFUSE_SECRET_KEY> env vars to enable
-auto-instrumented traces and generations. See L<Langertha::Role::Langfuse>.
+L<Langfuse|https://langfuse.com/> observability comes in two complementary
+flavours. Both read C<LANGFUSE_PUBLIC_KEY>, C<LANGFUSE_SECRET_KEY> and the
+optional C<LANGFUSE_URL> from the environment, and both stay inactive until
+that key pair is set.
+
+=over 4
+
+=item * B<Engine level> -- L<Langertha::Role::Langfuse> is composed by
+L<Langertha::Role::Chat>, so every chat engine carries it. It auto-instruments
+the synchronous C<simple_chat> call and offers C<langfuse_trace>,
+C<langfuse_span> and C<langfuse_generation> for instrumenting anything else.
+L<Langertha::Raider> uses those to trace raids, iterations and tool calls.
+
+=item * B<Plugin level> -- L<Langertha::Plugin::Langfuse> attaches to any
+L<Langertha::Role::PluginHost>, which is what the wrapper classes
+L<Langertha::Chat>, L<Langertha::Embedder> and L<Langertha::ImageGen> are (as
+is L<Langertha::Raider>). It needs no engine-level configuration and covers
+the embedding and image-generation calls the engine role does not see:
+
+    my $chat = Langertha::Chat->new(
+        engine  => $engine,
+        plugins => ['Langfuse'],
+    );
+
+=back
+
+Transcription-only engines (L<Langertha::Engine::Whisper> and other
+L<Langertha::Engine::TranscriptionBase> subclasses) compose neither
+L<Langertha::Role::Chat> nor a plugin host, and so are not instrumented.
 
 =head2 Extensions
 
