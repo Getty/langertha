@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-08-17T05:12:14Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T05:12:14Z
+created: 2026-08-17T04:06:24Z
+id: 105
+priority: low
+started: 2026-08-17T04:55:36Z
+status: done
+tags:
+- raider
+- docs
+title: 'Raider: session_history POD documents a clear route that dies (ro accessor)'
+updated: 2026-08-17T05:12:14Z
+---
+
+lib/Langertha/Raider.pm, =attr session_history says: "Only cleared manually via \$raider->session_history([])". The attribute is is => "ro", so that call dies with "Cannot assign a value to a read-only accessor at reader Langertha::Raider::session_history". Verified 2026-08-17 while fixing karr #99.
+
+Decide one of: (a) make the attribute rw and have the writer also reset _session_embeddings (the two arrays must stay 1:1 — see #99), or (b) add an explicit clear_session_history method that empties both arrays, and fix the POD to name it. Option (b) keeps the 1:1 invariant enforceable in one place.
+
+Until then the only working clear route is splicing the public ArrayRef, which leaves _session_embeddings stale; _query_session_history now detects the length mismatch and degrades to text search instead of returning the wrong message (fix from #99).
+Implemented option (b): added clear_session_history that splices session_history and _session_embeddings together (karr #99 1:1 invariant stays in one place). Updated the =attr POD to name the new method. Added t/88_raider_clear_session_history.t with 4 subtests: the POD-documented call dies (bug regression guard), both arrays cleared in lock-step, no-op on a fresh raider, and a push-after-clear round-trip to prove the embedding search re-aligns. All 88 test files pass (2947 tests); no live calls made.
