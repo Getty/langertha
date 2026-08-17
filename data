@@ -1,0 +1,37 @@
+---
+class: standard
+completed: 2026-08-17T05:09:34Z
+created: 2026-08-17T04:09:19Z
+id: 108
+priority: low
+started: 2026-08-17T05:09:34Z
+status: done
+tags:
+- tests
+- docs
+- langfuse
+- drift
+title: t/78 allowlist calls Role::Langfuse 'superseded' — it is live and load-bearing
+updated: 2026-08-17T05:09:34Z
+---
+
+Found while working karr #95.
+
+t/78_capability_registry.t:37 allowlists the role as:
+
+  Langertha::Role::Langfuse => "engine-level observability, superseded by Langertha::Plugin::Langfuse"
+
+"superseded" is factually wrong and it is what seeded the false premise in #95 (role assumed dead):
+
+- lib/Langertha/Role/Chat.pm:804 composes it: with "Langertha::Role::ThinkTag", "Langertha::Role::Langfuse";
+  (live code at the bottom of the file, not POD — easy to miss when grepping for a leading `with`)
+- every chat engine therefore does() it at runtime (verified: 35 of 38 engine classes; only Remote, TranscriptionBase and Whisper do not, since they lack Role::Chat)
+- Langertha::Raider calls into it at 14 sites (Raider.pm:1529-2032) for traces, iteration spans, generations and tool spans — the Raider tracing path runs through the ROLE, not the plugin
+- t/72_langfuse.t covers it with 105 passing tests
+- Plugin::Langfuse.pm:51 itself documents them as complementary: "Unlike Langertha::Role::Langfuse (which lives on the engine), this plugin works on any PluginHost and does not require engine-level configuration."
+
+The CLASSIFICATION (not a capability) is still fine — it is composed by Role::Chat, so a derived flag would be constant-true for every chat engine, same argument as Role::Models. Only the reason string needs correcting, e.g.:
+
+  "engine-level observability composed by Role::Chat — constant-true for chat engines, so it carries no capability information"
+
+Left alone in #95 because the reason string encodes a decision from the #90 lane.
