@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-08-15T08:18:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-15T08:18:23Z
+created: 2026-08-15T05:47:27Z
+id: 75
+priority: low
+started: 2026-08-15T05:54:30Z
+status: done
+tags:
+- docs
+- context
+- runtime-metrics
+title: 'CONTEXT.md: Runtime::MetricsPoll als sibling seam nicht erwähnt'
+updated: 2026-08-17T00:25:42Z
+---
+
+CONTEXT.md dokumentiert drei sibling seams zum Tool-Wire-Translation-Muster: reasoning_wire_format, cache_wire_format, response-timing. Langertha::Role::Runtime::MetricsPoll (Prometheus /metrics-Scraper für self-hosted Engines wie vLLM/SGLang/LlamaCpp, lib/Langertha/Role/Runtime/MetricsPoll.pm) ist ein viertes sibling — Scraping-Layer, Capability runtime_metrics (siehe Role::Capabilities), EngineContract in Runtime::Metrics::EngineContract. CONTEXT.md sollte diese vierte seam kurz benennen (analog Reasoning/PromptCache) und auf ADR/EngineContract verweisen, ohne sie zu restaten.
+Done: CONTEXT.md updated — Runtime::MetricsPoll + runtime_metrics capability now listed as 4th sibling seam, parallel to Reasoning/PromptCache (ADR 0012), with ADR 0011 timing still referenced. See docs/CONTEXT.md 'Response-side observability' section.
+Closed: CONTEXT.md Response-side observability (sibling seams) section now names Runtime::MetricsPoll as 4th sibling to Reasoning/PromptCache (ADR 0009) and Timing (ADR 0011). Implemented in commit's CONTEXT.md edit.
+Review OK: CONTEXT.md:121 nennt Runtime::MetricsPoll als vierte sibling seam. Kleine Korrektur zur Ticket-Notiz: die Datei liegt im Repo-Root (CONTEXT.md), nicht unter docs/.
+ADR-UMNUMMERIERUNG (Rebase auf 3dcca86, 2026-08-17): Die in diesem Ticket genannten ADR-Nummern sind ueberholt. Branch und neue Basis hatten unabhaengig voneinander 0012/0013/0014 vergeben. Neue Zuordnung: Runtime::MetricsPoll = ADR 0014 (docs/adr/0014-runtime-metrics-poll-role.md, vorher 0012); Role-Composition/-excludes + Direction-Pair = ADR 0015 (docs/adr/0015-role-composition-patterns.md, vorher 0014). Unveraendert: 0012 = self-hosted runtime knobs, 0013 = wire envelope as composed role. Alle Verweise in CLAUDE.md, CONTEXT.md und den ADRs sind nachgezogen.
