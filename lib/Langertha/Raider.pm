@@ -875,6 +875,143 @@ Synchronous wrapper around C<compress_history_f>.
 
 =cut
 
+# --- Session history rendering (karr #96) ---
+#
+# session_history holds whatever the engine's format_tool_results() put on the
+# wire, so an element's shape follows the engine's tool_wire_format: only the
+# openai / ollama / hermes dialects give every element a {role} plus a
+# plain-string {content}. Anthropic content is an ArrayRef of blocks, Gemini
+# keeps its blocks under {parts}, and OpenAI Responses items have no {role} at
+# all — they are discriminated by {type} (function_call, function_call_output,
+# reasoning). Both readers of the history (the MCP tool registered by
+# register_session_history_tool and the raider_session_history self-tool)
+# render through the helpers below, so they cannot drift apart again.
+
+my $history_json = JSON->new->canonical(1)->allow_nonref(1);
+
+# Compact a tool-call argument payload for display: an already-serialized
+# argument string (OpenAI, Responses) passes through, a structure (Anthropic
+# input, Gemini args) gets canonical JSON.
+sub _render_history_args {
+  my ( $args ) = @_;
+  return '' unless defined $args;
+  return $args unless ref $args;
+  my $encoded = eval { $history_json->encode($args) };
+  return defined $encoded ? $encoded : "$args";
+}
+
+sub _render_history_tool_call {
+  my ( $name, $args ) = @_;
+  return sprintf 'tool_call %s(%s)',
+    ( defined $name && length $name ? $name : '?' ),
+    _render_history_args($args);
+}
+
+# Flatten one wire block to text. The text rule is the one
+# Langertha::ToolResult applies for the plain-text formats (to_gemini /
+# to_hermes): a text part carries its text under ->{text}. Unlike a wire
+# serializer this renderer must not swallow the non-text blocks — a tool call
+# is named, never dropped, so an element that is only a tool call still shows
+# up as something readable.
+sub _render_history_block {
+  my ( $block ) = @_;
+  return '' unless defined $block;
+  return "$block" unless ref $block eq 'HASH';
+
+  return $block->{text}     if defined $block->{text}     && !ref $block->{text};
+  return $block->{thinking} if defined $block->{thinking} && !ref $block->{thinking};
+
+  # Gemini parts key their call/response by name instead of carrying a {type}.
+  if ( ref $block->{functionCall} eq 'HASH' ) {
+    return _render_history_tool_call(
+      $block->{functionCall}{name}, $block->{functionCall}{args} );
+  }
+  if ( ref $block->{functionResponse} eq 'HASH' ) {
+    my $response = $block->{functionResponse}{response};
+    my $result = ref $response eq 'HASH' ? $response->{result} : $response;
+    return 'tool_result: '
+      . ( defined $result && !ref $result ? $result : _render_history_args($result) );
+  }
+
+  my $type = $block->{type} // '';
+
+  # Tool invocations: Anthropic tool_use, Responses function_call, and the
+  # OpenAI/Ollama {function=>{...}} entry from an assistant echo.
+  return _render_history_tool_call( $block->{name}, $block->{input} )
+    if $type eq 'tool_use';
+  return _render_history_tool_call( $block->{name}, $block->{arguments} )
+    if $type eq 'function_call';
+  return _render_history_tool_call(
+    $block->{function}{name}, $block->{function}{arguments} )
+    if ref $block->{function} eq 'HASH';
+
+  # Tool results: Anthropic nests the MCP content array, the Responses item
+  # carries the same payload JSON-encoded in {output}.
+  if ( $type eq 'tool_result' || $type eq 'function_call_output' ) {
+    return 'tool_result: '
+      . ( defined $block->{output} && !ref $block->{output}
+          ? $block->{output}
+          : _render_history_payload_value( $block->{content} ) );
+  }
+
+  # Unknown block: name it by its discriminator rather than dropping it.
+  my $rest = _render_history_payload_value( $block->{content} );
+  return length $rest
+    ? ( length $type ? "<$type> $rest" : $rest )
+    : ( length $type ? "<$type>" : '<block>' );
+}
+
+# Render a {content} / {parts} / {summary} / {tool_calls} payload: a plain
+# string as-is, an ArrayRef of blocks flattened block by block.
+sub _render_history_payload_value {
+  my ( $value ) = @_;
+  return '' unless defined $value;
+  return "$value" unless ref $value;
+  return join( "\n", grep { length } map { _render_history_block($_) } @$value )
+    if ref $value eq 'ARRAY';
+  return _render_history_block($value) if ref $value eq 'HASH';
+  return "$value";
+}
+
+# The readable body of one history element, without its role/type label. Also
+# what the query/search filters match against, so a filter reaches the text of
+# an Anthropic block or a Responses item too.
+sub _render_history_payload {
+  my ( $entry ) = @_;
+  return '' unless defined $entry;
+  return "$entry" unless ref $entry eq 'HASH';
+
+  my @body;
+  for my $key (qw( content parts summary tool_calls )) {
+    push @body, _render_history_payload_value( $entry->{$key} )
+      if defined $entry->{$key};
+  }
+  # Items that are a block in their own right (Responses function_call /
+  # function_call_output) carry no content payload at all.
+  unless (@body) {
+    my $block = _render_history_block($entry);
+    # A bare "<type>" marker would only repeat the label the caller prints.
+    push @body, $block unless $block eq '<' . ( $entry->{type} // '' ) . '>';
+  }
+
+  return join "\n", grep { length } @body;
+}
+
+sub _render_history_entry {
+  my ( $entry ) = @_;
+  return '' unless defined $entry;
+  return "$entry" unless ref $entry eq 'HASH';
+
+  my $label = $entry->{role} // $entry->{type} // 'message';
+  my $body  = _render_history_payload($entry);
+  return length $body ? "[$label] $body" : "[$label]";
+}
+
+sub _render_session_history {
+  my ( @hist ) = @_;
+  return join "\n\n", map { _render_history_entry($_) } @hist;
+}
+
 sub register_session_history_tool {
   my ( $self, $server ) = @_;
   $server->tool(
@@ -891,14 +1028,12 @@ sub register_session_history_tool {
       my ( $tool, $args ) = @_;
       my @hist = @{$self->session_history};
       if (my $q = $args->{query}) {
-        @hist = grep { ($_->{content} // '') =~ /\Q$q/i } @hist;
+        @hist = grep { _render_history_payload($_) =~ /\Q$q/i } @hist;
       }
       if (my $n = $args->{last_n}) {
         @hist = @hist[-$n..-1] if @hist > $n;
       }
-      my $text = join("\n\n", map {
-        "[$_->{role}] $_->{content}"
-      } @hist);
+      my $text = _render_session_history(@hist);
       $tool->text_result($text || 'No messages in session history.');
     },
   );
@@ -1158,20 +1293,18 @@ sub _query_session_history {
       @hist = map { $hist[$_->{idx}] } @scored;
     } else {
       # Fallback to text grep
-      @hist = grep { ($_->{content} // '') =~ /\Q$search/i } @hist;
+      @hist = grep { _render_history_payload($_) =~ /\Q$search/i } @hist;
     }
   }
 
   if (my $q = $args->{query}) {
-    @hist = grep { ($_->{content} // '') =~ /\Q$q/i } @hist;
+    @hist = grep { _render_history_payload($_) =~ /\Q$q/i } @hist;
   }
   if (my $n = $args->{last_n}) {
     @hist = @hist[-$n..-1] if @hist > $n;
   }
 
-  my $text = join("\n\n", map {
-    "[$_->{role}] $_->{content}"
-  } @hist);
+  my $text = _render_session_history(@hist);
   return $text || 'No messages in session history.';
 }
 

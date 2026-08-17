@@ -251,6 +251,177 @@ subtest 'session history query' => sub {
   like($result->{content}[0]{text}, qr/Python/, 'last_n returns most recent');
 };
 
+# --- Test: session history rendering across wire formats (karr #96) ---
+
+# session_history holds whatever the engine's format_tool_results() put on the
+# wire, so the element shape follows tool_wire_format. Only openai/ollama/hermes
+# hand every element a {role} plus a plain-string {content}; anthropic content
+# is an ArrayRef of blocks, gemini keeps blocks under {parts}, and responses
+# items have no {role} at all. Rendering must stay readable for all of them and
+# must not emit uninitialized warnings.
+
+{
+  package MockToolServer;
+  use Moose;
+  has tools => (is => 'ro', default => sub { {} });
+  sub tool {
+    my ( $self, %args ) = @_;
+    $self->tools->{$args{name}} = \%args;
+    return;
+  }
+  __PACKAGE__->meta->make_immutable;
+}
+
+{
+  package MockToolHandle;
+  use Moose;
+  sub text_result {
+    my ( $self, $text ) = @_;
+    return { content => [ { type => 'text', text => $text } ] };
+  }
+  __PACKAGE__->meta->make_immutable;
+}
+
+sub mixed_wire_history {
+  return (
+    # --- anthropic: content is an ArrayRef of blocks ---
+    { role => 'user', content => 'What is the weather in Berlin?' },
+    { role => 'assistant', content => [
+      { type => 'text', text => 'Let me check the weather.' },
+      { type => 'tool_use', id => 'toolu_01', name => 'get_weather',
+        input => { city => 'Berlin' } },
+    ] },
+    { role => 'user', content => [
+      { type => 'tool_result', tool_use_id => 'toolu_01',
+        content => [ { type => 'text', text => 'Berlin: sunny, 22C' } ] },
+    ] },
+    # --- responses: envelope items, discriminated by {type}, no {role} ---
+    { type => 'reasoning', id => 'rs_1',
+      summary => [ { type => 'summary_text', text => 'Need the weather tool.' } ] },
+    { type => 'message', role => 'assistant', status => 'completed',
+      content => [ { type => 'output_text', text => 'Checking Hamburg now.' } ] },
+    { type => 'function_call', call_id => 'call_1', name => 'get_weather',
+      arguments => '{"city":"Hamburg"}' },
+    { type => 'function_call_output', call_id => 'call_1',
+      output => '[{"text":"Hamburg: rainy, 14C","type":"text"}]' },
+    # --- openai: assistant echo has content => undef when it only calls tools ---
+    { role => 'assistant', content => undef, tool_calls => [
+      { id => 'call_2', type => 'function',
+        function => { name => 'get_time', arguments => '{"tz":"CET"}' } },
+    ] },
+    { role => 'tool', tool_call_id => 'call_2',
+      content => '[{"type":"text","text":"14:05"}]' },
+    # --- gemini: blocks live under {parts}, there is no {content} at all ---
+    { role => 'model', parts => [
+      { text => 'One moment.' },
+      { functionCall => { name => 'get_weather', args => { city => 'Kiel' } } },
+    ] },
+    { role => 'user', parts => [
+      { functionResponse => { name => 'get_weather',
+        response => { result => 'Kiel: windy, 17C' } } },
+    ] },
+  );
+}
+
+subtest 'session history rendering across wire formats' => sub {
+  my $raider = Langertha::Raider->new(
+    engine     => MockEngine->new,
+    raider_mcp => 1,
+  );
+  push @{$raider->session_history}, mixed_wire_history();
+
+  my @warnings;
+  my $text;
+  {
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    $text = $raider->_query_session_history({});
+  }
+
+  is(scalar @warnings, 0, 'no warnings while rendering mixed-wire history')
+    or diag("warnings: @warnings");
+
+  unlike($text, qr/ARRAY\(0x/, 'ArrayRef content is flattened, not stringified');
+  unlike($text, qr/HASH\(0x/, 'HashRef payloads are flattened, not stringified');
+  unlike($text, qr/^\[[^\]]*\]\s*$/m, 'no history element renders as a bare label');
+
+  # anthropic
+  like($text, qr/\[assistant\] Let me check the weather\./, 'anthropic text block rendered');
+  like($text, qr/get_weather.*Berlin/, 'anthropic tool_use is visible with its arguments');
+  like($text, qr/Berlin: sunny, 22C/, 'anthropic tool_result content flattened to text');
+
+  # responses
+  like($text, qr/\[reasoning\] Need the weather tool\./, 'responses reasoning summary rendered');
+  like($text, qr/\[assistant\] Checking Hamburg now\./, 'responses message item uses its role');
+  like($text, qr/\[function_call\] .*get_weather.*Hamburg/, 'responses function_call labelled by type');
+  like($text, qr/\[function_call_output\] .*Hamburg: rainy, 14C/,
+    'responses function_call_output labelled by type and carries its output');
+
+  # openai
+  like($text, qr/\[assistant\] .*get_time.*CET/, 'openai tool-only assistant echo shows the call');
+  like($text, qr/14:05/, 'openai tool result content kept');
+
+  # gemini
+  like($text, qr/\[model\] One moment\./, 'gemini text part rendered');
+  like($text, qr/get_weather.*Kiel/, 'gemini functionCall part is visible');
+  like($text, qr/Kiel: windy, 17C/, 'gemini functionResponse flattened');
+};
+
+subtest 'session history query filters on rendered payload' => sub {
+  my $raider = Langertha::Raider->new(
+    engine     => MockEngine->new,
+    raider_mcp => 1,
+  );
+  push @{$raider->session_history}, mixed_wire_history();
+
+  my @warnings;
+  my ( $hamburg, $kiel );
+  {
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    $hamburg = $raider->_query_session_history({ query => 'Hamburg' });
+    $kiel    = $raider->_query_session_history({ query => 'Kiel: windy' });
+  }
+  is(scalar @warnings, 0, 'no warnings while filtering mixed-wire history')
+    or diag("warnings: @warnings");
+
+  like($hamburg, qr/Hamburg/, 'filter matches inside responses items');
+  unlike($hamburg, qr/Berlin/, 'filter excludes non-matching elements');
+  like($kiel, qr/Kiel: windy, 17C/, 'filter reaches into gemini functionResponse text');
+};
+
+subtest 'register_session_history_tool renders identically' => sub {
+  my $raider = Langertha::Raider->new(
+    engine     => MockEngine->new,
+    raider_mcp => 1,
+  );
+  push @{$raider->session_history}, mixed_wire_history();
+
+  my $server = MockToolServer->new;
+  $raider->register_session_history_tool($server);
+  my $registered = $server->tools->{session_history};
+  ok($registered, 'session_history tool registered');
+
+  my @warnings;
+  my $result;
+  {
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    $result = $registered->{code}->(MockToolHandle->new, {});
+  }
+  is(scalar @warnings, 0, 'no warnings from the MCP-registered renderer')
+    or diag("warnings: @warnings");
+
+  is($result->{content}[0]{text}, $raider->_query_session_history({}),
+    'both history readers share one renderer');
+};
+
+subtest 'empty session history' => sub {
+  my $raider = Langertha::Raider->new(
+    engine     => MockEngine->new,
+    raider_mcp => 1,
+  );
+  is($raider->_query_session_history({}), 'No messages in session history.',
+    'empty history keeps its placeholder');
+};
+
 # --- Test: MCP catalog management ---
 
 subtest 'manage MCPs' => sub {
