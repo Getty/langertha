@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-08-17T06:09:49Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-17T06:09:49Z
+created: 2026-08-17T06:04:53Z
+id: 113
+priority: low
+started: 2026-08-17T06:09:13Z
+status: done
+tags:
+- docs
+- pod
+- drift
+title: Synopsis model => examples freshen in lib/Langertha.pm
+updated: 2026-08-17T06:09:49Z
+---
+
+Gefunden vom langertha-worker bei karr #109 (2026-08-17). Synopsis-Abschnitt in lib/Langertha.pm traegt versionsbenannte Modelle als Beispielwerte:
+
+- ~L153: llama3.1
+- ~L163: gpt-4o-mini
+- ~L173: claude-sonnet-4-6
+- ~L182: gemini-2.5-flash
+
+Gleicher Rot-Mechanismus wie der Engine-Katalog in #109 — wird still veralten weil t/79_pod_catalogue.t nur Modul-Abdeckung prueft, nicht Prosa-Genauigkeit. Dauerhafteste Loesung: capability/tier statt Versionsname (z.B. "a small/fast model", "the configured default model", "a frontier-tier chat model"). Editorial-Judgement noetig weil die Synopsis den Leser in den Code-Stil einfuehrt — darf nicht zu generisch werden.
+
+Reine POD-Aenderung in lib/Langertha.pm, kein Verhalten.
