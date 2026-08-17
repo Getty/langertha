@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-08-15T08:22:20Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T00:17:42Z
+created: 2026-08-15T07:28:36Z
+id: 80
+priority: low
+started: 2026-08-15T08:22:14Z
+status: done
+tags:
+- docs
+- adrs
+- capabilities
+title: 'ADR 0014: per-direction comments in OpenAIBase.pm:31-36 and AnthropicBase.pm:32-37
+  should point at the ADR and the partner direction-pair (karr #67, #68 follow-up)'
+updated: 2026-08-17T00:17:42Z
+---
+
+ADR 0014 captures the -excludes canon and the cache-control per-family engine_capabilities direction-pair as the canonical reference. The existing in-code comments still read in isolation and do not point at each other.
+
+Concrete work:
+- Engine::OpenAIBase.pm:31-36 — replace the explanatory comment ("The OpenAI family caches automatically... (ADR 0002)") with a short pointer to ADR 0014 and a one-line reference saying the Anthropic side runs the symmetric correction (deletes prompt_cache_key, keeps prompt_cache).
+- Engine::AnthropicBase.pm:32-37 — mirror the change: point at ADR 0014 and the OpenAI partner direction.
+- Both diffs are pure comment prose; no behavior change.
+- Verify recursively: prove -lr t/ (or dzil test); pre-existing failures in t/64_ollama_mock.t and t/66_hermes.t reproduce on main and are not in scope.
+Umgesetzt (orchestrator, 2026-08-15): beide Kommentare zeigen jetzt auf ADR 0014 und nennen die Partner-Richtung explizit (OpenAIBase -> AnthropicBase loescht prompt_cache_key; AnthropicBase -> OpenAIBase loescht prompt_cache). AnthropicBase behaelt die Moose-Kompositionsordnungs-Begruendung + ADR-0013-Verweis. Reine Kommentar-Prosa, kein Verhalten. Verifiziert: perlcritic 'source OK' auf beiden Dateien, prove -lr t/ 75 Dateien / 2168 Tests mit unveraenderten zwei vorbestehenden MCP-Upstream-Failures. Liegt uncommittet im Working Tree - Commit steht aus.
+Committiert als 9715189 (Rebase-Session 2026-08-17). Achtung: die ADR-Nummer ist beim Rebase auf 3dcca86 von 0014 auf 0015 gewandert (0014 war in der neuen Basis bereits durch Runtime::MetricsPoll belegt) - die Kommentare zeigen jetzt korrekt auf ADR 0015.
