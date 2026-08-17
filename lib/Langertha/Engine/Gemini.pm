@@ -177,9 +177,14 @@ sub gemini_auth_query {
   return ( key => $self->api_key );
 }
 
+sub gemini_endpoint {
+  my ( $self, $path ) = @_;
+  return $self->url . '/' . $self->gemini_api_version . '/' . $path;
+}
+
 sub gemini_url {
   my ( $self, $path, @query ) = @_;
-  my $url = $self->url . '/' . $self->gemini_api_version . '/' . $path;
+  my $url = $self->gemini_endpoint($path);
   my @params = ( $self->gemini_auth_query, @query );
   return $url unless @params;
   # Values are interpolated verbatim, exactly as the call sites did before:
@@ -209,9 +214,17 @@ pair list, C<< ( key =E<gt> $self->api_key ) >> for the Developer API. A
 consumer that authenticates by header instead returns the empty list here and
 sets the header in C<update_request>.
 
+=method gemini_endpoint
+
+Composes the credential-free endpoint C<< {url}/{gemini_api_version}/{path} >>.
+This is the path half of the seam: a consumer whose resources live under an
+extra prefix (Vertex AI's C<< projects/{p}/locations/{l}/ >>) overrides this
+one method and every request URL follows. Callers that are about to issue a
+request want L</gemini_url> instead — this one carries no credential.
+
 =method gemini_url
 
-Builds C<< {url}/{gemini_api_version}/{path} >> and appends the query string:
+Builds L</gemini_endpoint> and appends the query string:
 first the pairs from L</gemini_auth_query>, then any C<< ( name =E<gt> value ) >>
 pairs passed by the caller (e.g. C<< alt =E<gt> 'sse' >>).
 
