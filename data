@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-08-15T08:18:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-15T08:18:23Z
+created: 2026-08-15T05:47:34Z
+id: 76
+priority: low
+started: 2026-08-15T05:54:37Z
+status: done
+tags:
+- adr
+- runtime-metrics
+- docs
+title: 'ADR: Runtime::MetricsPoll fehlt im docs/adr/ — Capability und Engine-Composition-Pattern
+  nicht dokumentiert'
+updated: 2026-08-17T00:25:47Z
+---
+
+Langertha::Role::Runtime::MetricsPoll existiert seit einiger Zeit (composed auf Langertha::Engine::vLLM, SGLang, LlamaCpp) und liefert das runtime_metrics-Capability-Flag (Role::Capabilities %ROLE_TO_CAPS). Aber: kein ADR dokumentiert die Pattern-Entscheidung — Scraping via Runtime::Metrics (Prometheus), Engine-Contract in Runtime::Metrics::EngineContract, warum Ollama absichtlich NICHT composed (JSON /api/ps statt /metrics), Auth-Modell (kein Bearer), URL-Ableitung (/v1 strippen). Bitte ADR-Entwurf schreiben — folgt der Struktur der bestehenden ADRs (0001–0011).
+Done: ADR 0012 written — Runtime::MetricsPoll role decision. Status accepted, references commit a8f1c32. Covers sidecar-observability seam, URL derivation, intentional non-composition on Ollama, no-Bearer auth, runtime_metrics capability flag. Future work: Ollama stats adapter, capability registry split, EngineContract coverage drift.
+Closed: docs/adr/0012-runtime-metrics-poll-role.md written — captures sidecar observability seam rationale, mechanical metrics_url derivation, intentional Ollama non-composition, no-Bearer auth, runtime_metrics as observability-shape capability (asymmetric to chat-shape flags). 5 Decision subsections + Rationale + Consequences + Future work.
+Review OK: docs/adr/0012-runtime-metrics-poll-role.md vorhanden und in der ADR-Liste von CLAUDE.md verlinkt.
+ADR-UMNUMMERIERUNG (Rebase auf 3dcca86, 2026-08-17): Die in diesem Ticket genannten ADR-Nummern sind ueberholt. Branch und neue Basis hatten unabhaengig voneinander 0012/0013/0014 vergeben. Neue Zuordnung: Runtime::MetricsPoll = ADR 0014 (docs/adr/0014-runtime-metrics-poll-role.md, vorher 0012); Role-Composition/-excludes + Direction-Pair = ADR 0015 (docs/adr/0015-role-composition-patterns.md, vorher 0014). Unveraendert: 0012 = self-hosted runtime knobs, 0013 = wire envelope as composed role. Alle Verweise in CLAUDE.md, CONTEXT.md und den ADRs sind nachgezogen.
