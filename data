@@ -1,0 +1,35 @@
+---
+claimed_at: 2026-08-17T01:08:05Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T01:08:05Z
+created: 2026-08-17T00:18:17Z
+id: 83
+priority: medium
+started: 2026-08-17T00:51:40Z
+status: done
+tags:
+- tests
+- prereqs
+title: t/93_to_json.t bricht ohne JSON::XS ab (ungeschuetztes use_module, kein Prereq)
+updated: 2026-08-17T01:08:05Z
+---
+
+prove -lr t/ endet mit Result: FAIL, weil t/93_to_json.t:253 JSON::XS laedt, ohne dass das Modul deklariert oder der Block geschuetzt ist:
+
+  for my $mod (qw(Cpanel::JSON::XS JSON::XS JSON::PP)) { ... }
+
+Ohne installiertes JSON::XS stirbt der Test nach Subtest 38 ("Cant locate JSON/XS.pm in @INC"), die restlichen Assertions laufen nicht und es fehlt done_testing.
+
+Vorbestehend, NICHT vom Rebase auf 3dcca86 verursacht - reproduziert unveraendert auf der Basis 3dcca86 selbst (verifiziert per git worktree, 2026-08-17). Alle uebrigen 78 Testdateien / 2434 Tests sind gruen.
+
+Zwei moegliche Fixes:
+- JSON::XS als Test-Prereq in cpanfile/dist.ini aufnehmen, oder
+- den Vergleichsblock pro Backend per eval/skip_if absichern, damit der Test die vorhandenen Backends prueft und fehlende ueberspringt.
+
+Die zweite Variante passt besser zur Absicht des Tests (karr #50: alle drei JSON-Backends kodieren TO_JSON identisch) - das ist eine Cross-Backend-Konsistenzpruefung, die nicht an einem optionalen Backend scheitern sollte.
+Fixed: per-backend guard (not a hard JSON::XS prereq). t/93_to_json.t now eval-guards both the require and the encode, collects @available/@missing, notes which backends were compared vs skipped, names the real backends in every assertion, and fails via ok(@available >= 2) if the cross-backend comparison would shrink to nothing. Final assertion compares the whole decoded hash instead of ->{content}, so the karr #50 symptom (empty-string overload emitting the bare content string) fails an assertion instead of dying mid-file. cpanfile: added 'recommends JSON::XS' under 'on test'.
+
+Verified: t/93_to_json.t 44 tests PASS without JSON::XS (JSON::XS reported as skipped), 46 tests PASS with all three backends installed into an isolated local::lib. Clean worktree at HEAD carrying only this change: prove -lr t/ = 79 files / 2440 tests PASS; dzil test = 82 files / 2681 tests PASS incl. t/author-critic.t. Defect simulation (TO_JSON deleted at runtime) fails 3 assertions and still reaches done_testing - no more mid-file abort. perlcritic lib/ bin/ maint/ clean.
+Ready for review. Changed files: t/93_to_json.t, cpanfile. Not committed - orchestrator commits. Suite-wide failures in t/93_chat.t + t/94_plugin_langfuse.t seen in the dirty main tree are the parallel Langertha::Chat worker's in-flight state, not this change (proven green in a clean worktree at HEAD).
+Umgesetzt als 773442b. Weg: Per-Backend-Guard + 'recommends JSON::XS' unter on test (kein Pflicht-Prereq - JSON::XS ist genau das Backend, das JSON::MaybeXS NICHT transitiv zieht, ein Pflicht-Prereq wuerde auf jedem Smoker einen XS-Build erzwingen). Zweiter Abbruchpfad gefunden, den das Ticket nicht kannte: der encode selbst wirft bei einer TO_JSON-Regression, haette also erneut vor done_testing gestorben - genau dann, wenn das Getestete kaputt ist. Jetzt Assertion statt Abbruch. Gegen stilles Zusammenschrumpfen: verglichene Backends werden pro Assertion benannt, fehlende als note gemeldet, weniger als zwei ist ein Fehlschlag. Review durch Orchestrator: Assertion 43 per Mutationstest als wirksam bestaetigt (verfaelschte usage-Keys machen sie rot). prove -lr t/ jetzt vollstaendig gruen: 80 Dateien, 2444 Tests.
