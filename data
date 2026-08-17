@@ -1,0 +1,75 @@
+---
+claimed_at: 2026-08-17T03:04:34Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:04:34Z
+created: 2026-08-17T01:18:28Z
+id: 88
+priority: low
+started: 2026-08-17T02:44:30Z
+status: done
+tags:
+- engines
+- gemini
+- auth
+- seam
+title: 'Engine::Gemini: factor the auth + endpoint-URL seam out of the three call
+  sites'
+updated: 2026-08-17T03:04:34Z
+---
+
+Found during the #66 sondierung (provider facts verified live 2026-08-17 by langertha-llm-advisor).
+
+lib/Langertha/Engine/Gemini.pm builds its endpoint inline at three sites:
+  205: $self->url . "/v1beta/models/${model}:generateContent?key=" . $self->api_key
+  386: $self->url . "/v1beta/models/${model}:streamGenerateContent?key=" . $self->api_key . "&alt=sse"
+  489: $self->url . "/v1beta/models?key=" . $self->api_key
+
+api_key is required (_build_api_key croaks) and update_request only sets content-type. So the
+API-key-in-query-string auth and the /v1beta/models/{model} path shape are welded into the
+method bodies.
+
+Consequence: the Gemini *envelope* (contents / generationConfig / functionDeclarations /
+toolConfig / cachedContent) is already reusable, but no second consumer can be reached, because
+every alternative endpoint differs exactly in auth + base path:
+  - Vertex AI express mode: https://aiplatform.googleapis.com/v1/publishers/google/models/{m}:generateContent?key=...
+    (same ?key= auth! delta is only base URL + publishers/google/models/ prefix + /v1 vs /v1beta)
+  - Vertex AI standard:     https://{loc}-aiplatform.googleapis.com/v1/projects/{p}/locations/{loc}/publishers/google/models/{m}:generateContent
+    with Authorization: Bearer <ADC token>
+  - Gemini-native gateways (e.g. LiteLLM proxy) serve /v1beta/models/{m}:generateContent with Bearer auth
+
+Fix shape (do this WHEN a shim engine is actually wanted, not speculatively): one overridable
+model-path/endpoint builder plus an auth seam that can move the credential from the query string
+to a header; then `Engine::VertexGemini extends Engine::Gemini` is a small subclass.
+
+Explicitly NOT the fix: extracting Role::GeminiCompatible. The delta between consumers is auth +
+URL, never the envelope, so ADR 0006 inheritance covers it; see #66 for the reasoning.
+
+Body deltas a Vertex shim would additionally need to handle: fileData.fileUri wants gs:// on
+Vertex (Files API URIs are Developer-API-only), grounding is googleSearch vs Vertex AI Search
+retrieval, `labels` is Vertex-side.
+Seam implemented (worker-gemini), NOT committed - orchestrator commits.
+
+lib/Langertha/Engine/Gemini.pm: four methods, one override point per delta ADR 0016 names:
+  gemini_api_version  -> "v1beta"                       (/v1 vs /v1beta)
+  gemini_model_url    -> "models/{model}:{method}"      (publishers/google/models/ prefix)
+  gemini_auth_query   -> ( key => api_key )             (query-string vs header credential)
+  gemini_url          -> {url}/{version}/{path} + query (shared assembly, auth pairs first)
+Base URL stays the existing `url` attribute. The three call sites (chat_request,
+chat_stream_request, list_models_request) are now one-liners.
+
+URLs byte-identical, verified by diffing generated URIs before/after, incl. the paginated
+listing URL. No existing test changed. New offline pin: t/46_gemini_endpoint_seam.t (15
+tests) - the three URLs literally, plus a Test::Gemini::HeaderAuth subclass proving base
+URL + version + model path + Bearer-header auth all move by overriding the seam, and that
+api_key stays required for the Developer API.
+
+Verified on a pristine HEAD copy (working tree is shared with parallel workers):
+baseline 80 files / 2444 tests PASS; with this change 81 files / 2459 tests PASS.
+dzil test in the same copy: 84 files / 2700 tests PASS (author-critic + author-pod-syntax
+included), t/80-89 skipped for missing keys.
+perlcritic --profile .perlcriticrc lib/ bin/ maint/ clean.
+
+Follow-up filed: #94 (Role::CachedContent still hardcodes /v1beta + ?key= at 7 spots and
+would not follow an overridden seam).
+Umgesetzt als ee0d457. Vier Override-Punkte statt einem, begruendet: Auth-Platzierung (Query vs Header) und Pfad sind verschiedene Freiheitsgrade, und der Vertex-Delta publishers/google/models/ braucht einen eigenen Punkt, sonst bliebe der Model-Pfad an zwei Stellen interpoliert. Kein neues Attribut - url existiert bereits, die restlichen Deltas sind berechnet, nicht konfiguriert. Orchestrator-Review: alle drei erzeugten URLs byte-identisch gegen HEAD verifiziert (chat, stream inkl. &alt=sse, list_models), per Vergleichslauf in einem HEAD-Worktree. Der Worker hat wegen der parallel dirty Arbeitskopie in einer isolierten HEAD-Kopie verifiziert - sauberes Vorgehen. Folgeticket #94: Role::CachedContent platziert ?key= an fuenf und /v1beta an zwei Stellen selbst, ein Subclass waere sonst nur halb konvertiert.
