@@ -589,6 +589,27 @@ test_openai_cloud_engine(
 );
 is(Langertha::Engine::AKIOpenAI->new(api_key => 'k')->default_model, 'llama3-chat-8b', 'AKIOpenAI default_model');
 
+# --- AKIAnthropic (AKI.IO via Anthropic-compatible endpoint) ---
+
+use Langertha::Engine::AKIAnthropic;
+
+ok(Langertha::Engine::AKIAnthropic->isa('Langertha::Engine::AnthropicBase'), 'AKIAnthropic isa AnthropicBase');
+ok(!Langertha::Engine::AKIAnthropic->isa('Langertha::Engine::OpenAIBase'), 'AKIAnthropic is NOT OpenAIBase');
+ok(Langertha::Engine::AKIAnthropic->does('Langertha::Role::AnthropicCompatible'), 'AKIAnthropic does AnthropicCompatible');
+ok(Langertha::Engine::AKIAnthropic->does('Langertha::Role::Tools'), 'AKIAnthropic does Tools');
+ok(Langertha::Engine::AKIAnthropic->does('Langertha::Role::StaticModels'), 'AKIAnthropic does StaticModels');
+{
+  my $a = Langertha::Engine::AKIAnthropic->new(api_key => 'test-key');
+  is($a->url, 'https://aki.io/anthropic', 'AKIAnthropic url default correct (no trailing /v1)');
+  is($a->default_model, 'llama3-chat-8b', 'AKIAnthropic default_model');
+  my $req = $a->chat('test prompt');
+  is($req->method, 'POST', 'AKIAnthropic chat request is POST');
+  # Same single-/v1 invariant as the MiniMaxAnthropic regression (karr #18).
+  is($req->uri, 'https://aki.io/anthropic/v1/messages', 'AKIAnthropic composed URL has a single /v1');
+  unlike($req->uri, qr{/v1/v1/}, 'AKIAnthropic URL has no double /v1');
+  is($req->header('x-api-key'), 'test-key', 'AKIAnthropic uses x-api-key header');
+}
+
 # ======================================================================
 # Part 4: OpenAI-compatible local engines (extend OpenAIBase, url required)
 # ======================================================================
@@ -831,6 +852,8 @@ for my $case (
 # Protocol variants share their vendor's key (derivation would be wrong)
 is(Langertha::Engine::AKIOpenAI->api_key_env, 'LANGERTHA_AKI_API_KEY',
   'AKIOpenAI api_key_env shares AKI key');
+is(Langertha::Engine::AKIAnthropic->api_key_env, 'LANGERTHA_AKI_API_KEY',
+  'AKIAnthropic api_key_env shares AKI key');
 is(Langertha::Engine::MiniMaxAnthropic->api_key_env, 'LANGERTHA_MINIMAX_API_KEY',
   'MiniMaxAnthropic api_key_env shares MiniMax key');
 is(Langertha::Engine::MoonshotAnthropic->api_key_env, 'LANGERTHA_MOONSHOT_API_KEY',
@@ -877,6 +900,7 @@ for my $class (qw(
   Langertha::Engine::XAI
   Langertha::Engine::NousResearch
   Langertha::Engine::AKIOpenAI
+  Langertha::Engine::AKIAnthropic
   Langertha::Engine::OllamaOpenAI
   Langertha::Engine::SGLang
   Langertha::Engine::vLLM
