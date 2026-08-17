@@ -7,14 +7,18 @@ use Carp qw( croak );
 extends 'Langertha::Engine::Remote';
 
 with 'Langertha::Role::Models',
+     # Role::Chat::content_format defaults to 'openai'; AnthropicCompatible (composed last) supplies 'anthropic'.
      'Langertha::Role::Chat' => { -excludes => ['content_format'] },
      'Langertha::Role::Temperature',
+     # Role::ReasoningEffort::_build_reasoning_wire_format defaults to 'openai'; AnthropicCompatible supplies 'anthropic'.
      'Langertha::Role::ReasoningEffort' => { -excludes => ['_build_reasoning_wire_format'] },
+     # Role::PromptCache::_build_cache_wire_format defaults to 'openai'; AnthropicCompatible supplies 'anthropic'.
      'Langertha::Role::PromptCache' => { -excludes => ['_build_cache_wire_format'] },
      'Langertha::Role::ResponseSize',
      'Langertha::Role::SystemPrompt',
      'Langertha::Role::ResponseFormat',
      'Langertha::Role::Streaming',
+     # Role::Tools::_build_tool_wire_format defaults to 'openai'; AnthropicCompatible supplies 'anthropic'.
      'Langertha::Role::Tools' => { -excludes => ['_build_tool_wire_format'] },
      'Langertha::Role::AnthropicCompatible';
 
