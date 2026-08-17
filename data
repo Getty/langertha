@@ -1,0 +1,37 @@
+---
+claimed_at: 2026-08-15T08:18:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-15T08:18:23Z
+created: 2026-08-14T04:26:11Z
+id: 64
+priority: medium
+started: 2026-08-15T00:15:04Z
+status: done
+tags:
+- architecture
+- roles
+- engines
+title: 'Symmetric wire-envelope roles: add Role::AnthropicCompatible'
+updated: 2026-08-17T00:26:09Z
+---
+
+User-requested (2026-08-14): OpenAI-Envelope exists as Role::OpenAICompatible, Anthropic-Envelope does not (it lives in Engine::AnthropicBase). Make both symmetric: extract Anthropic wire envelope into Role::AnthropicCompatible (or Role::Engine::*) parallel to Role::OpenAICompatible, keep AnthropicBase as thin composition layer like OpenAIBase. Nuancierung von ADR 0006; neuen ADR schreiben. Details: superpowers-Planung in docs/superpowers/plans/.
+Umgesetzt und committet: 579d0c8 (Refactor) + 9594694/3dcca86 (Doku, ADR 0013, POD-Fix). Testsuite grün (2402 Tests). Working Tree sauber.
+Implementation complete + committed.
+
+b87edbb: Extract Anthropic wire envelope to Role::AnthropicCompatible (karr #64)
+  - New Langertha::Role::AnthropicCompatible (709 lines) — full /v1/messages envelope (chat_request/response, stream_request, parse_stream_chunk, synth-tool rewrite via __langertha_response_format__, _normalize_tool_params, list_models with cursor pagination, anthropic-ratelimit-* parsing, effort/inference_geo, three _build_*_wire_format defaults all returning 'anthropic')
+  - Engine::AnthropicBase slimmed 525 -> 169 lines: extends Remote, declares api_version + api_key + default_model stub, composes the role + the universal Anthropic capability roles, installs around engine_capabilities that clears prompt_cache_key
+  - t/10_engine_hierarchy.t +5 role-composition assertions (AnthropicBase + 4 engines)
+  - Public API surface unchanged on all four engines (Anthropic, MiniMaxAnthropic, MoonshotAnthropic, LMStudioAnthropic)
+  - Tool wire-translation seam (ADR 0001, 0010) untouched
+
+f0d76ea: ADR 0013 + Changes + CLAUDE.md (karr #64)
+  - ADR 0013 documents the role/class split, attr defaults, wire-format defaults, per-family engine_capabilities direction, and the Moose composition-order constraint that forced around engine_capabilities onto the base (not the role)
+  - Changes new bullet under NEXT
+  - CLAUDE.md picks up ADR 0013 in the architecture-decisions list + updated engine-hierarchy tree
+
+Verification: 2168 tests pass; only the pre-existing t/64_tool_calling_ollama_mock.t + t/66_tool_calling_hermes.t failures remain (reproduce on main without these changes — MCP 'Missing protocol version'). perlcritic clean on both touched .pm files.
+Review OK (orchestrator, 2026-08-15): lib/Langertha/Role/AnthropicCompatible.pm vorhanden, AnthropicBase auf 169 Zeilen als Kompositionsschicht, ADR 0013 in docs/adr/. Commits b87edbb + f0d76ea auf main, Working Tree sauber. prove -lr t/: 75 Dateien, 2168 Tests, nur die zwei vorbestehenden Upstream-MCP-Failures (t/64, t/66 - Net::Async::MCP 0.003 'Missing protocol version', siehe karr #65).
+KORREKTUR nach Rebase auf 3dcca86 (2026-08-17): Die hier als 'auf main' notierten Commits b87edbb + f0d76ea sind NICHT mehr in der Historie - sie waren eine zweite, unabhaengige Umsetzung derselben Extraktion und wurden beim Rebase als Duplikate geskippt. Kanonisch ist die Basis-Variante: 579d0c8 (Refactor) + 9594694 (ADR 0013 + Doku). Funktional gleichwertig, nur anders geschnitten - die verworfene Variante legte das effort->reasoning_effort-BUILDARGS in die Rolle, die kanonische laesst es in Engine::AnthropicBase. Gerettet wurden die 5 does('Langertha::Role::AnthropicCompatible')-Assertions aus b87edbb, jetzt Commit 8117f09 in t/10_engine_hierarchy.t. ADR 0013 behaelt seine Nummer (Dateiname: 0013-wire-envelope-as-composed-role-not-only-in-engine-base.md, nicht 0013-anthropic-compatible-role.md).
