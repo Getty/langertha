@@ -9,6 +9,9 @@ use Langertha::Engine::NousResearch;
 use Langertha::Engine::Anthropic;
 use Langertha::Engine::MiniMax;
 use Langertha::Engine::Whisper;
+use Langertha::Engine::Ollama;
+
+use JSON::MaybeXS;
 
 # OpenAI: composes Tools and ResponseFormat -> all flags on.
 {
@@ -113,6 +116,28 @@ use Langertha::Engine::Whisper;
   my $e = Langertha::Engine::Whisper->new( api_key => 'x', url => 'http://x' );
   my $caps = $e->engine_capabilities;
   ok $caps->{transcription}, 'whisper transcription';
+}
+
+# Ollama (native /api/chat) composes Role::KeepAlive. The knob is a real wire
+# field, so it has to be advertised too — the request-body assertion is what
+# keeps the flag honest: a registry entry that no longer matches the wire
+# would still satisfy supports() on its own (karr #90).
+{
+  my $e = Langertha::Engine::Ollama->new(
+    url        => 'http://test.url:12345',
+    model      => 'model',
+    keep_alive => '5m',
+  );
+  ok $e->supports('keep_alive'), 'ollama advertises keep_alive (composes Role::KeepAlive)';
+  my $body = JSON::MaybeXS->new->utf8(1)->decode( $e->chat('testprompt')->content );
+  is $body->{keep_alive}, '5m', 'ollama puts keep_alive on the wire (flag matches reality)';
+}
+
+# OpenAI does not compose the role: no knob, no flag.
+{
+  my $e = Langertha::Engine::OpenAI->new( api_key => 'x' );
+  ok !$e->supports('keep_alive'), 'openai does not advertise keep_alive (role not composed)';
+  ok !$e->can('get_keep_alive'),  'openai has no keep-alive surface at all';
 }
 
 done_testing;

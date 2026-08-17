@@ -46,6 +46,10 @@ itself does not need to know about C<engine_capabilities>.
 #   tools_native    -> Role::Tools (the named flags below come too)
 #   tools_hermes    -> Role::HermesTools
 #   ... see %ROLE_TO_CAPS below.
+# Every Langertha::Role::* is on one of two axes (ADR 0016 decision 2):
+# a capability (an entry here) or envelope/infrastructure (the allowlist
+# in t/78_capability_registry.t). That guard fails on a role in neither,
+# so a new role cannot quietly skip the decision.
 my %ROLE_TO_CAPS = (
   'Langertha::Role::Chat'             => [qw( chat )],
   'Langertha::Role::Streaming'        => [qw( streaming )],
@@ -67,6 +71,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::ContextSize'      => [qw( context_size )],
   'Langertha::Role::ResponseSize'     => [qw( response_size )],
   'Langertha::Role::SystemPrompt'     => [qw( system_prompt )],
+  'Langertha::Role::KeepAlive'        => [qw( keep_alive )],
   'Langertha::Role::ParallelToolUse'  => [qw( parallel_tool_use )],
   'Langertha::Role::Runtime::MetricsPoll' => [qw( runtime_metrics )],
   'Langertha::Role::RuntimeKnobs'    => [qw( prefix_caching )],

@@ -50,6 +50,10 @@ Returns the effective keep-alive value: C<'0'> if C<no_keep_alive> is set,
 the C<keep_alive> value if provided, or C<undef> if neither is set (letting
 the engine use its default).
 
+Composing this role advertises the C<keep_alive> capability, so callers can
+dispatch on C<< $engine->supports('keep_alive') >> — see
+L<Langertha::Role::Capabilities>.
+
 =cut
 
 =seealso
@@ -57,6 +61,8 @@ the engine use its default).
 =over
 
 =item * L<Langertha::Engine::Ollama> - Engine that composes this role
+
+=item * L<Langertha::Role::Capabilities> - Registry that turns this role into the C<keep_alive> flag
 
 =back
 
