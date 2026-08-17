@@ -843,11 +843,12 @@ async sub compress_history_f {
     { role => 'assistant', content => $summary },
   ]);
 
-  # Mark compression event in session_history
-  push @{$self->session_history}, {
+  # Mark compression event in session_history — through the pusher, so the
+  # marker gets its embedding slot like every other message.
+  $self->_push_session_history({
     role => 'system',
     content => '[Context compressed — history summarized]',
-  };
+  });
 
   return $summary;
 }
@@ -1276,9 +1277,14 @@ sub _query_session_history {
   my ( $self, $args ) = @_;
   my @hist = @{$self->session_history};
 
-  # Semantic search via embeddings
+  # Semantic search via embeddings. The vector of history element $i is
+  # _session_embeddings->[$i], so a length mismatch means the two arrays drifted
+  # apart (session_history is a public ArrayRef, code outside _push_session_history
+  # can splice it) — searching a drifted index would answer with the wrong
+  # message, so degrade to the text search instead of lying.
   if (my $search = $args->{search}) {
     my $engine = $self->_get_embedding_engine;
+    $engine = undef unless @{$self->_session_embeddings} == @hist;
     if ($engine) {
       my $query_vec = $engine->simple_embedding($search);
       my @scored;
@@ -1386,23 +1392,32 @@ sub _cosine_similarity {
 sub _push_session_history {
   my ( $self, @msgs ) = @_;
   push @{$self->session_history}, @msgs;
-  # Fire-and-forget embedding computation
+
+  # Fire-and-forget embedding computation. _query_session_history looks the
+  # vector of history element $i up as _session_embeddings->[$i], so this must
+  # push EXACTLY one slot per message — a message with no embeddable text gets
+  # undef, never nothing. Skipping a slot shifts every later vector onto the
+  # wrong message and the similarity search silently answers with that one.
   my $engine = $self->_get_embedding_engine;
-  if ($engine) {
-    for my $msg (@msgs) {
-      my $text = $msg->{content};
-      next unless defined $text && length $text;
-      eval {
-        my $vec = $engine->simple_embedding($text);
-        push @{$self->_session_embeddings}, $vec;
-      };
-      if ($@) {
-        push @{$self->_session_embeddings}, undef;
-      }
-    }
-  } else {
+  unless ($engine) {
     push @{$self->_session_embeddings}, (undef) x scalar @msgs;
+    return;
   }
+
+  for my $msg (@msgs) {
+    # The rendered payload, not the raw {content}: an element's shape follows
+    # the engine's tool_wire_format, so {content} is an ArrayRef of blocks on
+    # anthropic and absent entirely on gemini ({parts}) and on responses
+    # envelope items. It is also the text the grep fallback in
+    # _query_session_history matches, so both search modes see one history
+    # element the same way.
+    my $text = _render_history_payload($msg);
+    my $vec;
+    $vec = eval { $engine->simple_embedding($text) } if length $text;
+    push @{$self->_session_embeddings}, $vec;
+  }
+
+  return;
 }
 
 sub raid {

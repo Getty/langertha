@@ -422,6 +422,172 @@ subtest 'empty session history' => sub {
     'empty history keeps its placeholder');
 };
 
+# --- Test: session-history embeddings (karr #99) ---
+#
+# _query_session_history looks the vector of history element $i up as
+# _session_embeddings->[$i], so the two arrays must stay 1:1: a message
+# without embeddable text still needs its slot, filled with undef. A missing
+# slot shifts every later vector onto the wrong message and the similarity
+# search then answers with that wrong message, silently. The embedded text is
+# the same rendered payload the grep fallback matches, so both search modes
+# see one history element the same way.
+
+{
+  package MockEmbeddingEngine;
+  use Moose;
+
+  # Deterministic bag-of-words vector over a fixed vocabulary — similar
+  # enough to real embeddings to prove the search lands on the right
+  # message, without touching the network.
+  my @VOCAB = qw( aardvark zebra narwhal tusk berlin weather time );
+
+  has calls  => (is => 'ro', default => sub { [] });
+  has die_on => (is => 'ro', predicate => 'has_die_on');
+
+  sub simple_embedding {
+    my ( $self, $text ) = @_;
+    push @{$self->calls}, $text;
+    die "embedding backend unavailable\n"
+      if $self->has_die_on && index($text, $self->die_on) >= 0;
+    my $lc_text = lc $text;
+    return [ map { scalar( () = $lc_text =~ /\Q$_\E/g ) } @VOCAB ];
+  }
+
+  __PACKAGE__->meta->make_immutable;
+}
+
+# Positions 1 and 3 carry no plain-string {content}: the empty assistant turn
+# renders to nothing at all, the responses function_call item has no
+# {content} key. Position 2 is anthropic ArrayRef content, which must be
+# rendered rather than embedded as "ARRAY(0x...)".
+sub embedding_probe_history {
+  return (
+    { role => 'user', content => 'Aardvark migration question' },
+    { role => 'assistant', content => '' },
+    { role => 'assistant', content => [
+      { type => 'text', text => 'The zebra crossing report' } ] },
+    { type => 'function_call', call_id => 'call_9', name => 'get_time',
+      arguments => '{"tz":"CET"}' },
+    { role => 'assistant', content => 'Narwhal tusk measurements are stable' },
+  );
+}
+
+subtest 'session embeddings keep one slot per history message' => sub {
+  my $embedder = MockEmbeddingEngine->new;
+  my $raider = Langertha::Raider->new(
+    engine           => MockEngine->new,
+    embedding_engine => $embedder,
+    raider_mcp       => 1,
+  );
+
+  $raider->_push_session_history(embedding_probe_history());
+  my @embedded = @{$embedder->calls};
+
+  my @hist = @{$raider->session_history};
+  my $slots = $raider->_session_embeddings;
+  is(scalar @$slots, scalar @hist, 'one embedding slot per history message');
+
+  for my $i (0..$#hist) {
+    my $text = Langertha::Raider::_render_history_payload($hist[$i]);
+    if (length $text) {
+      is_deeply($slots->[$i], $embedder->simple_embedding($text),
+        "slot $i holds the vector of the message at position $i");
+    } else {
+      is($slots->[$i], undef, "slot $i is undef for a message without text");
+    }
+  }
+
+  unlike($_, qr/ARRAY\(0x|HASH\(0x/,
+    'embedded text is the rendered payload, never a stringified ref')
+    for @embedded;
+  ok(scalar(grep { /get_time/ } @embedded),
+    'an element that is only a tool call is embedded by its rendered call');
+};
+
+subtest 'session embedding search returns the matching message' => sub {
+  my $raider = Langertha::Raider->new(
+    engine           => MockEngine->new,
+    embedding_engine => MockEmbeddingEngine->new,
+    raider_mcp       => 1,
+  );
+  $raider->_push_session_history(embedding_probe_history());
+
+  my $text = $raider->_query_session_history({ search => 'narwhal tusk' });
+  my ( $top ) = split /\n\n/, $text;
+  like($top, qr/Narwhal tusk measurements/, 'top hit is the message that matches');
+  unlike($top, qr/zebra/, 'not the message a drifted index would have returned');
+};
+
+subtest 'drifted embeddings degrade to text search instead of lying' => sub {
+  my $raider = Langertha::Raider->new(
+    engine           => MockEngine->new,
+    embedding_engine => MockEmbeddingEngine->new,
+    raider_mcp       => 1,
+  );
+  $raider->_push_session_history(embedding_probe_history());
+
+  # session_history is public: code outside the pusher can append to it and
+  # leave the two arrays out of step.
+  push @{$raider->session_history},
+    { role => 'assistant', content => 'Berlin weather note' };
+
+  my $text = $raider->_query_session_history({ search => 'narwhal tusk' });
+  my @hits = split /\n\n/, $text;
+  is(scalar @hits, 1, 'falls back to the text search when the arrays drifted');
+  like($hits[0], qr/Narwhal tusk measurements/, 'and still finds the right message');
+};
+
+subtest 'a failed embedding still leaves its slot' => sub {
+  my $raider = Langertha::Raider->new(
+    engine           => MockEngine->new,
+    embedding_engine => MockEmbeddingEngine->new(die_on => 'zebra'),
+    raider_mcp       => 1,
+  );
+  $raider->_push_session_history(embedding_probe_history());
+
+  is(scalar @{$raider->_session_embeddings}, scalar @{$raider->session_history},
+    'a failing embedding leaves an undef slot, not a gap');
+  is($raider->_session_embeddings->[2], undef, 'the failed message has no vector');
+  ok(defined $raider->_session_embeddings->[4], 'later messages keep their vector');
+};
+
+# The compression marker is pushed from compress_history_f, the second writer
+# of session_history — it needs its slot like every other message.
+{
+  package MockCompressionHTTP;
+  use Moose;
+  use Future;
+  sub do_request { return Future->done({ mock => 1 }) }
+  __PACKAGE__->meta->make_immutable;
+}
+
+{
+  package MockCompressionEngine;
+  use Moose;
+  sub chat_request { return { mock_request => 1 } }
+  sub _async_http { return MockCompressionHTTP->new }
+  sub parse_response { return $_[1] }
+  sub response_text_content { return 'compressed summary' }
+  __PACKAGE__->meta->make_immutable;
+}
+
+subtest 'compression marker gets an embedding slot too' => sub {
+  my $raider = Langertha::Raider->new(
+    engine             => MockEngine->new,
+    compression_engine => MockCompressionEngine->new,
+    embedding_engine   => MockEmbeddingEngine->new,
+    raider_mcp         => 1,
+  );
+  $raider->_push_session_history(embedding_probe_history());
+  $raider->history([{ role => 'user', content => 'something to summarize' }]);
+
+  is($raider->compress_history, 'compressed summary', 'compression ran');
+  like($raider->session_history->[-1]{content}, qr/compressed/i,
+    'the marker landed in the session history');
+  is(scalar @{$raider->_session_embeddings}, scalar @{$raider->session_history},
+    'the marker got its embedding slot');
+};
+
 # --- Test: MCP catalog management ---
 
 subtest 'manage MCPs' => sub {
