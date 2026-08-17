@@ -1,0 +1,34 @@
+---
+class: standard
+completed: 2026-08-17T05:09:45Z
+created: 2026-08-17T03:41:35Z
+id: 97
+priority: medium
+started: 2026-08-17T05:09:45Z
+status: done
+tags:
+- docs
+- adrs
+title: 'ADR 0015 Finding 1 / Decision 1: falsches Exemplar fuer die -excludes-Kanon-Entscheidung'
+updated: 2026-08-17T05:09:45Z
+---
+
+Gefunden vom langertha-adr-auditor bei karr #91, vom Orchestrator im Code verifiziert (2026-08-17). Gleiche Wurzel wie #91 (ADR entstand vor 579d0c8), aber Substanz statt Zeitform - deshalb bewusst nicht dort mitgezogen.
+
+docs/adr/0015-role-composition-patterns.md traegt "-excludes ... are canonical patterns" im Titel. Finding 1 (~18-25) und Decision 1 (~96-101) nennen als Exemplar fuer die map-qw-Kompositionsform aber ausgerechnet Engine::AnthropicBase (mit Zeilenangabe 14-25) - und genau diese Datei ist inzwischen das -excludes-EXEMPLAR:
+
+    lib/Langertha/Engine/AnthropicBase.pm:9-19 (verifiziert)
+      with Langertha::Role::Models,
+           Langertha::Role::Chat => { -excludes => [content_format] },
+           Langertha::Role::ReasoningEffort => { -excludes => [_build_reasoning_wire_format] },
+           Langertha::Role::PromptCache => { -excludes => [_build_cache_wire_format] },
+           Langertha::Role::Tools => { -excludes => [_build_tool_wire_format] },
+           Langertha::Role::AnthropicCompatible;
+
+Vor 579d0c8 stimmte die Aussage (git show 579d0c8^:lib/Langertha/Engine/AnthropicBase.pm hat die map-Liste an 14-25). 579d0c8s eigene Commit-Message sagt: "Composition resolves three Moose method conflicts ... via -excludes in the composer with". karr #68 lokalisierte den Kanon bei "AnthropicBase.pm:10-18".
+
+Zwei weitere Fehler im selben Abschnitt:
+- Zitat "AnthropicBase.pm:460" fuer die _build_*_wire_format-Defaults "from the class": die Datei hat 126 Zeilen, und die Builder liegen in der Rolle.
+- Decision 1 illustriert mit "-Capabilities falls Capabilities kollidiert" - erfunden; die realen Ausschluesse sind die vier oben.
+
+Zu tun: Finding 1 und Decision 1 auf das tatsaechliche Exemplar umschreiben. Dabei entscheiden, welche Basis welche Form demonstriert - OpenAIBase pruefen, ob es noch die map-Form nutzt, dann ist es das Gegenbeispiel. Reine Doku, kein Verhalten.
