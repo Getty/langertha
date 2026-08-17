@@ -161,6 +161,69 @@ C<cachedContent> field on a generateContent body).
 
 sub default_model { 'gemini-3-flash-preview' }
 
+# --- endpoint + auth seam -------------------------------------------------
+#
+# Every request URL in this engine is assembled here, and the credential is
+# placed by gemini_auth_query alone. A second consumer of the Gemini dialect
+# (Vertex AI express or standard, a Gemini-native gateway) differs from the
+# Developer API exclusively in base URL, API version, model-path prefix and
+# auth scheme — never in the request envelope — so such a shim is a subclass
+# that overrides here rather than a copy of chat_request (ADR 0016, karr #88).
+
+sub gemini_api_version { 'v1beta' }
+
+sub gemini_auth_query {
+  my ( $self ) = @_;
+  return ( key => $self->api_key );
+}
+
+sub gemini_url {
+  my ( $self, $path, @query ) = @_;
+  my $url = $self->url . '/' . $self->gemini_api_version . '/' . $path;
+  my @params = ( $self->gemini_auth_query, @query );
+  return $url unless @params;
+  # Values are interpolated verbatim, exactly as the call sites did before:
+  # the API key and the fixed switches (alt=sse) are URL-safe, and encoding
+  # them here would change bytes on the wire for no gain.
+  my @pairs;
+  while ( my ( $name, $value ) = splice @params, 0, 2 ) {
+    push @pairs, $name . '=' . $value;
+  }
+  return $url . '?' . join( '&', @pairs );
+}
+
+sub gemini_model_url {
+  my ( $self, $model, $method, @query ) = @_;
+  return $self->gemini_url( 'models/' . $model . ':' . $method, @query );
+}
+
+=method gemini_api_version
+
+The API version segment of every endpoint, C<v1beta> for the Generative
+Language API. Override in a subclass serving a different version.
+
+=method gemini_auth_query
+
+The auth seam: returns the credential as a C<< ( name =E<gt> value ) >> query
+pair list, C<< ( key =E<gt> $self->api_key ) >> for the Developer API. A
+consumer that authenticates by header instead returns the empty list here and
+sets the header in C<update_request>.
+
+=method gemini_url
+
+Builds C<< {url}/{gemini_api_version}/{path} >> and appends the query string:
+first the pairs from L</gemini_auth_query>, then any C<< ( name =E<gt> value ) >>
+pairs passed by the caller (e.g. C<< alt =E<gt> 'sse' >>).
+
+=method gemini_model_url
+
+Builds the endpoint of one model method, C<< models/{model}:{method} >>, via
+L</gemini_url>. The C<models/> prefix lives here so a consumer with a
+different resource path (Vertex AI's C<publishers/google/models/>) overrides
+one method.
+
+=cut
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
@@ -202,7 +265,7 @@ sub chat_request {
 
   # Build the URL with model and API key
   my $model_name = $self->chat_model;
-  my $url = $self->url . "/v1beta/models/${model_name}:generateContent?key=" . $self->api_key;
+  my $url = $self->gemini_model_url( $model_name, 'generateContent' );
 
   my %request_body = (
     contents => \@gemini_contents,
@@ -383,7 +446,7 @@ sub chat_stream_request {
 
   # Build the URL for streaming endpoint
   my $model_name = $self->chat_model;
-  my $url = $self->url . "/v1beta/models/${model_name}:streamGenerateContent?key=" . $self->api_key . "&alt=sse";
+  my $url = $self->gemini_model_url( $model_name, 'streamGenerateContent', alt => 'sse' );
 
   my %request_body = (
     contents => \@gemini_contents,
@@ -486,7 +549,7 @@ sub parse_stream_chunk {
 # Dynamic model listing with token pagination
 sub list_models_request {
   my ($self, %params) = @_;
-  my $url = $self->url . '/v1beta/models?key=' . $self->api_key;
+  my $url = $self->gemini_url('models');
 
   # Add pagination params if provided
   if (%params) {
