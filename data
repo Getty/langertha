@@ -1,0 +1,48 @@
+---
+claimed_at: 2026-08-17T03:01:50Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:01:50Z
+created: 2026-08-17T01:54:19Z
+id: 90
+priority: medium
+started: 2026-08-17T02:44:35Z
+status: done
+tags:
+- capabilities
+- roles
+- ollama
+- drift
+title: Role::KeepAlive fehlt in %ROLE_TO_CAPS - keep_alive wird nie ueber supports()
+  advertised
+updated: 2026-08-17T03:01:50Z
+---
+
+Gefunden vom langertha-adr-auditor beim Schreiben von ADR 0016 (Achsentest envelope vs. capability), vom Orchestrator praezisiert und im Code verifiziert (2026-08-17).
+
+Langertha::Role::KeepAlive ist nach dem Achsentest von ADR 0016 eine Capability-Rolle: eigene Attribute (keep_alive, no_keep_alive) und eine eigene Zugriffsmethode (get_keep_alive), separierbare Feature-Flaeche. Sie hat aber KEINEN Eintrag in %ROLE_TO_CAPS (lib/Langertha/Role/Capabilities.pm), also liefert supports(q{keep_alive}) nie wahr, egal welche Engine die Rolle komponiert.
+
+Warum das eine echte Luecke ist und kein bewusster Verzicht: Die Rolle wird von Engine::Ollama komponiert (Ollama.pm:17-31, ueber das with-map-qw-Idiom - ein grep nach "Role::KeepAlive" findet sie deshalb NICHT). Im selben qw()-Block stehen Seed, Temperature, ContextSize, ResponseSize und SystemPrompt - und die sind ALLE in %ROLE_TO_CAPS registriert. KeepAlive ist der einzige Nachbar derselben Kategorie, der fehlt. Das Argument "nur ein Request-Knopf, wonach niemand verzweigt" traegt daher nicht: seed und context_size sind genau solche Knoepfe und werden trotzdem advertised.
+
+Wirkung real: keep_alive landet an Ollama.pm:211 und :435 im Request-Body, die Faehigkeit ist also da - nur nicht abfragbar. Ein Aufrufer, der ueber supports() dispatcht, sieht sie nicht.
+
+Zu tun:
+- Eintrag "Langertha::Role::KeepAlive => [qw( keep_alive )]" in %ROLE_TO_CAPS ergaenzen.
+- Pruefen, ob eine Engine die Rolle komponiert, ohne dass der Server das Feld akzeptiert - dann dort per "around engine_capabilities" loeschen (ADR 0002 Escape Hatch). Aktuell komponiert nur Ollama, das keep_alive nativ unterstuetzt, also vermutlich nicht noetig.
+- Test in t/ ergaenzen, der supports(q{keep_alive}) fuer Ollama prueft.
+
+Breiterer Verdacht, beim Umsetzen mitpruefen: Gibt es weitere Rollen mit eigener Attribut-/Methodenflaeche, die nicht in %ROLE_TO_CAPS stehen? Ein t/-Guard, der jede Role::*-Datei gegen die Registry haelt und Unbekannte meldet, wuerde diese Drift-Klasse dauerhaft schliessen (verwandt mit karr #86, das denselben Drift-Typ fuer die POD-Kataloge vorschlaegt).
+
+Referenz: ADR 0016 nennt den Fall unter Future work; ADR 0002 definiert die Registry-Semantik.
+Umgesetzt (worker-caps, NICHT committed - Orchestrator committet):
+
+- %ROLE_TO_CAPS: 'Langertha::Role::KeepAlive' => [qw( keep_alive )] ergaenzt.
+- Composer-Audit (qw()-Idiom beruecksichtigt): einziger Composer ist Engine::Ollama; keine Engine extends Ollama. Ollama /api/chat akzeptiert keep_alive nativ -> KEIN 'around engine_capabilities' noetig, Ollama.pm bleibt unberuehrt.
+- KeepAlive.pm: nur POD (Capability-Hinweis + seealso auf Role::Capabilities).
+- t/78_engine_capabilities.t: Ollama supports('keep_alive') PLUS Request-Body traegt keep_alive => '5m' (Flag gegen Wire-Realitaet, nicht nur gegen die Map); OpenAI-Gegenprobe (kein Flag, kein get_keep_alive).
+- NEU t/78_capability_registry.t: Drift-Guard ueber alle lib/Langertha/Role/**/*.pm. Jede Rolle muss in %ROLE_TO_CAPS ODER in der Allowlist %NOT_A_CAPABILITY stehen (12 Eintraege, je mit Begruendung); dazu Rueckrichtung (jeder Registry-Key hat eine Datei) und Allowlist-Hygiene. 99 Tests. Negativprobe mit Dummy-Rolle laesst den Guard fehlschlagen.
+
+Vollaudit aller 32 Rollen gegen ADR 0016 Decision 2: KeepAlive war die einzige echte Luecke. Grenzfaelle (von mir als Nicht-Capability eingestuft, Orchestrator-Review offen): Models + StaticModels (Model-Discovery, faktisch auf jeder Engine -> konstant-wahres Flag), ThinkTag (von Role::Chat komponiert, Client-seitige Nachbearbeitung, kein Wire-Feld), PluginHost (Host-Seite, auch von Nicht-Engines komponiert), Runnable (Interface-Marker), Langfuse (Engine-Level-Observability, wird derzeit von KEINER Klasse komponiert - abgeloest von Plugin::Langfuse; eigener Drift-Fund).
+
+Verifikation: prove -lr t/ gruen (83 Dateien / 2592 Tests inkl. paralleler Worker; Baseline 80/2444, davon +1 Datei/+103 Tests von mir). perlcritic --profile .perlcriticrc lib/ bin/ maint/ ohne Violations. Live-Tests t/80-89 skippen mangels Keys.
+Umgesetzt als 7635af9. KeepAlive registriert; Audit ueber alle 32 Rollen ergab, dass es die einzige echte Luecke war. Drift-Guard t/78_capability_registry.t (99 Tests) mit expliziter 12-Eintrag-Allowlist der Nicht-Capability-Rollen - vom Orchestrator selbst negativ verifiziert: eine testweise eingelegte unregistrierte Role::ZzzDriftProbe laesst den Guard rot laufen (Failed test 68), nach Entfernen wieder gruen. Der Capability-Test prueft die Flag gegen die Wire-Realitaet (Request-Body traegt keep_alive => 5m), nicht nur gegen die Map, in die sie gerade eingetragen wurde. Ollama.pm blieb unangetastet: einziger Komponist, Server akzeptiert das Feld, kein around engine_capabilities noetig.
