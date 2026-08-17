@@ -1,0 +1,53 @@
+---
+claimed_at: 2026-08-17T04:10:01Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T04:10:01Z
+created: 2026-08-17T03:42:43Z
+id: 99
+priority: high
+started: 2026-08-17T03:55:29Z
+status: done
+tags:
+- raider
+- robustness
+- embeddings
+title: 'Raider _push_session_history: Embedding-Text nimmt {content} als String, Index
+  driftet gegen session_history'
+updated: 2026-08-17T04:10:01Z
+---
+
+Gefunden beim Fix von karr #96 (Session-History-Rendering). Zwei getrennte Nachlaessigkeiten in Langertha::Raider::_push_session_history:
+
+1. Embedding-Text: `my $text = $msg->{content}; next unless defined $text && length $text;`
+   Bei anthropic-History ist {content} ein ArrayRef -> `length $ref` ist wahr und
+   `simple_embedding("ARRAY(0x...)")` embeddet die Ref-Stringifizierung. Bei
+   responses-Envelope-Items (function_call / function_call_output / reasoning) gibt es
+   gar kein {content} -> gar kein Embedding. Die semantische Suche in
+   _query_session_history sieht diese Elemente also nie bzw. mit Muell-Vektor.
+
+2. Index-Drift: mit Embedding-Engine wird pro uebersprungener Nachricht KEIN Eintrag in
+   _session_embeddings gepusht, waehrend session_history waechst. _query_session_history
+   indiziert aber ueber die History-Position (`$self->_session_embeddings->[$i]` fuer $i
+   ueber @hist) -> ab der ersten content-losen Nachricht zeigen alle Embeddings auf die
+   falsche Nachricht. Der else-Zweig (ohne Engine) pusht dagegen korrekt
+   `(undef) x @msgs`.
+
+Fix-Skizze: Text ueber die in #96 eingefuehrte Render-Hilfe ziehen
+(`_render_history_payload($msg)`) und IMMER genau einen Slot pro Nachricht pushen
+(undef wenn kein Text). Test: History mit anthropic-ArrayRef-content + responses-Items
+und einer Mock-Embedding-Engine, prueft 1:1-Alignment zwischen session_history und
+_session_embeddings.
+Vom Orchestrator im Code verifiziert (2026-08-17), Prioritaet auf high angehoben - das ist ein Datenintegritaetsfehler, keine Kosmetik. Raider.pm:1388 pusht die Nachricht in session_history, Zeile 1394 (next unless defined $text && length $text) ueberspringt aber den Embedding-Slot. Ab der ersten content-losen Nachricht ist _session_embeddings gegenueber session_history um eins verschoben, und _query_session_history indexiert Embeddings nach History-Position - jede Aehnlichkeitssuche liefert danach die falsche Nachricht. Der else-Zweig (kein Embedding-Engine, Zeile 1404) macht es mit (undef) x scalar @msgs richtig; nur der Embedding-Pfad nicht. Zweiter Teil: $msg->{content} wird direkt embedded, ArrayRef-Content (Anthropic) also als 'ARRAY(0x...)' - sinnloser Vektor. Fix-Hinweis: der Renderer aus karr #96 (_render_history_payload) liefert bereits den korrekten Text pro Wire-Form und sollte hier wiederverwendet werden; und in JEDEM Fall genau ein Slot pro Nachricht pushen.
+Fixed in working tree (uncommitted, orchestrator commits).
+
+_push_session_history now pushes exactly one slot per message, always: no engine -> (undef) x @msgs (unchanged); with engine -> per message a vector or undef, never a skipped slot. Embedding text is _render_history_payload($msg) (the karr #96 renderer), i.e. the same text the grep fallback in _query_session_history matches, so both search modes see one history element the same way; a rendered-empty element gets undef.
+
+Second push path found and routed through the pusher: compress_history_f pushed the "[Context compressed]" marker straight onto session_history, so with an embedding engine EVERY compression drifted the arrays by one. Now goes through _push_session_history.
+
+_query_session_history: added an alignment guard - if @{_session_embeddings} != @hist the semantic path degrades to the text grep instead of indexing a drifted array (session_history is a public ArrayRef, external code can splice it; see #105).
+
+Tests in t/86_raider_self_tools.t (4 new subtests, red-verified against the unfixed code): 1:1 slot invariant incl. anthropic ArrayRef content and responses function_call items, vector-belongs-to-its-own-message check, similarity search returns the right message (was: the message one slot earlier), failed embedding still leaves a slot, compression marker gets its slot, drifted arrays degrade to text search. Suite: prove -lr t/ 86 files / 2724 tests green; perlcritic clean.
+
+Follow-up filed: #105 (session_history POD documents a clear route that dies).
+Fix + tests in working tree, uncommitted. Files: lib/Langertha/Raider.pm, t/86_raider_self_tools.t. Follow-up: #105
