@@ -139,46 +139,71 @@ naming which flag the wire doesn't speak**. Both directions live in
 `ADR 0002`'s escape-hatch paragraph; this ADR adds the explicitly paired
 form so the symmetry is discoverable from one place.
 
-### 3. The generation-parameter block asymmetry is a deliberate dialect split (and a future refactor target)
+### 3. The generation-parameter block asymmetry is a deliberate dialect split; the shared part is a helper on `Engine::Remote`
 
 The boilerplate generation-parameter emission in `Role::OpenAICompatible` (`has_temperature`,
 `reasoning_kwargs_for`, `prompt_cache_kwargs_for`, `stream`, …) is *duplicated* into
 `Role::AnthropicCompatible` rather than shared through a common helper,
 because **the dialect-aware fields (`response_format` translation to a synthetic
 tool, `tool_choice` ↔ `parallel_tool_use` folding, `inference_geo`,
-`anthropic-version`) all require the wire envelope in scope**. Extracting
-the wire-agnostic subset (e.g. `temperature`, `reasoning_kwargs_for`,
-`prompt_cache_kwargs_for`) into a shared helper is a worthwhile follow-up
-(working name `Langertha::Role::GenerationParams`, or a
-`generation_kwargs_for` method on each base — *not* `knobs_kwargs_for`, which
-`Langertha::Role::RuntimeKnobs` already owns for the self-hosted prefix-cache
-knobs), but it cannot happen until each side's dialect-aware logic is named as
-"dialect" not "parameter". Recording this as a *deliberate asymmetry, not
-oversight* prevents a future reviewer from misreading the duplicated
-boilerplate as drift.
+`anthropic-version`) all require the wire envelope in scope**. Recording this
+as a *deliberate asymmetry, not oversight* prevents a future reviewer from
+misreading the duplicated boilerplate as drift.
+
+The wire-agnostic subset, however, *is* shared. The form this ADR originally
+left open — `Langertha::Role::GenerationParams` versus a method on the bases —
+**is decided: a plain helper method named `generation_kwargs_for` on
+`Langertha::Engine::Remote`** (karr #98). No role is created.
+
+- **Why not a role.** `ADR 0016` decision 1 gives the extraction trigger: a
+  shared wire shape earns its own `Role::<X>` at the moment a **second consumer
+  needs it while descending from a different parent**. Both consumers here —
+  `Role::OpenAICompatible` and `Role::AnthropicCompatible`, composed into
+  `Engine::OpenAIBase` / `Engine::AnthropicBase` — descend from
+  `Engine::Remote`. There is no second parent, so the trigger does not fire and
+  0016's scepticism towards symmetry-driven extraction applies in spirit: the
+  common ancestor already *is* the shared home.
+- **Why the "role from day one" rule does not override that.** `ADR 0016`
+  decision 2 puts capabilities on the role axis immediately, single consumer or
+  not — but only capabilities: a *separable feature surface* with its own
+  attributes and/or lifecycle methods, advertisable through `does($role)` per
+  ADR 0002. `generation_kwargs_for` is an emission utility with no attributes,
+  no lifecycle methods and no `%ROLE_TO_CAPS` flag, so the decision-2 test does
+  not fire either.
+- **Naming guard.** The name is deliberately *not* `knobs_kwargs_for`, which
+  `Langertha::Role::RuntimeKnobs` already owns for the self-hosted prefix-cache
+  knobs (**ADR 0012** decisions 4/5). `generation_kwargs_for` collides with
+  nothing.
 
 Concretely:
 
-- **Status quo** — `Role::AnthropicCompatible::chat_request:180-187` /
-  `chat_stream_request:406-413` emit the generation parameters inline because
-  they share scope with the wire-aware blocks. Until the wire-envelope
-  extraction (579d0c8, ADR 0013) this block sat in `Engine::AnthropicBase`; the
-  move changed its address, not its shape.
-  `Role::OpenAICompatible::chat_request:323-335` / `chat_stream_request:448-460`
-  emit a similar set in the same shape, also inline, also dialect-agnostic at
-  the emission level but also dialect-aware (the `stream => JSON->true/false`
-  placement, the `parallel_tool_calls` placement differ).
-- **Future refactor** — extract the wire-agnostic subset
-  (`temperature`, `reasoning_kwargs_for`, `prompt_cache_kwargs_for`,
-  `has_response_format`) into a `Langertha::Role::GenerationParams` helper or a
-  `generation_kwargs_for` method on each base. The first precondition is
-  **met**: #64 landed (579d0c8, ADR 0013) and `Role::AnthropicCompatible` is
-  that stable home, so both dialect sides are roles composed into thin bases.
-  What remains is the second precondition — `Role::OpenAICompatible`
-  reformulating its own generation-parameter block as a call to the helper —
-  plus tests proving the request bodies are identical before and after. The
-  extraction is therefore concretely actionable follow-up work, not blocked
-  work.
+- **The helper** lives in `lib/Langertha/Engine/Remote.pm:147-182` (comment
+  147-157, body 158-164, POD 166-182):
+
+  ```perl
+  sub generation_kwargs_for {
+    my ( $self, %controls ) = @_;
+    return (
+      ( $self->can('reasoning_kwargs_for')    ? $self->reasoning_kwargs_for(%controls)    : () ),
+      ( $self->can('prompt_cache_kwargs_for') ? $self->prompt_cache_kwargs_for(%controls) : () ),
+    );
+  }
+  ```
+
+  Both dialect roles call it in `chat_request` and `chat_stream_request`
+  (`Role::OpenAICompatible.pm:333` / `:457`,
+  `Role::AnthropicCompatible.pm:186` / `:411`).
+- **What stays inline** — the cut is narrower than the subset this ADR first
+  sketched. `temperature` and `has_response_format` were *not* folded in:
+  OpenAI emits `seed` between `temperature` and the reasoning kwargs, so moving
+  `temperature` into the helper would shift `seed` and change the byte order of
+  the OpenAI body. Everything whose *position* in the body is a dialect
+  convention (`temperature`, `response_format`, `seed`, `knobs_kwargs_for`,
+  `inference_geo`, the `stream` / `parallel_tool_calls` placement) stays at the
+  call site. The shared part is exactly the two `can`-guarded control kwargs.
+- **Proof of equivalence** — `t/46_generation_kwargs_for_byte_identity.t`
+  asserts the request bodies are byte-identical before and after, the check
+  this ADR named as the remaining precondition.
 
 ## Rationale
 
