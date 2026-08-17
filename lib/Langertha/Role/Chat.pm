@@ -28,8 +28,9 @@ by L<Langertha::Engine::AnthropicBase> and L<Langertha::Engine::Gemini>.
 
 =cut
 
-# Defaults to the OpenAI dialect; AnthropicCompatible and Engine::Gemini
-# override the builder. The POD =method above documents the same.
+# Defaults to the OpenAI dialect; AnthropicBase (via AnthropicCompatible) and
+# Engine::Gemini override the builder. The POD =method above documents the
+# same override points from the engine-user perspective.
 sub content_format { 'openai' }
 
 =method engine_capabilities
