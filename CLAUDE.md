@@ -102,6 +102,7 @@ Engine::Remote              url required, JSON + HTTP
   │     ├── Anthropic       Claude models, thinking blocks, tool_use
   │     ├── MiniMaxAnthropic MiniMax via legacy /anthropic shim endpoint
   │     ├── MoonshotAnthropic Moonshot Kimi via /anthropic shim endpoint
+  │     ├── AKIAnthropic   AKI.IO via /anthropic shim endpoint, EU/Germany
   │     └── LMStudioAnthropic LM Studio Anthropic-compatible endpoint
   │
   ├── Engine::OpenAIBase    /chat/completions format, Bearer auth, SSE streaming
@@ -143,8 +144,11 @@ Engine::Remote              url required, JSON + HTTP
 
 - **LMStudio family** — `LMStudio` (native), `LMStudioOpenAI` (OpenAI-compatible),
   `LMStudioAnthropic` (Anthropic-compatible). Pick whichever the server serves.
-- **AKI family** — `AKI` (official native API, changes often) vs `AKIOpenAI` (more stable
-  OpenAI-compatible, sometimes lacks features). Both provided; no endorsement.
+- **AKI family** — three faces of the same service, all on `LANGERTHA_AKI_API_KEY`:
+  `AKI` (official native API, changes often), `AKIOpenAI` (more stable OpenAI-compatible,
+  sometimes lacks features), `AKIAnthropic` (`/anthropic` shim, `x-api-key`). All provided;
+  no endorsement. Unknown model IDs silently fall back to Minimax M2.5 — check
+  `$response->model` if it matters which model replied.
 - **Whisper / `->whisper`** — `Whisper` extends `TranscriptionBase` (transcription only, no
   chat/tools/embeddings). The `whisper` attribute on `OpenAI` returns a `TranscriptionBase`
   pre-configured with the parent's `api_key`/`url`.
