@@ -1,0 +1,31 @@
+---
+claimed_at: 2026-08-17T06:21:00Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T06:21:00Z
+created: 2026-08-17T06:19:26Z
+id: 116
+priority: low
+started: 2026-08-17T06:20:24Z
+status: done
+tags:
+- docs
+- role
+- drift
+title: Role::Chat::content_format and Role::Tools::_build_tool_wire_format lack inline
+  default comments
+updated: 2026-08-17T06:21:00Z
+---
+
+Found by langertha-worker on karr #114 (2026-08-17).
+
+While adding the WHY-comments above each -excludes clause in lib/Langertha/Engine/AnthropicBase.pm:9-23, the worker noticed the inline documentation of the 'openai' default is inconsistent across the four roles that supply a per-format default builder:
+
+- Role::ReasoningEffort (lib/Langertha/Role/ReasoningEffort.pm:53-56) — has the '# Defaults to the OpenAI /chat/completions dialect; ...' comment above the builder.
+- Role::PromptCache (lib/Langertha/Role/PromptCache.pm:56-58) — has the '# Defaults to the OpenAI dialect; AnthropicBase overrides the builder. ...' comment.
+- Role::Chat (lib/Langertha/Role/Chat.pm:31) — sub content_format { "openai" } has NO inline comment. Default is only documented in the surrounding POD block (L26-27).
+- Role::Tools (lib/Langertha/Role/Tools.pm:115) — sub _build_tool_wire_format { "openai" } has no inline comment; the =attr tool_wire_format POD block also does not document the default value.
+
+Two roles document the default inline (with a cross-reference to the overriding base), two do not. After #114 the call site (AnthropicBase.pm) carries the WHY; matching inline comments on the default side would close the loop so the next reader does not have to discover the contract via grep.
+
+Pure documentation change (inline comments plus a POD clarification on Role::Tools). No behavior change. No new tests required.
