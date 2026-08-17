@@ -1,0 +1,92 @@
+---
+claimed_at: 2026-08-17T04:09:50Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T04:09:50Z
+created: 2026-08-17T03:00:49Z
+id: 93
+priority: low
+started: 2026-08-17T03:55:50Z
+status: done
+tags:
+- engines
+- api
+- introspection
+title: api_key_env cannot express optional credentials (Ollama, LMStudio read an env
+  var they do not advertise)
+updated: 2026-08-17T04:09:50Z
+---
+
+Surfaced while fixing karr #87.
+
+api_key_env (Langertha::Engine::Remote:42, karr #44) is documented as "the environment
+variable this engine reads its API key from ... Returns undef for engines that do not
+require an API key". That is a two-state answer for a three-state world:
+
+  required   -> LANGERTHA_<VENDOR>_API_KEY   (cloud engines)
+  optional   -> reads an env var, works without it
+  none       -> undef
+
+The optional case now exists twice and both engines answer undef while quietly reading an
+env var:
+
+  Engine::LMStudio / LMStudioOpenAI / LMStudioAnthropic -> LANGERTHA_LMSTUDIO_API_KEY
+  Engine::Ollama / OllamaOpenAI (karr #87)              -> LANGERTHA_OLLAMA_API_KEY
+
+#87 followed the LMStudio precedent (undef) rather than inventing a third convention
+mid-fix, and t/10_engine_hierarchy.t:838ff pins Ollama/OllamaOpenAI/LMStudio* into the
+"keyless -> undef" list.
+
+Consequence for the consumer that motivated #44: Langertha::Knarr scanning the environment
+for configurable engines will not discover that LANGERTHA_OLLAMA_API_KEY unlocks Ollama
+Cloud, or that LANGERTHA_LMSTUDIO_API_KEY unlocks a secured LM Studio.
+
+Options: (a) leave as is and document "optional keys are not advertised"; (b) have
+api_key_env name the var it actually reads and add a separate api_key_required predicate;
+(c) return a small structure. Whichever wins, do it for LMStudio and Ollama in one move —
+the two must not diverge.
+Option (b) implemented: api_key_env now names the variable the engine actually reads; a new
+class method api_key_required (Engine::Remote) carries the mandatory/optional bit.
+
+Why (b) over (a)/(c):
+- (a) documents the gap away, but the gap IS the feature #44 asked for -- a consumer scanning
+  the environment must be able to see that LANGERTHA_OLLAMA_API_KEY unlocks Ollama Cloud.
+  "We do not advertise optional keys" would force Knarr to keep the hand-maintained table
+  that #44 exists to delete.
+- (c) (hashref) answers the same two questions but forces every consumer to destructure and
+  breaks the shape of the neighbouring introspection methods (default_model, tool_wire_format
+  -- plain scalar class methods).
+- (b) keeps the scalar ergonomics, adds one orthogonal predicate, and each of the three states
+  stays independently assertable.
+
+Cost of the break: none externally. api_key_env landed in 43e5603, after the 0.502 tag, and is
+in no released version (`git tag --contains 43e5603` is empty). Nothing in lib/ consumes it
+(only engine definitions + tests); Langertha::Knarr still scans with its own @ENGINE_DEFS and
+so far only consumes default_model_for.
+
+Default in Engine::Remote: api_key_required { defined $class->api_key_env ? 1 : 0 }. Cloud
+engines and no-env engines therefore need no override at all -- only the optional group opts
+out, which is exactly the group that is special.
+
+Engines pulled along (all five that read an env var while answering undef):
+  Ollama            override dropped (derivation already yields LANGERTHA_OLLAMA_API_KEY) + required 0
+  OllamaOpenAI      api_key_env 'LANGERTHA_OLLAMA_API_KEY' (derivation would say OLLAMAOPENAI) + required 0
+  LMStudio          override dropped (derivation correct) + required 0
+  LMStudioOpenAI    api_key_env 'LANGERTHA_LMSTUDIO_API_KEY' + required 0
+  LMStudioAnthropic api_key_env 'LANGERTHA_LMSTUDIO_API_KEY' + required 0
+Convention followed: override api_key_env only where derivation is wrong, as the cloud engines do.
+
+NOT pulled along: vLLM, SGLang, LlamaCpp, Whisper read no env var at all, so undef stays the
+honest answer and required derives to 0. Giving them an optional env key is a behaviour change,
+not a semantics fix -- filed separately.
+
+Tests: t/10_engine_hierarchy.t part 6b restructured into the three states (required / optional /
+none) and it now also pins that the advertised name is the name actually read (set
+$ENV{advertised} -> the built api_key carries it). t/13_ollama_auth.t tail updated. Suite:
+prove -lr t/ = 86 files / 2724 tests, all green, offline (every *API_KEY* var unset for the run,
+live tests skipped). perlcritic --profile .perlcriticrc lib/ bin/ maint/ clean. Not committed,
+not staged.
+
+Stale but harmless: docs/adr/0016 line 110 quotes "Engine::Ollama has sub api_key_env { undef }
+(line 126)" as the pre-#87 state -- a historical snapshot inside an ADR, left alone.
+Option (b) implemented and verified offline (86 files / 2724 tests green, perlcritic clean). 6 files touched: Engine::Remote (api_key_required + three-state POD), Ollama, OllamaOpenAI, LMStudio, LMStudioOpenAI, LMStudioAnthropic; tests t/10_engine_hierarchy.t + t/13_ollama_auth.t. Uncommitted and unstaged, orchestrator commits. Follow-up filed as #106 (vLLM/SGLang/LlamaCpp env keys).
