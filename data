@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-08-17T01:07:55Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T01:07:55Z
+created: 2026-08-16T17:26:22Z
+id: 81
+priority: high
+started: 2026-08-17T00:51:35Z
+status: done
+tags:
+- bug
+- tools
+title: simple_chat_with_tools reicht ein Langertha::Response in response_tool_calls
+updated: 2026-08-17T01:07:55Z
+---
+
+Chat::_tool_loop_iteration bevorzugt $request->response_call->($response) vor parse_response. Role::HTTP::generate_http_request setzt response_call aber IMMER (Role/HTTP.pm:60), also ist der parse_response-Zweig toter Code und der Rueckgabewert ist ein Langertha::Response-Objekt, kein rohes Hashref.
+
+response_tool_calls macht danach @{$data->{content} // []} und trifft den flachgezogenen Text statt der Block-Liste. Empirisch, ohne Netz:
+
+  HASH-slot content is: SCALAR:hi
+  response_tool_calls: DIED: Cant use string ("hi") as an ARRAY ref
+    at Langertha/Engine/AnthropicBase.pm line 357
+
+Betrifft Anthropic, OpenAICompatible, Ollama und OpenAIResponses gleichermassen — alle geben in chat_response ein Langertha::Response zurueck.
+
+Der engine-seitige Loop Role::Tools::chat_with_tools_f (Role/Tools.pm:64) macht es richtig: parse_response, nie response_call.
+
+Gefunden beim Bau von CitiAI::Queen (Repo citilan/citiai), das dasselbe Muster kopiert hatte. Dort behoben; hier steht es noch.
+Fix im Working Tree (nicht committed): lib/Langertha/Chat.pm _tool_loop_iteration nutzt jetzt parse_response statt response_call, wie das async-Geschwister simple_chat_with_tools_f und Role::Tools::chat_with_tools_f. Neuer Offline-Regressionstest t/93_chat_tool_loop.t (anthropic/openai/ollama/gemini, echte Engines + gefakter LWP::UserAgent, rot vor dem Fix). Mocks in t/93_chat.t und t/94_plugin_langfuse.t liefern jetzt den rohen Wire-Body statt sich auf response_call zu stuetzen. prove -lr t/: 80 Dateien, 2444 Tests, alle gruen; perlcritic sauber.
+Umgesetzt als 0e616aa. Fix: Chat::_tool_loop_iteration ruft parse_response statt response_call; beide alten Zweige (ref-eq-HASH-Mock, response_call-Override) waren toter Code, und der Body wurde doppelt dekodiert (_update_rate_limit lief zweimal pro Turn). Review durch Orchestrator: Red/Green unabhaengig nachvollzogen - t/93_chat_tool_loop.t faellt 4/4 mit Chat.pm auf HEAD, 4/4 gruen mit Fix. Mock-Reparatur in 93_chat.t/94_plugin_langfuse.t geprueft: keine Assertion abgeschwaecht, die Mocks simulierten einen response_call-Pfad, den keine Engine hat - genau die Fiktion, die den Bug verdeckt hat. Der im Ticket zitierte AnthropicBase.pm:357 ist veraltet (Code in Role::AnthropicCompatible gewandert); reale Symptome: anthropic stirbt in Role/Tools.pm:234 nachdem ToolCall->locate die Calls still verworfen hat, openai/ollama/gemini melden gar keine Tool-Calls und liefern leeren Text - die stille Variante ist die gefaehrlichere.
