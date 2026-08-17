@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-08-15T08:18:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-15T08:18:23Z
+created: 2026-08-14T13:08:06Z
+id: 68
+priority: low
+started: 2026-08-15T07:28:29Z
+status: done
+tags:
+- docs
+- adr
+- capabilities
+title: Document engine_capabilities per-family correction direction + -excludes canon
+updated: 2026-08-17T00:25:37Z
+---
+
+Doku-Audit-Befunde 4+6 (2026-08-14): 1) Das -excludes-Muster zur Auflösung der _build_*_wire_format/content_format-Kollisionen (AnthropicBase.pm:10-18) ist nur in ADR 0013 fallweise dokumentiert - als kanonisches Muster in CONTEXT.md oder ADR-Note festhalten. 2) Die per-Familie unterschiedliche engine_capabilities-Korrektion (AnthropicFamily löscht prompt_cache_key, OpenAIFamily löscht prompt_cache - jeweils das unzutreffende Flag) ist nur als Code-Kommentar existent; beide Richtungen nebeneinander dokumentieren.
+Review OK: ADR 0014 Findings 1+2 plus Decision 1 (-excludes canon) und Decision 2 (Direction-Pair-Tabelle: OpenAI loescht prompt_cache, Anthropic loescht prompt_cache_key). CLAUDE.md hat den Abschnitt 'Roles - composition patterns'. Kommentar-Feinschliff im Code laeuft als #80 nach.
+ADR-UMNUMMERIERUNG (Rebase auf 3dcca86, 2026-08-17): Die in diesem Ticket genannten ADR-Nummern sind ueberholt. Branch und neue Basis hatten unabhaengig voneinander 0012/0013/0014 vergeben. Neue Zuordnung: Runtime::MetricsPoll = ADR 0014 (docs/adr/0014-runtime-metrics-poll-role.md, vorher 0012); Role-Composition/-excludes + Direction-Pair = ADR 0015 (docs/adr/0015-role-composition-patterns.md, vorher 0014). Unveraendert: 0012 = self-hosted runtime knobs, 0013 = wire envelope as composed role. Alle Verweise in CLAUDE.md, CONTEXT.md und den ADRs sind nachgezogen.
