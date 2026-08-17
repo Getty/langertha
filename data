@@ -1,0 +1,23 @@
+---
+block_reason: 'Blockiert auf Net::Async::MCP-Release > 0.003 (Upstream-Board p5-net-async-mcp
+  #1). CPAN hat nur 0.003; t/64 + t/66 bleiben bis dahin rot.'
+blocked: true
+class: standard
+completed: 2026-08-17T00:25:22Z
+created: 2026-08-14T04:50:40Z
+id: 65
+priority: high
+started: 2026-08-17T00:25:22Z
+status: done
+tags:
+- mcp
+- upstream
+- workinprogress
+title: 't/64 + t/66 rot: Net::Async::MCP 0.003 spricht obsoletes Handshake-Protokoll
+  (Upstream-Release abwarten)'
+updated: 2026-08-17T00:25:22Z
+---
+
+Parallele uncommittete WIP-Arbeit liegt in git stash@{0} (Stand: sauberer HEAD 579d0c8, nur docs/superpowers untracked). Der Stash löscht lib/Langertha/MCP/Client.pm (243 Zeilen) und modifiziert Role/Tools.pm, Raider.pm, Chat.pm, Langertha.pm, README.md sowie t/64, t/66, t/80, t/82, t/83, t/88 — Rückbau des #60-Workarounds zu Net::Async::MCP. ACHTUNG: der Stash konserviert AUCH eine veraltete (volle) Version von Engine/AnthropicBase, die vor meinem Refactor-Commit 579d0c8 entstand — git stash pop erzeugt Konflikte mit aktuellem HEAD. NICHT poppen ohne Konflikt-Behandlung. Beschreibung in docs/superpowers/plans/2026-08-14-symmetric-anthropic-wire-role.md.
+Praemisse ueberprueft (orchestrator, 2026-08-15) und HINFAELLIG: der referenzierte git stash@{0} existiert nicht mehr (git stash list leer, kein stash-reflog), der Basis-Commit 579d0c8 ist kein gueltiges Objekt mehr (Historie wurde umgeschrieben - der Anthropic-Refactor liegt jetzt als b87edbb auf main), und lib/Langertha/MCP/Client.pm taucht in KEINEM erreichbaren oder unerreichbaren Tree auf (git fsck --unreachable durchsucht: die vier verbliebenen WIP-Commits von heute enthalten nur AnthropicBase- bzw. vLLM-Zwischenstaende, alle inzwischen committet). Der in #63 zitierte Commit 863ab31 existiert in diesem Repo ebenfalls nicht. Es gibt also nichts zurueckzubauen: main ruft bereits ueberall direkt Net::Async::MCP auf (Role/Tools.pm, Raider.pm:1373/1385, t/64, t/66, t/80, t/82, t/83, t/88). Was real offen bleibt: die Suite ist deswegen rot - t/64_tool_calling_ollama_mock.t und t/66_tool_calling_hermes.t brechen mit 'MCP error -32602: Missing protocol version at Net/Async/MCP.pm line 82' ab. CPAN fuehrt weiterhin nur GETTY/Net-Async-MCP-0.003.tar.gz, der Upstream-Fix (p5-net-async-mcp Board #1, ex-karr #63) ist nicht released. Ticket umgewidmet: blockiert auf Upstream-Release.
+ERLEDIGT durch den Rebase auf 3dcca86 (2026-08-17). Die Notiz vom 2026-08-15 galt fuer den alten main-Stand und ist ueberholt: 863ab31 'Fix MCP client for current protocol revision (karr #60)' liegt jetzt in der Historie, lib/Langertha/MCP/Client.pm existiert (7326 Bytes) und Role/Tools.pm, Chat.pm, Langertha.pm verweisen darauf. Die Blockade-Praemisse ist damit hinfaellig - der Fix kam NICHT per Upstream-Release, sondern per temporaerer Net::Async::MCP-Subklasse (karr #60). Verifiziert: prove -lr t/64_tool_calling_ollama_mock.t t/66_tool_calling_hermes.t -> 81 Tests, PASS. CPAN fuehrt weiterhin nur Net-Async-MCP-0.003; der Rueckbau der Subklasse bleibt offen, sobald Upstream nachzieht (nicht Teil dieses Tickets).
