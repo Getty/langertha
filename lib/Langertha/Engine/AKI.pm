@@ -33,6 +33,10 @@ sub _build_tool_wire_format { 'hermes' }
     my $aki_openai = $aki->openai;
     print $aki_openai->simple_chat('Hello via OpenAI format!');
 
+    # Get Anthropic-compatible API access
+    my $aki_anthropic = $aki->anthropic;
+    print $aki_anthropic->simple_chat('Hello via Anthropic format!');
+
 =head1 DESCRIPTION
 
 Provides access to AKI.IO's native API for running LLM inference. AKI.IO is
@@ -42,7 +46,8 @@ fully GDPR-compliant with no data leaving the EU.
 The native API sends the API key as a C<key> field in the JSON request body
 (not as an HTTP header). Supports synchronous chat, temperature and sampling
 controls, dynamic endpoint listing, MCP tool calling via
-L<Langertha::Role::HermesTools>, and OpenAI-compatible access via L</openai>.
+L<Langertha::Role::HermesTools>, OpenAI-compatible access via L</openai>,
+and Anthropic-compatible access via L</anthropic>.
 
 Streaming is not yet supported in the native API. For streaming, use the
 OpenAI-compatible endpoint via C<< $aki->openai >>.
@@ -308,6 +313,41 @@ suppress the warning.
 
 =cut
 
+sub anthropic {
+  my ( $self, %args ) = @_;
+  require Langertha::Engine::AKIAnthropic;
+  unless (exists $args{model}) {
+    carp "".(ref $self)."->anthropic: native model name cannot be mapped to /anthropic model name automatically, using AKIAnthropic default model";
+  }
+  return Langertha::Engine::AKIAnthropic->new(
+    api_key => $self->api_key,
+    $self->has_system_prompt ? ( system_prompt => $self->system_prompt ) : (),
+    $self->has_temperature ? ( temperature => $self->temperature ) : (),
+    %args,
+  );
+}
+
+=method anthropic
+
+    my $anth = $aki->anthropic;
+    my $anth = $aki->anthropic(model => 'gemma4-26b');
+
+Returns a L<Langertha::Engine::AKIAnthropic> instance configured with the
+same API key, system prompt, and temperature. URL defaults to
+C<https://aki.io/anthropic> (set on L<Langertha::Engine::AKIAnthropic>
+itself, so it is not carried over from the native engine's
+C<https://aki.io> base).
+
+B<Note:> The native AKI model name is B<not> carried over automatically
+because the C</anthropic> endpoint uses different model identifiers. If no
+C<model> is passed, the AKIAnthropic default model is used and a warning is
+emitted. Pass C<< model => '...' >> explicitly with a valid C</anthropic>
+model name to suppress the warning. AKI.IO also silently routes unknown
+model IDs to MiniMax M2.5 — check C<< $response->model >> if it matters
+which model replied.
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -315,6 +355,8 @@ __PACKAGE__->meta->make_immutable;
 =over
 
 =item * L<Langertha::Engine::AKIOpenAI> - OpenAI-compatible AKI.IO access via L</openai>
+
+=item * L<Langertha::Engine::AKIAnthropic> - Anthropic-compatible AKI.IO access via L</anthropic>
 
 =item * L<https://aki.io/docs> - AKI.IO API documentation
 

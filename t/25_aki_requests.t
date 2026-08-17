@@ -178,4 +178,42 @@ is_deeply($min_decoded, [{
   is(scalar @warnings, 0, 'openai() with explicit model does not warn');
 }
 
+# --- anthropic() method (karr #103, mirrors LMStudio->anthropic) ---
+
+{
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my $aki_anthropic = $aki->anthropic;
+  isa_ok($aki_anthropic, 'Langertha::Engine::AKIAnthropic');
+  is($aki_anthropic->model, 'llama3-chat-8b', 'anthropic() uses AKIAnthropic default model');
+  is($aki_anthropic->api_key, 'testkey', 'anthropic() passes api_key');
+  is($aki_anthropic->url, 'https://aki.io/anthropic',
+    'anthropic() uses AKIAnthropic own url (not the native https://aki.io base)');
+  is($aki_anthropic->system_prompt, 'systemprompt', 'anthropic() passes system_prompt');
+  is($aki_anthropic->temperature, 0.5, 'anthropic() passes temperature');
+  ok(scalar @warnings >= 1, 'anthropic() without explicit model emits warning');
+  like($warnings[0] || '', qr/cannot be mapped/, 'warning mentions model mapping');
+}
+
+# anthropic() with explicit model does not warn
+{
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my $aki_anthropic = $aki->anthropic(model => 'gemma4-26b');
+  is($aki_anthropic->model, 'gemma4-26b', 'anthropic(model => ...) uses given model');
+  is($aki_anthropic->url, 'https://aki.io/anthropic',
+    'anthropic() with explicit model still uses AKIAnthropic own url');
+  is(scalar @warnings, 0, 'anthropic() with explicit model does not warn');
+}
+
+# anthropic() with explicit url override
+{
+  my $aki_anthropic = $aki->anthropic(
+    model => 'gemma4-26b',
+    url   => 'https://aki.example.test/anthropic',
+  );
+  is($aki_anthropic->url, 'https://aki.example.test/anthropic',
+    'anthropic() honours explicit url override');
+}
+
 done_testing;
