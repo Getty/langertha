@@ -223,7 +223,8 @@ has session_history => (
 
 Full chronological archive of ALL messages including tool calls and
 results. Never auto-compressed. Persists across C<clear_history> and
-C<reset>. Only cleared manually via C<< $raider->session_history([]) >>.
+C<reset>. Cleared via C<clear_session_history>, which also empties the
+internal C<_session_embeddings> array to preserve their 1:1 invariant.
 
 =cut
 
@@ -600,6 +601,24 @@ sub clear_history {
     $raider->clear_history;
 
 Clears conversation history and pending injections while preserving metrics.
+
+=cut
+
+sub clear_session_history {
+  my ( $self ) = @_;
+  splice @{$self->session_history};
+  splice @{$self->_session_embeddings};
+  return $self;
+}
+
+=method clear_session_history
+
+    $raider->clear_session_history;
+
+Empties C<session_history> and the matching C<_session_embeddings> array
+in lock-step, so the 1:1 invariant both readers of C<session_history> rely
+on is preserved. Use this instead of splicing C<session_history> directly,
+which leaves C<_session_embeddings> stale.
 
 =cut
 
