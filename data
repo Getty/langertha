@@ -1,0 +1,89 @@
+---
+claimed_at: 2026-08-17T03:50:01Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:50:01Z
+created: 2026-08-17T03:00:29Z
+id: 92
+priority: high
+started: 2026-08-17T03:31:24Z
+status: done
+tags:
+- engines
+- ollama
+- bug
+- response
+title: 'Engine::Ollama chat_response croaks on every real server: created_at is RFC3339,
+  Response.created is Maybe[Int]'
+updated: 2026-08-17T03:50:01Z
+---
+
+Found while verifying karr #87 (Ollama Cloud auth) against a real server.
+
+Langertha::Engine::Ollama::chat_response passes Ollama's `created_at` straight into
+Langertha::Response:
+
+  lib/Langertha/Engine/Ollama.pm:313
+    $data->{created_at} ? ( created => $data->{created_at} ) : (),
+
+But Response.created is typed `Maybe[Int]` (lib/Langertha/Response.pm:250-254, "Unix
+timestamp"), while the native Ollama API returns an RFC3339 string
+("2026-08-17T02:58:35.885433013Z"). Every non-streaming chat against a real Ollama server
+therefore dies in the Response constructor:
+
+  Attribute (created) does not pass the type constraint because:
+  Validation failed for 'Maybe[Int]' with value 2026-02-22T04:00:45.027209927Z
+
+Reproducible offline with the repo's own captured fixture, no network:
+
+  perl -Ilib -MHTTP::Response -MLangertha::Engine::Ollama -e '
+    my $body = do { local $/; open my $fh, "<", "t/data/ollama_tool_call_response.json"; <$fh> };
+    my $o = Langertha::Engine::Ollama->new(url=>"http://x.invalid:11434", model=>"m");
+    my $http = HTTP::Response->new(200,"OK",["Content-Type"=>"application/json"],$body);
+    eval { $o->chat_response($http) }; print $@;
+  '
+
+Also hit live against https://ollama.com with gpt-oss:20b (2026-08-17) — the HTTP call and
+the auth succeed, the response object construction is what dies.
+
+Why the suite is green: t/64_tool_calling_ollama_mock.t drives chat_with_tools_f, and
+Langertha::Role::Tools:424 works on the raw parse_response HashRef — it never builds a
+Langertha::Response. The croaking path is simple_chat / chat_f / chat_response, which only
+the live tests (t/83_live_chat.t, gated on TEST_LANGERTHA_OLLAMA_URL) exercise.
+
+Pre-existing since 1fac6c4 (2026-02-22).
+
+Fix shape (needs a decision, hence a ticket, not a drive-by): either parse the RFC3339
+stamp to epoch seconds in chat_response, or widen Response.created. The engine-agnostic
+seconds-vs-native-stages precedent from ADR 0011 (timing) suggests the engine converts and
+Response stays a Unix timestamp. A unit test on the fixture would have caught it and should
+come with the fix.
+Fixed in the engine (not in Response). Engine::Ollama::_created_at_to_epoch converts the
+RFC3339 created_at to epoch seconds before it reaches Response.created; Maybe[Int] stays
+honest and the native string stays under raw.created_at -- the same normalized-plus-native
+split the *_seconds timing keys already use (ADR 0011). Unparseable stamps (incl. Ollama's
+"0001-01-01T00:00:00Z" sentinel) drop the field instead of croaking. Epoch-shaped values from
+shims pass through numified, so TO_JSON keeps emitting a number.
+
+Widening Response.created was rejected: created has exactly two producers
+(Role::OpenAICompatible with an epoch Int, and Ollama), so a coercion at the value object
+would buy nothing and would either loosen the type for all 7 Response->new call sites or need
+a subtype nobody else uses.
+
+Regression gate in t/70_response.t: two subtests, +2 top-level tests (74 -> 76). One drives
+chat_response over the captured server fixtures t/data/ollama_tool_call_response.json and
+ollama_tool_result_response.json; the other covers the created_at normalization matrix
+(fractional/whole-second UTC, +/- offsets with and without colon, epoch int and epoch string,
+unparseable/sentinel/empty -> field dropped and response still built) and asserts TO_JSON
+still serializes created as a JSON number. Both subtests fail against HEAD without the
+engine fix.
+
+Verified offline, no live calls: repro green, prove -lr t/ green, perlcritic clean.
+Working tree only, not committed: lib/Langertha/Engine/Ollama.pm, lib/Langertha/Response.pm
+(POD of created only), t/70_response.t.
+
+Follow-ups filed: #100 (Response is false in boolean context when content is empty -- bit the
+regression test itself), #101 (chat_response tests use hand-written payloads; Engine::LMStudio
+native has no unit coverage of its Response path at all).
+Fix + regression tests in the working tree, not committed: lib/Langertha/Engine/Ollama.pm, lib/Langertha/Response.pm (created POD), t/70_response.t. Offline verification only.
+Umgesetzt als a20f9a6. Fix im Engine statt am Value-Objekt, begruendet: created hat nur zwei Produzenten, fuenf von sieben Response->new-Aufrufstellen setzen es gar nicht; eine Coercion haette den Typ fuer alle aufgeweicht. ADR 0011 gibt das Muster (normalisiert am Response, nativ daneben in raw). Orchestrator-Review: Repro aus dem Ticket laeuft jetzt durch (created=1771732845, raw.created_at verbatim erhalten). Testluecke geschlossen an der richtigen Stelle - der bestehende t/70-Ollama-Block baute sein Payload von Hand und passte damit zur Klasse statt zum Wire; jetzt laeuft chat_response ueber die echten Server-Fixtures. Zwei Nebenfunde als #100 (Boolean-Overload) und #101 (LMStudio ohne Response-Pfad-Coverage).
