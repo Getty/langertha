@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-08-17T06:03:52Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T06:03:52Z
+created: 2026-08-17T05:56:34Z
+id: 112
+priority: low
+started: 2026-08-17T06:03:40Z
+status: done
+tags:
+- adr
+- docs
+- drift
+title: 'ADR 0015 Consequences/Rationale: stale Role::GenerationParams references'
+updated: 2026-08-17T06:03:52Z
+---
+
+Gefunden vom langertha-adr-auditor bei karr #111 (2026-08-17). ADR 0015 Decision 3 wurde aktualisiert um die Helper-Form (generation_kwargs_for auf Engine::Remote) als kanonisch zu markieren. Die Consequences- und Rationale-Bullet-Points derselben ADR erwaehnen aber noch die alte Role::GenerationParams-Sprache und sind damit jetzt stale:
+
+1. Consequences-Bullet (~L256-260): nennt Role::GenerationParams extraction als "Open work" — die Arbeit ist seit #98 erledigt und die Form ist nicht Role::GenerationParams.
+2. Rationale-Bullet (~L222): "a future Langertha::Role::GenerationParams helper becomes possible the day..." — gleiche Veraltetheit.
+3. CONTEXT.md generation-parameter-block entry erwaehnt weder generation_kwargs_for noch Engine::Remote als kanonisches Zuhause — Vocabulary-Luecke, nicht falsch.
+
+Finding 3 ("no shared generation-parameter helper exists yet") bleibt als historisch korrektes Audit-Finding unberuehrt.
+
+Zu tun: Consequences und Rationale auf die neue Realitaet bringen; CONTEXT.md-Eintrag um den kanonischen Helper und sein Zuhause erweitern. Reine ADR/CONTEXT-Doku, kein Verhalten.
