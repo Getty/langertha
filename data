@@ -1,0 +1,26 @@
+{"action":"handoff","agent":"claude","detail":"review","task_id":98,"ts":"2026-08-17T05:52:57Z"}
+{"action":"move","agent":"claude","detail":"done","task_id":98,"ts":"2026-08-17T05:53:03Z"}
+{"action":"handoff","agent":"langertha-adr-auditor","detail":"review","task_id":111,"ts":"2026-08-17T05:56:17Z"}
+{"action":"handoff","agent":"claude","detail":"review","task_id":111,"ts":"2026-08-17T05:56:23Z"}
+{"action":"move","agent":"claude","detail":"done","task_id":111,"ts":"2026-08-17T05:56:28Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":112,"ts":"2026-08-17T05:56:34Z"}
+{"action":"handoff","agent":"langertha-adr-auditor","detail":"review","task_id":112,"ts":"2026-08-17T06:03:40Z"}
+{"action":"handoff","agent":"claude","detail":"review","task_id":112,"ts":"2026-08-17T06:03:46Z"}
+{"action":"move","agent":"claude","detail":"done","task_id":112,"ts":"2026-08-17T06:03:52Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":113,"ts":"2026-08-17T06:04:53Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":114,"ts":"2026-08-17T06:04:58Z"}
+{"action":"move","agent":"langertha-worker","detail":"in-progress","task_id":113,"ts":"2026-08-17T06:09:13Z"}
+{"action":"move","agent":"langertha-worker","detail":"done","task_id":113,"ts":"2026-08-17T06:09:49Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":115,"ts":"2026-08-17T06:11:22Z"}
+{"action":"handoff","agent":"langertha-worker","detail":"review","task_id":114,"ts":"2026-08-17T06:16:05Z"}
+{"action":"handoff","agent":"claude","detail":"review","task_id":114,"ts":"2026-08-17T06:16:11Z"}
+{"action":"move","agent":"claude","detail":"done","task_id":114,"ts":"2026-08-17T06:16:17Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":116,"ts":"2026-08-17T06:19:26Z"}
+{"action":"move","agent":"claude","detail":"done","task_id":115,"ts":"2026-08-17T06:20:15Z"}
+{"action":"move","agent":"claude","detail":"in-progress","task_id":116,"ts":"2026-08-17T06:20:24Z"}
+{"action":"move","agent":"claude","detail":"done","task_id":116,"ts":"2026-08-17T06:21:00Z"}
+{"action":"move","agent":"claude","detail":"in-progress","task_id":102,"ts":"2026-08-17T06:21:10Z"}
+{"action":"move","agent":"claude","detail":"review","task_id":102,"ts":"2026-08-17T06:27:45Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"review","task_id":102,"ts":"2026-08-17T06:28:19Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"review","task_id":102,"ts":"2026-08-17T06:28:29Z"}
+{"action":"move","agent":"claude","detail":"review","task_id":102,"ts":"2026-08-17T06:28:45Z"}
