@@ -1,0 +1,35 @@
+---
+claimed_at: 2026-08-17T03:41:29Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:41:29Z
+created: 2026-08-17T02:49:18Z
+id: 91
+priority: low
+started: 2026-08-17T03:31:39Z
+status: done
+tags:
+- docs
+- adr
+title: 'ADR 0015: #64-Referenzen stehen noch im Futur, Status-quo-Bullet nennt AnthropicBase
+  statt Role::AnthropicCompatible'
+updated: 2026-08-17T03:41:29Z
+---
+
+Vorbestehend, aufgefallen bei karr #84 (dort nur der "nicht dupliziert"-Widerspruch behoben, bewusst nicht mitgezogen).
+
+ADR 0015 wurde am 2026-08-15 geschrieben, als die Envelope-Extraktion (579d0c8, karr #64, ADR 0013) noch nicht in der Branch-Historie lag. karr #64 ist done, Role::AnthropicCompatible existiert. Im ADR steht #64 aber weiter als Zukunft, und die Emissionsstelle wird noch am alten Ort genannt:
+
+- Zeile ~146 (Decision 3, Status-quo-Bullet): "AnthropicBase::chat_request / chat_stream_request emit the generation parameters inline" - der Block liegt seit 579d0c8 in Role::AnthropicCompatible::chat_request:179-192 bzw. chat_stream_request:405-418. Die Aussage selbst (inline, gleiches ternary-Muster) stimmt, nur der Ort ist veraltet.
+- Zeile ~156: "only after #64 has given AnthropicCompatible a stable home"
+- Zeile ~159: "no karr ticket today (would block on #64 + tests)"
+- Zeile ~180 (Rationale): "which is post-#64"
+- Zeile ~186 (Consequences, ADR-0006-Cross-Link): "would not be safely future-extractable until Anthropic wire-envelope lives in a role" - lebt sie inzwischen
+- Zeile ~210 (Consequences): "Future: Role::GenerationParams extraction (track when #64 lands ...)"
+
+Sachlage: die Vorbedingung fuer die in Decision 3 skizzierte Role::GenerationParams-Extraktion ist erfuellt. Das ADR sollte das entweder als erfuellt vermerken oder die Extraktion als echtes Folgeticket fuehren - derzeit liest es sich als blockiert auf ein abgeschlossenes Ticket.
+
+Nit im selben Absatz: Finding 3 und Decision 3 nennen reasoning_kwargs / prompt_cache_kwargs. Beide Methoden existieren real (Role::ReasoningEffort:113, Role::PromptCache:107), aber die Request-Builder rufen die Controls-Varianten reasoning_kwargs_for / prompt_cache_kwargs_for. Nicht falsch, nur unpraezise.
+
+Reine Doku-Arbeit, kein Verhalten. Nur docs/adr/0015-role-composition-patterns.md.
+Umgesetzt als 16b1401. Sieben Stellen plus zwei weitere derselben Klasse, die das Ticket nicht nannte (Comment-updates-Bullet behauptete 'not done' - ist als karr #80 / 9715189 erledigt; Kanban-Bullet fuehrte das geschlossene #68 als offen). Kein Amendment-Vermerk, Klasse karr #84: es wird nichts umbenannt und keine Cross-Referenz entwertet; der eingefuegte ADR-0013-Verweis IST die Bruecke. Korrektur an meiner Vorgabe: die Zeilenspanne des Bloecks ist 180-187 / 406-413, nicht 179-192 - Zeile 188 ist inference_geo und gehoert auf die dialekt-bewusste Seite. Meine Commit-Message zu 2bf48cc nannte 181 als Start, der Block oeffnet aber bei 180 mit dem max_tokens-Guard. Vom Orchestrator nachgemessen und bestaetigt.
