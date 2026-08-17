@@ -50,11 +50,50 @@ sub api_key_env {
     my $env = $class->api_key_env;
 
 Class method returning the name of the environment variable this engine
-reads its API key from (C<LANGERTHA_*_API_KEY>). Derived from the class
-name by default; engines that share a vendor key (e.g.
-L<Langertha::Engine::AKIOpenAI> reads C<LANGERTHA_AKI_API_KEY>) or need
-no credentials at all (e.g. L<Langertha::Engine::Ollama>) override it.
-Returns C<undef> for engines that do not require an API key.
+reads its API key from (C<LANGERTHA_*_API_KEY>), or C<undef> if the engine
+reads none at all. Derived from the class name by default; engines that
+share a vendor key override it (e.g. L<Langertha::Engine::AKIOpenAI> reads
+C<LANGERTHA_AKI_API_KEY>).
+
+The name alone does not say whether the key is mandatory - pair it with
+L</api_key_required>.
+
+=cut
+
+sub api_key_required {
+  my ( $class ) = @_;
+  return defined $class->api_key_env ? 1 : 0;
+}
+
+=method api_key_required
+
+    my $needs_key = $class->api_key_required;
+
+Class method returning true if the engine is unusable without credentials.
+Together with L</api_key_env> it covers the three states an engine can be
+in:
+
+=over
+
+=item * B<required> - C<api_key_env> names a variable and C<api_key_required>
+is true. Cloud providers; building the engine without the key croaks.
+
+=item * B<optional> - C<api_key_env> names a variable and C<api_key_required>
+is false. Local-first engines that also serve an authenticated deployment
+(L<Langertha::Engine::Ollama> reaching Ollama Cloud,
+L<Langertha::Engine::LMStudio> reaching a secured LM Studio): the variable
+unlocks that deployment, the engine works without it.
+
+=item * B<none> - C<api_key_env> is C<undef> and C<api_key_required> is
+false. The engine reads no environment variable at all
+(L<Langertha::Engine::vLLM>, L<Langertha::Engine::SGLang>,
+L<Langertha::Engine::LlamaCpp>, L<Langertha::Engine::Whisper>); pass
+C<api_key> explicitly when the server was started with one.
+
+=back
+
+Derived from L</api_key_env> by default, so only engines with an optional
+key override it.
 
 =cut
 

@@ -828,9 +828,11 @@ ok(Langertha::Engine::LlamaCpp->does('Langertha::Role::Tools'), 'LlamaCpp does T
 }
 
 # ======================================================================
-# Part 6b: api_key_env — class method exposing the API-key env var name
-# (karr #44). Derived from the class name by default; vendor-key-sharing
-# protocol variants and keyless local engines override it.
+# Part 6b: api_key_env / api_key_required — class methods describing the
+# credentials an engine can be configured with (karr #44, #93). Three
+# states: required (name + true), optional (name + false), none
+# (undef + false). The name is derived from the class name by default;
+# vendor-key-sharing protocol variants override it.
 # ======================================================================
 
 use Langertha::Engine::Hetzner;
@@ -847,6 +849,7 @@ for my $case (
 ) {
   my ( $class, $env ) = @$case;
   is($class->api_key_env, $env, "$class api_key_env derives $env");
+  ok($class->api_key_required, "$class api_key_required (cloud provider)");
 }
 
 # Protocol variants share their vendor's key (derivation would be wrong)
@@ -861,19 +864,47 @@ is(Langertha::Engine::MoonshotAnthropic->api_key_env, 'LANGERTHA_MOONSHOT_API_KE
 is(Langertha::Engine::OpenAIResponses->api_key_env, 'LANGERTHA_OPENAI_API_KEY',
   'OpenAIResponses api_key_env shares OpenAI key');
 
-# Keyless engines: no credentials needed -> undef
+is(Langertha::Engine::OpenAIResponses->api_key_required, 1,
+  'OpenAIResponses api_key_required (shared vendor key is still mandatory)');
+
+# Optional key (karr #93): these engines DO read an env var and still work
+# without it, so they advertise the name and answer false to required. A
+# consumer scanning the environment has to be able to discover that
+# LANGERTHA_OLLAMA_API_KEY unlocks Ollama Cloud and LANGERTHA_LMSTUDIO_API_KEY
+# a secured LM Studio - answering undef here hid exactly that.
+my @optional_key = (
+  [ 'Langertha::Engine::Ollama',            'LANGERTHA_OLLAMA_API_KEY' ],
+  [ 'Langertha::Engine::OllamaOpenAI',      'LANGERTHA_OLLAMA_API_KEY' ],
+  [ 'Langertha::Engine::LMStudio',          'LANGERTHA_LMSTUDIO_API_KEY' ],
+  [ 'Langertha::Engine::LMStudioOpenAI',    'LANGERTHA_LMSTUDIO_API_KEY' ],
+  [ 'Langertha::Engine::LMStudioAnthropic', 'LANGERTHA_LMSTUDIO_API_KEY' ],
+);
+for my $case (@optional_key) {
+  my ( $class, $env ) = @$case;
+  is($class->api_key_env, $env, "$class api_key_env advertises $env");
+  is($class->api_key_required, 0, "$class api_key_required is false (optional)");
+}
+
+# The advertised name must be the name the engine actually reads, otherwise
+# the advertisement is decoration: set it and the built api_key must carry it.
+for my $case (@optional_key) {
+  my ( $class, $env ) = @$case;
+  local $ENV{$env} = 'pinned-'.lc($env);
+  my $engine = $class->new( url => 'http://test.invalid:1234' );
+  is($engine->api_key, 'pinned-'.lc($env),
+    "$class reads its advertised $env");
+}
+
+# No credentials at all: these read no env var, so undef stays the honest
+# answer (an explicit api_key => ... still works for a server started with one)
 for my $class (qw(
-  Langertha::Engine::Ollama
-  Langertha::Engine::OllamaOpenAI
   Langertha::Engine::vLLM
   Langertha::Engine::SGLang
   Langertha::Engine::LlamaCpp
-  Langertha::Engine::LMStudio
-  Langertha::Engine::LMStudioAnthropic
-  Langertha::Engine::LMStudioOpenAI
   Langertha::Engine::Whisper
 )) {
-  is($class->api_key_env, undef, "$class api_key_env is undef (no key needed)");
+  is($class->api_key_env, undef, "$class api_key_env is undef (reads no env var)");
+  is($class->api_key_required, 0, "$class api_key_required is false");
 }
 
 # ======================================================================

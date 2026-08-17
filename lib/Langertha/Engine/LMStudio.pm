@@ -94,7 +94,9 @@ sub update_request {
 sub default_model { 'default' }
 sub default_response_size { 1024 }
 
-sub api_key_env { undef }
+# api_key_env derives LANGERTHA_LMSTUDIO_API_KEY, the variable _build_api_key
+# reads: a secured LM Studio needs it, the default local server does not.
+sub api_key_required { 0 }
 
 sub openapi_file { yaml => dist_file('Langertha','lmstudio.yaml') };
 

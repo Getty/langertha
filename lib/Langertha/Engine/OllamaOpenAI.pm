@@ -66,8 +66,10 @@ has '+url' => (
 sub default_model { croak "".(ref $_[0])." requires model to be set" }
 sub default_embedding_model { 'mxbai-embed-large' }
 
-# Credentials are optional here too — see Langertha::Engine::Ollama.
-sub api_key_env { undef }
+# Shares the Ollama key (derivation would name LANGERTHA_OLLAMAOPENAI_API_KEY)
+# and, like the native engine, only needs it for Ollama Cloud.
+sub api_key_env { 'LANGERTHA_OLLAMA_API_KEY' }
+sub api_key_required { 0 }
 
 sub _build_api_key {
   return $ENV{LANGERTHA_OLLAMA_API_KEY};

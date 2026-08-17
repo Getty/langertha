@@ -85,7 +85,10 @@ defaults to C<lmstudio>.
 sub default_model { 'default' }
 sub default_embedding_model { 'default' }
 
-sub api_key_env { undef }
+# Shares the LM Studio key with the native engine (derivation would name the
+# protocol variant); optional, the local server accepts the 'lmstudio' dummy.
+sub api_key_env { 'LANGERTHA_LMSTUDIO_API_KEY' }
+sub api_key_required { 0 }
 
 =attr model
 

@@ -135,10 +135,9 @@ The optional C<tools> list is passed to C<openai()>.
 sub default_model { 'llama3.3' }
 sub default_embedding_model { 'mxbai-embed-large' }
 
-# Credentials are optional, so this stays undef like the other
-# local-first engines (LMStudio, vLLM, LlamaCpp): a consumer scanning the
-# environment must not conclude that Ollama needs a key to be usable.
-sub api_key_env { undef }
+# api_key_env derives LANGERTHA_OLLAMA_API_KEY, the variable _build_api_key
+# reads: it unlocks Ollama Cloud, a local server needs no credentials.
+sub api_key_required { 0 }
 
 has api_key => (
   is => 'ro',

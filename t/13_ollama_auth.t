@@ -165,12 +165,16 @@ my $cloud_url = 'https://ollama.com';
 }
 
 # ======================================================================
-# Neither engine advertises a required key: both stay env-optional
+# Both engines advertise the key they read, neither requires it (karr #93)
 # ======================================================================
 
-is(Langertha::Engine::Ollama->api_key_env, undef,
-  'Ollama api_key_env stays undef (credentials optional)');
-is(Langertha::Engine::OllamaOpenAI->api_key_env, undef,
-  'OllamaOpenAI api_key_env stays undef (credentials optional)');
+is(Langertha::Engine::Ollama->api_key_env, 'LANGERTHA_OLLAMA_API_KEY',
+  'Ollama advertises the env var it reads');
+is(Langertha::Engine::Ollama->api_key_required, 0,
+  'Ollama api_key_required is false (local server needs none)');
+is(Langertha::Engine::OllamaOpenAI->api_key_env, 'LANGERTHA_OLLAMA_API_KEY',
+  'OllamaOpenAI advertises the shared Ollama env var');
+is(Langertha::Engine::OllamaOpenAI->api_key_required, 0,
+  'OllamaOpenAI api_key_required is false (local server needs none)');
 
 done_testing;
