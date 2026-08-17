@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-08-17T05:12:22Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T05:12:22Z
+created: 2026-08-17T04:09:35Z
+id: 109
+priority: low
+started: 2026-08-17T05:00:09Z
+status: done
+tags:
+- docs
+- pod
+- drift
+title: Stale model names in the lib/Langertha.pm engine catalogue
+updated: 2026-08-17T05:12:22Z
+---
+
+Found while fixing the catalogue completeness in karr #86.
+
+#86 fixed WHICH engines are listed. It deliberately did not touch the descriptions of pre-existing entries (surgical scope), but several name models that are years out of date. Most visible:
+
+  =item * L<Langertha::Engine::OpenAI> - GPT-4, GPT-4o, GPT-3.5, o1, embeddings
+
+CLAUDE.md has the OpenAI engine on the gpt-5.6 family. Other entries carry model names worth a pass too (Anthropic "Sonnet, Opus, Haiku" is fine because it names tiers, not versions; MiniMax names "M2.7, M2.5, M2.1" while CLAUDE.md says M3).
+
+Note this class of drift is NOT catchable by t/79_pod_catalogue.t — that guard checks module coverage, not prose accuracy. Model names in POD will keep rotting; the cheapest durable fix is to describe capability/tier rather than version ("frontier GPT models, embeddings, Whisper transcription") so the text stops being a dated claim.
+Rewrote two version-named catalogue entries (OpenAI, MiniMax) to capability/tier descriptions; left all other engine entries (incl. Anthropic Sonnet/Opus/Haiku tier-names exception and Gemini Flash/Pro tier-names). All tests pass (3048 pass, live tests skipped without keys); perlcritic clean on lib/Langertha.pm. Files touched: lib/Langertha.pm only.
