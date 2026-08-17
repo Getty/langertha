@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-08-17T03:45:10Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:45:10Z
+created: 2026-08-17T03:02:49Z
+id: 96
+priority: low
+started: 2026-08-17T03:31:34Z
+status: done
+tags:
+- raider
+- robustness
+title: Raider Session-History-Rendering nimmt {role} und {content} als Skalare an
+updated: 2026-08-17T03:45:10Z
+---
+
+Gefunden vom #85-Worker, vom Orchestrator verifiziert (2026-08-17).
+
+lib/Langertha/Raider.pm:900 und :1173 rendern die Session-History identisch:
+
+    my $text = join("\n\n", map { "[$_->{role}] $_->{content}" } @hist);
+
+Beide Annahmen halten nicht ueber alle Wire-Formate:
+- {role} fehlt bei Responses-Envelope-Items ganz (die sind ueber {type} diskriminiert, z.B. function_call / function_call_output / reasoning) -> uninitialized warning.
+- {content} ist bei Anthropic schon heute ein Arrayref von Bloecken -> rendert als ARRAY(0x...).
+
+Vorbestehende Nachlaessigkeitsklasse, nicht responses-spezifisch und unabhaengig von karr #85 (dort wurde nur der format_tool_results-Vertrag korrigiert; die Raider-Aufrufer selbst waren korrekt und blieben unberuehrt).
+
+Zu tun: eine gemeinsame Render-Hilfe, die pro Element entscheidet - Rolle falls vorhanden, sonst {type}; Content flach falls String, sonst die Textbloecke extrahieren (Langertha::ToolResult kennt diese Flachziehung bereits pro Format). Test mit gemischter History ueber mindestens anthropic + responses.
+Fix implementiert in lib/Langertha/Raider.pm: gemeinsame Render-Hilfe (_render_session_history / _render_history_entry / _render_history_payload / _render_history_payload_value / _render_history_block) ersetzt die duplizierte Zeile an :900 und :1173. Label = {role} // {type} // "message"; Content flach falls String, sonst Textbloecke nach der ToolResult-Regel (->{text}) flachgezogen, Nicht-Text-Bloecke (tool_use / function_call / tool_result / function_call_output / gemini functionCall+functionResponse / openai tool_calls) werden benannt statt verschluckt. Die query/search-Filter matchen jetzt auch gegen die gerenderte Payload statt gegen {content}. Tests: 4 neue Subtests in t/86_raider_self_tools.t (gemischte History ueber anthropic/responses/openai/gemini, Warnings via $SIG{__WARN__} scharf, beide Leseseiten liefern identischen Text). Suite gruen (prove -lr t/), perlcritic sauber. Nicht committet. Folge-Drift als #99 aufgemacht.
+Umgesetzt als dace29e. Ein gemeinsamer Renderer statt zweier duplizierter Zeilen; der Test vergleicht beide Ausgabepfade auf Identitaet und faellt, wenn die Duplikation zurueckkommt. Bewusste Abweichung von ToolResult: dessen Textregel uebernommen (->{text}), aber nicht dessen stilles Verwerfen von Nicht-Text-Bloecken - ein History-Dump darf nichts verschlucken, also werden Tool-Calls und -Results benannt. Mitgezogen: query-Filter und Embedding-Suche matchten gegen ARRAY(0x...) statt gegen den Inhalt. Rot zuerst verifiziert: 9 uninitialized warnings pro Aufrufstelle gegen ungefixten Code.
