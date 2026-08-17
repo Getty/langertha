@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-08-15T08:18:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-15T08:18:23Z
+created: 2026-08-15T05:47:47Z
+id: 78
+priority: low
+started: 2026-08-15T05:54:44Z
+status: done
+tags:
+- docs
+- claudemd
+title: CLAUDE.md erwähnt VLLMHook und Hetzner nicht in der Architecture-Übersicht
+updated: 2026-08-17T00:25:52Z
+---
+
+CLAUDE.md Engine-Hierarchie-Baum und "Engine hierarchy (lib/Langertha/Engine/)" listet vLLM, aber nicht Langertha::Engine::VLLMHook (Sub-Engine von vLLM für IBM vLLM-Hook Plugin) und nicht Langertha::Engine::Hetzner (Cloud/DE OpenAI-kompatibel). Hetzner ist seit einiger Zeit im Repo, VLLMHook ebenfalls. Skills-Map sollte langertha-llm-advisor-Pfad erwähnen wenn vLLM-Hook-Themen kommen.
+Done: CLAUDE.md updated — engine hierarchy tree now lists Hetzner (cloud, DE) and VLLMHook (sub-engine of vLLM). Roles section adds Runtime::MetricsPoll with ADR 0012 reference. ADR list updated to 0011/0012.
+Closed: CLAUDE.md engine-hierarchy tree now mentions Hetzner under cloud providers, VLLMHook as sub-engine of vLLM; Roles section lists Langertha::Role::Runtime::MetricsPoll with ADR 0012; ADR list extended to 0011 and 0012.
+Review OK: CLAUDE.md:126 Hetzner unter Cloud-Providern, :130 VLLMHook als Sub-Engine von vLLM; Roles-Abschnitt nennt Runtime::MetricsPoll mit ADR 0012.
+ADR-UMNUMMERIERUNG (Rebase auf 3dcca86, 2026-08-17): Die in diesem Ticket genannten ADR-Nummern sind ueberholt. Branch und neue Basis hatten unabhaengig voneinander 0012/0013/0014 vergeben. Neue Zuordnung: Runtime::MetricsPoll = ADR 0014 (docs/adr/0014-runtime-metrics-poll-role.md, vorher 0012); Role-Composition/-excludes + Direction-Pair = ADR 0015 (docs/adr/0015-role-composition-patterns.md, vorher 0014). Unveraendert: 0012 = self-hosted runtime knobs, 0013 = wire envelope as composed role. Alle Verweise in CLAUDE.md, CONTEXT.md und den ADRs sind nachgezogen.
