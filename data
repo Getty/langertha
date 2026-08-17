@@ -1,0 +1,33 @@
+---
+claimed_at: 2026-08-17T01:01:14Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T01:01:14Z
+created: 2026-08-17T00:18:00Z
+id: 82
+priority: medium
+started: 2026-08-17T00:51:45Z
+status: done
+tags:
+- docs
+- context
+- naming
+title: 'CONTEXT.md: ''RuntimeKnobs'' kollidiert als Audit-Nickname mit der realen
+  Role::RuntimeKnobs'
+updated: 2026-08-17T01:01:14Z
+---
+
+Beim Rebase von main auf 3dcca86 (2026-08-17) sind zwei CONTEXT.md-Abschnitte nebeneinander gelandet, die denselben Namen unterschiedlich belegen:
+
+1. Abschnitt "knob_wire_format / Langertha::Runtime::Knobs" (aus der Basis, ADR 0012): Langertha::Role::RuntimeKnobs ist eine REALE Rolle - Engine::vLLM komponiert sie und setzt _build_knob_wire_format.
+
+2. Abschnitt "Request-side knobs (RuntimeKnobs split - sibling seam)" (aus dem Branch, ADR 0015) endet mit: "_Avoid_: RuntimeKnobs used as a literal type - it is the audit nickname for the inline aggregation pattern, not a role name."
+
+Aussage 2 ist seit der Basis 3dcca86 sachlich falsch. Beide Absaetze stehen unveraendert im Dokument, weil die Konfliktaufloesung den Widerspruch nicht mitentscheiden sollte.
+
+Zu klaeren: den Audit-Nickname fuer das Inline-Aggregations-Pattern umbenennen (er beschreibt die OpenAICompatible-aggregiert-vs-AnthropicCompatible-inlined-Asymmetrie, nicht die Prefix-Cache-Knobs) und den _Avoid_-Satz entsprechend neu fassen. ADR 0015 traegt denselben Nickname im Titel-Kontext und muesste mitgezogen werden.
+
+Reine Doku-Arbeit, kein Verhalten.
+Audit-Nickname umbenannt: 'RuntimeKnobs split' -> generation-parameter block (Begriff), Abschnitt 'Request-side generation parameters (the per-dialect block)'. Das Wort 'knob' bleibt exklusiv beim realen Seam (Role::RuntimeKnobs / knob_wire_format / Runtime::Knobs / knobs_kwargs_for). _Avoid_ neu gefasst: warnt jetzt vor der Verwechslung mit der realen Rolle. Zusaetzlich korrigiert: 'es gibt keinen shared knobs_kwargs_for-Helper' war ebenfalls falsch - die Methode existiert real auf Role::RuntimeKnobs und wird von Role::OpenAICompatible aufgerufen; ADR-0015-Zukunftsvorschlag daher auf Role::GenerationParams / generation_kwargs_for umbenannt. Dateien: CONTEXT.md, docs/adr/0015-role-composition-patterns.md, CLAUDE.md (ADR-Index). Kein lib/-Code, nicht committet.
+Doku-Aenderungen fertig im Working Tree (CONTEXT.md, docs/adr/0015-role-composition-patterns.md, CLAUDE.md), NICHT committet - Orchestrator committet. Folgeticket #84 fuer den vorbestehenden ADR-0015-Widerspruch angelegt.
+Umgesetzt als 783a5b3. Gewaehlter Name: 'generation-parameter block' - 'generation parameter' war bereits in-repo Terminologie (Role/Chat.pm POD, mehrere Engine-PODs), nur 'knob' musste weichen: das gehoert vollstaendig der realen Seam (Role::RuntimeKnobs, knob_wire_format, Runtime::Knobs, knobs_kwargs_for, prefix_caching). Die Kollision war nicht hypothetisch - knobs_kwargs_for wird als eine Zeile INNERHALB des Blocks aufgerufen, den der Nickname benannte. Review durch Orchestrator: beide Zusatzkorrekturen im Code gegengeprueft und bestaetigt (knobs_kwargs_for existiert in Role/RuntimeKnobs.pm:147, aufgerufen in OpenAICompatible.pm:335+460; beide Dialekt-Rollen bauen den Block inline im identischen ternary-Muster, OpenAICompatible.pm:320-336 vs AnthropicCompatible.pm:179-192). Folgeticket #84.
