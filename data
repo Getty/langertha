@@ -1,0 +1,18 @@
+---
+claimed_at: 2026-08-17T05:56:28Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T05:56:28Z
+created: 2026-08-17T05:43:18Z
+id: 111
+priority: low
+started: 2026-08-17T05:56:17Z
+status: done
+tags:
+- adr
+- refactor
+title: 'ADR-Update: generation-parameter helper lives on Engine::Remote (karr #98)'
+updated: 2026-08-17T05:56:28Z
+---
+
+Bei der Umsetzung von #98 wurde die offene Designfrage (Helper auf Remote vs. neue Role) zugunsten Helper auf Remote entschieden. ADR 0015 Decision 3 listet diese Frage noch als offen; ADR 0016 Decision 1 / Decision 2 sind die Begruendung: Wire-Envelopes extrahieren erst beim zweiten Konsumenten von einem anderen Parent (hier nicht gegeben), Capability-Rollen von Tag eins (hier nicht zutreffend, da der Helper keine eigenen Attribute hat). Bitte ADR 0015 Decision 3 so aktualisieren, dass die offene Frage als entschieden gilt und die Helper-Form (auf Remote, mit Name generation_kwargs_for) kanonisch ist.
