@@ -177,7 +177,13 @@ has '+url' => (
 sub default_model { 'default' }
 sub default_embedding_model { 'default' }
 
-sub api_key_env { undef }
+# LANGERTHA_VLLM_API_KEY is derived from the class name; a local server needs
+# no key, a --api-key-protected `vllm serve` does.
+sub api_key_required { 0 }
+
+sub _build_api_key {
+  return $ENV{LANGERTHA_VLLM_API_KEY};
+}
 
 sub _build_supported_operations {[qw(
   createChatCompletion

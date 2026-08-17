@@ -878,6 +878,9 @@ my @optional_key = (
   [ 'Langertha::Engine::LMStudio',          'LANGERTHA_LMSTUDIO_API_KEY' ],
   [ 'Langertha::Engine::LMStudioOpenAI',    'LANGERTHA_LMSTUDIO_API_KEY' ],
   [ 'Langertha::Engine::LMStudioAnthropic', 'LANGERTHA_LMSTUDIO_API_KEY' ],
+  [ 'Langertha::Engine::vLLM',              'LANGERTHA_VLLM_API_KEY' ],
+  [ 'Langertha::Engine::SGLang',            'LANGERTHA_SGLANG_API_KEY' ],
+  [ 'Langertha::Engine::LlamaCpp',          'LANGERTHA_LLAMACPP_API_KEY' ],
 );
 for my $case (@optional_key) {
   my ( $class, $env ) = @$case;
@@ -898,9 +901,6 @@ for my $case (@optional_key) {
 # No credentials at all: these read no env var, so undef stays the honest
 # answer (an explicit api_key => ... still works for a server started with one)
 for my $class (qw(
-  Langertha::Engine::vLLM
-  Langertha::Engine::SGLang
-  Langertha::Engine::LlamaCpp
   Langertha::Engine::Whisper
 )) {
   is($class->api_key_env, undef, "$class api_key_env is undef (reads no env var)");

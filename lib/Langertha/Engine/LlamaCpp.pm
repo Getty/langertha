@@ -50,7 +50,13 @@ B<THIS API IS WORK IN PROGRESS>
 sub default_model { 'default' }
 sub default_embedding_model { 'default' }
 
-sub api_key_env { undef }
+# LANGERTHA_LLAMACPP_API_KEY is derived from the class name; a local server
+# needs no key, a --api-key-protected `llama-server` does.
+sub api_key_required { 0 }
+
+sub _build_api_key {
+  return $ENV{LANGERTHA_LLAMACPP_API_KEY};
+}
 
 sub _build_supported_operations {[qw(
   createChatCompletion
