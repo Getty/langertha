@@ -1,0 +1,70 @@
+---
+claimed_at: 2026-08-17T06:28:45Z
+claimed_by: claude
+class: standard
+created: 2026-08-17T03:46:21Z
+id: 102
+priority: low
+started: 2026-08-17T06:21:10Z
+status: review
+tags:
+- engines
+- aki
+- tools
+title: 'AKIOpenAI hermes tool format may be stale: AKI docs now document OpenAI-standard
+  tool calling'
+updated: 2026-08-17T06:28:45Z
+---
+
+Found while implementing #89 (AKIAnthropic), from public docs only — NOT live verified.
+
+Engine::AKIOpenAI composes Role::HermesTools with the comment:
+
+  # AKI's /openai/v1 endpoint does not support native tool parameters
+
+AKI.IO's current public docs contradict that. https://aki.io/docs/compatibility/for-ai-coding-agents/
+section "B. Tool Calling (Function Calling)" states:
+
+  "AKI.IO supports OpenAI-standard tool calling. Pass your tools in the tools array.
+   Use tool_choice: auto to let the model decide. When executing a tool, append the tool
+   result as a message with role: tool and the matching tool_call_id."
+
+The same page carries a per-model support table (Tool Calling / JSON Mode): gpt-oss-120b,
+gemma4-chat-26b, kimi-k2.7-code-1100b, minimax-m2.5-230b, mistral4-119b, qwen3.6-chat-35b
+= supported; apertus-chat-70b, llama3-chat-8b, llama3-chat-70b = "Basic Support".
+
+Either the provider gained native tool support since the hermes decision, or the docs
+overstate it. Needs ONE live probe with a real AKI key (tools array + tool_choice auto against
+/openai/v1/chat/completions) before changing tool_wire_format — the hermes fallback works
+either way, so this is not urgent.
+
+If native tools are real, the same question applies to Engine::AKIAnthropic (#89), which
+currently inherits the anthropic tool wire format untested (AKI does not document tools on
+/anthropic at all).
+
+---
+
+# langertha-llm-advisor report (2026-08-17)
+
+verdict: UNCERTAIN — leaning strongly STALE
+
+evidence:
+- AKI Agents Integration Guide documents OpenAI-standard tool calling on /openai/v1.
+- BUT canonical OpenAI compat page does NOT list tools/tool_choice — internal doc drift.
+- AKIOpenAI default_model (llama3-chat-8b) is "Basic Support" in AKI's per-model table, not "Supported".
+- No live probe possible without LANGERTHA_AKI_API_KEY.
+
+proposed_fix (two paths):
+- Path A: live probe against a Supported model first; flip override if response carries tool_calls.
+- Path B: trust docs, flip the override with one-line restore as fallback.
+- Engine::AKI native (/api/call/{model}) is a separate question — docs say nothing; leave alone.
+
+drift_to_flag after flip:
+- lib/Langertha/Role/Tools.pm:115-118 — drop AKIOpenAI from inline comment.
+- README.md:382, :449 — drop AKIOpenAI from prose/table.
+- lib/Langertha/Engine/AKIOpenAI.pm:9 — drop HermesTools composition; :11 delete _build_tool_wire_format; :48 update DESCRIPTION POD.
+- t/80_live_tool_calling.t — re-run with LANGERTHA_AKI_API_KEY against a Supported model.
+
+sources: https://aki.io/docs/compatibility/for-ai-coding-agents/ (Agents Integration Guide documents OpenAI-standard tool calling) and https://aki.io/docs/compatibility/openai-api-compatibility/ (canonical compat — does NOT list tools).
+
+decision needed: Path A / Path B / wontfix? Blocked on maintainer — live calls require explicit approval per memory rule, default-model-is-Basic-Support + internal doc drift means Path B carries non-trivial risk.
