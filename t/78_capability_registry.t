@@ -34,7 +34,7 @@ my %NOT_A_CAPABILITY = (
   'Langertha::Role::ThinkTag'            => 'client-side response post-processing (composed by Role::Chat), never a wire field',
   'Langertha::Role::PluginHost'          => 'host-side plugin pipeline, also composed by non-engines (Chat, Raider, Embedder, ImageGen)',
   'Langertha::Role::Runnable'            => 'interface marker (requires run_f), composed by Langertha::Raid, not by engines',
-  'Langertha::Role::Langfuse'            => 'engine-level observability, superseded by Langertha::Plugin::Langfuse',
+  'Langertha::Role::Langfuse'            => 'engine-level observability composed by Role::Chat — constant-true for chat engines, so it carries no capability information',
 );
 
 # Read the registry out of the module source: %ROLE_TO_CAPS is lexical by

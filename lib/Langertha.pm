@@ -303,7 +303,7 @@ namespace) rather than for direct use.
 
 =item * L<Langertha::Engine::Anthropic> - Claude models (Sonnet, Opus, Haiku)
 
-=item * L<Langertha::Engine::OpenAI> - GPT-4, GPT-4o, GPT-3.5, o1, embeddings
+=item * L<Langertha::Engine::OpenAI> - frontier GPT models, embeddings, Whisper transcription
 
 =item * L<Langertha::Engine::OpenAIResponses> - OpenAI Responses API for reasoning models
 
@@ -315,7 +315,7 @@ namespace) rather than for direct use.
 
 =item * L<Langertha::Engine::DeepSeek> - DeepSeek models
 
-=item * L<Langertha::Engine::MiniMax> - MiniMax AI models (M2.7, M2.5, M2.1) via OpenAI-compatible endpoint
+=item * L<Langertha::Engine::MiniMax> - MiniMax large language models via OpenAI-compatible endpoint (coding, reasoning, agentic tool use)
 
 =item * L<Langertha::Engine::MiniMaxAnthropic> - MiniMax via legacy Anthropic-compatible endpoint
 
