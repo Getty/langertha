@@ -20,6 +20,9 @@ with 'Langertha::Role::Models',
 
 # The Anthropic family has the cache_control enable breakpoint but no OpenAI-style
 # routing key. Clear the key flag so only the enable flag is advertised (ADR 0002).
+# Partner direction: Langertha::Engine::OpenAIBase runs the symmetric
+# correction and deletes prompt_cache, keeping prompt_cache_key. The pair is
+# canon in L<ADR 0015|docs/adr/0015-role-composition-patterns.md>.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);

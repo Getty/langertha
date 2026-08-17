@@ -28,6 +28,9 @@ sub _build_openapi_operations {
 # The OpenAI family caches automatically — there is no request-side enable
 # breakpoint, only the prompt_cache_key routing hint. Clear the Anthropic-style
 # enable flag here so the whole family advertises only the key (ADR 0002).
+# Partner direction: Langertha::Engine::AnthropicBase runs the symmetric
+# correction and deletes prompt_cache_key, keeping prompt_cache. The pair is
+# canon in L<ADR 0015|docs/adr/0015-role-composition-patterns.md>.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
