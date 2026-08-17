@@ -15,22 +15,27 @@ scattered code comments.
 
 ### Finding 1 — `-excludes` is a non-obvious role-composition workaround
 
-When `Langertha::Engine::AnthropicBase` composes its roles, it uses the
-`with map { 'Langertha::Role::'.$_ } qw(...)` pattern (AnthropicBase.pm:14-25),
-not the simpler `with 'Langertha::Role::X'`. The reason isn't taste — it's
-**collision resolution**. Several `_build_*_wire_format` and `content_format`
-methods live on more than one role, and an unqualified `with` would either
-fail at class-load time or pick arbitrarily. The base compiles the role list
-explicitly via a `map` and then subtracts the conflicting roles to keep the
-wiring unambiguous.
+When `Langertha::Engine::AnthropicBase` composes its roles, it uses the plain
+`with` list with per-role `-excludes` clauses (`AnthropicBase.pm:9-19`), not
+the simpler `with 'Langertha::Role::X'`. The reason isn't taste — it's
+**collision resolution**. Each role ships a default wire-format builder that
+disagrees with the dialect's own wire family (`_build_tool_wire_format` →
+`'openai'` in `Role::Tools.pm:115`, `_build_cache_wire_format` → `'openai'`
+in `Role::PromptCache.pm:59`, `_build_reasoning_wire_format` → `'openai'` in
+`Role::ReasoningEffort.pm:57`, `content_format` → `'openai'` in
+`Role::Chat.pm:31`); without `-excludes`, the composer would either resolve
+the conflict non-deterministically or fail to load the class — the exclusion
+tells Moose to skip the role's builder so the dialect role composed
+alongside (`Role::AnthropicCompatible`) can supply the override.
 
-Only two lines in the codebase document why (`AnthropicBase.pm:14-25`), and the
-pattern recurs in `Engine::OpenAIBase` (which uses the same `map` shape for
-the same reason — `OpenAICompatible`, `OpenAPI`, `Models`, etc. all want to
-override `_build_*_wire_format`, and the explicit list sets the order). A new
-reviewer reading the bare `with map { ... } qw(...)` sees an unusual idiom and
-has no quick pointer to "this is how we resolve dialect-base composition
-collisions".
+The companion shape — the `with map { 'Langertha::Role::'.$_ } qw(...)` list
+— is the canonical form for dialect bases whose role inventory *agrees*
+with the role defaults and so needs no exclusions. The live exemplar is
+`Engine::OpenAIBase.pm:10-22`: the OpenAI family inherits the role builders
+verbatim, and the `map` form simply makes the *intentional* OpenAI-family
+role set visible. A new reviewer reading either idiom sees an unusual Perl
+shape and has no quick pointer to "this is how we resolve dialect-base role
+composition".
 
 ### Finding 2 — Per-family `engine_capabilities` correction is symmetric but undocumented side-by-side
 
@@ -78,31 +83,41 @@ the generation-parameter block.
 
 Concretely: when a dialect base class needs to compose a *role-inventory-style*
 set of roles (the always-on family — models/chat/streaming/etc.) and *some of
-those roles collide* on method names (`_build_tool_wire_format`,
-`_build_cache_wire_format`, `content_format`, `stream_format`, …), the
-canonical shape is:
+those roles' defaults collide* with the dialect's wire family, the canonical
+shape is the plain `with` list with per-role `-excludes` clauses. The live
+exemplar is `Engine::AnthropicBase.pm:9-19`:
 
 ```perl
-extends 'Langertha::Engine::Remote';
-
-with map { 'Langertha::Role::'.$_ } qw(
-  Models Chat Temperature ReasoningEffort PromptCache ResponseSize
-  SystemPrompt ResponseFormat Streaming Tools
-);
+with 'Langertha::Role::Models',
+     'Langertha::Role::Chat' => { -excludes => ['content_format'] },
+     'Langertha::Role::Temperature',
+     'Langertha::Role::ReasoningEffort' => { -excludes => ['_build_reasoning_wire_format'] },
+     'Langertha::Role::PromptCache' => { -excludes => ['_build_cache_wire_format'] },
+     'Langertha::Role::ResponseSize',
+     'Langertha::Role::SystemPrompt',
+     'Langertha::Role::ResponseFormat',
+     'Langertha::Role::Streaming',
+     'Langertha::Role::Tools' => { -excludes => ['_build_tool_wire_format'] },
+     'Langertha::Role::AnthropicCompatible';
 ```
 
-and on dialect-specific subclasses that override the conflicting defaults, an
-explicit `-` exclusion in the role list (e.g. `-Capabilities` if `Capabilities`
-conflicts with a dialect override). The `map` form is canonical B<not> because
-it's terse but because it makes the *intentional* list visible — every role
-listed is one the dialect base keeps, and anything not listed (because the
-subclass takes over) is deliberately absent. The pattern is the explicit
-answer to "why doesn't `AnthropicBase` just `with 'Role::Tools'`?" — it does,
-because Tools doesn't collide, but the `_build_*_wire_format` defaults come
-from the class (`AnthropicBase.pm:460`) so the list stays compact.
+Each `-excludes` clause names the builder whose role default would shadow the
+dialect role's override — `Role::AnthropicCompatible` supplies the
+`'anthropic'` wire for `_build_tool_wire_format`,
+`_build_cache_wire_format`, `_build_reasoning_wire_format`, and
+`content_format`, while the rest of the role (the tool-calling loop, the
+cache-control attribute, etc.) still composes in.
+
+The companion form — the `with map { 'Langertha::Role::'.$_ } qw(...)` list
+— is the canonical shape for dialect bases whose role inventory *agrees*
+with the role defaults and so needs no exclusions. The live exemplar is
+`Engine::OpenAIBase.pm:10-22`. The `map` form is canonical not because it's
+terse but because it makes the *intentional* list visible — every role listed
+is one the dialect base keeps, and the order matters when several roles
+contribute to the same wire request.
 
 This is **not** a new decision — it's the pattern in
-`OpenAIBase.pm:10-22` and `AnthropicBase.pm:14-25` already. The ADR captures
+`OpenAIBase.pm:10-22` and `AnthropicBase.pm:9-19` already. The ADR captures
 the pattern so the next contributor doesn't re-derive it.
 
 ### 2. Per-family `engine_capabilities` correction is a documented direction-pair
