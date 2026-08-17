@@ -126,8 +126,8 @@ form so the symmetry is discoverable from one place.
 ### 3. The generation-parameter block asymmetry is a deliberate dialect split (and a future refactor target)
 
 The boilerplate generation-parameter emission in `Role::OpenAICompatible` (`has_temperature`,
-`reasoning_kwargs`, `prompt_cache_kwargs`, `stream`, …) is *not* duplicated
-into `Role::AnthropicCompatible` (or `AnthropicBase` once #64 lands)
+`reasoning_kwargs`, `prompt_cache_kwargs`, `stream`, …) is *duplicated* into
+`Role::AnthropicCompatible` rather than shared through a common helper,
 because **the dialect-aware fields (`response_format` translation to a synthetic
 tool, `tool_choice` ↔ `parallel_tool_use` folding, `inference_geo`,
 `anthropic-version`) all require the wire envelope in scope**. Extracting
