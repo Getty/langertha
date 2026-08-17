@@ -1,0 +1,39 @@
+---
+class: standard
+completed: 2026-08-17T05:03:01Z
+created: 2026-08-17T04:07:23Z
+id: 106
+priority: low
+started: 2026-08-17T05:03:01Z
+status: done
+tags:
+- engines
+- api
+- auth
+title: vLLM/SGLang/LlamaCpp read no env var for an --api-key-protected server
+updated: 2026-08-17T05:03:01Z
+---
+
+Follow-up from karr #93, which introduced the three-state credential contract
+(api_key_env names the variable actually read, api_key_required says whether it is
+mandatory).
+
+Ollama and the LM Studio family now sit in the "optional" state: they read
+LANGERTHA_OLLAMA_API_KEY / LANGERTHA_LMSTUDIO_API_KEY and work without it.
+
+vLLM, SGLang and LlamaCpp do NOT read any environment variable. They inherit
+Role::OpenAICompatible (api_key attribute, _build_api_key { undef }, Bearer header sent
+only when defined), so a user CAN authenticate, but only by passing api_key => ...
+explicitly in code. All three servers can be started with a token
+(`vllm serve --api-key ...`, `python -m sglang.launch_server --api-key ...`,
+`llama-server --api-key ...`), and then every client must send it.
+
+api_key_env { undef } is therefore truthful today, but the optional state is now
+expressible, so the ergonomic gap is worth closing: add _build_api_key reading
+LANGERTHA_VLLM_API_KEY / LANGERTHA_SGLANG_API_KEY / LANGERTHA_LLAMACPP_API_KEY and drop
+the api_key_env override (derivation yields exactly those names), leaving
+api_key_required { 0 }.
+
+This is a behaviour change (an exported variable would start being picked up), not a
+semantics fix, which is why #93 deliberately left it out. Whisper is a separate case:
+_build_api_key returns the dummy string "whisper" and no env var is plausible.
