@@ -240,6 +240,15 @@ sub roundtrip { return $json->decode( $json->encode( $_[0] ) ) }
 # The defect karr #50 fixes: Cpanel::JSON::XS used to fall back to the ""
 # overload (emitting the content string), JSON::XS and JSON::PP threw. Now all
 # three emit the same canonical hash.
+#
+# JSON::MaybeXS picks whichever backend is installed, so this has to cover all
+# of them — but JSON::XS is optional (JSON::MaybeXS prefers Cpanel::JSON::XS),
+# and neither a backend nobody installed nor a regressed one may abort the file
+# before done_testing. Missing backends are skipped and an encode that throws
+# is reported as a failed assertion. The comparison must never quietly shrink
+# to nothing either, so the backends really compared are named in every
+# assertion, the skipped ones are reported, and having fewer than two left to
+# compare is itself a failure rather than a silent pass.
 {
   my $response = Langertha::Response->new(
     content => 'hello',
@@ -247,17 +256,43 @@ sub roundtrip { return $json->decode( $json->encode( $_[0] ) ) }
     usage   => { prompt_tokens => 10, completion_tokens => 5, total_tokens => 15 },
   );
 
-  my %encoded;
+  my ( @available, @missing, %encoded );
   for my $mod (qw(Cpanel::JSON::XS JSON::XS JSON::PP)) {
     ( my $file = $mod ) =~ s{::}{/}g;
-    require "$file.pm";
+    unless ( eval { require "$file.pm"; 1 } ) {
+      push @missing, $mod;
+      next;
+    }
+    push @available, $mod;
     my $enc = $mod->new->convert_blessed(1)->canonical(1);
-    $encoded{$mod} = $enc->encode( { response => $response } );
+    $encoded{$mod} = eval { $enc->encode( { response => $response } ) };
+    ok( defined $encoded{$mod}, "$mod encodes a Response without throwing" )
+      or diag($@);
   }
-  is( $encoded{'Cpanel::JSON::XS'}, $encoded{'JSON::XS'}, 'Cpanel and JSON::XS encode identically' );
-  is( $encoded{'JSON::XS'}, $encoded{'JSON::PP'}, 'JSON::XS and JSON::PP encode identically' );
-  is( $json->decode( $encoded{'JSON::XS'} )->{response}{content}, 'hello',
-    'uniform shape carries content' );
+  note( 'JSON backends compared: ' . join( ', ', @available ) );
+  note( 'JSON backends not installed, skipped: ' . join( ', ', @missing ) ) if @missing;
+
+  ok( @available >= 2,
+    'at least two JSON backends to compare (' . join( ', ', @available ) . ')' );
+
+  # Identity is transitive, so comparing every backend against the first covers
+  # all pairs while still naming which two backends each assertion checked.
+  my ( $reference, @rest ) = @available;
+  for my $mod (@rest) {
+    is( $encoded{$mod}, $encoded{$reference}, "$reference and $mod encode identically" );
+  }
+  if ( defined $reference && defined $encoded{$reference} ) {
+    # The whole decoded hash, not a ->{content} lookup: the karr #50 symptom
+    # was the "" overload emitting the bare content string, and a lookup into
+    # that string would die instead of failing an assertion.
+    is( $json->decode( $encoded{$reference} )->{response},
+      {
+        content => 'hello',
+        model   => 'gpt-4o',
+        usage   => { input_tokens => 10, output_tokens => 5, total_tokens => 15 },
+      },
+      "uniform shape is the canonical hash ($reference)" );
+  }
 }
 
 # --- Stringification still works alongside TO_JSON ---
