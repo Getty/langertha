@@ -1,0 +1,64 @@
+---
+claimed_at: 2026-08-17T04:14:58Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T04:14:58Z
+created: 2026-08-17T03:02:44Z
+id: 95
+priority: medium
+started: 2026-08-17T03:55:55Z
+status: done
+tags:
+- docs
+- drift
+- observability
+- langfuse
+title: Role::Langfuse wird von nichts komponiert, aber Langertha.pm bewirbt sie als
+  Nutzer-Feature
+updated: 2026-08-17T04:14:58Z
+---
+
+Gefunden vom #90-Worker beim 32-Rollen-Audit, vom Orchestrator verifiziert (2026-08-17).
+
+lib/Langertha/Role/Langfuse.pm wird in ganz lib/ von KEINER Klasse komponiert - saemtliche anderen Langfuse-Treffer verweisen auf Langertha::Plugin::Langfuse, das sie abgeloest hat (ImageGen.pm:25 nutzt plugins => [Langfuse], Role/ImageGeneration.pm:46 und diverse Value-Objects verweisen auf das Plugin).
+
+Die POD zeigt aber weiter auf die tote Rolle, und zwar nicht nur im Katalog:
+- lib/Langertha.pm:411 fuehrt sie in der Roles-Liste als "Langfuse observability integration (engine-level)"
+- lib/Langertha.pm:616-618 ist eine NUTZERANLEITUNG: "Every engine has Langfuse observability built in. Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY env vars to enable auto-instrumented traces and generations. See L<Langertha::Role::Langfuse>."
+
+Der zweite Punkt ist der schaedliche: ein Nutzer, der das liest, erwartet Observability out of the box auf jeder Engine und wird zu einer Rolle geschickt, die nichts komponiert. Ob die Env-Var-Aussage ueber das Plugin noch stimmt, ist dabei mitzupruefen.
+
+Zu entscheiden (nicht vom Agenten allein):
+a) Rolle entfernen und die POD auf Plugin::Langfuse umbiegen, oder
+b) Rolle wieder anschliessen, falls der engine-level Pfad bewusst erhalten bleiben soll.
+
+Beruehrt lib/Langertha.pm und ueberschneidet sich damit mit karr #86 (POD-Katalog-Drift) - zusammen bearbeiten oder Reihenfolge festlegen. #86 wuerde die Rolle sonst womoeglich einfach im Katalog belassen.
+PREMISE OF THIS TICKET IS WRONG — Role::Langfuse is NOT dead. Recommendation: (b), keep the role. Nothing to reconnect: it was never disconnected.
+
+Evidence:
+- lib/Langertha/Role/Chat.pm:804 — live code, NOT POD:
+    with "Langertha::Role::ThinkTag", "Langertha::Role::Langfuse";
+  It sits at the very bottom of the file after the sub definitions, which is why a grep for a leading `with` at the top of a class misses it. The earlier "composed by no class in lib/" verification was a false negative.
+- Runtime check: 35 of 38 engine classes ->does("Langertha::Role::Langfuse"). Only Remote (abstract), TranscriptionBase and Whisper do not — they lack Role::Chat.
+- Langertha::Raider depends on it directly at 14 call sites (Raider.pm:1529-2032): langfuse_trace, langfuse_span, langfuse_generation, langfuse_update_span, langfuse_update_trace. The whole Raider tracing path runs through the ENGINE ROLE, not the plugin. Deleting the role would break Raider observability outright.
+- Coverage exists: t/72_langfuse.t, 105 tests, passing.
+- Git history says "added alongside", not "replaced": the plugin arrived in 52ca1db as part of a broad plugin-system commit, described as "Plugin::Langfuse for Raider observability". No commit ever detached the role.
+- Plugin::Langfuse.pm:51 documents the two as complementary by design: "Unlike Langertha::Role::Langfuse (which lives on the engine), this plugin works on any PluginHost and does not require engine-level configuration."
+
+So (a) is off the table — it is not a docs cleanup, it is a Raider-breaking removal.
+
+Env-var claim: TRUE, and true for both paths. Role and plugin both read LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_URL and both stay inactive until the key pair is set (Role/Langfuse.pm:154-168, Plugin/Langfuse.pm:56-112).
+
+What WAS actually wrong in the POD, and is now fixed:
+1. "Every engine" — false. Transcription-only engines (Whisper, TranscriptionBase) have no Role::Chat and so no engine-level Langfuse. Now stated explicitly.
+2. "auto-instrumented traces and generations" — overstated. The role has exactly one auto-instrumentation hook, `around simple_chat` (Role/Langfuse.pm:538). simple_chat is its own sync implementation and does NOT delegate to simple_chat_f, so simple_chat_f, chat_f and streaming are NOT auto-instrumented. Raider gets its traces by calling the role methods explicitly. Now scoped to simple_chat, with the manual methods named.
+3. The section never mentioned Plugin::Langfuse at all, so the wrapper classes (Chat, Embedder, ImageGen) — the path that actually covers embeddings and image generation — were invisible. Now documented as the second flavour, with a code example.
+
+lib/Langertha.pm:411 catalogue entry kept, description corrected to "Engine-level Langfuse observability, composed by L<Langertha::Role::Chat>".
+
+lib/Langertha/Role/Langfuse.pm NOT touched (read-only per instruction).
+
+Spun off #108: t/78_capability_registry.t:37 allowlists the role with the reason "superseded by Langertha::Plugin::Langfuse" — that string is where the false premise came from and should be corrected (the classification itself is still fine).
+
+Verified: prove -lr t/ 87 files / 2943 tests PASS, offline (no API keys set). perlcritic clean. Not committed.
+GESCHLOSSEN - die Praemisse dieses Tickets war FALSCH, und zwar meine (Orchestrator). Role::Langfuse ist nicht tot: Role::Chat komponiert sie in Chat.pm:804 (am Dateiende nach den Sub-Definitionen, weshalb ein grep mit head sie verfehlt), 35 von 38 Engine-Klassen does() sie, und Raider ruft an 14 Stellen hinein (Raider.pm:1529-2032). Coverage existiert als t/72_langfuse.t. Die Git-Historie zeigt 'ergaenzt', nicht 'abgeloest': Plugin::Langfuse kam in 52ca1db dazu, kein Commit hat die Rolle je abgehaengt. Ich hatte die Behauptung auf einem abgeschnittenen grep aufgebaut - der Worker hat sie widerlegt statt sie umzusetzen, was richtig war. Der reale Kern bleibt und ist behoben (siehe Commit): die POD versprach 'every engine' (falsch fuer Transcription-Engines) und 'auto-instrumented traces and generations' (tatsaechlich nur ein around simple_chat; simple_chat_f, chat_f und Streaming laufen nicht darueber). Nichts geloescht. Folgeticket #108 korrigiert die Allowlist-Begruendung in t/78_capability_registry.t, aus der meine Fehlannahme stammte.
