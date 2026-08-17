@@ -7,6 +7,7 @@ use warnings;
 use Test2::Bundle::More;
 use JSON::MaybeXS;
 use HTTP::Response;
+use Path::Tiny;
 
 use Langertha::Response;
 use Langertha::Engine::OpenAI;
@@ -292,6 +293,112 @@ subtest 'clone_with timing then tool_calls preserves both' => sub {
   is($r3->total_seconds, 1.5, 'total_seconds survives second clone');
   ok($r3->has_tool_calls, 'tool_calls set after second clone');
   is($r3->tool_call('extract')->arguments->{x}, 1, 'tool_calls value reachable');
+};
+
+# --- Ollama chat_response over what a real server actually sends (karr #92) ---
+#
+# The hand-written Ollama payload above omits created_at, the one field every
+# real Ollama server sends — and it sends it as an RFC3339 string, which no
+# Maybe[Int] will take. That killed every non-streaming Ollama chat from
+# 1fac6c4 onwards without the suite noticing, because the only other Ollama
+# coverage (t/64_tool_calling_ollama_mock.t) drives chat_with_tools_f, which
+# reads the raw parse_response HashRef and never builds a Response at all.
+# These fixtures are captured verbatim from a real server, so the constructor
+# is fed the wire shape rather than a payload written to fit the class.
+
+sub ollama_http {
+  my ( $body ) = @_;
+  my $http = HTTP::Response->new(200, 'OK');
+  $http->header('Content-Type' => 'application/json');
+  $http->content($body);
+  return $http;
+}
+
+subtest 'Ollama chat_response over captured server fixtures (karr #92)' => sub {
+  my $data_dir = path(__FILE__)->parent->child('data');
+
+  my $call_body = $data_dir->child('ollama_tool_call_response.json')->slurp_raw;
+  my $call_resp = eval { $ollama->chat_response(ollama_http($call_body)) };
+  # Test definedness, not truth: a tool-call-only reply has empty content and
+  # Response stringifies to content, so the object itself is false here.
+  ok(defined $call_resp, 'tool-call fixture: Response constructed, no type-constraint croak')
+    or diag($@);
+
+  SKIP: {
+    skip 'no Response to inspect', 6 unless defined $call_resp;
+    isa_ok($call_resp, 'Langertha::Response');
+    is($call_resp->created, 1771732845, 'created normalized to Unix seconds');
+    is($call_resp->raw->{created_at}, '2026-02-22T04:00:45.027209927Z',
+      'native RFC3339 stamp preserved verbatim under raw');
+    is($call_resp->model, 'qwen3:8b', 'model from fixture');
+    is($call_resp->finish_reason, 'stop', 'finish_reason from done_reason');
+    is(scalar @{$call_resp->tool_calls}, 1, 'tool call extracted from the same payload');
+  }
+
+  my $result_body = $data_dir->child('ollama_tool_result_response.json')->slurp_raw;
+  my $result_resp = eval { $ollama->chat_response(ollama_http($result_body)) };
+  ok(defined $result_resp, 'tool-result fixture: Response constructed') or diag($@);
+
+  SKIP: {
+    skip 'no Response to inspect', 2 unless defined $result_resp;
+    is("$result_resp", '22', 'tool-result fixture stringifies to its content');
+    is($result_resp->created, 1771732852, 'created normalized to Unix seconds');
+  }
+};
+
+subtest 'Ollama created_at normalization (karr #92)' => sub {
+  my %stamps = (
+    'fractional UTC'         => '2026-02-22T04:00:45.027209927Z',
+    'whole-second UTC'       => '2026-02-22T04:00:45Z',
+    'positive UTC offset'    => '2026-02-22T05:00:45+01:00',
+    'negative UTC offset'    => '2026-02-22T03:00:45-01:00',
+    'offset without a colon' => '2026-02-22T03:00:45-0100',
+    'epoch seconds'          => 1771732845,
+    'epoch seconds as text'  => '1771732845',
+  );
+  for my $name (sort keys %stamps) {
+    my $body = $json->encode({
+      model       => 'qwen3:8b',
+      created_at  => $stamps{$name},
+      message     => { role => 'assistant', content => 'hi' },
+      done        => JSON->true,
+      done_reason => 'stop',
+    });
+    my $resp = eval { $ollama->chat_response(ollama_http($body)) };
+    ok(defined $resp, "$name: Response constructed") or diag($@);
+    is(defined $resp ? $resp->created : undef, 1771732845,
+      "$name: created is the expected Unix timestamp");
+  }
+
+  # A stamp we cannot read must drop the field, never take the response down:
+  # created is informational metadata, the content is what the caller asked for.
+  for my $bad ('not-a-timestamp', '0001-01-01T00:00:00Z', '') {
+    my $body = $json->encode({
+      model      => 'qwen3:8b',
+      created_at => $bad,
+      message    => { role => 'assistant', content => 'hi' },
+      done       => JSON->true,
+    });
+    my $resp = eval { $ollama->chat_response(ollama_http($body)) };
+    ok(defined $resp, "unreadable created_at '$bad': Response still constructed") or diag($@);
+    ok(defined $resp && !$resp->has_created, "unreadable created_at '$bad': created left unset");
+    is(defined $resp ? "$resp" : undef, 'hi', "unreadable created_at '$bad': content intact");
+  }
+
+  # TO_JSON must keep emitting a number for created, whichever form the server
+  # used — a trace consumer sees the same shape for Ollama as for OpenAI.
+  my $encoder = JSON::MaybeXS->new->canonical(1)->convert_blessed(1);
+  for my $stamp ('2026-02-22T04:00:45.027209927Z', '1771732845') {
+    my $body = $json->encode({
+      model      => 'qwen3:8b',
+      created_at => $stamp,
+      message    => { role => 'assistant', content => 'hi' },
+      done       => JSON->true,
+    });
+    my $resp = $ollama->chat_response(ollama_http($body));
+    like($encoder->encode($resp), qr/"created":1771732845(?![0-9"])/,
+      "created serializes as a JSON number (from '$stamp')");
+  }
 };
 
 done_testing;

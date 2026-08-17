@@ -255,7 +255,13 @@ has created => (
 
 =attr created
 
-Unix timestamp of when the response was created.
+Unix timestamp (seconds since the epoch) of when the response was created.
+
+Engine-agnostic by contract: an engine whose wire format reports the stamp in
+another shape normalizes it before setting this. The OpenAI-compatible wire
+passes its epoch integer straight through; L<Langertha::Engine::Ollama>
+converts Ollama's RFC3339 C<created_at> string. The provider's native form
+stays available under L</raw> (karr #92).
 
 =cut
 
