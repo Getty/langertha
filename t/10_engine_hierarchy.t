@@ -57,6 +57,7 @@ like($@, qr/url/, 'OpenAIBase requires url');
 use Langertha::Engine::AnthropicBase;
 
 ok(Langertha::Engine::AnthropicBase->isa('Langertha::Engine::Remote'), 'AnthropicBase isa Remote');
+ok(Langertha::Engine::AnthropicBase->does('Langertha::Role::AnthropicCompatible'), 'AnthropicBase does AnthropicCompatible');
 ok(Langertha::Engine::AnthropicBase->does('Langertha::Role::Models'), 'AnthropicBase does Models');
 ok(Langertha::Engine::AnthropicBase->does('Langertha::Role::Chat'), 'AnthropicBase does Chat');
 ok(Langertha::Engine::AnthropicBase->does('Langertha::Role::Streaming'), 'AnthropicBase does Streaming');
@@ -80,6 +81,7 @@ use Langertha::Engine::Anthropic;
 ok(Langertha::Engine::Anthropic->isa('Langertha::Engine::Remote'), 'Anthropic isa Remote');
 ok(Langertha::Engine::Anthropic->isa('Langertha::Engine::AnthropicBase'), 'Anthropic isa AnthropicBase');
 ok(!Langertha::Engine::Anthropic->isa('Langertha::Engine::OpenAIBase'), 'Anthropic is NOT OpenAIBase');
+ok(Langertha::Engine::Anthropic->does('Langertha::Role::AnthropicCompatible'), 'Anthropic does AnthropicCompatible');
 ok(Langertha::Engine::Anthropic->does('Langertha::Role::Chat'), 'Anthropic does Chat');
 ok(Langertha::Engine::Anthropic->does('Langertha::Role::Streaming'), 'Anthropic does Streaming');
 ok(Langertha::Engine::Anthropic->does('Langertha::Role::Tools'), 'Anthropic does Tools');
@@ -239,6 +241,7 @@ use Langertha::Engine::LMStudioAnthropic;
 ok(Langertha::Engine::LMStudioAnthropic->isa('Langertha::Engine::AnthropicBase'), 'LMStudioAnthropic isa AnthropicBase');
 ok(Langertha::Engine::LMStudioAnthropic->isa('Langertha::Engine::Remote'), 'LMStudioAnthropic isa Remote');
 ok(!Langertha::Engine::LMStudioAnthropic->isa('Langertha::Engine::OpenAIBase'), 'LMStudioAnthropic is NOT OpenAIBase');
+ok(Langertha::Engine::LMStudioAnthropic->does('Langertha::Role::AnthropicCompatible'), 'LMStudioAnthropic does AnthropicCompatible');
 ok(Langertha::Engine::LMStudioAnthropic->does('Langertha::Role::Chat'), 'LMStudioAnthropic does Chat');
 ok(Langertha::Engine::LMStudioAnthropic->does('Langertha::Role::Streaming'), 'LMStudioAnthropic does Streaming');
 ok(Langertha::Engine::LMStudioAnthropic->does('Langertha::Role::Tools'), 'LMStudioAnthropic does Tools');
@@ -490,6 +493,7 @@ use Langertha::Engine::MiniMaxAnthropic;
 
 ok(Langertha::Engine::MiniMaxAnthropic->isa('Langertha::Engine::AnthropicBase'), 'MiniMaxAnthropic isa AnthropicBase');
 ok(!Langertha::Engine::MiniMaxAnthropic->isa('Langertha::Engine::OpenAIBase'), 'MiniMaxAnthropic is NOT OpenAIBase');
+ok(Langertha::Engine::MiniMaxAnthropic->does('Langertha::Role::AnthropicCompatible'), 'MiniMaxAnthropic does AnthropicCompatible');
 ok(Langertha::Engine::MiniMaxAnthropic->does('Langertha::Role::Tools'), 'MiniMaxAnthropic does Tools');
 ok(Langertha::Engine::MiniMaxAnthropic->does('Langertha::Role::StaticModels'), 'MiniMaxAnthropic does StaticModels');
 {
@@ -538,6 +542,7 @@ use Langertha::Engine::MoonshotAnthropic;
 
 ok(Langertha::Engine::MoonshotAnthropic->isa('Langertha::Engine::AnthropicBase'), 'MoonshotAnthropic isa AnthropicBase');
 ok(!Langertha::Engine::MoonshotAnthropic->isa('Langertha::Engine::OpenAIBase'), 'MoonshotAnthropic is NOT OpenAIBase');
+ok(Langertha::Engine::MoonshotAnthropic->does('Langertha::Role::AnthropicCompatible'), 'MoonshotAnthropic does AnthropicCompatible');
 ok(Langertha::Engine::MoonshotAnthropic->does('Langertha::Role::Tools'), 'MoonshotAnthropic does Tools');
 ok(Langertha::Engine::MoonshotAnthropic->does('Langertha::Role::StaticModels'), 'MoonshotAnthropic does StaticModels');
 {
