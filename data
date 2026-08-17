@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-08-17T06:20:15Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T06:20:15Z
+created: 2026-08-17T06:11:22Z
+id: 115
+priority: low
+started: 2026-08-17T06:20:15Z
+status: done
+tags:
+- docs
+- pod
+- drift
+title: lib/Langertha.pm L590 Mojolicious example still uses gpt-4o-mini
+updated: 2026-08-17T06:20:15Z
+---
+
+Gefunden vom langertha-worker bei karr #113 (2026-08-17). Im "Using with Mojolicious" Code-Block unter dem async/streaming-Abschnitt in lib/Langertha.pm steht noch:
+
+  L590: model   => "gpt-4o-mini",
+
+Gleicher Rot-Mechanismus wie die SYNOPSIS-Beispiele in #109/#113. Sollte zusammen mit der naechsten Prosa-Rot-Runde gefresht werden, z.B. "a small fast model from your provider" wie in #113 fuer OpenAI-Beispiele gewaehlt. Reine POD-Aenderung, kein Verhalten.
