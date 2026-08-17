@@ -1,0 +1,35 @@
+---
+claimed_at: 2026-08-17T02:51:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T02:51:23Z
+created: 2026-08-17T00:57:50Z
+id: 84
+priority: low
+started: 2026-08-17T02:44:41Z
+status: done
+tags:
+- docs
+- adr
+title: 'ADR 0015 Decision 3: Widerspruch ''nicht dupliziert'' vs. Status-quo-Bullet'
+updated: 2026-08-17T02:51:23Z
+---
+
+Vorbestehend, unabhaengig von karr #82 (dort nur der Nickname umbenannt).
+
+docs/adr/0015-role-composition-patterns.md Decision 3, erster Absatz: "The boilerplate generation-parameter emission in Role::OpenAICompatible ... is *not* duplicated into Role::AnthropicCompatible".
+
+Der Status-quo-Bullet direkt darunter und Finding 3 sagen das Gegenteil: beide Rollen emittieren den Block inline, in derselben Ternary-Form ("per-request control beats engine attribute") - AnthropicCompatible::chat_request:180-190, OpenAICompatible::chat_request:320-336. Es ist also sehr wohl dupliziert; gemeint war offenbar "nicht in einen shared Helper extrahiert".
+
+Fix: den ersten Absatz von Decision 3 auf "duplicated rather than shared" umformulieren. Reine Doku-Arbeit.
+Am Code gegengeprueft, Briefing haelt stand: der Block ist dupliziert, nicht geteilt. Role::AnthropicCompatible::chat_request:181-187 und Role::OpenAICompatible::chat_request:322-335 tragen dasselbe ternary-Muster (max_tokens / temperature aus $controls sonst Engine-Attribut, danach reasoning_kwargs_for + prompt_cache_kwargs_for); symmetrisch nochmal in beiden chat_stream_request (AnthropicCompatible:407-413, OpenAICompatible:452-460).
+
+Geaendert: nur der erste Absatz von Decision 3, "is *not* duplicated into Role::AnthropicCompatible (or AnthropicBase once #64 lands)" -> "is *duplicated* into Role::AnthropicCompatible rather than shared through a common helper". Die stale Futur-Parenthese "(or AnthropicBase once #64 lands)" faellt weg, weil sie in genau dem umformulierten Satz stand; #64 ist done.
+
+Derselbe Denkfehler steht sonst nirgends im ADR: Finding 3 ("duplicates this exact pattern inline"), der Status-quo-Bullet, der Schlusssatz von Decision 3 ("the duplicated boilerplate") und Rationale-Bullet 3 ("the generation-parameter block is duplicated because ...") sagen bereits das Richtige. Der falsche Satz war der einzige Ausreisser.
+
+Kein Amendment-Vermerk gesetzt. Begruendung: Hausformat-Praezedenz in genau diesem ADR unterscheidet zwei Faelle - 783a5b3 (karr #82) trug einen datierten Vermerk, weil er kanonisches Vokabular umbenannte (Leser und CONTEXT.md haengen am Begriff); 6f37f15 ("fix sibling-seam placement description and typo") korrigierte eine schlicht falsche Beschreibung ersatzlos, WHY nur in der Commit-Message. #84 ist der zweite Fall: die Aussage war nie wahr, widersprach der eigenen Evidenz des ADR, und niemand konnte sich auf sie stuetzen. Ein datierter Vermerk wuerde faelschlich suggerieren, die Entscheidung habe sich geaendert - sie ist unveraendert.
+
+Folgeticket #91 fuer die uebrigen #64-Futur-Referenzen + den veralteten AnthropicBase-Ort im Status-quo-Bullet (bewusst nicht mitgezogen, anderer Fehlertyp). Nicht committet, Working Tree: nur docs/adr/0015-role-composition-patterns.md von mir.
+Doku-Fix fertig im Working Tree (docs/adr/0015-role-composition-patterns.md, 3 Zeilen ersetzt durch 3), NICHT committet. Verifikation, Fundstellen und die Amendment-Entscheidung stehen in der vorigen Notiz. Folgeticket #91 angelegt.
+Umgesetzt als 2bf48cc. Auditor hat den Sachverhalt am Code gegengeprueft und bestaetigt: beide Rollen bauen den Block inline im identischen Ternary-Muster (AnthropicCompatible 181-187 / 407-413, OpenAICompatible 322-335 / 452-460). Der falsche Satz war ein Einzelausreisser - Finding 3, Status-quo-Bullet, Schlusssatz Decision 3 und Rationale-Bullet 3 sagten bereits das Richtige, es hing nichts daran. Kein Amendment-Vermerk, begruendet am Praezedenzfall innerhalb desselben ADR: 783a5b3 (karr #82) bekam einen Vermerk, weil er kanonisches Vokabular umbenannte; 6f37f15 korrigierte eine schlicht falsche Beschreibung ersatzlos. #84 ist der zweite Fall. Folgeticket #91 fuer die #64-Futur-Formulierungen an sechs weiteren Stellen.
