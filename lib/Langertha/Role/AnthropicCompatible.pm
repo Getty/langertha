@@ -183,8 +183,7 @@ sub chat_request {
     exists $controls->{temperature}
       ? ( temperature => $controls->{temperature} )
       : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
-    $self->reasoning_kwargs_for(%$controls),
-    $self->prompt_cache_kwargs_for(%$controls),
+    $self->generation_kwargs_for(%$controls),
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     %extra,
@@ -409,8 +408,7 @@ sub chat_stream_request {
     exists $controls->{temperature}
       ? ( temperature => $controls->{temperature} )
       : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
-    $self->reasoning_kwargs_for(%$controls),
-    $self->prompt_cache_kwargs_for(%$controls),
+    $self->generation_kwargs_for(%$controls),
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     stream => JSON->true,

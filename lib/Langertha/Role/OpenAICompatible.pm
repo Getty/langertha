@@ -330,8 +330,7 @@ sub chat_request {
       ? ( temperature => $controls->{temperature} )
       : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
     exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
-    ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
-    ( $self->can('prompt_cache_kwargs_for') ? $self->prompt_cache_kwargs_for(%$controls) : () ),
+    $self->generation_kwargs_for(%$controls),
     ( $self->can('knobs_kwargs_for') ? $self->knobs_kwargs_for(%$controls) : () ),
     stream => JSON->false,
     %extra,
@@ -455,8 +454,7 @@ sub chat_stream_request {
       ? ( temperature => $controls->{temperature} )
       : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
     exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
-    ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
-    ( $self->can('prompt_cache_kwargs_for') ? $self->prompt_cache_kwargs_for(%$controls) : () ),
+    $self->generation_kwargs_for(%$controls),
     ( $self->can('knobs_kwargs_for') ? $self->knobs_kwargs_for(%$controls) : () ),
     stream => JSON->true,
     %extra,

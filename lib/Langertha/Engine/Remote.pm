@@ -144,6 +144,43 @@ sub _parse_rate_limit_headers {
   return undef;
 }
 
+# Wire-agnostic generation-parameter block shared by every chat dialect
+# (OpenAI, Anthropic, ...). Extracts the can-guarded sibling calls for
+# reasoning_kwargs_for / prompt_cache_kwargs_for; the dialect-specific
+# fields (response_format on OpenAI, inference_geo on Anthropic, ...) stay
+# inline because their placement in the request body depends on dialect
+# conventions. Temperature also stays inline: OpenAI emits seed between
+# temperature and reasoning, so folding temperature in here would shift
+# seed and break the byte order of the OpenAI body (karr #98, ADR 0015
+# Decision 3). The helper name is deliberately not knobs_kwargs_for -
+# that name belongs to Langertha::Role::RuntimeKnobs for the self-hosted
+# prefix-cache knobs (ADR 0012).
+sub generation_kwargs_for {
+  my ( $self, %controls ) = @_;
+  return (
+    ( $self->can('reasoning_kwargs_for')    ? $self->reasoning_kwargs_for(%controls)    : () ),
+    ( $self->can('prompt_cache_kwargs_for') ? $self->prompt_cache_kwargs_for(%controls) : () ),
+  );
+}
+
+=method generation_kwargs_for
+
+    my @kwargs = $engine->generation_kwargs_for(%$controls);
+
+Emits the wire-agnostic generation-parameter kwargs that every chat dialect
+shares - the C<reasoning_kwargs_for> and C<prompt_cache_kwargs_for> outputs,
+each gated by C<can()> so engines without those roles stay quiet. C<%controls>
+is the per-request controls hash from C<chat_f> (karr #46), passed wholesale;
+keys it does not carry fall back to the engine attributes inside the
+underlying L<Langertha::Role::ReasoningEffort/reasoning_kwargs_for> and
+L<Langertha::Role::PromptCache/prompt_cache_kwargs_for>. Returned as a list
+suitable for spreading into a request body. Dialect-specific emission
+(C<temperature>, C<response_format>, C<seed>, C<knobs_kwargs_for>,
+C<inference_geo>, ...) stays at the call site because each dialect positions
+those fields at a specific place in the body.
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso
