@@ -84,23 +84,25 @@ sets — the knob dialect is a distinct concern from reasoning and caching. The
 `prefix_caching` capability means *the wire accepts the controls*, not that the
 server has caching enabled.
 
-### Request-side knobs (RuntimeKnobs split — sibling seam)
+### Request-side generation parameters (the per-dialect block)
 
-The generation-parameter knobs (`temperature`, `response_format`,
-`response_size`, `reasoning_kwargs`, `prompt_cache_kwargs`,
-`parallel_tool_use`) are emitted inline in each dialect base's
-`chat_request` / `chat_stream_request`. There is no shared `knobs_kwargs_for`
-helper today — the asymmetry between `Role::OpenAICompatible` (which
-aggregates them) and `Role::AnthropicCompatible` (which inlines them) is a
-**deliberate dialect split**, not a missing refactor. Dialect-aware knobs
-(Anthropic's `response_format` translation to a synthetic tool,
-`tool_choice` ↔ `parallel_tool_use` folding, `inference_geo`,
-`anthropic-version`) require the wire envelope in scope; a wire-agnostic
-helper can only be extracted once both dialect roles have a stable
-shape. → **ADR 0015**.
-
-_Avoid_: "RuntimeKnobs" used as a literal type — it's the audit nickname
-for the inline aggregation pattern, not a role name.
+**generation-parameter block**:
+The slab of per-request body fields (`temperature`, `response_format`,
+`response_size`/`max_tokens`, `seed`, `reasoning_kwargs`, `prompt_cache_kwargs`,
+`parallel_tool_use`) that a dialect role assembles inline in its own
+`chat_request` / `chat_stream_request`, in the same "per-request control beats
+engine attribute" ternary shape. `Role::OpenAICompatible` and
+`Role::AnthropicCompatible` each carry their own copy — the duplication is a
+**deliberate dialect split**, not a missing refactor, because the surrounding
+dialect-aware blocks (Anthropic's `response_format` translation to a synthetic
+tool, `tool_choice` ↔ `parallel_tool_use` folding, `inference_geo`,
+`anthropic-version`) need the wire envelope in scope. → **ADR 0015**.
+_Avoid_: "RuntimeKnobs", "the knobs", "knob block" for this pattern — *knob* is
+taken by the unrelated self-hosted seam above (`Langertha::Role::RuntimeKnobs`,
+`knob_wire_format`, `Langertha::Runtime::Knobs`), whose real `knobs_kwargs_for`
+is itself just one line *inside* the generation-parameter block in
+`Role::OpenAICompatible::chat_request`. The block is an inline code pattern —
+not a role, not a value object, not a wire-format tag.
 
 ### Response-side observability (sibling seams)
 

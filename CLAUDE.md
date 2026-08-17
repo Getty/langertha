@@ -55,7 +55,7 @@ refactors:
 - **0012** — self-hosted runtime knobs as a per-concern wire-format value object
 - **0013** — the wire envelope is a composed role (parallel `AnthropicCompatible`), nuancing 0006
 - **0014** — self-hosted engines expose runtime metrics via `Role::Runtime::MetricsPoll` (Prometheus `/metrics` scrape)
-- **0015** — `-excludes` role-composition pattern + per-family `engine_capabilities` correction (cache-control direction-pair); RuntimeKnobs asymmetry as a deliberate dialect split
+- **0015** — `-excludes` role-composition pattern + per-family `engine_capabilities` correction (cache-control direction-pair); the per-dialect generation-parameter block as a deliberate dialect split
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
