@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-08-17T05:53:03Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T05:53:03Z
+created: 2026-08-17T03:41:40Z
+id: 98
+priority: low
+started: 2026-08-17T05:43:27Z
+status: done
+tags:
+- refactor
+- roles
+- wire-format
+title: 'Role::GenerationParams extrahieren - Vorbedingung ist seit #64 erfuellt'
+updated: 2026-08-17T05:53:03Z
+---
+
+Vorgeschlagen vom langertha-adr-auditor bei karr #91 (2026-08-17).
+
+ADR 0015 Decision 3 nennt die Extraktion des wire-agnostischen Teils des generation-parameter block (temperature, reasoning_kwargs_for, prompt_cache_kwargs_for, has_response_format) in einen gemeinsamen Helper als lohnende Folgearbeit. Sie galt als blockiert auf karr #64 - das ist seit 579d0c8 erledigt, beide Dialekt-Seiten sind jetzt Rollen in duennen Basen. Das ADR ist mit 16b1401 entsprechend nachgezogen: die Arbeit ist konkret machbar, nicht blockiert.
+
+Offene Designfrage, im Ticket zu entscheiden statt anzunehmen: ADR 0016 sagt, eine Role::<X>Compatible verdient sich ihren Platz erst beim zweiten Konsumenten von einem anderen Parent. Das ist auf Wire-Envelopes gemuenzt und verbietet einen GenerationParams-Helper nicht - aber OpenAIBase und AnthropicBase stammen beide von Engine::Remote ab, also koennte generation_kwargs_for AUF Remote die billigere Form sein als eine neue Rolle. Die Skepsis von 0016 gegenueber symmetriegetriebener Extraktion gilt hier dem Geiste nach.
+
+Name: NICHT knobs_kwargs_for - das gehoert Role::RuntimeKnobs fuer die self-hosted Prefix-Cache-Knoepfe (ADR 0012).
+
+Verbleibende Vorbedingung: Role::OpenAICompatible muss seinen eigenen Block als Helper-Aufruf formulieren, mit Tests, die beweisen, dass die Request-Bodies vorher und nachher identisch sind. Byte-Vergleich wie bei karr #88 ist das passende Vorgehen.
