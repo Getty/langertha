@@ -43,16 +43,27 @@ of the value-object pattern the others now follow.
 _Avoid_: "tool_choice hash"
 
 **Result envelope**:
-The provider-shaped *message structure* wrapping ToolResults for the next turn —
-arity differs (OpenAI: N `role:tool` messages; Anthropic/Gemini: one message, N
-blocks) and it includes the **assistant echo**. Assembled by thin tag-driven
-orchestration, not by ToolResult.
-_Avoid_: "tool result message", "result wrapper"
+The provider-shaped *conversation elements* wrapping ToolResults for the next
+turn — arity differs (OpenAI/Ollama: N `role:tool` messages; Anthropic/Gemini:
+one message, N blocks; Responses: N `function_call_output` items) and it always
+includes the **assistant echo**. Assembled by thin tag-driven orchestration
+(`Role::Tools::format_tool_results`), not by ToolResult.
+**Always a LIST, for every `tool_wire_format`** — all three tool loops
+(`Chat::simple_chat_with_tools`, its `_f` sibling, `Role::Tools::chat_with_tools_f`,
+plus `Raider`) append it with `push @$conversation, ...`, so an arrayref return
+lands as one bogus conversation element and the next turn dies walking it
+(karr #85). Not every element is a chat *message*: Responses appends `input`
+items discriminated by `type`, with no `role` at all.
+_Avoid_: "tool result message", "result wrapper", "the result arrayref"
 
 **Assistant echo**:
 The re-emission of the prior assistant turn (its text + tool_calls) that must
 precede ToolResults so the provider has context. Rebuildable from canonical
-ToolCalls + text rather than from raw response data.
+ToolCalls + text rather than from raw response data. Not optional on any wire:
+the Responses API rejects a `function_call_output` whose `call_id` was not
+announced by a preceding **top-level** `function_call` item, which is why the
+`responses` envelope hoists a call out of the legacy nested-inside-a-message
+shape that `ToolCall->locate` also walks.
 _Avoid_: "assistant replay", "history echo"
 
 ### Request-side controls (sibling seams)

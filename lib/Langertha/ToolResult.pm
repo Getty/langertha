@@ -32,6 +32,10 @@ The C<content> is the MCP-style content array (C<[ { type => 'text', text =>
 JSON-encode it; formats that take structured blocks (Anthropic) embed it as-is;
 formats that want plain text (Gemini, Hermes) flatten the text parts.
 
+Not every block is a chat message: the OpenAI Responses block is an C<input>
+I<item> discriminated by C<type> (C<function_call_output>), carrying its payload
+in C<output> and no C<role> at all.
+
 =cut
 
 has name => (
@@ -115,10 +119,12 @@ sub to_ollama {
 
 sub to_responses {
   my ($self) = @_;
+  # A Responses API input item, not a chat message: the wire discriminates on
+  # `type`, carries the payload in `output`, and has no `role` at all.
   return {
-    role    => 'tool',
+    type    => 'function_call_output',
     call_id => $self->id,
-    content => $JSON->encode( $self->content ),
+    output  => $JSON->encode( $self->content ),
   };
 }
 

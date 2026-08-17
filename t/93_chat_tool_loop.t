@@ -20,6 +20,16 @@
 # "what flows through the tool loop is the raw decoded wire body, with the
 # provider's block list intact" -- which is also what the async sibling
 # simple_chat_with_tools_f and Langertha::Role::Tools::chat_with_tools_f do.
+#
+# karr #85 extended the sweep to the two remaining tool_wire_formats, and the
+# responses case caught a second, independent loop breakage: format_tool_results
+# returned an ARRAYREF for 'responses' while every caller does
+# `push @$conversation, $engine->format_tool_results(...)`. One arrayref landed
+# in the conversation as a single element and the next turn died with
+# "Not a HASH reference" in OpenAIResponses::chat_request. The responses branch
+# also skipped the assistant echo, which the Responses API requires before a
+# function_call_output. Both are covered below: driving a second turn is what
+# makes the Result envelope's arity and shape observable.
 
 use strict;
 use warnings;
@@ -35,6 +45,8 @@ use Langertha::Engine::Anthropic;
 use Langertha::Engine::OpenAI;
 use Langertha::Engine::Ollama;
 use Langertha::Engine::Gemini;
+use Langertha::Engine::OpenAIResponses;
+use Langertha::Engine::NousResearch;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
@@ -49,10 +61,13 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
     my ( $class, @responses ) = @_;
     my $self = $class->SUPER::new;
     $self->{queue} = [@responses];
+    $self->{sent}  = [];
     return $self;
   }
+  sub sent { $_[0]->{sent} }
   sub request {
-    my ( $self ) = @_;
+    my ( $self, $request ) = @_;
+    push @{ $self->{sent} }, $request;
     my $response = shift @{ $self->{queue} };
     die "ToolLoopUserAgent: no canned response left\n" unless $response;
     return $response;
@@ -82,7 +97,9 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 }
 
 # Records every $data the tool loop hands to plugin_after_llm_response --
-# the public seam through which the loop's raw wire body is observable.
+# the public seam through which the loop's raw wire body is observable -- and
+# every conversation it hands to plugin_before_llm_call, which is where the
+# Result envelope appended by the previous iteration becomes observable.
 {
   package ToolLoopPlugin::DataSpy;
   use Moose;
@@ -90,11 +107,19 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
   extends 'Langertha::Plugin';
 
   has seen => ( is => 'ro', default => sub { [] } );
+  has conversations => ( is => 'ro', default => sub { [] } );
 
   async sub plugin_after_llm_response {
     my ( $self, $data, $iteration ) = @_;
     push @{ $self->seen }, $data;
     return $data;
+  }
+
+  async sub plugin_before_llm_call {
+    my ( $self, $conversation, $iteration ) = @_;
+    # Snapshot: the loop keeps pushing onto this very arrayref.
+    push @{ $self->conversations }, [@$conversation];
+    return $conversation;
   }
 
   __PACKAGE__->meta->make_immutable;
@@ -192,6 +217,71 @@ my @cases = (
     blocks => sub { $_[0]->{candidates}[0]{content}{parts} },
     block_desc => 'candidates[0].content.parts',
   },
+  {
+    name   => 'responses',
+    engine => sub {
+      Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key', model => 'gpt-5.5-pro', user_agent => $_[0],
+      );
+    },
+    tool_turn => {
+      id => 'resp_1', object => 'response', status => 'completed',
+      output => [
+        { type => 'reasoning', id => 'rs_1', summary => [] },
+        { type => 'function_call', id => 'fc_1', call_id => 'call_1',
+          name => 'get_time', arguments => '{}', status => 'completed' },
+      ],
+    },
+    text_turn => {
+      id => 'resp_2', object => 'response', status => 'completed',
+      output => [
+        { type => 'message', id => 'msg_2', status => 'completed',
+          role => 'assistant',
+          content => [ { type => 'output_text', text => 'It is 12:00.' } ] },
+      ],
+    },
+    blocks => sub { $_[0]->{output} },
+    block_desc => 'output[] item list',
+    # The Responses API pairs a function_call_output with the call_id of a
+    # preceding top-level function_call item; without the echo it answers
+    # "No tool call found for function call output with call_id".
+    wire_check => sub {
+      my ( $body ) = @_;
+      my @input = @{ $body->{input} // [] };
+      my ($call)   = grep { ( $_->{type} // '' ) eq 'function_call' } @input;
+      my ($output) = grep { ( $_->{type} // '' ) eq 'function_call_output' } @input;
+      ok( $call, 'turn 2 input echoes the function_call item' );
+      ok( $output, 'turn 2 input carries a function_call_output item' );
+      is( $output->{call_id}, $call->{call_id},
+        'the output is correlated with the echoed call' );
+      like( $output->{output}, qr/12:00/, 'the tool result rode along in output' );
+    },
+  },
+  {
+    name   => 'hermes',
+    engine => sub {
+      Langertha::Engine::NousResearch->new(
+        api_key => 'test-key', model => 'Hermes-4-70B', user_agent => $_[0],
+      );
+    },
+    # hermes has no native tool channel: the call arrives as <tool_call> XML
+    # inside the ordinary assistant content string.
+    tool_turn => {
+      id => 'chatcmpl-h1',
+      choices => [ { index => 0, finish_reason => 'stop', message => {
+        role => 'assistant',
+        content => qq{<tool_call>\n{"name": "get_time", "arguments": {}}\n</tool_call>},
+      } } ],
+    },
+    text_turn => {
+      id => 'chatcmpl-h2',
+      choices => [ { index => 0, finish_reason => 'stop',
+        message => { role => 'assistant', content => 'It is 12:00.' } } ],
+    },
+    blocks => sub { $_[0]->{choices}[0]{message} },
+    block_ref => 'HASH',
+    block_desc => 'choices[0].message',
+  },
 );
 
 for my $case (@cases) {
@@ -199,12 +289,11 @@ for my $case (@cases) {
     my $mcp = ToolLoopMCP->new(
       get_time => sub { { content => [ { type => 'text', text => '12:00' } ] } },
     );
-    my $engine = $case->{engine}->(
-      ToolLoopUserAgent->new(
-        canned_http( $case->{tool_turn} ),
-        canned_http( $case->{text_turn} ),
-      )
+    my $user_agent = ToolLoopUserAgent->new(
+      canned_http( $case->{tool_turn} ),
+      canned_http( $case->{text_turn} ),
     );
+    my $engine = $case->{engine}->($user_agent);
     is( $engine->tool_wire_format, $case->{name}, "engine speaks $case->{name}" );
 
     my $chat = Langertha::Chat->new(
@@ -229,8 +318,22 @@ for my $case (@cases) {
       'iteration 1 data is an unblessed raw wire body, not a Langertha::Response' );
     ok( !eval { $seen->[0]->isa('Langertha::Response') },
       'iteration 1 data is not a Langertha::Response' );
-    is( ref $case->{blocks}->( $seen->[0] ), 'ARRAY',
-      "$case->{block_desc} survived as a block list" );
+    is( ref $case->{blocks}->( $seen->[0] ), ( $case->{block_ref} // 'ARRAY' ),
+      "$case->{block_desc} survived on the raw body" );
+
+    # karr #85: format_tool_results must return a LIST -- the loop appends it
+    # with `push @$conversation, ...`, so an arrayref return would sit in the
+    # conversation as one element and the next chat_request would walk it as a
+    # message. Turn 2's conversation is the only place that is visible.
+    my $conversations = $chat->_plugin_instances->[0]->conversations;
+    is( scalar @$conversations, 2, 'two conversations built' );
+    is( scalar( grep { ref $_ ne 'HASH' } @{ $conversations->[1] } ), 0,
+      'every element of turn 2 is a message hashref, none an appended arrayref' );
+    cmp_ok( scalar @{ $conversations->[1] }, '>', scalar @{ $conversations->[0] },
+      'the Result envelope was appended as N elements' );
+
+    $case->{wire_check}->( $json->decode( $user_agent->sent->[1]->content ) )
+      if $case->{wire_check};
   };
 }
 

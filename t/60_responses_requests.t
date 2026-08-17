@@ -300,7 +300,14 @@ subtest 'response_text_content' => sub {
     is( $text, 'Hello! How are you?', 'text extracted from output_text blocks' );
 };
 
-subtest 'format_tool_results' => sub {
+# karr #85: format_tool_results returns a LIST for every tool_wire_format --
+# all three tool loops do `push @$conversation, $engine->format_tool_results(...)`.
+# The Responses envelope is a flat item list: the model's own output items echoed
+# back (the assistant echo), then one function_call_output per result. The API
+# rejects a function_call_output whose call_id was never announced by a
+# preceding TOP-LEVEL function_call item, so a call nested inside a message item
+# (the legacy shape ToolCall->locate also walks) must be hoisted out.
+subtest 'format_tool_results - nested function_call shape' => sub {
     my $engine = Langertha::Engine::OpenAIResponses->new(
         api_key => 'test-key',
         model   => 'gpt-5.5-pro',
@@ -313,10 +320,44 @@ subtest 'format_tool_results' => sub {
         },
     ];
 
-    my $messages = $engine->format_tool_results($toolcall_fixture, $results);
-    is( scalar @$messages, 1, 'one result message' );
-    is( $messages->[0]{role}, 'tool', 'role is tool' );
-    is( $messages->[0]{call_id}, 'call_abc123', 'call_id preserved' );
+    my @messages = $engine->format_tool_results($toolcall_fixture, $results);
+    ok( scalar @messages, 'returns a list, not a single arrayref' );
+    is( scalar( grep { ref $_ ne 'HASH' } @messages ), 0,
+        'every element is a plain hashref the input builder can walk' );
+
+    is( scalar @messages, 2, 'assistant echo + one function_call_output' );
+    is( $messages[0]{type}, 'function_call',
+        'echo hoists the nested function_call to a top-level item' );
+    is( $messages[0]{call_id}, 'call_abc123', 'echo carries the call_id' );
+    is( $messages[0]{name}, 'get_weather', 'echo carries the tool name' );
+
+    is( $messages[1]{type}, 'function_call_output', 'result is a function_call_output item' );
+    is( $messages[1]{call_id}, 'call_abc123', 'call_id preserved' );
+    ok( !exists $messages[1]{role}, 'no role key -- input items are not chat messages' );
+    like( $messages[1]{output}, qr/Sunny, 22C/, 'tool output encoded into output' );
+};
+
+subtest 'format_tool_results - top-level function_call shape' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+    );
+
+    my $results = [
+        {
+            tool_call => { call_id => 'call_real789', name => 'get_weather' },
+            result    => { content => [{ type => 'text', text => 'Rainy, 9C' }] },
+        },
+    ];
+
+    my @messages = $engine->format_tool_results($toolcall_toplevel_fixture, $results);
+    is( scalar @messages, 3, 'reasoning + function_call echoed, then the output' );
+    is( $messages[0]{type}, 'reasoning',
+        'reasoning item echoed in place -- it must keep its following item' );
+    is( $messages[1]{type}, 'function_call', 'function_call echoed verbatim' );
+    is( $messages[1]{call_id}, 'call_real789', 'echoed call_id' );
+    is( $messages[2]{type}, 'function_call_output', 'then the matching output' );
+    is( $messages[2]{call_id}, 'call_real789', 'output pairs with the echoed call' );
 };
 
 subtest 'format_tools - flat tool format' => sub {

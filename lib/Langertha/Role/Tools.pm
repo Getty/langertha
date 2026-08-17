@@ -313,14 +313,35 @@ sub format_tool_results {
   }
 
   if ( $fmt eq 'responses' ) {
-    return [
+    # The Responses API takes one flat item list: the model's own output items
+    # echoed back, then one function_call_output per result. It only accepts a
+    # function_call_output whose call_id was announced by a *top-level*
+    # function_call item, so hoist any call out of the legacy
+    # nested-inside-a-message shape that ToolCall->locate('responses') also
+    # walks. Returns a LIST like every other branch — every caller does
+    # `push @$conversation, $engine->format_tool_results(...)` (karr #85).
+    my @echo;
+    for my $item ( @{ $data->{output} // [] } ) {
+      next unless ref($item) eq 'HASH';
+      if ( ( $item->{type} // '' ) eq 'message' ) {
+        my @content = grep { ref($_) eq 'HASH' } @{ $item->{content} // [] };
+        my @calls   = grep { ( $_->{type} // '' ) eq 'function_call' } @content;
+        my @rest    = grep { ( $_->{type} // '' ) ne 'function_call' } @content;
+        push @echo, { %$item, content => \@rest } if @rest;
+        push @echo, @calls;
+        next;
+      }
+      push @echo, $item;
+    }
+    return (
+      @echo,
       map {
         Langertha::ToolResult->new(
           id      => ( $_->{tool_call}{call_id} // $_->{tool_call}{id} // '' ),
           content => ( $_->{result}{content} // [] ),
         )->to('responses')
-      } @$results
-    ];
+      } @$results,
+    );
   }
 
   if ( $fmt eq 'hermes' ) {
@@ -360,6 +381,11 @@ sub format_tool_results {
 Assembles tool execution results into the provider-shaped message envelope for
 the next turn: the assistant echo of the prior turn plus one
 L<Langertha::ToolResult> block per result (arity varies by format).
+
+Always returns a LIST, for every C<tool_wire_format> — the callers append it
+straight onto the conversation with
+C<< push @$conversation, $engine->format_tool_results(...) >>, so a single
+arrayref would land as one bogus conversation element.
 
 =cut
 
