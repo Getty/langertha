@@ -1,0 +1,69 @@
+---
+claimed_at: 2026-08-17T04:14:41Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T04:14:41Z
+created: 2026-08-17T01:16:47Z
+id: 86
+priority: low
+started: 2026-08-17T03:55:45Z
+status: done
+tags:
+- docs
+- pod
+- drift
+title: 'lib/Langertha.pm catalogue drift: engines + roles missing from the main POD
+  lists'
+updated: 2026-08-17T04:14:41Z
+---
+
+Found while sondieren for #66 (wire-envelope roles).
+
+lib/Langertha.pm carries two hand-maintained catalogues in POD that have drifted from the tree:
+
+ENGINES (=head2 Engines list, ~line 295-357) is missing shipped, user-facing engines:
+  - Langertha::Engine::XAI
+  - Langertha::Engine::Moonshot
+  - Langertha::Engine::MoonshotAnthropic
+  - Langertha::Engine::Hetzner
+  - Langertha::Engine::VLLMHook
+  - Langertha::Engine::OpenAIResponses
+(the bases Remote / OpenAIBase / AnthropicBase are arguably deliberately absent - decide explicitly)
+
+ROLES (=head2 Roles list, ~line 360+) is missing:
+  - Langertha::Role::AnthropicCompatible  (created by 579d0c8, never registered)
+  - Langertha::Role::CachedContent
+  - Langertha::Role::ParallelToolUse
+  - Langertha::Role::PromptCache
+  - Langertha::Role::ReasoningEffort
+  - Langertha::Role::Runnable
+  - Langertha::Role::RuntimeKnobs
+  - Langertha::Role::StaticModels
+  - Langertha::Role::ThinkTag
+
+CLAUDE.md itself is current - only the shipped POD catalogue is stale. Pure prose/POD work, no behaviour.
+
+Consider a t/ guard that asserts every lib/Langertha/{Engine,Role}/*.pm appears in the respective POD list, so the catalogue cannot drift again silently.
+DONE (pending review). Verified against the tree, not the ticket list — the tree had moved since.
+
+Engines: 28 listed, 38 files. 7 concrete engines were missing and are now listed: OpenAIResponses, Moonshot, MoonshotAnthropic, XAI, VLLMHook, AKIAnthropic, Hetzner. Catalogue is now 35 entries.
+
+The three abstract bases (Remote, OpenAIBase, AnthropicBase) are DELIBERATELY not entries — decided explicitly per the ticket. They are instead named in a new intro paragraph to the section, pointing subclassers (incl. LangerthaX::Engine::*) at them, and they are allowlisted with reasons in the guard. TranscriptionBase stays an entry: it is user-reachable via OpenAI->whisper.
+
+Roles: 22 listed, 32 files. All 10 missing roles are now listed: AnthropicCompatible, ThinkTag, ReasoningEffort, PromptCache, CachedContent, StaticModels, ParallelToolUse, RuntimeKnobs, Runtime::MetricsPoll (nested — the ticket missed this one), Runnable. Intro reworded because Runnable is composed by Raider/Raid, not by engines.
+
+Also: "B<24 engines>" in Key Features was drift too -> 35, and now guarded.
+
+GUARD: t/79_pod_catalogue.t (219 tests), modelled on t/78_capability_registry.t. Checks BOTH directions per lane — file on disk not in POD, and POD entry with no file (the second is the Langfuse-shaped failure). Plus: no duplicate entries, allowlist entries still exist, and the headline count equals the catalogue size. Only the module named at the START of an =item counts as an entry, so prose links like "composed by L<Langertha::Role::Chat>" are not miscounted as coverage.
+
+Allowlist: %ENGINE_NOT_CATALOGUED = Remote, OpenAIBase, AnthropicBase (each with reason). %ROLE_NOT_CATALOGUED is empty by design, with a comment saying why the mechanism stays.
+
+NEGATIVE-VERIFIED, all four paths went red then green again:
+1. dummy lib/Langertha/Engine/DummyDrift.pm -> FAIL
+2. dummy nested lib/Langertha/Role/Runtime/DummyDrift.pm -> FAIL (nesting matters: Runtime::MetricsPoll is the real-world case)
+3. phantom POD entry L<Langertha::Role::Vanished> -> FAIL
+4. count back to 24 -> FAIL with "Key Features says 24 engines, the catalogue lists 35"
+
+prove -lr t/: 87 files / 2943 tests PASS (all live tests skipped, no API keys set — offline). perlcritic clean. podchecker OK. All 90 L<Langertha::*> links resolve to real files.
+
+Not committed. Spun off: #107 (t/00_load.t missing 35 modules), #109 (stale model names in the catalogue prose).
