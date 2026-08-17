@@ -144,6 +144,31 @@ The asymmetry between chat-shape flags (request body fields) and
 the observability-shape flag (`runtime_metrics`) is documented in
 ADR 0014.
 
+### Engine composition axes
+
+**wire envelope**:
+The dialect body of an engine — the `chat_request` / `chat_response` pair, the
+auth hook (`update_request`), the stream framing (`stream_format` /
+`parse_stream_chunk`), the rate-limit reader. Envelope-shaped and
+all-or-nothing: an engine speaks exactly one.
+_Avoid_: "wire format" (that is the `*_wire_format` tag), "transport" (that is
+`Engine::Remote` + `Role::HTTP`)
+
+**dialect axis**:
+The inheritance axis. A **wire envelope** lives on it — in the engine class, or
+in a `Role::<X>Compatible` once a second consumer needs it from a different
+parent. → **ADR 0006**, **ADR 0013**, **ADR 0016**.
+_Avoid_: "the base-class axis" when the envelope has already moved to a role
+
+**capability axis**:
+The role axis. A **capability** — a separable feature surface with its own
+attributes and/or lifecycle methods (`Role::CachedContent`, `Role::Embedding`,
+`Role::Runtime::MetricsPoll`) — lives on it from day one, single consumer or
+not, because `engine_capabilities` derives from `does($role)`. → **ADR 0002**,
+**ADR 0016**.
+_Avoid_: counting consumers to decide the axis — consumer count is the trigger
+for moving an *envelope*, never for placing a *capability*
+
 ## Relationships
 
 - An engine declares exactly one **tool_wire_format**; its default follows the
