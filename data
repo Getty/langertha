@@ -1,0 +1,56 @@
+---
+claimed_at: 2026-08-17T03:54:36Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:54:36Z
+created: 2026-08-17T01:18:43Z
+id: 89
+priority: low
+started: 2026-08-17T03:31:44Z
+status: done
+tags:
+- engines
+- aki
+- anthropic
+- eu
+title: 'Engine::AKIAnthropic: AKI.IO now serves an Anthropic-compatible /v1/messages
+  endpoint'
+updated: 2026-08-17T03:54:36Z
+---
+
+Side finding from the #66 sondierung (verified live 2026-08-17 by langertha-llm-advisor).
+
+AKI.IO ships an Anthropic-compatible interface next to its native API and its OpenAI-compatible
+one (which Langertha covers as Engine::AKIOpenAI):
+
+  base URL:  https://aki.io/anthropic
+  endpoint:  /v1/messages
+  auth:      x-api-key: <AKI key>   (anthropic-version accepted but not required)
+  streaming: SSE
+  models:    /anthropic/v1/models
+
+That is a FIFTH consumer of the existing Role::AnthropicCompatible (after Anthropic,
+MiniMaxAnthropic, MoonshotAnthropic, LMStudioAnthropic) and it is EU/GDPR-hosted — the same
+selling point as the existing AKI engines.
+
+Implementation would be the usual thin shim: `extends Langertha::Engine::AnthropicBase`, url
+default + _build_api_key (LANGERTHA_AKI_API_KEY, same env as Engine::AKI) + default_model.
+
+Quirk to encode/document: unknown model IDs do NOT error — the endpoint silently falls back to
+MiniMax M2.5. Worth a POD warning at minimum.
+
+Nice side effect: this is direct evidence that ADR 0013 (envelope as composed role) paid off on
+the Anthropic side, while #66 concludes the opposite for the single-consumer dialects.
+Built. Every wire fact was confirmed from AKI.IO public documentation only — no live call was made against the endpoint (maintainer constraint).
+
+Confirmed from https://aki.io/docs/compatibility/anthropic-api-compatibility/ and https://aki.io/docs/compatibility/for-ai-coding-agents/:
+- base URL https://aki.io/anthropic, endpoint /v1/messages ("AKI.IO API internally appends /v1/messages")
+- auth x-api-key, raw value, docs say explicitly "NO Bearer prefix"
+- anthropic-version accepted but not required
+- SSE streaming via stream, system as top-level parameter, default_max_output_tokens 8192
+- 9 model ids, and verbatim: "Requests to unknown model names will fall back onto the Minimax M2.5 model."
+
+NOT confirmed: tool calling on /anthropic (docs list no tools parameter for this endpoint; tool calling is documented only for /openai/v1). The engine inherits the anthropic tool wire format from AnthropicBase and the POD says plainly that it is unverified. See #102. Model discovery is also contradictory in AKI docs (/anthropic/v1/models vs /openai/v1/models), so the engine uses Role::StaticModels like the MiniMax/Moonshot shims instead of relying on either.
+
+Files: lib/Langertha/Engine/AKIAnthropic.pm (new), t/26_akianthropic_requests.t (new), t/10_engine_hierarchy.t, lib/Langertha/Engine/AnthropicBase.pm (extender POD list). Suite green recursively, perlcritic clean. Not committed. Follow-ups in #103.
+Umgesetzt als 6f3fc11 (Engine) + 80be0de (Doku). Der Worker hat gebaut, weil die AKI-Compatibility-Doku alle Wire-Fakten hergab (Base-URL ohne /v1 - die Doku benennt die Doppel-/v1-Falle selbst; rohes x-api-key ohne Bearer-Prefix; anthropic-version optional; neun Model-IDs; default_max_output_tokens 8192). Gelesen per crawl4ai, KEINE Requests gegen den Endpoint - Maintainer-Vorgabe eingehalten. Nicht behauptet, was nicht belegt war: Tool Calling ist auf /anthropic undokumentiert (die Engine erbt das native anthropic-Format, die POD sagt ausdruecklich ungetestet), und die Model-Discovery widerspricht sich zwischen zwei Doku-Seiten, daher StaticModels. Der Silent-Fallback auf Minimax M2.5 steht als Warnblock in der POD und im CLAUDE.md-Bullet. Folgetickets #102 (AKIOpenAI-Hermes-Entscheidung moeglicherweise veraltet, braucht eine Live-Probe) und #103 (t/00_load fehlt AKIAnthropic und MoonshotAnthropic; AKI->anthropic als Gegenstueck zu ->openai; Live-Smoketest).
