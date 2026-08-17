@@ -587,7 +587,7 @@ B<Using with Mojolicious:>
 
     my $openai = Langertha::Engine::OpenAI->new(
         api_key => $ENV{OPENAI_API_KEY},
-        model   => 'gpt-4o-mini',
+        model   => 'a small fast model from your provider',
     );
 
     my $future = $openai->simple_chat_stream_realtime_f(
