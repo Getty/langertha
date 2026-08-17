@@ -1,0 +1,56 @@
+---
+claimed_at: 2026-08-17T04:59:01Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-17T04:59:01Z
+created: 2026-08-17T04:08:59Z
+id: 107
+priority: medium
+started: 2026-08-17T04:58:20Z
+status: done
+tags:
+- tests
+- drift
+title: t/00_load.t is a third hand-maintained module list and is missing 35 modules
+updated: 2026-08-17T04:59:01Z
+---
+
+Found while fixing the lib/Langertha.pm POD catalogues (karr #86).
+
+t/00_load.t hardcodes @modules for the load smoketest. Measured against the tree it is missing 35 modules — 8 engines and 27 roles:
+
+Engines: AKIAnthropic, HuggingFace, Moonshot, MoonshotAnthropic, OpenAIResponses, TranscriptionBase, VLLMHook, XAI
+Roles: AnthropicCompatible, CachedContent, Capabilities, Chat, ContextSize, Embedding, HermesTools, HTTP, ImageGeneration, JSON, KeepAlive, Models, OpenAPI, ParallelToolUse, PluginHost, PromptCache, ReasoningEffort, ResponseFormat, ResponseSize, RuntimeKnobs, Seed, StaticModels, Streaming, SystemPrompt, Temperature, ThinkTag, Transcription
+
+So the "verify all Langertha modules load successfully" claim in its ABSTRACT is not true today — a new module that fails to compile standalone would not be caught.
+
+Fix options:
+a) discover the module list from disk (Module::Pluggable or a Path::Tiny walk) instead of hardcoding it, or
+b) keep the list and guard it the way t/79_pod_catalogue.t guards the POD catalogues.
+
+(a) is the better fit — there is no editorial judgement in a load smoketest, unlike the user-facing POD catalogue where abstract bases are deliberately omitted.
+
+Not fixed in #86: that ticket is scoped to the POD catalogues in lib/Langertha.pm.
+
+Done. Replaced hardcoded @modules in t/00_load.t with a Path::Tiny disk walk
+over lib/ (sort by dotted module name for deterministic order; use FindBin
+to locate lib/ relative to t/).
+
+Old list: 53 modules hardcoded. New list: 117 modules discovered from disk.
+All 35 ticket-named modules now included (8 engines + 27 roles) plus 29
+additional modules the previous list also missed (Tool/ToolCall/ToolChoice/
+ToolResult, Content/Image, Cost, Embedder, ImageGen, MCP::Client, Plugin,
+Plugin::Langfuse, Pricing, PromptCache, RateLimit, Reasoning, Runtime::Knobs,
+Runtime::Metrics::OTLP, Spec::LMStudio/Mistral/Ollama/OpenAI, Stream,
+Stream::Chunk, Usage, UsageRecord, VLLMHook::Config).
+
+Tests: prove -lr t/ -> 88 files / 3048 tests PASS, no failures. Skips are
+the live API tests gated on TEST_LANGERTHA_*_API_KEY, as expected.
+perlcritic on t/00_load.t: clean.
+
+Follow-up left deliberately:
+- Langertha.pm itself is now loaded by the smoketest (it was already in the
+  old hardcoded list as 'Langertha', so this is not a new exposure). It
+  loads fine; no exclude needed.
+- LangerthaX (under lib/, not lib/Langertha/) is included; it loads fine
+  via require_module and was already in the old list.
