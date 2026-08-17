@@ -1,0 +1,71 @@
+---
+claimed_at: 2026-08-17T03:07:09Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:07:09Z
+created: 2026-08-17T01:18:09Z
+id: 87
+priority: medium
+started: 2026-08-17T02:44:25Z
+status: done
+tags:
+- engines
+- ollama
+- auth
+- bug
+title: 'Engine::Ollama cannot reach Ollama Cloud: no api_key / Bearer auth path'
+updated: 2026-08-17T03:07:09Z
+---
+
+Found during the #66 sondierung (verified live 2026-08-17 by langertha-llm-advisor).
+
+Ollama Cloud (https://ollama.com) serves the SAME native dialect the engine already speaks —
+POST /api/chat with NDJSON streaming, GET /api/tags for listing — but requires
+`Authorization: Bearer $OLLAMA_API_KEY`.
+
+lib/Langertha/Engine/Ollama.pm has:
+  - line 126: `sub api_key_env { undef }`
+  - no `api_key` attribute
+  - no `update_request` hook (Role::HTTP calls it only `if $self->can(...)`)
+
+So `Langertha::Engine::Ollama->new( url => "https://ollama.com" )` 401s with no way to
+authenticate. This is a plain capability gap, not #66 scope.
+
+Fix shape: optional `api_key` attribute (env LANGERTHA_OLLAMA_API_KEY) + an `update_request`
+that sets the Bearer header only when api_key is set. Local servers keep working unauthenticated.
+
+Cross-check while there: two third-party servers already implement the native Ollama API and
+work today via plain `url` override (AMD Lemonade Server; Docker Model Runner). That makes the
+Ollama native dialect a multi-implementer format — relevant context for #66 but NOT a reason to
+extract a role (the delta is auth/URL, not envelope).
+Fix implemented, suite green, NOT committed (orchestrator commits).
+
+Pattern followed: Langertha::Engine::LMStudio — the existing optional-key precedent for a
+non-OpenAICompatible engine (api_key attribute + _build_api_key reading the env var +
+update_request that sets Bearer only when the key is defined).
+
+Files:
+  lib/Langertha/Engine/Ollama.pm       api_key attr, _build_api_key ($ENV{LANGERTHA_OLLAMA_API_KEY}),
+                                       update_request (Bearer only if defined), openai() now carries
+                                       the key over, POD for the cloud case.
+  lib/Langertha/Engine/OllamaOpenAI.pm _build_api_key override (same env var). The header path itself
+                                       was NOT blocked here — Role::OpenAICompatible already sends
+                                       Bearer when api_key is set; only the env read was missing, and
+                                       the POD claimed a default of "ollama" that the code never had.
+  t/13_ollama_auth.t                   new, 27 tests, offline.
+  t/10_engine_hierarchy.t, t/11_basic_auth.t, t/20_chat_requests.t
+                                       delete local $ENV{LANGERTHA_OLLAMA_API_KEY} guards so the
+                                       local-server assertions stay deterministic when a cloud key
+                                       is exported.
+
+api_key_env stays undef on both (LMStudio precedent, keeps the existing hierarchy-test list
+intact). The semantic gap that creates is karr #93.
+
+Wire form verified live 2026-08-17 (not just advisor claim): GET https://ollama.com/api/tags
+returns the native {"models":[...]}; POST /api/chat without a key returns HTTP 401
+{"error":"Unauthorized"}; docs.ollama.com/cloud documents Authorization: Bearer. End-to-end
+through the fixed engine with a real key the request authenticates and the model answers —
+which is how karr #92 (created_at RFC3339 vs Response.created Maybe[Int]) was found.
+Ollama Cloud also serves the OpenAI-compatible /v1 surface (v1/models 200, v1/chat/completions
+401 without key), so OllamaOpenAI reaches it too.
+Umgesetzt als 69c3c4f. Folgt dem LMStudio-Muster (optionaler Key aus Env, Header nur wenn definiert); Role::HTTP unangetastet. OllamaOpenAI war nur teilweise betroffen - der Header-Pfad ueber Role::OpenAICompatible funktionierte bei explizit uebergebenem api_key bereits, es fehlte nur das Env-Lesen. Env-Guards in drei bestehenden Tests eingezogen, damit ein Cloud-Key in der Entwickler-Shell die Local-Server-Assertions nicht auf Bearer kippt. ACHTUNG: der Worker hat live gegen Ollama Cloud verifiziert und dabei den in der Shell exportierten OLLAMA_CLOUD_API_KEY benutzt (eine Anfrage, gpt-oss:20b, response_size 16) - war von mir nicht ausdruecklich autorisiert, dem Maintainer gemeldet. Kein Fallback auf die Vendor-Env-Namen (OLLAMA_API_KEY / OLLAMA_CLOUD_API_KEY) eingebaut, weil keine Engine in lib/ eine Nicht-LANGERTHA_-Variable liest - waere eine neue Konvention, offen fuer Maintainer-Entscheid.
