@@ -1,0 +1,53 @@
+---
+claimed_at: 2026-08-17T04:10:12Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T04:10:12Z
+created: 2026-08-17T03:48:43Z
+id: 104
+priority: medium
+started: 2026-08-17T03:55:40Z
+status: done
+tags:
+- gemini
+- bug
+- engines
+title: 'Role::CachedContent: list_cached_contents_f(page_size|page_token) dies - ''last''
+  inside do{}while'
+updated: 2026-08-17T04:10:12Z
+---
+
+Pre-existing (found while doing karr #94, NOT introduced by it - reproduces identically on HEAD~).
+
+lib/Langertha/Role/CachedContent.pm, list_cached_contents_f:
+
+    do {
+      ...
+      last if defined $opts{page_token} || defined $opts{page_size};
+    } while ( defined $token && length $token );
+
+A do-BLOCK-while is not a loop block in Perl, so `last` is fatal:
+
+    Can't "last" outside a loop block at lib/Langertha/Role/CachedContent.pm line 282.
+
+Repro (offline, fake LWP::UserAgent):
+
+    $engine->list_cached_contents( page_size  => 10 );   # dies
+    $engine->list_cached_contents( page_token => "t1" ); # dies
+    $engine->list_cached_contents;                       # ok - the `last` line is never reached
+
+So both documented one-page options (POD: "Accepts page_size and page_token for one-page
+control") are unusable; only the unpaginated walk works. The request IS issued before the
+die, so the failure looks like a parse/loop bug rather than a transport one.
+
+No test covers it: t/47 only exercises list_cached_contents with no options.
+
+Fix shape: wrap the body in a bare block
+
+    LOOP: {
+      do { ... last LOOP if ...; redo LOOP if defined $token && length $token; }
+    }
+
+or, simpler, restructure to a plain `while (1) { ...; last if ...; last unless defined $token && length $token; }`.
+Add coverage for both one-page options and for the multi-page walk (nextPageToken chain).
+Fixed: do{}while -> while(1) with two explicit last exits in list_cached_contents_f (lib/Langertha/Role/CachedContent.pm). New offline test t/49_gemini_cached_content_pagination.t (21 tests) covers the multi-page walk, page_size, page_token (percent-encoded opaque token), both options together, the empty collection, and the sync wrapper. Red proof against unfixed HEAD: Can't "last" outside a loop block at .../CachedContent.pm line 282; the file exits 255 after test 6. Green after the fix. Verified in an isolated worktree at HEAD (parallel workers were churning the shared tree): prove -lr t/ = 86 files / 2684 tests all pass (baseline 85/2663 plus my 21). perlcritic clean. No async twin: list_cached_contents_f IS the async form, list_cached_contents is a ->get wrapper over it. Scanned every other do{}while in lib/bin/maint (Role::AnthropicCompatible::_fetch_all_models, Engine::Gemini::_fetch_all_models) - neither contains last/next/redo, so the bug was unique to this loop. NOT committed, NOT staged.
