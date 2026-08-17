@@ -35,8 +35,8 @@ L<Langertha::Engine::AnthropicBase>, which supplies the C<url> / HTTP / JSON
 infrastructure from L<Langertha::Engine::Remote>.
 
 As with L<Langertha::Role::OpenAICompatible>, this role is only
-self-contained in isolation: it assumes the composer brings a
-C<gem::Remote> infrastructure (C<url>, C<generate_http_request>,
+self-contained in isolation: it assumes the composer brings the
+L<Langertha::Engine::Remote> infrastructure (C<url>, C<generate_http_request>,
 C<parse_response>, C<json>, C<user_agent>, C<chat_model>,
 C<get_response_size>, C<has_temperature>, C<reasoning_kwargs_for>,
 C<prompt_cache_kwargs_for>, C<tool_wire_format>, C<has_parallel_tool_use> /
@@ -53,8 +53,6 @@ class stays a thin composition shell.
 sub _build_reasoning_wire_format { 'anthropic' }
 sub _build_cache_wire_format { 'anthropic' }
 
-# The Anthropic family has the cache_control enable breakpoint but no OpenAI-style
-# routing key. Clear the key flag so only the enable flag is advertised (ADR 0002).
 sub default_response_size { 1024 }
 
 sub content_format { 'anthropic' }
