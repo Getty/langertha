@@ -222,9 +222,11 @@ This ADR layers the *mechanics* on top:
 - **Explicit asymmetry** (decision 3) is cheaper than a half-done refactor.
   Naming "the generation-parameter block is duplicated because the
   dialect-aware fields around it need wire context" is the right level for
-  now — a future `Langertha::Role::GenerationParams` helper becomes possible
-  the day both dialect sides can hand the helper a fully resolved wire context,
-  which #64 delivered (579d0c8, ADR 0013).
+  now — the wire-agnostic subset is shared through the
+  `generation_kwargs_for` helper on `Langertha::Engine::Remote` (karr #98;
+  the open design question closed by #111), not a new role, because
+  ADR 0016's second-consumer trigger does not fire (both consumers
+  descend from `Engine::Remote`).
 
 ## Consequences
 
@@ -254,7 +256,14 @@ This ADR layers the *mechanics* on top:
   - karr #68 finding-1/2 implementation: update the per-direction code
     comments in `OpenAIBase.pm` / `AnthropicBase.pm` to point at this
     ADR + the partner direction. *Done* — karr #80 (9715189).
-  - `Role::GenerationParams` extraction — no longer gated on #64, which
-    landed in 579d0c8 and made `Langertha::Role::AnthropicCompatible` the
-    stable home. Open work, not an open blocker; decision 3 names the one
-    remaining precondition.
+  - Generation-parameter helper extraction — *done* as the
+    `generation_kwargs_for` method on `Langertha::Engine::Remote`
+    (`Engine::Remote.pm:147-182`), per karr #98; decision 3's open
+    design question closed by karr #111. The wire-agnostic kwargs
+    share a method on the common ancestor; dialect-specific
+    positioning (`temperature`, `response_format`, `seed`, `knobs_kwargs_for`,
+    `inference_geo`, …) stays inline because each dialect positions
+    those fields at a specific place in the body. Remaining follow-up,
+    if any: other dialect families (Gemini, Ollama, TranscriptionBase,
+    AKI, LMStudio native) adopting the helper once they grow a
+    `chat_request` that emits the same wire-agnostic kwargs.

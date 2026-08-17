@@ -115,6 +115,14 @@ is itself just one line *inside* the generation-parameter block in
 `Role::OpenAICompatible::chat_request`. The block is an inline code pattern —
 not a role, not a value object, not a wire-format tag.
 
+**generation_kwargs_for** (helper on `Langertha::Engine::Remote`):
+The canonical home for the wire-agnostic slice of the generation-parameter
+block — a method on the common ancestor that both `Role::OpenAICompatible`
+and `Role::AnthropicCompatible` call from their `chat_request` /
+`chat_stream_request`. Helper-on-Remote (not a role) because both
+consumers descend from `Engine::Remote`, so ADR 0016's second-consumer
+trigger does not fire. karr #98; ADR 0015 decision 3.
+
 ### Response-side observability (sibling seams)
 
 Two sibling seams sit on the response side. Their canonical vocabularies
