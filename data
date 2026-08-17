@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-08-17T06:16:17Z
+claimed_by: claude
+class: standard
+completed: 2026-08-17T06:16:17Z
+created: 2026-08-17T06:04:58Z
+id: 114
+priority: low
+started: 2026-08-17T06:16:05Z
+status: done
+tags:
+- docs
+- engine
+- wire-format
+title: AnthropicBase.pm:9-19 -excludes clauses lack WHY-comments
+updated: 2026-08-17T06:16:17Z
+---
+
+Gefunden vom langertha-adr-auditor bei karr #97 (2026-08-17). lib/Langertha/Engine/AnthropicBase.pm listet vier -excludes-Klauseln ohne Kommentar dazu, warum die Builder aus der Rolle ausgeschlossen werden:
+
+  Langertha::Role::Chat => { -excludes => [content_format] },
+  Langertha::Role::ReasoningEffort => { -excludes => [_build_reasoning_wire_format] },
+  Langertha::Role::PromptCache => { -excludes => [_build_cache_wire_format] },
+  Langertha::Role::Tools => { -excludes => [_build_tool_wire_format] },
+
+Der naechste Leser muss zu Roles::Chat, ReasoningEffort, PromptCache, Tools springen um zu verstehen dass jeder Default die openai-Draht zurueckgibt und Anthropic-Draht anthropic braucht. Eine Zeile pro -excludes (z.B. "role default returns openai; Anthropic needs anthropic") spart diese Recherche. ADR 0015 Decision 1 zitiert AnthropicBase.pm als Kanon-Beispiel — die Begruendung sollte dort stehen wo der Leser sie erwartet.
+
+Reine Inline-Kommentar-Aenderung, kein Verhalten, kein neues Test noetig.
