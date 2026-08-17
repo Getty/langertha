@@ -1,0 +1,95 @@
+---
+claimed_at: 2026-08-17T03:01:40Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:01:40Z
+created: 2026-08-17T01:09:45Z
+id: 85
+priority: high
+started: 2026-08-17T02:44:19Z
+status: done
+tags:
+- bug
+- tools
+- responses
+- raider
+title: format_tool_results gibt beim 'responses'-Wire-Format ein ARRAYREF statt einer
+  LIST zurueck
+updated: 2026-08-17T03:01:40Z
+---
+
+Gefunden vom #81-Worker beim Ausweiten der Repro auf ein fuenftes Wire-Format; vom Orchestrator im Code bestaetigt (2026-08-17).
+
+Role::Tools::format_tool_results gibt in JEDEM Zweig eine LIST zurueck - ausser im responses-Zweig (lib/Langertha/Role/Tools.pm, "if ( $fmt eq q{responses} )"), der ein ARRAYREF liefert:
+
+    return [ map { ... } @$results ];
+
+Alle drei Tool-Loops pushen den Rueckgabewert direkt in die Konversation:
+- lib/Langertha/Chat.pm:357  (simple_chat_with_tools)
+- lib/Langertha/Chat.pm:435  (simple_chat_with_tools_f)
+- lib/Langertha/Role/Tools.pm:432 (chat_with_tools_f)
+
+Auf Langertha::Engine::OpenAIResponses landet damit EIN Arrayref als einzelnes Konversations-Element statt N Nachrichten, und der naechste Turn stirbt:
+
+    Not a HASH reference at lib/Langertha/Engine/OpenAIResponses.pm line 126
+
+(das ist "next if ( $msg->{role} // q{} ) eq q{system};")
+
+Langertha::Raider hat dieselbe Call-Shape an Raider.pm:1832 und :1907 (my @tool_msgs = $engine->format_tool_results(...)) und erbt die Exposition - bei responses enthaelt @tool_msgs ein Arrayref statt der Nachrichten.
+
+ZUSAETZLICH widersprechen sich Unit-Test und Loop-Contract aktiv: t/60_responses_requests.t:316 kodifiziert den Arrayref-Return (my $messages = $engine->format_tool_results(...)), waehrend saemtliche anderen format_tool_results-Tests (t/60, t/61, t/62, t/63, t/65, t/66) die LIST-Form pruefen (my @messages = ...). Eine der beiden Seiten muss nachgeben - das ist die eigentliche Entscheidung. CONTEXT.md hat mit "Result envelope" / "Assistant echo" bereits das Vokabular dafuer.
+
+Der responses-Zweig laesst ausserdem den Assistant-Echo aus (das function_call-Item), das die Responses-API vor einem function_call_output erwartet.
+
+Vorbestehend, unabhaengig von karr #81. Der Loop-Level ist fuer responses und hermes bisher ungetestet - t/93_chat_tool_loop.t (aus #81) deckt vier Formate ab, diese zwei fehlen. Die Abdeckung fuer responses sollte Teil der Loesung sein.
+Fixed. Three changes, all in the producer -- no caller needed touching.
+
+1) LIST contract won. lib/Langertha/Role/Tools.pm format_tool_results 'responses'
+   branch now returns a LIST like every other branch. git log/blame: the arrayref
+   was NOT deliberate -- it predates the value-object refactor (a7484bf, the
+   original OpenAIResponses commit) where the engine carried its own
+   format_tool_results with the comment 'Responses API: tool results go into a
+   new input item, not back into messages'. That comment justifies the *item
+   shape*, not an arrayref *return*; 2423885 moved the body into Role::Tools
+   verbatim, arrayref and all. No caller ever dereferenced it. t/60:316 was the
+   only thing holding it up.
+
+2) Assistant echo added (confirmed missing). The 'responses' envelope now echoes
+   the model's own output[] items before the results, and hoists a function_call
+   out of the legacy nested-inside-a-message shape that ToolCall->locate also
+   walks -- the API pairs function_call_output with a TOP-LEVEL function_call
+   call_id ('No tool call found for function call output with call_id' otherwise).
+
+3) THIRD, unlisted defect found while fixing (2): ToolResult->to('responses')
+   emitted { role:'tool', call_id, content } -- a chat message, not a Responses
+   input item. Verified against developers.openai.com: the wire wants
+   { type:'function_call_output', call_id, output }. Fixed in
+   lib/Langertha/ToolResult.pm. Had to go with (2): an echo paired with a block
+   the API rejects is still a dead loop, and the regression test would otherwise
+   have codified a shape that 400s. Only t/92_tool_wire.t touches to_responses
+   and it asserts call_id only -- unaffected.
+
+Coverage: t/93_chat_tool_loop.t now sweeps all six tool_wire_formats
+(anthropic/openai/ollama/gemini + responses + hermes). Reproduced the exact
+reported death first ('Not a HASH reference ... OpenAIResponses.pm line 126'),
+then green. Every case now also asserts turn-2's conversation holds only
+hashrefs and grew by N; the responses case additionally asserts the outgoing
+turn-2 request body pairs an echoed function_call with its function_call_output.
+t/60_responses_requests.t: the arrayref subtest replaced by two LIST subtests
+(nested + top-level function_call fixture).
+
+CONTEXT.md: 'Result envelope' now states the LIST contract and that not every
+element is a chat message; 'Assistant echo' states it is not optional on any wire.
+
+Verified: prove -lr t/ green (83 files / 2592 tests -- higher than the 80/2444
+baseline because parallel workers added t/13_ollama_auth.t,
+t/46_gemini_endpoint_seam.t, t/78_capability_registry.t). perlcritic clean.
+Live t/80-89 skipped, no API keys.
+
+Follow-up candidate (NOT fixed, out of scope): Raider's session-history renderer
+(Raider.pm:900 and :1173) interpolates "[$_->{role}] $_->{content}" over
+session_history. Responses envelope items have no 'role' -> uninitialized
+warnings. Pre-existing class of looseness -- anthropic already puts an arrayref
+in {content} there. Worth its own ticket.
+Implementation complete, suite green, perlcritic clean. NOT committed and NOT git-added -- orchestrator commits. Files: lib/Langertha/Role/Tools.pm, lib/Langertha/ToolResult.pm, t/60_responses_requests.t, t/93_chat_tool_loop.t, CONTEXT.md. Note lib/Langertha/ToolResult.pm was outside the assigned file list -- see the preceding note, point (3), for why it had to move.
+Umgesetzt als b02b45b. Die LIST-Form hat gewonnen; der Arrayref hatte keinen Grund (a7484bf, Ursprungscommit von OpenAIResponses - der dortige Kommentar rechtfertigt die Item-GESTALT, nicht den Arrayref-RETURN; 2423885 verschob den Rumpf woertlich nach Role::Tools). Kein Aufrufer hat ihn je dereferenziert, nur t/60_responses_requests.t:316 hielt ihn fest -> Unit-Test nachgegeben. Dritter, im Ticket ungemeldeter Defekt mitgefixt: ToolResult->to_responses lieferte { role => tool, call_id, content } - eine Chat-Nachricht statt eines Responses-input-Items. Korrekt ist { type => function_call_output, call_id, output }. Untrennbar vom Echo-Fix: ein Echo, dessen function_call_output die API ablehnt, bleibt ein toter Loop. Vom Orchestrator gegengeprueft. t/93_chat_tool_loop.t deckt jetzt alle sechs tool_wire_format-Werte ab.
