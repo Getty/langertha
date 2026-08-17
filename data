@@ -1,0 +1,40 @@
+---
+claimed_at: 2026-08-17T04:55:32Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-08-17T04:55:32Z
+created: 2026-08-17T04:10:42Z
+id: 110
+priority: low
+started: 2026-08-17T04:55:32Z
+status: done
+tags:
+- pod
+- ollama
+title: 'OllamaOpenAI: POD behauptet api_key-Default ''ollama'', Code sagt undef'
+updated: 2026-08-17T04:55:32Z
+---
+
+Die POD von Langertha::Engine::OllamaOpenAI sagt:
+
+  "The API key defaults to 'ollama' since Ollama does not require authentication."
+
+Der Code sagt etwas anderes. OllamaOpenAI extends OpenAIBase, das api_key aus
+Langertha::Role::OpenAICompatible bezieht — dort steht `sub _build_api_key { undef }`,
+und weder OpenAIBase noch OllamaOpenAI ueberschreiben das. Der Default ist also undef,
+nicht 'ollama'.
+
+Folge: bei undef setzt OpenAICompatible gar keinen Authorization-Kopf (Role/
+OpenAICompatible.pm, Zeile 22-23: `$request->header(... ) if defined $key`). Gegen ein
+lokales Ollama ist das folgenlos — das verlangt keine Auth. Gegen Ollama Cloud
+(https://ollama.com/v1) ist es der Unterschied zwischen 200 und 401, und wer sich auf
+die POD verlaesst, sucht den fehlenden Kopf lange, weil er glaubt, ein Default sei
+gesetzt.
+
+Zwei moegliche Aufloesungen, beide vertretbar: die POD auf undef korrigieren, oder den
+Default tatsaechlich auf 'ollama' setzen (dann traegt der Aufruf gegen ein lokales
+Ollama einen harmlosen Kopf, und die POD stimmt wieder).
+
+Gefunden am 2026-08-17 aus dem Nachbar-Repo citiai (karr#41 dort), beim Bau der
+Engine-Naht fuer CitiAI::Queen gegen Ollama Cloud. Dort umgangen, indem der Schluessel
+ausdruecklich gesetzt wird — kein Handlungsdruck fuer citiai.
