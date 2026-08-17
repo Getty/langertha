@@ -1,0 +1,83 @@
+---
+claimed_at: 2026-08-17T03:54:47Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T03:54:47Z
+created: 2026-08-17T03:01:04Z
+id: 94
+priority: low
+started: 2026-08-17T03:31:29Z
+status: done
+tags:
+- engines
+- gemini
+- auth
+- seam
+title: Role::CachedContent hardcodes /v1beta + ?key= auth alongside the new Gemini
+  endpoint seam
+updated: 2026-08-17T03:54:47Z
+---
+
+Follow-up to #88, found while factoring the Engine::Gemini endpoint seam.
+
+#88 routed the three Gemini.pm call sites through gemini_url / gemini_model_url /
+gemini_api_version / gemini_auth_query. Role::CachedContent (composed only by
+Engine::Gemini) still builds its own URLs and places the credential itself:
+
+  lib/Langertha/Role/CachedContent.pm:69   $self->url . "/v1beta/cachedContents"
+  lib/Langertha/Role/CachedContent.pm:89   $self->url . "/v1beta/" . $name
+  :139  POST   $url . "?key=" . $self->api_key
+  :175  GET    $url . "?key=" . $self->api_key
+  :210  list   query_form( key => $self->api_key )
+  :276  PATCH  query_form( key => $self->api_key, updateMask => ... )
+  :307  DELETE $url . "?key=" . $self->api_key
+
+Consequence: a subclass that overrides the seam (header auth, /v1 instead of /v1beta,
+another base path) gets correct chat + model-listing URLs but the cachedContents lifecycle
+keeps sending ?key= against /v1beta - a half-converted shim.
+
+Fix shape (again: only WHEN a shim is actually wanted, ADR 0016 decision 3): have the role
+call the consumer's seam - $self->gemini_url("cachedContents", ...) - guarded by can(), the
+way _assert_http_seam already guards url/api_key/user_agent. That drags a Gemini-named method
+into a role, so the naming needs a decision (rename the seam, or `requires` it on the role).
+Not done in #88 to keep that ticket a pure structural move on Engine::Gemini.
+
+Note: cachedContents is a top-level collection, NOT under models/, so it needs gemini_url,
+not gemini_model_url.
+Done (worker-cachedcontent), not committed.
+
+Chosen coupling: `requires qw( gemini_endpoint gemini_url )` on Role::CachedContent - option
+(a) from the ticket. The seam methods are plain subs, installed at compile time, so they exist
+when Gemini's runtime `with` runs; requires holds and fails at composition instead of at the
+first HTTP call. No neutral alias: single consumer, ADR 0016 classes CachedContent as a
+capability role, an indirection with one implementation would be speculative (house rule 2).
+
+Engine::Gemini touched minimally: gemini_endpoint extracted out of gemini_url (path half of
+the seam, credential-free). Needed because t/47 pins _cached_contents_url / _cached_content_url
+with a \z anchor, i.e. they must stay query-free; gemini_url always appends the auth query.
+gemini_url now calls gemini_endpoint, so no behaviour moved.
+
+Role now holds only the resource paths (_cached_contents_path / _cached_content_path); all five
+request sites go through gemini_url. url + api_key dropped from _assert_http_seam - the role
+reads neither any more, and requiring api_key would block an ADC/mTLS consumer.
+
+URL byte-identity verified by diffing 14 generated URLs (whole lifecycle + chat + stream +
+model listing) old-vs-new with a recording UA: identical, except the paginated list, whose old
+query order was randomised by Perl hash ordering (?pageSize=50&key=... vs ?key=...&pageSize=50,
+varied run to run) and is now stable with the auth pair first, matching list_models_request.
+pageToken percent-encoding preserved (URI round-trip kept for opaque pagination values).
+
+New test t/48_gemini_cached_content_seam.t (23 assertions): Developer-API pin for all five
+lifecycle URLs + an inline Vertex-shaped shim (other base URL, v1, projects/{p}/locations/{l}
+prefix via gemini_endpoint, empty gemini_auth_query, Bearer header) proving the lifecycle
+follows. Against the old role with the new engine, 12 of 23 fail with exactly the ticket's
+symptom: https://vertex-shim.invalid/v1beta/cachedContents?key=... - half-converted shim.
+
+Verified offline: prove -lr t/ -> 85 files / 2663 tests PASS (includes other workers' in-flight
+changes; my delta is +1 file / +23 tests). All 13 live files skipped, no TEST_LANGERTHA_* set.
+perlcritic --profile .perlcriticrc lib/ bin/ maint/ -> clean.
+
+Found in passing, filed separately as #104: list_cached_contents_f(page_size|page_token) dies
+on 'last' inside a do{}while. Pre-existing, reproduces identically on HEAD~, left untouched.
+Struktur-Move fertig, nicht committet. Dateien: lib/Langertha/Role/CachedContent.pm, lib/Langertha/Engine/Gemini.pm (minimal: gemini_endpoint aus gemini_url extrahiert), t/48_gemini_cached_content_seam.t (neu). t/47 unveraendert und gruen.
+Umgesetzt als 3b72e06. Kopplung per requires statt neutralem Alias, begruendet: gemini_url/gemini_endpoint sind plain subs, existieren also zur Kompositionszeit - der bestehende Rollenkommentar behauptete, requires ginge nicht, das galt nur fuer die Attribute. Damit scheitert eine falsche Komposition beim with statt beim ersten HTTP-Call. Ein provider-neutraler Name waere eine Abstraktion mit einer Implementierung (ADR 0016 ordnet CachedContent als Single-Consumer-Capability ein). 13 von 14 URLs byte-identisch; die eine Abweichung ist die Parameter-Reihenfolge im paginierten List-Aufruf, die vorher durch Perl-Hash-Ordering ZUFAELLIG war (drei Laeufe des unveraenderten Codes ergaben verschiedene Reihenfolgen) - es gab dort keine Ordnung zu bewahren. Eine bewusste Verhaltensaenderung: url und api_key fallen aus _assert_http_seam, sonst haette die Rolle weiter die Developer-API-Annahme erzwungen. Folgeticket #104: last in einem do{}while ist fatal, page_size/page_token sterben - vom Orchestrator statisch nachgewiesen.
