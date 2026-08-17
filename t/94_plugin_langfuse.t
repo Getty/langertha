@@ -21,14 +21,23 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 
 {
   package MockChatRequest;
-  sub new { bless { response_call => $_[1] }, $_[0] }
+  sub new { bless { response_call => $_[1], wire_body => $_[2] }, $_[0] }
   sub response_call { $_[0]->{response_call} }
+  # The raw wire body a real engine decodes out of the HTTP response, handed
+  # back by MockUserAgent so the mock parse_response (identity) yields what a
+  # real parse_response would rather than a flattened Response (karr #81).
+  sub wire_body { $_[0]->{wire_body} }
 }
 
 {
   package MockUserAgent;
   sub new { bless {}, $_[0] }
-  sub request { 'fake_response' }
+  sub request {
+    my ($self, $request) = @_;
+    return $request->wire_body
+      if ref $request && $request->can('wire_body') && $request->wire_body;
+    return 'fake_response';
+  }
 }
 
 {
@@ -390,7 +399,7 @@ subtest 'Chat with Langfuse + tools creates spans for tool calls' => sub {
     sub chat_request {
       my ($self, $messages, %extra) = @_;
       my $data = shift @{$self->_response_queue} // { final_text => 'done' };
-      return MockChatRequest->new(sub { $data });
+      return MockChatRequest->new(sub { $data }, $data);
     }
 
     sub build_tool_chat_request {

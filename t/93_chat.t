@@ -17,12 +17,22 @@ use Langertha::Chat;
     bless \%args, $class;
   }
   sub response_call { $_[0]->{response_call} }
+  # The raw wire body a real engine decodes out of the HTTP response.
+  # MockUserAgent hands it back so the mock parse_response (identity) yields
+  # what a real parse_response would: the provider's block list, not a
+  # flattened Langertha::Response (karr #81).
+  sub wire_body { $_[0]->{wire_body} }
 }
 
 {
   package MockUserAgent;
   sub new { bless {}, $_[0] }
-  sub request { 'fake_http_response' }
+  sub request {
+    my ($self, $request) = @_;
+    return $request->wire_body
+      if ref $request && $request->can('wire_body') && $request->wire_body;
+    return 'fake_http_response';
+  }
 }
 
 {
@@ -380,6 +390,7 @@ subtest 'Chat with system_prompt + plugin injection — both present' => sub {
     my $resp_data = shift @{$self->_response_queue} // { final_text => 'done' };
     return MockChatRequest->new(
       response_call => sub { $resp_data },
+      wire_body     => $resp_data,
     );
   }
 

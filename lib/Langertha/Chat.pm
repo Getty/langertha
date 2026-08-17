@@ -274,14 +274,18 @@ sub _tool_loop_iteration {
   my $request = $engine->build_tool_chat_request($conversation, $formatted_tools, $self->_extra);
 
   my $response = $engine->user_agent->request($request);
-  my $data = ref $response eq 'HASH'
-    ? $response  # mock: chat_request returns data directly via response_call
-    : $engine->parse_response($response);
 
-  # If response_call exists (Langertha::Request::HTTP), use it
-  if (ref $request && $request->can('response_call') && $request->response_call) {
-    $data = $request->response_call->($response);
-  }
+  # The tool loop needs the RAW decoded wire body, not the engine's
+  # Langertha::Response: response_tool_calls, response_text_content and
+  # format_tool_results all walk the provider's own block list
+  # (content[] / choices[] / message / candidates[] / output[]).
+  # Role::HTTP::generate_http_request ALWAYS installs a response_call, and every
+  # chat_response flattens the wire body into a Langertha::Response whose
+  # ->{content} is a plain string -- so going through response_call here dropped
+  # the tool_use blocks and then blew up on the flattened text (karr #81).
+  # Same choice as the async sibling simple_chat_with_tools_f and
+  # Langertha::Role::Tools::chat_with_tools_f.
+  my $data = $engine->parse_response($response);
 
   # Plugin hook: after LLM response
   $data = $self->_run_plugin_after_llm_response($data, $iteration)->get;
