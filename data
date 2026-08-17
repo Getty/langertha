@@ -1,0 +1,82 @@
+---
+claimed_at: 2026-08-17T04:14:30Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-08-17T04:14:30Z
+created: 2026-08-17T03:45:55Z
+id: 100
+priority: medium
+started: 2026-08-17T03:55:35Z
+status: done
+tags:
+- response
+- api
+- footgun
+title: Langertha::Response is false in boolean context when content is empty (tool-call-only
+  replies)
+updated: 2026-08-17T04:14:30Z
+---
+
+Found while writing the karr #92 regression test.
+
+Langertha::Response overloads only stringification:
+
+  lib/Langertha/Response.pm:8-10
+    use overload
+      "\"\"" => sub { $_[0]->content },
+      fallback => 1;
+
+With fallback => 1 Perl derives bool from the "" overload, so a Response whose
+content is the empty string is FALSE in boolean context. That is exactly the
+shape of a tool-call-only reply (Ollama fixture t/data/ollama_tool_call_response.json
+has message.content == "" plus one tool_call), and of Anthropic replies that are
+pure tool_use.
+
+Consequence for callers:
+
+  my $resp = $engine->simple_chat(...);
+  if ($resp) { ... }            # silently skipped for a tool-call-only reply
+  $resp or die "no response";   # dies on a perfectly good Response
+
+It bit the new test itself: ok($resp, ...) failed on a successfully constructed
+object; the test now asserts defined-ness instead.
+
+Fix candidates (design decision, not a drive-by):
+  a) add bool => sub { 1 } to the overload list (an object that exists is true)
+  b) leave it and document the trap in the Response POD SYNOPSIS
+
+(a) is the honest one and matches how every other value object in the dist
+behaves, but it is a public-behavior change: code doing `if ($resp)` as a
+stand-in for `if (length $resp)` would flip. Worth deciding deliberately.
+Decision: option (a) — added 'bool' => sub { 1 } to the overload list.
+
+Scope widened by one file after the consistency check: Langertha::Result has the
+identical pattern ("" => text // '', fallback => 1), and there it is worse —
+question/pause/abort carry their message in 'content', not 'text', so EVERY result
+a caller must actually handle was false. Langertha::Raider::Result inherits the fix.
+Langertha::Usage (%{} overload), ToolCall and Stream::Chunk were already
+true-because-they-exist (verified empirically), so this makes the dist consistent
+rather than introducing a new convention.
+
+Second case the ticket did not name: content '0' was false too — the classic Perl
+false-string trap, hit by any model answering a bare count or a JSON 0.
+
+Back-compat audit: nothing in lib/, bin/ or t/ relies on the falseness. Every
+boolean test on a Langertha::Response/Result goes through a predicate (has_*,
+is_success on HTTP::Response, is_final/is_question) or through ref/blessed + isa.
+The two live tests that combine them (t/86_live_prompt_cache.t:94 and
+t/86_live_reasoning_effort.t) already spell the content check as length($resp),
+which is unaffected.
+
+Stringification contract untouched: "$r" is still content/text, and eq/ne/concat
+keep routing through the "" overload — asserted explicitly, and those assertions
+pass both before and after, so they are not vacuous.
+
+Documented as '=head2 Boolean context' in both classes' POD, including the spelling
+for the question callers actually mean (length "$resp" / has_tool_calls / has_text).
+
+Verification (offline, no live calls): red first — 5 of 14 new assertions in
+t/70_response.t and 6 in t/85_raider_result.t fail against unpatched HEAD.
+Green after: isolated HEAD+patch tree, prove -lr t/ = 85 files / 2675 tests pass
+(baseline 2663 + 12 new). perlcritic --profile .perlcriticrc lib/ bin/ maint/ clean.
+Not committed.
