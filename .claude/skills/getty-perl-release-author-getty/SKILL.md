@@ -1,6 +1,6 @@
 ---
-name: perl-release-author-getty
-description: "Load when dist.ini contains [@Author::GETTY] — bundle options, POD conventions (=attr/=method/=opt), next-version semantics, dzil release workflow, copyright_year, Changes/{{$NEXT}}"
+name: getty-perl-release-author-getty
+description: Load when a dist.ini contains [@Author::GETTY] — bundle options, POD conventions (=attr/=method/=opt), next-version semantics, the dzil release workflow.
 user-invocable: false
 allowed-tools: Read, Grep
 model: sonnet
@@ -16,6 +16,63 @@ author = Name <email>
 license = Perl_5
 copyright_holder = Copyright Owner
 ```
+
+## The LICENSE file
+
+The bundle expects `LICENSE` to be a **committed file in the repository**. It
+removes `[License]` from `@Basic` and adds `[LicenseFile]`, which aborts the
+build when that file is missing or no longer matches the distribution's
+`license`, `copyright_holder` and `copyright_year`:
+
+```
+[@Author::GETTY/LicenseFile] no LICENSE in the distribution:
+run 'dzil genlicense' and commit the file
+```
+
+Write it once, then track it:
+
+```bash
+dzil genlicense
+git add LICENSE
+```
+
+**The `git add` is not optional.** The bundle gathers through `Git::GatherDir`,
+which sees only tracked files, so a LICENSE left untracked in the working
+directory fails with the identical message — which reads as though `genlicense`
+did nothing.
+
+Re-run `genlicense` after changing `license`, `copyright_holder` or
+`copyright_year`. Checking the file against them is the whole point of the
+plugin: a committed LICENSE otherwise keeps serving the old licence silently,
+with no warning and no build failure.
+
+The target is the repository, not the tarball. GitHub, Gitea and Forgejo detect
+a licence only from a committed `LICENSE`, and a generated one never exists
+outside the build — which is why a distribution built the default way shows up
+as unlicensed on its own project page. `genlicense` writes the bare licence
+text, not the `fulltext` that `[License]` generates: the copyright notice
+`fulltext` prefixes is enough to make GitHub report `NOASSERTION` instead of
+naming the licence.
+
+`[LicenseFile]` is a recent addition to the bundle, so distributions that built
+fine before it landed fail on their next build. When picking up an older dist,
+`ls LICENSE` is cheaper than diagnosing it mid-release. For a dist that
+deliberately ships no committed LICENSE, `generate_license = 1` restores the
+generated file and adds no check.
+
+## When the bundle applies
+
+`[@Author::GETTY]` is for Getty's own CPAN work. A distribution that is not
+released to CPAN — a proprietary application, a deploy artefact — lists its
+Dist::Zilla plugins explicitly instead, because the bundle assumes a CPAN
+release. Non-CPAN dists that still use the bundle set `no_cpan = 1`.
+
+## `# ABSTRACT` lines
+
+Every file the bundle processes carries `# ABSTRACT: <one line>` directly under
+`package`, before any `use`; executables in `bin/` carry it under the shebang.
+PodWeaver turns it into the NAME section. Outside a bundle-managed distribution
+the line does nothing — do not scatter it into files Dist::Zilla never sees.
 
 ## @Author::GETTY Options
 
@@ -33,6 +90,7 @@ copyright_holder = Copyright Owner
 - `gitea` - Treat the remote host as Gitea/Forgejo (repository/bugtracker/homepage via GiteaMeta). Only needed for self-hosted instances — codeberg.org and the author's own are auto-detected. No effect when a GitHub remote exists
 - `include_readme` - Ship README.md (excluded from the tarball by default)
 - `no_install` - Resulting distribution can't be installed
+- `generate_license` - Go back to a generated LICENSE: `@Basic` keeps its License plugin, no LicenseFile check is added. Default 0 — the bundle expects a committed LICENSE (see above)
 
 ### Identity & Metadata
 - `author` - CPAN author name used for the authority
@@ -105,6 +163,16 @@ For wrapping C libraries with Alien::Base:
 - `run_before_build`, `run_after_build`
 - `run_before_release`, `run_after_release`
 - `run_release`, `run_test`
+
+Use a run hook for the project-specific step that follows a release — a Docker
+build and push, a deploy script — so it travels with `dzil release` instead of
+living in someone's shell history. Never wire up a step the bundle already
+performs; the hook is for what it does *not* know about.
+
+```ini
+[Run::Release]
+run = docker build -t registry/app:%v %d && docker push registry/app:%v
+```
 
 ## POD Commands (Pod::Elemental::Transformer::Author::GETTY)
 
@@ -182,3 +250,4 @@ dzil release        # Builds, tests, uploads to CPAN, bumps version, commits, ta
 4. Dependencies in `cpanfile`, not dist.ini
 5. Changes file with `{{$NEXT}}` for unreleased
 6. For XS+Alien modules: use `xs_alien = Alien::Foo` (auto-configures MakeMaker::Awesome)
+7. `LICENSE` is generated once with `dzil genlicense` and **committed** — the build aborts without it

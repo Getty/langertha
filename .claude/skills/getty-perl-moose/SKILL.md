@@ -1,12 +1,32 @@
 ---
-name: perl-moose
-description: Moose-Klassen — Attribute, Roles vs. Inheritance, BUILD/BUILDARGS, Type-Constraints, MooseX::Singleton, make_immutable, Method-Modifier.
+name: getty-perl-moose
+description: "Use when writing classes or roles in a Moose distribution — `use Moose`, `use Moose::Role`, attributes, modifiers, immutability."
 ---
 
 # Perl/Moose – Architecture & Implementation Patterns
 
 ## Core Principle
 Use **inheritance sparingly** (stable "is-a" contracts), **roles heavily** (horizontal reuse). When in doubt: role, not subclass. Always end classes with `make_immutable`.
+
+---
+
+## House conventions
+
+- **`with '...'` goes directly under `use Moose;`**, before the remaining `use` lines — role composition is a runtime action, not an import.
+- **`is => 'ro'` is the default**; `rw` needs a reason.
+- **Wrap `has` when a shape repeats.** Many attributes sharing one pattern get a generator sub that calls `has`, rather than the declaration copied N times:
+
+```perl
+sub has_conf {
+  my ( $name, $env_key, $default ) = @_;
+  has $name => (
+  is => 'ro', lazy => 1,
+  default => sub { defined $ENV{$env_key} ? $ENV{$env_key} : ( ref $default eq 'CODE' ? $default->(@_) : $default ) },
+  );
+}
+
+has_conf time_zone => MYAPP_TIME_ZONE => 'Europe/Berlin';
+```
 
 ---
 
@@ -111,10 +131,10 @@ package Role::Counter;
 use MooseX::Role::Parameterized;
 parameter name => (isa => 'Str', required => 1);
 role {
-    my $p = shift;
-    my $n = $p->name;
-    has $n => (is => 'rw', isa => 'Int', default => 0);
-    method "inc_$n" => sub { my $self = shift; $self->$n($self->$n + 1) };
+  my $p = shift;
+  my $n = $p->name;
+  has $n => (is => 'rw', isa => 'Int', default => 0);
+  method "inc_$n" => sub { my $self = shift; $self->$n($self->$n + 1) };
 };
 
 package Game::Weapon;
@@ -138,19 +158,19 @@ has content => (is => 'lazy');                     # built on first access
 sub _build_content { "generated: " . $_[0]->name }
 
 has status  => (
-    is      => 'rw',
-    isa     => 'Str',
-    trigger => sub {                               # fires on new() and set
-        my ($self, $new, $old) = @_;              # $old is undef on construction
-        die "bad status" unless $new =~ /\A(new|ok|done)\z/;
-    },
+  is      => 'rw',
+  isa     => 'Str',
+  trigger => sub {                               # fires on new() and set
+    my ($self, $new, $old) = @_;              # $old is undef on construction
+    die "bad status" unless $new =~ /\A(new|ok|done)\z/;
+  },
 );
 
 has _secret => (is => 'ro', init_arg => 'secret'); # constructor uses 'secret', stored as _secret
 has size    => (
-    is     => 'ro',
-    isa    => 'Int',
-    coerce => 1,                                   # requires subtype with coercion defined
+  is     => 'ro',
+  isa    => 'Int',
+  coerce => 1,                                   # requires subtype with coercion defined
 );
 ```
 
@@ -171,17 +191,17 @@ use Moose;
 use namespace::autoclean;
 
 has tasks => (
-    traits  => ['Array'],
-    is      => 'ro',
-    isa     => 'ArrayRef[Task]',
-    default => sub { [] },
-    handles => {
-        add_task  => 'push',
-        next_task => 'shift',
-        all_tasks => 'elements',
-        task_count => 'count',
-        find_task  => 'first',
-    },
+  traits  => ['Array'],
+  is      => 'ro',
+  isa     => 'ArrayRef[Task]',
+  default => sub { [] },
+  handles => {
+    add_task  => 'push',
+    next_task => 'shift',
+    all_tasks => 'elements',
+    task_count => 'count',
+    find_task  => 'first',
+  },
 );
 __PACKAGE__->meta->make_immutable;
 ```
@@ -197,11 +217,11 @@ package Website;
 use Moose;
 use namespace::autoclean;
 has uri => (
-    is      => 'ro',
-    isa     => 'URI',
-    handles => [qw(host path)],            # list form
-    # OR: handles => { hostname => 'host' }  # rename form
-    # OR: handles => 'Role::URILike',         # delegate interface from role
+  is      => 'ro',
+  isa     => 'URI',
+  handles => [qw(host path)],            # list form
+  # OR: handles => { hostname => 'host' }  # rename form
+  # OR: handles => 'Role::URILike',         # delegate interface from role
 );
 __PACKAGE__->meta->make_immutable;
 # $site->host() calls $site->uri->host() internally
@@ -213,19 +233,19 @@ __PACKAGE__->meta->make_immutable;
 
 ```perl
 before 'save' => sub {
-    my $self = shift;
-    die "read-only mode" if $self->readonly;     # validate; cannot change return value
+  my $self = shift;
+  die "read-only mode" if $self->readonly;     # validate; cannot change return value
 };
 
 after 'save' => sub {
-    my ($self, @args) = @_;
-    $self->log("saved");                         # side effects; cannot change return value
+  my ($self, @args) = @_;
+  $self->log("saved");                         # side effects; cannot change return value
 };
 
 around 'calculate' => sub {
-    my ($orig, $self, $x) = @_;
-    return 0 if $x < 0;
-    return $self->$orig($x) * 2;                # CAN change return value
+  my ($orig, $self, $x) = @_;
+  return 0 if $x < 0;
+  return $self->$orig($x) * 2;                # CAN change return value
 };
 ```
 
@@ -242,8 +262,8 @@ package Report;
 use Moose;
 use namespace::autoclean;
 sub render {
-    my $self = shift;
-    "<html>" . inner() . "</html>";    # inner() calls augment from child
+  my $self = shift;
+  "<html>" . inner() . "</html>";    # inner() calls augment from child
 }
 __PACKAGE__->meta->make_immutable;
 
@@ -252,8 +272,8 @@ use Moose;
 use namespace::autoclean;
 extends 'Report';
 augment 'render' => sub {
-    my $self = shift;
-    "<pdf>" . inner() . "</pdf>";     # chain further down if needed
+  my $self = shift;
+  "<pdf>" . inner() . "</pdf>";     # chain further down if needed
 };
 __PACKAGE__->meta->make_immutable;
 ```
@@ -266,16 +286,16 @@ Use when the parent defines the *frame* and children fill in the *content*. Rare
 
 ```perl
 around BUILDARGS => sub {
-    my ($orig, $class, @args) = @_;
-    # normalize: allow single string arg
-    return $class->$orig(id => $args[0]) if @args == 1 && !ref $args[0];
-    $class->$orig(@args);
+  my ($orig, $class, @args) = @_;
+  # normalize: allow single string arg
+  return $class->$orig(id => $args[0]) if @args == 1 && !ref $args[0];
+  $class->$orig(@args);
 };
 
 sub BUILD {
-    my ($self, $args) = @_;     # called AFTER all attributes are set
-    die "SSN required for US" if $self->country eq 'USA' && !$self->ssn;
-    # don't call SUPER::BUILD — Moose handles the chain (parent→child order)
+  my ($self, $args) = @_;     # called AFTER all attributes are set
+  die "SSN required for US" if $self->country eq 'USA' && !$self->ssn;
+  # don't call SUPER::BUILD — Moose handles the chain (parent→child order)
 }
 ```
 
@@ -313,13 +333,13 @@ __PACKAGE__->meta->make_immutable; # ALWAYS — massive perf gain on object crea
 use Moose::Util::TypeConstraints;
 
 subtype 'PositiveInt',
-    as 'Int',
-    where { $_ > 0 },
-    message { "$_ is not a positive integer" };
+  as 'Int',
+  where { $_ > 0 },
+  message { "$_ is not a positive integer" };
 
 coerce 'PositiveInt',
-    from 'Str',
-    via { int($_) };
+  from 'Str',
+  via { int($_) };
 
 # Or use Type::Tiny (recommended — works with both Moo and Moose):
 use Types::Standard qw(Str Int ArrayRef InstanceOf);

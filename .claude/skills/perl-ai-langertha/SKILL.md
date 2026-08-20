@@ -1,6 +1,6 @@
 ---
 name: perl-ai-langertha
-description: Langertha LLM framework — Engine creation, Raider autonomous agents, MCP tool integration, plugin system
+description: Use when calling an LLM from Perl via Langertha — engine creation, capability queries, chat_f, Raider agents, MCP tools, the plugin system.
 ---
 
 <oneliner>

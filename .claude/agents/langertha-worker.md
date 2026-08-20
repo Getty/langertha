@@ -6,12 +6,12 @@ allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - perl-ai-langertha
-    - perl-moose
+    - getty-perl-moose
     - perl-io-async-future
-    - perl-release-author-getty
+    - getty-perl-release-author-getty
     - perl-release-dist-ini
-    - git-commit-style
-    - karr
+    - getty-git-commit-style
+    - kanban-issues-karr-cli
 ---
 
 You are the langertha-worker for the **Langertha LLM framework**.

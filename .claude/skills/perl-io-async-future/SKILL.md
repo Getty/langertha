@@ -1,8 +1,6 @@
 ---
-name: Perl IO::Async + Future
-description: Async Perl with IO::Async, Future, Future::AsyncAwait — lifecycle, retention, cancellation, reconnect patterns from PEVANS modules and battle-tested fixes
-trigger: when working with IO::Async, Future, Future::AsyncAwait, Net::Async::*, async/await in Perl
-category: language
+name: perl-io-async-future
+description: "Use when writing async Perl — IO::Async, Future, Future::AsyncAwait, Net::Async::*, notifier lifecycle, futures lost to GC, cancellation, reconnect loops."
 ---
 
 # Perl IO::Async + Future — Patterns & Pitfalls
@@ -36,12 +34,12 @@ use Future::AsyncAwait;
 use IO::Async::Stream;
 
 sub configure {
-    my ($self, %params) = @_;
-    for my $key (qw(host port on_connect on_error)) {
-        $self->{$key} = delete $params{$key} if exists $params{$key};
-    }
-    $self->{host} //= 'localhost';
-    $self->SUPER::configure(%params);   # MUST chain — unknown keys die here
+  my ($self, %params) = @_;
+  for my $key (qw(host port on_connect on_error)) {
+    $self->{$key} = delete $params{$key} if exists $params{$key};
+  }
+  $self->{host} //= 'localhost';
+  $self->SUPER::configure(%params);   # MUST chain — unknown keys die here
 }
 
 sub host { $_[0]->{host} }
@@ -59,29 +57,29 @@ sub host { $_[0]->{host} }
 
 ```perl
 async sub connect {
-    my ($self) = @_;
+  my ($self) = @_;
 
-    my $stream = IO::Async::Stream->new(
-        on_read       => sub { $self->_on_read(@_) },
-        on_read_eof   => sub { $self->_on_disconnect('read_eof') },
-        on_read_error => sub { $self->_on_error("read: $_[1]") },
-    );
-    $self->{_stream} = $stream;
-    $self->add_child($stream);
+  my $stream = IO::Async::Stream->new(
+    on_read       => sub { $self->_on_read(@_) },
+    on_read_eof   => sub { $self->_on_disconnect('read_eof') },
+    on_read_error => sub { $self->_on_error("read: $_[1]") },
+  );
+  $self->{_stream} = $stream;
+  $self->add_child($stream);
 
-    # ⚠️ RETAIN the connect Future. If GC'd, the stream never gets its
-    # handle and on_read never fires — silent hang.
-    $self->{_tcp_connect_future} = $stream->connect(
-        host    => $self->{host},
-        service => $self->{port},
-    )->on_fail(sub {
-        my $err = shift;
-        $self->{_connect_future}->fail("connect: $err")
-            unless $self->{_connect_future}->is_ready;
-    });
+  # ⚠️ RETAIN the connect Future. If GC'd, the stream never gets its
+  # handle and on_read never fires — silent hang.
+  $self->{_tcp_connect_future} = $stream->connect(
+    host    => $self->{host},
+    service => $self->{port},
+  )->on_fail(sub {
+    my $err = shift;
+    $self->{_connect_future}->fail("connect: $err")
+      unless $self->{_connect_future}->is_ready;
+  });
 
-    $self->{_connect_future} = $self->loop->new_future;
-    return await $self->{_connect_future};
+  $self->{_connect_future} = $self->loop->new_future;
+  return await $self->{_connect_future};
 }
 ```
 
@@ -98,8 +96,8 @@ The reconnect path is where Future-lifetime bugs cluster. Wrong:
 ```perl
 # ❌ BUG: $f is local to the closure, GC'd as soon as _reconnect returns
 sub _reconnect {
-    my $self = shift;
-    my $f = $self->loop->delay_future(after => 2)->then(sub { $self->connect });
+  my $self = shift;
+  my $f = $self->loop->delay_future(after => 2)->then(sub { $self->connect });
 }
 ```
 
@@ -107,27 +105,27 @@ Right:
 
 ```perl
 sub _reconnect_attempt {
-    my ($self) = @_;
-    return if $self->{_connected};
+  my ($self) = @_;
+  return if $self->{_connected};
 
-    weaken(my $weak = $self);
+  weaken(my $weak = $self);
 
-    $self->{_reconnect_future} = $self->loop
-        ->delay_future(after => $self->{reconnect_wait})
-        ->then(sub {
-            my $self = $weak or return Future->done;
-            return Future->done if $self->{_connected};
-            return $self->connect;
-        })
-        ->on_done(sub {
-            my $self = $weak or return;
-            delete $self->{_reconnect_future};
-        })
-        ->on_fail(sub {
-            my $self = $weak or return;
-            delete $self->{_reconnect_future};
-            $self->_reconnect_attempt;        # try again
-        });
+  $self->{_reconnect_future} = $self->loop
+    ->delay_future(after => $self->{reconnect_wait})
+    ->then(sub {
+      my $self = $weak or return Future->done;
+      return Future->done if $self->{_connected};
+      return $self->connect;
+    })
+    ->on_done(sub {
+      my $self = $weak or return;
+      delete $self->{_reconnect_future};
+    })
+    ->on_fail(sub {
+      my $self = $weak or return;
+      delete $self->{_reconnect_future};
+      $self->_reconnect_attempt;        # try again
+    });
 }
 ```
 
@@ -182,8 +180,8 @@ When you legitimately want to start an op and not wait, but still need it to *fi
 
 ```perl
 $self->_log_async($msg)
-    ->on_fail(sub { warn "log failed: $_[0]" })
-    ->retain;
+  ->on_fail(sub { warn "log failed: $_[0]" })
+  ->retain;
 ```
 
 `->retain` parks the Future on an internal global until it completes, then drops it. Without `retain`, the chain has no holder and gets GC'd before it runs. Use this only when you genuinely don't need the result — otherwise hold the Future yourself.
@@ -196,10 +194,10 @@ $self->_log_async($msg)
 use Future::AsyncAwait;
 
 async sub fetch_user {
-    my ($self, $id) = @_;
-    my $row = await $self->db->query("SELECT ...", $id);
-    my $perms = await $self->perms->for($id);
-    return { %$row, perms => $perms };
+  my ($self, $id) = @_;
+  my $row = await $self->db->query("SELECT ...", $id);
+  my $perms = await $self->perms->for($id);
+  return { %$row, perms => $perms };
 }
 
 # Caller MUST hold the returned Future:
@@ -226,8 +224,8 @@ my $timer = $self->loop->delay_future(after => 5);
 
 # Race the work against the timer
 my $result = await Future->wait_any(
-    $work_future,
-    $timer->then_fail('timeout'),
+  $work_future,
+  $timer->then_fail('timeout'),
 );
 ```
 
@@ -240,7 +238,7 @@ my $result = await Future->wait_any(
 ```perl
 # Before starting a new attempt, kill stale ones
 if (my $f = delete $self->{_connect_future}) {
-    $f->cancel unless $f->is_ready;
+  $f->cancel unless $f->is_ready;
 }
 ```
 

@@ -7,7 +7,7 @@ briefing:
   skills:
     - langertha-adr
     - perl-ai-langertha
-    - karr
+    - kanban-issues-karr-cli
 ---
 
 You are the langertha-adr-auditor for the Langertha LLM framework.

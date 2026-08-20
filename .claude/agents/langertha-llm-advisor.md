@@ -7,7 +7,7 @@ briefing:
   skills:
     - perl-ai-langertha
     - langertha-adr
-    - karr
+    - kanban-issues-karr-cli
 ---
 
 You are the langertha-llm-advisor — the LLM provider & market specialist for the Langertha

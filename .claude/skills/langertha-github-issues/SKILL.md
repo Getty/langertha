@@ -1,6 +1,6 @@
 ---
 name: langertha-github-issues
-description: "Langertha's PUBLIC issue tracker — real humans' bug reports and feature requests, hosted on GitHub (github.com/Getty/langertha) and reached with the `gh` CLI. Read this whenever GitHub, `gh`, public issues, pull requests, or user bug reports come up. NOT the AI/agent work board (that is karr). HARD RULE: never touch GitHub issues — not even read — unless the user explicitly tells you to."
+description: Use whenever GitHub, the gh CLI, public issues, pull requests or user bug reports come up in Langertha. Not the agent work board — that is kanban-issues-karr-cli.
 ---
 
 # Langertha GitHub User Issues (`gh`)

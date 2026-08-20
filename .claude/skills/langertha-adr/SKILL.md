@@ -1,6 +1,6 @@
 ---
 name: langertha-adr
-description: "How Langertha records Architecture Decision Records: the house docs/adr/ format, what counts as ADR-worthy in an LLM-engine framework, and the structure-first method for backfilling decisions already baked into the engine/role/value-object mesh."
+description: Use when recording or backfilling an Architecture Decision Record in Langertha, or when asked whether a decision is ADR-worthy.
 user-invocable: false
 allowed-tools: Read, Grep, Glob, Bash
 model: sonnet

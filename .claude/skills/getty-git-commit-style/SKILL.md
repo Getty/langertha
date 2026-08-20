@@ -1,7 +1,6 @@
 ---
-name: git-commit-style
-description: "Commit message conventions — compact, precise, complete"
-user-invocable: false
+name: getty-git-commit-style
+description: Use when writing or amending a commit message in a Getty repository, including a commit that spans several repos.
 ---
 
 # Commit Message Style
@@ -13,7 +12,7 @@ user-invocable: false
 
 <body — one line per change, no filler>
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude <Model> <noreply@anthropic.com>
 ```
 
 ## Rules
@@ -25,7 +24,10 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 - **No filler**: no "This commit...", no "In this change...", no "Also..."
 - **No @ symbols**: never use `@` in commit messages (e.g. write `[DBIO]` not `[@DBIO]`) — platforms like GitHub interpret `@word` as user/org mentions
 - **Language**: English
-- **Co-Author**: always append the Co-Authored-By line when Claude wrote or co-wrote the changes
+- **Co-Author**: append the Co-Authored-By line whenever Claude wrote or co-wrote the changes.
+  Name the model that actually did the work — read it from the session rather than
+  copying a version out of an older commit or out of this file. If the harness
+  prescribes its own trailers (a session link, a different spelling), use those verbatim.
 
 ## Examples
 
@@ -39,9 +41,9 @@ Schema/Versioned.pm: one call site
 
 Good:
 ```
-Migrate to [@DBIO] bundle, fix _Util rename, add POD
+Migrate to [DBIO] bundle, fix _Util rename, add POD
 
-Switch dist.ini from [@Author::GETTY] to [@DBIO].
+Switch dist.ini from [Author::GETTY] to [DBIO].
 Fix DBIO::_Util -> DBIO::Util in Storage::ASE.
 Fix _dbic_cinnect_attributes typo in Storage::FreeTDS.
 Add inline POD to all four modules.
@@ -57,7 +59,7 @@ Update driver code and documentation
 Bad (too verbose):
 ```
 This commit updates the Sybase driver distribution to use the new
-[@DBIO] Dist::Zilla plugin bundle instead of the previous [@Author::GETTY]
+[DBIO] Dist::Zilla plugin bundle instead of the previous [Author::GETTY]
 bundle. Additionally, it fixes an issue where...
 ```
 
@@ -76,7 +78,7 @@ Summary line
 
 Body lines here.
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude <Model> <noreply@anthropic.com>
 EOF
 )"
 ```
