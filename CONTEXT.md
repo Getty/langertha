@@ -148,6 +148,19 @@ Round-trip latency is recoverable from the difference between
 provider-native and client-measured `total_seconds` when both are
 present.
 
+**Langertha::Moment** — **ADR 0017**:
+The instant a provider reports, currently only
+`Langertha::Response.created`. A `Time::Moment` subclass carrying an
+overload set: `0+` is the Unix epoch (the back-compat contract, and the
+form `to_hash` / `TO_JSON` emit), `""` is the full ISO-8601 stamp with
+sub-seconds. The provider's native form stays under `raw` — the same
+normalized-plus-native split as `timing` (ADR 0011).
+**from_wire** is its one lenient inbound door: epoch number, RFC3339
+string or an existing moment in, a `Langertha::Moment` or `undef` out,
+never a die — an unreadable stamp drops the field rather than failing
+the response. The parse lives in the value object, not in the engine
+(ADR 0001's inbound half).
+
 **runtime_metrics** capability — **ADR 0014**:
 The self-hosted observability seam. Engines that serve a Prometheus
 `GET /metrics` endpoint (vLLM, SGLang, llama.cpp's built-in server)

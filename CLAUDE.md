@@ -57,6 +57,7 @@ refactors:
 - **0014** — self-hosted engines expose runtime metrics via `Role::Runtime::MetricsPoll` (Prometheus `/metrics` scrape)
 - **0015** — `-excludes` role-composition pattern + per-family `engine_capabilities` correction (cache-control direction-pair); the per-dialect generation-parameter block as a deliberate dialect split
 - **0016** — a wire envelope becomes a `Role::<X>Compatible` only when a second consumer needs it from a different parent; capability roles are roles from day one
+- **0017** — `Response.created` is a `Langertha::Moment` value object (`0+` = epoch, `""` = ISO stamp with sub-seconds), reversing karr #92's engine-side epoch conversion
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
@@ -80,7 +81,9 @@ Test framework: `Test2::Bundle::More`. `dzil release` is forbidden without expli
 
 ## OOP / Async / MCP / POD
 
-- **Moose exclusively.** Every class ends with `__PACKAGE__->meta->make_immutable`.
+- **Moose exclusively.** Every class ends with `__PACKAGE__->meta->make_immutable`. One
+  documented exception: `Langertha::Moment` subclasses the XS `Time::Moment` (blessed SCALARs,
+  constructors bless from inside XS) — do not "convert it to Moose". → **ADR 0017**.
 - **`Future::AsyncAwait`** (>= 0.66) for all async methods; **IO::Async** event loop.
 - **MCP**: `Net::Async::MCP` (client), `MCP::Server` (tool definitions, `inputSchema` camelCase).
 - **POD**: `@Author::GETTY` PodWeaver. `# ABSTRACT:` required on every `.pm`; inline `=attr`,
@@ -197,6 +200,11 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **Langertha::Reasoning / PromptCache** — request-side control value objects (reasoning effort,
   prompt caching); per-format serializers dispatched by `reasoning_wire_format` /
   `cache_wire_format`. → **ADR 0009**.
+- **Langertha::Moment** — the instant a provider reports (`Response.created`); a `Time::Moment`
+  subclass that numifies to the Unix epoch and stringifies to the full ISO-8601 stamp.
+  `from_wire` is the lenient inbound door (never dies; an unreadable stamp drops the field).
+  Deliberately **not** Moose — the one documented exception, asserted in
+  `t/91_response_created.t`. → **ADR 0017**.
 - **Langertha::Stream / Stream::Chunk** — streaming iteration; `Stream::Chunk` carries
   `tool_calls`, aggregated by `Role::Chat::aggregate_tool_calls`.
 - **Langertha::Content::Image** — provider-agnostic vision input.
