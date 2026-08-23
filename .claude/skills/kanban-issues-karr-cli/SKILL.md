@@ -9,6 +9,12 @@ Git-native kanban board for multi-agent workflows. Canonical board state lives i
 `refs/karr/*`, not in a checked-in `karr/` directory. Commands materialize a
 temporary task/config view only while they run.
 
+`--json` is available on every command with an alternate rendering. `--compact`
+is not -- exactly nine render one: `board`, `config`, `context`, `dashboard`,
+`list`, `log`, `metrics`, `pick`, `show`. Anywhere else it answers
+`Unknown option: compact` with the usage and exit 2, rather than accepting the
+flag and ignoring it.
+
 ## Commands
 
 ### Initialize
@@ -18,7 +24,8 @@ karr init [--name NAME] [--statuses s1,s2,s3] [--claude-skill] [--new-board]
 ```
 
 Creates the board refs inside the current Git repository. With
-`--claude-skill`, installs this skill to `.claude/skills/karr/SKILL.md`.
+`--claude-skill`, installs this skill to
+`.claude/skills/kanban-issues-karr-cli/SKILL.md`.
 
 Before it writes anything, init asks the remote whether this repository already
 has a board there: `git clone` does not fetch `refs/karr/*`, so a fresh clone
@@ -43,16 +50,41 @@ karr create "Fix the thing" --escalated-from home#5   # the card raised in that 
 ### List tasks
 
 ```bash
-karr list                                    # all non-archived
+karr list                                    # the open cards
 karr list --status todo,in-progress          # filter by status
 karr list --priority high,critical           # filter by priority
 karr list --tag backend                      # filter by tag
+karr list --class expedite                   # filter by class of service
+karr list --blocked                          # only the blocked cards
+karr list --not-blocked                      # only the unblocked ones
+karr list --archived                         # the archive, and nothing else
 karr list -s "search term"                   # search title/body/tags
 karr list --sort priority --reverse          # sort and reverse
+karr list --sort priority -n 5 --json        # the five most urgent open cards
 karr list --claimed-by agent-1               # filter by claim owner
+karr list --unclaimed                        # only what no live claim holds
 karr list --compact                          # one-line output (agent-friendly)
 karr list --json                             # JSON output
 ```
+
+Finished work is out of `list` by default: the board's final column (`done` on
+a default board) and `archived` are shown only when asked for by name
+(`--status done`, `--archived`). `--sort` takes `id`, `title`, `status`,
+`priority`, `created`, `updated` or `due`, and `priority` sorts most urgent
+first. `-n`/`--limit` cuts after filtering **and** after sorting, so
+`--sort priority -n 5` is the five most urgent open cards rather than five
+arbitrary ones put in order -- that is the "what next" call, instead of pulling
+the whole board and cutting it locally.
+
+`--unclaimed` is "what is free right now" -- `claimed_by` unset or empty, or a
+claim older than the board's `claim_timeout`. It is the question `karr pick`
+answers by *taking* the card, so this is how to see the free work without
+touching it, and it uses the very test `pick` uses. It is not the opposite of
+`--claimed-by NAME`: that one is an exact match on the field and matches an
+expired claim too, so the two overlap on "cards NAME no longer holds" and
+passing both is a usage error. Since it asks about the claim and nothing else,
+a blocked card nobody holds is still listed -- `--blocked --unclaimed` is a
+real triage query.
 
 ### Show task
 
@@ -62,6 +94,7 @@ karr show                  # most recently updated task
 karr show --last 5         # the 5 most recent
 karr show --me             # the task you most recently acted on (re-orient)
 karr show --agent NAME     # the task most recently claimed by NAME
+karr show ID --compact     # one line per card, as list --compact
 ```
 
 ### Move task
@@ -99,8 +132,23 @@ dependencies are unfinished warns on move/pick but is never blocked.
 ### Delete task
 
 ```bash
+karr delete ID                               # asks first
 karr delete ID --yes                         # skip confirmation
+karr delete ID,ID,ID --yes                   # a batch
 ```
+
+Before an id goes, `delete` names on STDERR every card on this board that
+points at it -- a `depends_on` entry or a `parent` -- and every cross-board
+link the card itself carries (`escalated-from:`, `needs:`), offering
+`karr archive` as the way to keep the card readable instead. The delete then
+proceeds: karr warns about dependencies, it does not block on them. `--json`
+carries the same sentences as `dependent_warnings` and `cross_board_warnings`
+in the result object.
+
+The question itself goes to STDERR on every path, not only under `--json`:
+STDOUT belongs to the result, so `karr delete ID --json` decodes as a whole
+even when the answer is typed rather than passed as `--yes`. A task with a live
+claim is not deleted at all -- release it or wait for `claim_timeout`.
 
 ### Archive task
 
@@ -113,10 +161,20 @@ Idempotent — archiving an already-archived task is a no-op.
 ### Board summary
 
 ```bash
-karr board
+karr board                                   # every column but the last one
+karr board --done                            # include the final column too
+karr board --tags                            # tags on an extra line per card
+karr board --compact                         # status(count): ids, one per column
+karr board --json                            # JSON output
 ```
 
-Shows tasks grouped by status with WIP utilization.
+Groups the board's cards into one `## Status` section per column, in board
+order and empty sections included, with a footer totalling tasks, claims and
+blocks. The board's final column (`done` on a default board) is hidden unless
+`--done` is given, and the footer says how many it withheld -- `(2 done
+hidden)`. Archived cards are in none of it, in any output mode: `board` reports
+the columns the board works in, and `karr list --archived` is where filed-away
+cards are read.
 
 ### Multi-board dashboard
 
@@ -146,9 +204,10 @@ over half the screen and burying the summary.
 karr pick --claim agent-1                    # pick highest priority available
 karr pick --claim agent-1 --status todo --move in-progress
 karr pick --claim agent-1 --tags backend
+karr pick --claim agent-1 --compact          # stop after the assignment line
 ```
 
-Atomically finds and claims the next available task. Respects claim timeouts, blocked state, and class-of-service priority ordering (expedite > fixed-date > standard > intangible).
+Atomically finds and claims the next available task. Respects claim timeouts, blocked state, and class-of-service priority ordering (expedite > fixed-date > standard > intangible); where two `fixed-date` cards meet, the due date is asked before priority. `--compact` ends the plaintext output after the `Picked task ... (claimed by NAME)` line -- `--json` renders the full task either way.
 
 ### Unlock a stuck task
 
@@ -213,6 +272,7 @@ karr config get KEY                          # get a single value
 karr config set KEY VALUE                    # set a writable value
 karr config show --defaults                  # karr's defaults, no board read
 karr config --json                           # JSON output
+karr config show --compact                   # key=value per line, no padding
 ```
 
 Writable keys: `board.name`, `board.description`, `defaults.status`, `defaults.priority`, `defaults.class`, `claim_timeout`, `lock_timeout`, `foundation.enabled`, `foundation.reason`.
@@ -261,6 +321,7 @@ karr context --sections blocked,overdue      # filter sections
 karr context --days 14                       # lookback for recently-completed
 karr context --activity-limit 10             # other agents' log entries in Recent Activity
 karr context --json                          # JSON output
+karr context --compact                       # board_name and the four counts, key=value
 ```
 
 Generates a markdown summary with sections: In Progress, Blocked, Overdue, Recently Completed, Recent Activity (other agents' log entries, newest first, bounded by `--activity-limit`, default 5). `--sections` takes the slugs `in-progress,blocked,overdue,recently-completed,activity`. Uses `<!-- BEGIN kanban-md context -->` / `<!-- END kanban-md context -->` sentinels for in-place updates.
@@ -401,6 +462,7 @@ karr log                                     # last 20 entries
 karr log --agent swift-fox                   # filter by agent
 karr log --task 5                            # filter by task
 karr log --last 50 --json                    # more entries, JSON
+karr log --compact                           # one line per entry, no padding
 ```
 
 ### Flow metrics
@@ -488,9 +550,7 @@ statuses:
   - done
   - archived
 priorities: [low, medium, high, critical]
-wip_limits:
-  in-progress: 3
-  review: 2
+classes: [expedite, fixed-date, standard, intangible]
 claim_timeout: 1h
 defaults:
   status: backlog

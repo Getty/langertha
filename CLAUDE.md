@@ -246,10 +246,10 @@ my $info = $raider->engine_info;     # { name, class, model }
 | Need | Skill |
 |---|---|
 | Engine creation, Raider, MCP, plugin pipeline (architecture) | `perl-ai-langertha` |
-| Moose patterns (attributes, roles, BUILD, immutability) | `perl-moose` |
+| Moose patterns (attributes, roles, BUILD, immutability) | `getty-perl-moose` |
 | Async (IO::Async, Future, Future::AsyncAwait lifecycle) | `perl-io-async-future` |
-| dist.ini / `[@Author::GETTY]` bundle, POD conventions, next-version | `perl-release-author-getty`, `perl-release-dist-ini` |
-| Commit message conventions | `git-commit-style` |
+| dist.ini / `[@Author::GETTY]` bundle, POD conventions, next-version | `getty-perl-release-author-getty`, `perl-release-dist-ini` |
+| Commit message conventions | `getty-git-commit-style` |
 | ADR format + backfill method | `langertha-adr` |
 | GitHub public issues (`gh`) guardrails | `langertha-github-issues` |
-| karr board commands | `karr` |
+| karr board commands | `kanban-issues-karr-cli` |
