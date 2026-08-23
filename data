@@ -1,0 +1,47 @@
+---
+claimed_at: 2026-08-23T21:24:07Z
+claimed_by: claude
+class: standard
+completed: 2026-08-23T21:24:07Z
+created: 2026-08-23T19:53:14Z
+id: 119
+priority: high
+started: 2026-08-23T20:24:28Z
+status: done
+tags:
+- response
+- ollama
+- types
+title: Response.created wird ein Time::Moment-Werttyp (0+ ergibt Epoch)
+updated: 2026-08-23T21:24:07Z
+---
+
+Maintainer-Entscheidung 2026-08-23: Response.created ist kein nackter Maybe[Int] mehr, sondern eine Time::Moment-Subklasse mit Operator-Overload -- numerischer Kontext (0+) ergibt die Epoch, String-Kontext den ISO-8601-Stamp inklusive Sub-Sekunden.
+
+Warum: karr #92 hat GH #3 (Ollama RFC3339 vs Maybe[Int]) per Epoch-Konvertierung in der Engine geloest. Der Croak ist damit weg, aber die Nanosekunden, die Ollama tatsaechlich schickt, werden plattgedrueckt -- der Parser hat die Fraktion als nicht-einfangende Gruppe drin.
+
+Warum Time::Moment und nicht DateTime/Time::Piece (gemessen, nicht behauptet):
+- Time::Piece scheitert am echten Ollama-Stamp komplett (strptime "Error parsing time"), kennt keine Sub-Sekunden und verliert den Offset (tzoffset=0).
+- DateTime kann alles, ist aber nicht Core und bringt einen grossen Dependency-Baum (DateTime::Locale, DateTime::TimeZone, Params::ValidationCompiler, Specio) fuer ein Feld mit zwei Produzenten.
+- Time::Moment parst den Stamp direkt, haelt die Nanosekunden, liefert einen byte-identischen Round-Trip und braucht runtime nur XSLoader/Carp (Core) plus Time::HiRes -- das steht bereits im cpanfile. Eine Zeile, null neue transitive Runtime-Deps. XS ist kein neues Hindernis: YAML::XS ist schon runtime-required.
+- Keine benannten Zonen/DST -- bewusst akzeptiert, die Provider stempeln ausnahmslos UTC bzw. nackte Epoch.
+
+Prototypisch verifiziert vor der Umsetzung: Subclassing des XS-Moduls traegt, from_string liefert die Subklasse, 0+ ergibt 1777949583, Basisklassen-Methoden (plus_days) geben ebenfalls die Subklasse zurueck.
+
+Vorgabe: TO_JSON emittiert created weiterhin als JSON-Zahl (back-compat, t/70_response.t:399 prueft das). Die karr-#92-Haertungen (Sentinel 0001-01-01, Unparsebares droppt statt croakt, Epoch-Shims) muessen erhalten bleiben.
+
+cpanfile: Time::Moment eintragen. Time::Local fehlt dort ebenfalls, obwohl Engine/Ollama.pm es heute nutzt (Core, deshalb nie aufgefallen) -- mitnehmen oder entfaellt mit dem Umbau.
+
+Time::Moment ist auf der Maintainer-Maschine NICHT systemweit installiert. Fuer die Suite braucht es eine globale Installation -- Entscheidung des Maintainers.
+
+Folgt: ADR ueber die Wahl, und die Antwort an GH #3 sollte die endgueltige Form von created nennen.
+
+Umgesetzt 2026-08-23, uncommitted im Arbeitsverzeichnis. Neu: lib/Langertha/Moment.pm (Time::Moment-Subklasse, 0+ -> epoch, "" -> ISO, eigenes TO_JSON -> Epoch-Zahl, from_wire fuer Objekt/Epoch/ISO). Response.created ist Maybe[Langertha::Moment] mit Coercion in BUILDARGS. Engine/Ollama.pm um 45 Zeilen leichter, _created_at_to_epoch entfaellt, Parsen liegt im Value Object (ADR-0001-Linie). Neuer Test t/91_response_created.t (13 Subtests). Unabhaengig verifiziert: prove -lr t/ = 92 Files, 3122 Tests PASS (Live-Tests skippen mangels Keys); dzil test laut Worker 94 Files, 3367 Tests PASS.
+
+Offen: Time::Moment muss auf der Maintainer-Maschine global installiert werden, sonst laeuft die Suite nicht. Der Index ist nicht pristine -- git add -N auf die beiden neuen Dateien, damit Git::GatherDir sie im dzil-Build sieht. ADR laeuft. Bewusste Verhaltensaenderung: if ($created) bei Epoch 0 ist jetzt wahr statt falsch (bool explizit deklariert).
+
+ADR 0017 geschrieben (docs/adr/0017-response-created-as-moment-value-object.md), ausdruecklich als Umkehrung von karr #92 formuliert, inkl. Abschnitt warum dessen Argumentation nicht mehr traegt. CONTEXT.md um Langertha::Moment + from_wire ergaenzt; CLAUDE.md um ADR 0017, die Core-Klasse und die dokumentierte Moose-Ausnahme.
+
+Orchestrator hat die beiden ADR-Kernbehauptungen unabhaengig nachgemessen und bestaetigt: nacktes Time::Moment liefert bei '0 + $tm' das JAHR (2026) statt der Epoch -- also ein stiller Zahlenfehler, kein Fehlen -- und das geerbte <=> croakt beim Vergleich mit einer nackten Zahl. Beides rechtfertigt die Subklasse zwingend.
+
+Committed 2026-08-23: 401524a (Umbau) + eed78f5 (ADR 0017). Time::Moment global installiert, Suite laeuft ohne Hilfspfade. Arbeitsbaum sauber.
