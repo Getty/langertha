@@ -1,0 +1,82 @@
+---
+claimed_at: 2026-08-23T20:34:49Z
+claimed_by: logo-tape
+class: standard
+completed: 2026-08-23T20:34:49Z
+created: 2026-08-23T19:16:26Z
+id: 118
+priority: low
+started: 2026-08-23T20:31:16Z
+status: done
+tags:
+- vllm
+- docs
+- reasoning
+title: vLLM POD SYNOPSIS 5 shows reasoning_effort as a simple_chat argument - simple_chat
+  takes only messages
+updated: 2026-08-23T20:34:49Z
+---
+
+Found while writing t/88_live_vllm_reasoning.t (karr #79).
+
+lib/Langertha/Engine/vLLM.pm SYNOPSIS example 5 reads:
+
+    $vllm->simple_chat(
+        'Solve step by step: what is 7 factorial?',
+        reasoning_effort => 'high',
+    );
+
+That does not do what it looks like. Role::Chat::simple_chat takes only
+@messages and hands them to chat_messages, which turns every non-ref
+argument into { role => user, content => $string }. The snippet therefore
+sends THREE user messages: the prompt, the literal string
+"reasoning_effort", and the literal string "high" - and no reasoning_effort
+reaches the wire at all.
+
+The two working forms are:
+  - engine attribute: vLLM->new(..., reasoning_effort => "high") then simple_chat($prompt)
+  - per-request control: await $vllm->chat_f(messages => [...], reasoning_effort => "high")
+    (Role::Chat::_extract_controls picks the canonical control out of %opts)
+
+Scope: fix the SYNOPSIS block. Only occurrence in the tree - grep for
+simple_chat near reasoning_effort found nothing else.
+
+2026-08-23 20:31 Fixed, doc-only, uncommitted in the working tree.
+
+Verified the report at the code AND empirically (offline request-body dump, no
+live call):
+  A) simple_chat($prompt, reasoning_effort => 'high')
+     -> body carries THREE user messages ('...factorial?', 'reasoning_effort',
+        'high') and no reasoning_effort field. Confirmed.
+  B) vLLM->new(..., reasoning_effort => 'high') then simple_chat($prompt)
+     -> body carries "reasoning_effort":"high". Works.
+  C) chat_f(messages => [...], reasoning_effort => 'high')
+     -> body carries "reasoning_effort":"high". Works.
+Path for B/C: chat_request -> generation_kwargs_for(%$controls) (Engine::Remote)
+-> Role::ReasoningEffort::reasoning_kwargs_for, per-request control beating the
+attribute per key. simple_chat/chat never build a controls hash at all.
+
+CORRECTION to this ticket: the pattern occurs TWICE, not once.
+  1. lib/Langertha/Engine/vLLM.pm SYNOPSIS example 5
+  2. README.md, 'Self-hosted with vLLM' section (was line 265)
+Both fixed. The README one is the same snippet with a shortened prompt, which
+is why a grep for the exact POD wording missed it.
+
+Tree sweep for the same footgun (multi-line paren-balanced scan over lib/, bin/,
+examples/, docs/, README.md, CONTEXT.md for simple_chat* / chat / chat_stream /
+chat_with_tools* / raid* / respond* / inject calls whose argument list contains
+'=>'): only those two. Every other hit is a legitimate hashref message
+({ role => 'user', content => [...] }) - SGLang, Hetzner, vLLM ex. 4,
+Content::Image, Raider::inject, README inject.
+
+Verification: PERL5LIB=<tmlib> prove -lr t/ -> 92 files, 3122 tests, PASS.
+Live tests t/80-89* skipped (no API keys / no TEST_LANGERTHA_*_URL set).
+dzil build + AUTHOR_TESTING=1 prove -l t/author-pod-syntax.t on the built dist
+-> 119 files PASS; weaved SYNOPSIS renders correctly. The raw-source Test::Pod
+complaints (=seealso, =encoding) are byte-identical to HEAD - PodWeaver
+artifacts, not a regression.
+
+No behaviour code touched. No behaviour bug found: simple_chat taking only
+messages is the documented API shape, not a defect.
+
+Vom Orchestrator geprueft: Diff gesichtet, Suite unabhaengig nachgefahren (92 Files, 3122 Tests, PASS). Das Muster kam entgegen der urspruenglichen Annahme ZWEIMAL vor -- lib/Langertha/Engine/vLLM.pm SYNOPSIS 5 und README.md 'Self-hosted with vLLM'; der abweichende Prompt-Wortlaut im README hatte den ersten Grep entwischen lassen. Beide Stellen zeigen jetzt Konstruktor-Attribut und chat_f, mit explizitem Hinweis dass simple_chat nur Messages nimmt. Doku-only. Claim bleibt beim ausfuehrenden Agenten.
