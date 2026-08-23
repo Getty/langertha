@@ -1,0 +1,40 @@
+---
+class: standard
+completed: 2026-08-23T20:23:45Z
+created: 2026-08-23T18:50:20Z
+id: 117
+priority: high
+started: 2026-08-23T20:23:45Z
+status: done
+tags:
+- github
+- ollama
+title: 'GH #3: Ollama created_at ist ein ISO-8601-String und scheitert an Maybe[Int]'
+updated: 2026-08-23T20:23:45Z
+---
+
+Gemeldet 2026-05-05 von heince, GitHub-Issue #3. Jeder chat-Aufruf gegen Ollama
+stirbt beim Parsen der Antwort:
+
+  OLLAMA_MODEL=qwen3:8b langertha_chat_ollama hello
+
+  Attribute (created) does not pass the type constraint because:
+  Validation failed for "Maybe[Int]" with value 2026-05-05T02:53:03.138043625Z
+  at constructor Langertha::Response::new
+
+Ollama liefert created_at als ISO-8601 mit Nanosekunden, Langertha::Response
+deklariert created als Maybe[Int] (Unix-Epoch, wie es die OpenAI-Form liefert).
+Der Melder fragt selbst, ob nach Epoch konvertiert werden soll.
+
+Vor dem Fix pruefen, ob karr #92 das schon erledigt hat -- der alte Release-Plan
+fuehrt genau diese Frage. Wenn ja, schliessen und dem Melder antworten; wenn
+nein, ist die Ollama-Engine gemeint, nicht die Response-Klasse: die Umrechnung
+gehoert in den Engine-Pfad, damit die Klasse ihre Semantik behaelt.
+
+Board #101 ist der Grund, warum das durchrutschen konnte: nur Ollama und
+Responses haben echte Server-Fixtures, der Rest testet handgeschriebene
+Payloads.
+
+Vier Monate offen.
+
+Erledigt 2026-08-23. Der Croak war bereits durch karr #92 (a20f9a6) behoben; verifiziert mit dem Original-Payload des Melders. Darueber hinaus auf Maintainer-Entscheidung nach Time::Moment umgebaut (karr #119). GH #3 beantwortet und geschlossen: issuecomment-5388269837 -- inklusive Hinweis auf die geaenderte String-Kontext-Semantik und die Einladung nach #langertha.
