@@ -261,9 +261,11 @@ my $vllm = Langertha::Engine::vLLM->new(
 my $r = await $vllm->chat_with_tools_f('Add 7 and 15');
 
 # Reasoning models — wire reasoning_effort honors OpenAI format
-# (low/medium/high map to enable_thinking=true; none -> false)
-$vllm->simple_chat(
-    'Solve step by step: 7 factorial',
+# (low/medium/high map to enable_thinking=true; none -> false).
+# simple_chat takes messages only: set the control on the engine
+# (vLLM->new(..., reasoning_effort => 'high')) or hand it to chat_f.
+my $reasoned = await $vllm->chat_f(
+    messages         => ['Solve step by step: 7 factorial'],
     reasoning_effort => 'high',
 );
 

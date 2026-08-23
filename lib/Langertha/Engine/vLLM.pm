@@ -55,9 +55,18 @@ sub _build_knob_wire_format { 'vllm' }
 
     # 5. Reasoning models (Qwen3, DeepSeek-R1, QwQ — server needs
     #    --reasoning-parser matching the model; reasoning_effort maps to
-    #    enable_thinking via the chat template)
-    $vllm->simple_chat(
-        'Solve step by step: what is 7 factorial?',
+    #    enable_thinking via the chat template). simple_chat takes messages
+    #    only — set the control on the engine, or hand it to chat_f.
+    my $thinker = Langertha::Engine::vLLM->new(
+        url              => 'http://localhost:8000/v1',
+        reasoning_effort => 'high',
+    );
+
+    print $thinker->simple_chat('Solve step by step: what is 7 factorial?');
+
+    # … or as a per-request control:
+    my $reasoned = await $vllm->chat_f(
+        messages         => ['Solve step by step: what is 7 factorial?'],
         reasoning_effort => 'high',
     );
 
