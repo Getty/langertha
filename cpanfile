@@ -16,6 +16,7 @@ requires 'MooseX::NonMoose';
 requires 'OpenAPI::Modern', '>= 0.089';  # needs v0.089+ for updated evaluator handling
 requires 'Path::Tiny';
 requires 'Time::HiRes';
+requires 'Time::Moment';
 requires 'URI';
 requires 'YAML::PP';
 requires 'YAML::XS';

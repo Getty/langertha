@@ -44,7 +44,7 @@ is("$r2", 'Hi', 'full Response stringifies');
 is($r2->id, 'resp-123', 'id accessor');
 is($r2->model, 'gpt-4o', 'model accessor');
 is($r2->finish_reason, 'stop', 'finish_reason accessor');
-is($r2->created, 1700000000, 'created accessor');
+is(0 + $r2->created, 1700000000, 'created numifies to the Unix timestamp');
 is($r2->prompt_tokens, 10, 'prompt_tokens convenience');
 is($r2->completion_tokens, 5, 'completion_tokens convenience');
 is($r2->total_tokens, 15, 'total_tokens from usage');
@@ -98,7 +98,7 @@ is("$openai_resp", 'OpenAI says hello', 'OpenAI Response stringifies');
 is($openai_resp->id, 'chatcmpl-abc123', 'OpenAI id extracted');
 is($openai_resp->model, 'gpt-4o-mini-2024-07-18', 'OpenAI model extracted');
 is($openai_resp->finish_reason, 'stop', 'OpenAI finish_reason extracted');
-is($openai_resp->created, 1700000001, 'OpenAI created extracted');
+is(0 + $openai_resp->created, 1700000001, 'OpenAI created extracted');
 is($openai_resp->prompt_tokens, 12, 'OpenAI prompt_tokens');
 is($openai_resp->completion_tokens, 4, 'OpenAI completion_tokens');
 is($openai_resp->total_tokens, 16, 'OpenAI total_tokens');
@@ -327,7 +327,7 @@ subtest 'Ollama chat_response over captured server fixtures (karr #92)' => sub {
   SKIP: {
     skip 'no Response to inspect', 6 unless defined $call_resp;
     isa_ok($call_resp, 'Langertha::Response');
-    is($call_resp->created, 1771732845, 'created normalized to Unix seconds');
+    is(0 + $call_resp->created, 1771732845, 'created numifies to Unix seconds');
     is($call_resp->raw->{created_at}, '2026-02-22T04:00:45.027209927Z',
       'native RFC3339 stamp preserved verbatim under raw');
     is($call_resp->model, 'qwen3:8b', 'model from fixture');
@@ -342,7 +342,7 @@ subtest 'Ollama chat_response over captured server fixtures (karr #92)' => sub {
   SKIP: {
     skip 'no Response to inspect', 2 unless defined $result_resp;
     is("$result_resp", '22', 'tool-result fixture stringifies to its content');
-    is($result_resp->created, 1771732852, 'created normalized to Unix seconds');
+    is(0 + $result_resp->created, 1771732852, 'created numifies to Unix seconds');
   }
 };
 
@@ -366,8 +366,8 @@ subtest 'Ollama created_at normalization (karr #92)' => sub {
     });
     my $resp = eval { $ollama->chat_response(ollama_http($body)) };
     ok(defined $resp, "$name: Response constructed") or diag($@);
-    is(defined $resp ? $resp->created : undef, 1771732845,
-      "$name: created is the expected Unix timestamp");
+    is(defined $resp ? 0 + $resp->created : undef, 1771732845,
+      "$name: created numifies to the expected Unix timestamp");
   }
 
   # A stamp we cannot read must drop the field, never take the response down:

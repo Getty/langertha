@@ -4,7 +4,6 @@ our $VERSION = '0.503';
 use Moose;
 use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak );
-use Time::Local qw( timegm );
 use JSON::MaybeXS;
 use Module::Runtime qw( use_module );
 use Langertha::Response;
@@ -276,38 +275,6 @@ sub chat_request {
   );
 }
 
-# Ollama stamps every response with an RFC3339 string
-# ("2026-02-22T04:00:45.027209927Z"), while Langertha::Response.created is the
-# engine-agnostic Unix timestamp (Int) that every other engine fills from an
-# epoch integer. Convert here, in the engine, and leave the native string
-# untouched under raw.created_at -- the same normalized-plus-native split the
-# *_seconds timing keys use (ADR 0011).
-#
-# Anything unparseable yields undef, which drops the key entirely: created is
-# informational metadata and must never take a whole response down (karr #92).
-# Years below 1000 are rejected on purpose -- Ollama emits
-# "0001-01-01T00:00:00Z" as its "no timestamp" sentinel, and Time::Local's
-# legacy timegm would silently read such a year as the current century.
-sub _created_at_to_epoch {
-  my ( $created_at ) = @_;
-  return undef unless defined $created_at && length $created_at;
-  # Some Ollama-compatible shims already send epoch seconds; numify so the
-  # value serializes as a JSON number no matter how it arrived on the wire.
-  return 0 + $created_at if $created_at =~ /\A[0-9]+\z/;
-  my ( $year, $month, $day, $hour, $minute, $sec, $zone ) = $created_at =~ m{
-    \A ([0-9]{4}) - ([0-9]{2}) - ([0-9]{2})
-    [Tt ] ([0-9]{2}) : ([0-9]{2}) : ([0-9]{2}) (?: \. [0-9]+ )?
-    ( [Zz] | [+-] [0-9]{2} :? [0-9]{2} ) \z
-  }x or return undef;
-  return undef if $year < 1000;
-  my $epoch = eval { timegm( $sec, $minute, $hour, $day, $month - 1, $year ) };
-  return undef unless defined $epoch;
-  return $epoch if $zone =~ /\A[Zz]\z/;
-  my ( $sign, $zone_hours, $zone_minutes ) = $zone =~ /\A([+-])([0-9]{2}):?([0-9]{2})\z/;
-  my $zone_offset = $zone_hours * 3600 + $zone_minutes * 60;
-  return $sign eq '-' ? $epoch + $zone_offset : $epoch - $zone_offset;
-}
-
 sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
@@ -334,7 +301,15 @@ sub chat_response {
   $timing->{eval_seconds}         = $ns_to_s->( $data->{eval_duration}         ) if $data->{eval_duration};
   $timing = undef unless %$timing;
 
-  my $created = _created_at_to_epoch( $data->{created_at} );
+  # Ollama stamps every response with an RFC3339 string carrying nanoseconds
+  # ("2026-02-22T04:00:45.027209927Z"). It is handed over verbatim: normalizing
+  # it is Langertha::Moment->from_wire's job, reached through
+  # Langertha::Response's BUILDARGS, which also parses the epoch seconds some
+  # Ollama-compatible shims send instead and drops a stamp it cannot read (the
+  # "0001-01-01T00:00:00Z" zero-value sentinel included) rather than failing
+  # the whole response. The native string stays untouched under raw.created_at
+  # -- the same normalized-plus-native split the *_seconds timing keys use
+  # (ADR 0011). See karr #92 / #117 and GitHub issue #3.
   my @tcs = Langertha::ToolCall->extract( $self->tool_wire_format, $data );
   return Langertha::Response->new(
     content       => $msg->{content} // '',
@@ -343,7 +318,7 @@ sub chat_response {
     defined $data->{done_reason} ? ( finish_reason => $data->{done_reason} ) : (),
     $usage ? ( usage => $usage ) : (),
     $timing ? ( timing => $timing ) : (),
-    defined $created ? ( created => $created ) : (),
+    defined $data->{created_at} ? ( created => $data->{created_at} ) : (),
     @tcs ? ( tool_calls => [ @tcs ] ) : (),
   );
 }

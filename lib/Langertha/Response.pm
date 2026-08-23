@@ -2,6 +2,7 @@ package Langertha::Response;
 # ABSTRACT: LLM response with metadata
 our $VERSION = '0.503';
 use Moose;
+use Langertha::Moment;
 use Langertha::ToolCall;
 use Langertha::Usage;
 
@@ -284,19 +285,73 @@ to test availability without warnings.
 
 has created => (
   is => 'ro',
-  isa => 'Maybe[Int]',
+  isa => 'Maybe[Langertha::Moment]',
   predicate => 'has_created',
 );
 
 =attr created
 
-Unix timestamp (seconds since the epoch) of when the response was created.
+The instant the provider says the response was created, as a
+L<Langertha::Moment> — a L<Time::Moment> subclass, so the full civil time is
+there: sub-seconds, UTC offset, and every L<Time::Moment> accessor.
 
-Engine-agnostic by contract: an engine whose wire format reports the stamp in
-another shape normalizes it before setting this. The OpenAI-compatible wire
-passes its epoch integer straight through; L<Langertha::Engine::Ollama>
-converts Ollama's RFC3339 C<created_at> string. The provider's native form
-stays available under L</raw> (karr #92).
+B<In numeric context it is the Unix timestamp it always was.> The C<0+>
+overload yields whole seconds since the epoch, so C<0 + $response-E<gt>created>,
+C<< $response->created > $cutoff >> and C<< int($response->created) >> keep
+returning exactly what they returned when this attribute was a C<Maybe[Int]>.
+In string context it is the full ISO-8601 stamp instead — which is where the
+sub-seconds are, and which is B<not> what the old C<Int> stringified to. See
+L</"Comparing and printing created"> below.
+
+Engine-agnostic by contract, and normalized here rather than per engine:
+C<BUILDARGS> runs every incoming value through
+L<Langertha::Moment/from_wire>, which takes the OpenAI-compatible wire's epoch
+integer and Ollama's RFC3339 C<created_at> string alike. A value it cannot
+read — including the C<0001-01-01T00:00:00Z> zero-value sentinel Go-based
+servers emit — B<drops the field> instead of failing the constructor:
+C<has_created> is then false and the response is built regardless. A timestamp
+is metadata and must never take a whole reply down with it (GitHub issue #3,
+karr #92 / #117).
+
+The provider's native form always stays available verbatim under L</raw>
+(C<raw.created> on the OpenAI-compatible wire, C<raw.created_at> on Ollama).
+
+=head2 Comparing and printing created
+
+Numeric context, arithmetic and comparison are unchanged from the old C<Int>:
+
+    0 + $response->created                 # 1700000000
+    $response->created == 1700000000       # true
+    $response->created > $cutoff           # true/false, as before
+    sprintf '%d', $response->created       # 1700000000
+    sort { $a->created <=> $b->created } @responses
+
+Three idioms do B<not> survive the change to an object:
+
+=over
+
+=item * B<String context is the stamp, not the digits.>
+C<"$response-E<gt>created"> now interpolates C<2023-11-14T22:13:20Z>, so
+C<eq> against the epoch digits is false and a hash keyed by C<created> re-keys
+itself. Write C<0 + $response-E<gt>created> where the number is what is
+wanted. This is the point of the change, not a side effect — the string form
+is where the sub-seconds are.
+
+=item * B<C<ref> and C<blessed> are no longer empty.> Code branching on
+whether the field is a reference takes the other path now.
+
+=item * B<A JSON encoder without C<convert_blessed> dies on it> — the same
+way it already dies on L</usage>, L</tool_calls> and L</rate_limit>, which
+have been objects for longer. With C<convert_blessed> enabled it encodes as
+the epoch number, because L<Langertha::Moment> carries a C<TO_JSON> that says
+so. L</to_hash> and C<TO_JSON> on the Response itself are unaffected: they
+emit a plain number either way.
+
+=back
+
+One smaller change: C<created> is now true in boolean context even when the
+stamp is the epoch zero, where the old C<Int> C<0> was false. L</has_created>
+is the predicate for "did the provider report a stamp", and it is unaffected.
 
 =cut
 
@@ -374,6 +429,27 @@ around BUILDARGS => sub {
             );
       } @{ $params->{tool_calls} }
     ];
+  }
+
+  # created arrives in two shapes and must survive a third: an epoch integer
+  # on the OpenAI-compatible wire, an RFC3339 string with nanoseconds from
+  # Ollama, and anything at all from a shim nobody has met yet. Normalizing
+  # here rather than in each engine means a producer only has to hand over
+  # what the provider sent (ADR 0001's inbound half: the value object owns the
+  # parse, the engine carries no per-shape code).
+  #
+  # from_wire never dies, and an unreadable value deletes the key rather than
+  # setting it to undef -- created is metadata, and a timestamp the parser
+  # cannot read must not fail the constructor for a response that is otherwise
+  # perfectly good (GitHub #3, karr #92 / #117).
+  if ( exists $params->{created} ) {
+    my $moment = Langertha::Moment->from_wire( $params->{created} );
+    if ( defined $moment ) {
+      $params->{created} = $moment;
+    }
+    else {
+      delete $params->{created};
+    }
   }
 
   # Accept legacy HashRef usage input by upgrading to a Usage object.
@@ -510,6 +586,10 @@ L</thinking>, L</rate_limit>, L</tool_calls>). L</raw> and L</probes> are
 deliberately excluded — see L</"TO_JSON — the canonical, bounded
 representation">.
 
+L</created> is emitted as a plain epoch number (via its C<0+> overload), not
+as the L<Langertha::Moment> object — the hash is a bounded interop shape and
+that key has been a number since it existed.
+
 =cut
 
 sub to_hash {
@@ -521,7 +601,12 @@ sub to_hash {
     ( $self->has_finish_reason ? ( finish_reason => $self->finish_reason ) : () ),
     ( $self->has_usage         ? ( usage         => $self->usage )         : () ),
     ( $self->has_timing        ? ( timing        => $self->timing )        : () ),
-    ( $self->has_created       ? ( created       => $self->created )       : () ),
+    # Numified on purpose: created is a Langertha::Moment, and the bounded
+    # Response hash (karr #50) is the interop surface that has emitted an
+    # epoch number for this key since the attribute existed. The sub-seconds
+    # the object carries stay reachable on the object and under raw; they are
+    # not in this hash, and were never in it.
+    ( $self->has_created       ? ( created       => 0 + $self->created )   : () ),
     ( $self->has_cached_tokens ? ( cached_tokens => $self->cached_tokens ) : () ),
     ( $self->has_thinking      ? ( thinking      => $self->thinking )      : () ),
     ( $self->has_rate_limit    ? ( rate_limit    => $self->rate_limit )    : () ),

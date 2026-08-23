@@ -162,7 +162,7 @@ my $engine_off = Langertha::Engine::OpenAI->new(
   is($clone->id, 'resp-123', 'clone_with preserves id');
   is($clone->model, 'gpt-4o', 'clone_with preserves model');
   is($clone->finish_reason, 'stop', 'clone_with preserves finish_reason');
-  is($clone->created, 1700000000, 'clone_with preserves created');
+  is(0 + $clone->created, 1700000000, 'clone_with preserves created');
   is($clone->prompt_tokens, 10, 'clone_with preserves usage');
 }
 

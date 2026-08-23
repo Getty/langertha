@@ -511,6 +511,10 @@ Provider-agnostic vision input
 
 =item * L<Langertha::RateLimit> - Normalized rate limit data from HTTP response headers
 
+=item * L<Langertha::Moment> - Instant reported by a provider
+(L<Langertha::Response/created>); a L<Time::Moment> subclass that keeps the
+sub-seconds and numifies to the Unix epoch
+
 =item * L<Langertha::Stream> - Iterator over streaming chunks
 
 =item * L<Langertha::Stream::Chunk> - A single chunk from a streaming
