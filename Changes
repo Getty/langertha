@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Role::JSON's engine encoder enables convert_blessed (karr #120). The
+      shared $engine->json now serializes the distribution's value objects
+      through their TO_JSON instead of croaking, making the "house default"
+      those objects' POD names true on the encoder every engine builds, not
+      only on Plugin::Langfuse. Plain request bodies are unaffected.
+
     - Engine::AKI native chat_response fills id, usage, and timing (karr #126).
       job_id becomes Response.id; prompt_length / num_generated_tokens become
       usage; num_cached_tokens becomes cached_tokens. Timing now emits the

@@ -301,4 +301,17 @@ sub roundtrip { return $json->decode( $json->encode( $_[0] ) ) }
   is( "$response", 'hello', 'string overload still returns content' );
 }
 
+# --- The engine's own encoder ($engine->json) honors convert_blessed too, so
+#     the "house default" the value objects' POD names is true on the encoder
+#     every engine builds — not only on Plugin::Langfuse (karr #120). ---
+{
+  require Langertha::Engine::OpenAI;
+  my $engine = Langertha::Engine::OpenAI->new( api_key => 'test', model => 'gpt-4o' );
+  my $u = Langertha::Usage->new( input_tokens => 3, output_tokens => 4 );
+  my $back = $engine->json->decode( $engine->json->encode( { usage => $u } ) );
+  is( $back->{usage},
+    { input_tokens => 3, output_tokens => 4, total_tokens => 7 },
+    'engine->json encodes a blessed value object via TO_JSON (karr k120)' );
+}
+
 done_testing;
