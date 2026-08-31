@@ -404,15 +404,23 @@ around BUILDARGS => sub {
   # from provider usage — including one built from a streamed final chunk's
   # usage hash — surfaces the prefix-cache read-back. Only when defined
   # (cached_tokens => 0 is a real count). An explicit cached_tokens
-  # parameter always wins. exists-guards keep the caller's usage hash
-  # free of autovivification.
-  if ( !exists $params->{cached_tokens}
-       && ref( $params->{usage} ) eq 'HASH'
-       && exists $params->{usage}{prompt_tokens_details}
-       && ref( $params->{usage}{prompt_tokens_details} ) eq 'HASH'
-       && exists $params->{usage}{prompt_tokens_details}{cached_tokens}
-       && defined $params->{usage}{prompt_tokens_details}{cached_tokens} ) {
-    $params->{cached_tokens} = $params->{usage}{prompt_tokens_details}{cached_tokens};
+  # parameter always wins.
+  #
+  # Two wire spellings carry the read-back count (karr #125): OpenAI nests it
+  # at usage.prompt_tokens_details.cached_tokens, Anthropic reports it flat as
+  # usage.cache_read_input_tokens. Lift either — the OpenAI shape wins if both
+  # are somehow present. The Anthropic write count (cache_creation_input_tokens)
+  # is a different quantity and is deliberately NOT folded in. Values are read
+  # into lexicals first so a missing key never autovivifies the caller's usage.
+  if ( !exists $params->{cached_tokens} && ref( $params->{usage} ) eq 'HASH' ) {
+    my $usage = $params->{usage};
+    my $ptd   = $usage->{prompt_tokens_details};
+    if ( ref($ptd) eq 'HASH' && defined $ptd->{cached_tokens} ) {
+      $params->{cached_tokens} = $ptd->{cached_tokens};
+    }
+    elsif ( defined $usage->{cache_read_input_tokens} ) {
+      $params->{cached_tokens} = $usage->{cache_read_input_tokens};
+    }
   }
 
   # Accept legacy ArrayRef[HashRef] input by upgrading to ToolCall objects.

@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Response.cached_tokens now reads the Anthropic wire too (karr #125).
+      The BUILDARGS lift learns the Anthropic spelling
+      usage.cache_read_input_tokens alongside the OpenAI
+      usage.prompt_tokens_details.cached_tokens, so all five Anthropic-family
+      engines surface the prefix-cache read-back on the engine-agnostic
+      accessor. The write count cache_creation_input_tokens is not folded in.
+
     - Engine::AKI native chat_response emits Response.tool_calls (karr #123).
       The engine composes Role::HermesTools, so a <tool_call> block in the
       native `text` field is parsed onto Response.tool_calls (ADR 0003) and

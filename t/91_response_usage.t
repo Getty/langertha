@@ -281,6 +281,13 @@ subtest 'cache tokens: Anthropic survives verbatim' => sub {
     is($resp->usage->{cache_read_input_tokens},     8192,
         'Anthropic cache_read_input_tokens survives in usage');
 
+    # karr k125: the Anthropic read-back count lifts onto cached_tokens, the
+    # engine-agnostic accessor, the same way the OpenAI shape's
+    # prompt_tokens_details.cached_tokens does. The write count
+    # (cache_creation_input_tokens) is a different quantity and is NOT folded in.
+    is($resp->cached_tokens, 8192,
+        'Anthropic cache_read_input_tokens lifts onto cached_tokens (karr k125)');
+
     # GAP: Response.pm has no accessor for cache tokens. The canonical
     # `prompt_tokens` accessor ignores them. Callers today read
     # `$resp->usage->{cache_*}` directly. Until an accessor exists,
