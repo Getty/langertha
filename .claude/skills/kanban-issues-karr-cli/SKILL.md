@@ -15,6 +15,14 @@ is not -- exactly nine render one: `board`, `config`, `context`, `dashboard`,
 `Unknown option: compact` with the usage and exit 2, rather than accepting the
 flag and ignoring it.
 
+## Referring to a karr id
+
+In prose -- commit subjects, card bodies, anywhere the text travels -- a karr id is
+written `k12`, never a bare `#12`: GitHub, Gitea and GitLab all resolve `#12` against
+*their own* issue 12, which is a different thing or nothing at all. This is karr's
+numbering only and says nothing about how the repository's public issue tracker is
+referenced -- that is separate, with its own notation.
+
 ## Commands
 
 ### Initialize

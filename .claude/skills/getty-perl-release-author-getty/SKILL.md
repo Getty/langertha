@@ -237,10 +237,18 @@ effect.
 ## Release Workflow
 
 ```bash
-# Before release: check Changes, ensure {{$NEXT}} section has entries
-# Then:
 dzil release        # Builds, tests, uploads to CPAN, bumps version, commits, tags
 ```
+
+Read the `{{$NEXT}}` section of `Changes` once as a whole first. It was written bullet
+by bullet over weeks, so this is where entries circling one topic get merged into one
+and over-detailed ones get cut back (skill `getty-git-commit-style`). It is not only a
+changelog: `GitHub::CreateRelease` runs with `notes_from = ChangeLog` and publishes the
+section verbatim as the release notes.
+
+Fix it in its own commit *before* `dzil release`. `Changes` sits in the release commit's
+`allow_dirty` list, so an uncommitted edit stops nothing — it is folded into the release
+snapshot silently, under a message naming only the version.
 
 ## Conventions
 
