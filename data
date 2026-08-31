@@ -1,0 +1,55 @@
+---
+class: standard
+created: 2026-08-23T20:31:42Z
+id: 122
+priority: low
+status: backlog
+tags:
+- chat
+- dx
+- ergonomics
+title: simple_chat silently swallows control kwargs as extra user messages - consider
+  a guard
+updated: 2026-08-31T03:48:44Z
+---
+
+Follow-up from #118 (docs-only fix), NOT a bug - recording an ergonomic trap.
+
+Role::Chat::simple_chat/simple_chat_f/chat take only @messages and hand them to
+chat_messages, which turns every non-ref scalar into { role => user, content =>
+$string }. So:
+
+    $engine->simple_chat($prompt, reasoning_effort => "high");
+
+silently sends three user messages and drops the control. There is no error, no
+warning - the model just answers a conversation that has the words
+"reasoning_effort" and "high" appended as separate user turns.
+
+Evidence it is a real trap: the project hit it twice in its OWN documentation
+(vLLM.pm SYNOPSIS example 5 and README.md, both fixed under #118), written by
+people who know the API.
+
+Possible guards, cheapest first:
+  - carp when an odd trailing scalar in @messages exactly matches a key of
+    %CANONICAL_CONTROLS in Role::Chat (very cheap, zero false positives in
+    practice - nobody sends "reasoning_effort" as a user turn on purpose).
+  - carp on any even-length run of trailing plain scalars that looks like a
+    kwargs tail.
+  - do nothing and rely on docs.
+
+Behaviour change, so it needs a decision before anyone implements it: the first
+option is close to free and catches the exact copy-paste mistake, but it is
+still a new warning on a hot path and could surprise a legitimate multi-string
+simple_chat call. Wants maintainer input, possibly langertha-llm-advisor.
+
+Do not implement without a decision.
+
+Beleg aus der #101-Capture-Vorbereitung (2026-08-24): Engine::AKI komponiert kein Role::ResponseSize (calculate_all_roles: Models, Temperature, SystemPrompt, Chat, Tools, HermesTools). Ein response_size => 16 im Konstruktor wird von Moose stillschweigend akzeptiert und landet nirgends im Wire-Body - die native Wire kennt nur das engine-eigene max_gen_tokens (AKI.pm:121, :243). Gleiche Klasse von stiller Schluckerei wie die simple_chat-kwargs: kein Fehler, keine Warnung, nur ein wirkungsloses Argument. Falls ein Guard kommt, sollte er auch unbekannte/nicht-komponierte Konstruktor-Args abdecken, nicht nur simple_chat.
+
+Reviewed 2026-08-31 (weak-feel): stays in backlog per the ticket's own "Do not implement without a
+decision." Both the simple_chat kwargs guard and the broader constructor-arg guard (the #101
+finding: response_size silently swallowed by engines that don't compose Role::ResponseSize) are
+BEHAVIOR changes -- a new carp on a hot path, or MooseX::StrictConstructor-style rejection of
+unknown constructor args -- that could surprise legitimate callers (multi-string simple_chat) and
+change construction semantics distribution-wide. That needs a maintainer decision (and likely
+langertha-llm-advisor input) on scope and false-positive tolerance before any code. Not implemented.
