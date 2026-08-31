@@ -93,6 +93,37 @@ is($tool_result->tool_calls->[0]->arguments->{a}, 7, 'AKI tool call argument a')
 is($tool_result->tool_calls->[0]->arguments->{b}, 15, 'AKI tool call argument b');
 unlike("$tool_result", qr/tool_call/, 'AKI content strips the tool_call tag');
 
+# --- Chat response id, usage, and timing (karr #126) ---
+# Verbatim body shape from capture 3 of the karr #101 run: the native wire
+# names its token counts and durations differently from the OpenAI shim.
+
+my $full_response = HTTP::Response->new(200, 'OK');
+$full_response->content($json->encode({
+  text                   => 'OK',
+  success                => JSON->true,
+  job_id                 => 'a871d5bd-1111-2222-3333-00000000097ad',
+  model_name             => 'Llama-3.1-8B-Instruct',
+  prompt_length          => 37,
+  num_generated_tokens   => 2,
+  num_cached_tokens      => 16,
+  current_context_length => 39,
+  max_seq_len            => 65536,
+  total_duration         => 0.14,
+  compute_duration       => 0.123,
+  ep_version             => 3,
+}));
+$full_response->header('Content-Type' => 'application/json');
+
+my $full = $aki->chat_response($full_response);
+is($full->id, 'a871d5bd-1111-2222-3333-00000000097ad', 'AKI job_id maps to Response.id');
+is($full->prompt_tokens, 37, 'AKI prompt_length maps to prompt_tokens');
+is($full->completion_tokens, 2, 'AKI num_generated_tokens maps to completion_tokens');
+is($full->cached_tokens, 16, 'AKI num_cached_tokens maps to cached_tokens');
+is($full->total_seconds, 0.14, 'AKI total_duration surfaces as engine-agnostic total_seconds');
+is($full->timing->{compute_seconds}, 0.123, 'AKI compute_duration surfaces as compute_seconds');
+ok(!exists $full->timing->{total_duration},
+  'AKI drops the raw total_duration key (Ollama-ns collision, karr #126)');
+
 # --- Chat error response ---
 
 my $error_response = HTTP::Response->new(200, 'OK');

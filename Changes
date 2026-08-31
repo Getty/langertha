@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::AKI native chat_response fills id, usage, and timing (karr #126).
+      job_id becomes Response.id; prompt_length / num_generated_tokens become
+      usage; num_cached_tokens becomes cached_tokens. Timing now emits the
+      engine-agnostic total_seconds plus a native compute_seconds (both already
+      in seconds) and no longer emits a raw total_duration key, which collided
+      with Engine::Ollama's nanosecond total_duration.
+
     - Response.cached_tokens now reads the Anthropic wire too (karr #125).
       The BUILDARGS lift learns the Anthropic spelling
       usage.cache_read_input_tokens alongside the OpenAI

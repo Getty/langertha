@@ -225,7 +225,9 @@ isa_ok($aki_resp, 'Langertha::Response');
 is("$aki_resp", 'AKI says hello', 'AKI Response stringifies');
 is($aki_resp->model, 'Meta-Llama-3-8B-Instruct', 'AKI model from model_name');
 ok($aki_resp->has_timing, 'AKI timing populated');
-is($aki_resp->timing->{total_duration}, 0.7, 'AKI timing total_duration');
+is($aki_resp->total_seconds, 0.7, 'AKI total_duration (seconds) surfaces as total_seconds');
+ok(!exists $aki_resp->timing->{total_duration},
+  'AKI no longer emits the raw total_duration key (Ollama-ns collision, karr k126)');
 
 # --- clone_with: probes survives (the gap that bit karr #4) ---
 

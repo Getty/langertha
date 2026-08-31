@@ -270,12 +270,39 @@ sub chat_response {
   # leaving them buried in content; strip the tags from content when a call is
   # present. -- karr k123
   my $tool_calls = $self->response_tool_calls($data);
+
+  # Native usage: the AKI wire names its token counts differently from the
+  # OpenAI/Anthropic shapes, so normalize to the keys Langertha::Usage->from_hash
+  # understands. num_cached_tokens is the same quantity as cached_tokens. The
+  # native counts differ from the /v1 OpenAI shim for the same prompt (prompt_length
+  # 37 vs prompt_tokens 64), so trust $response->model for which model answered.
+  # -- karr k126
+  my $usage = {
+    defined $data->{prompt_length}        ? ( prompt_tokens     => $data->{prompt_length} )        : (),
+    defined $data->{num_generated_tokens} ? ( completion_tokens => $data->{num_generated_tokens} ) : (),
+  };
+  undef $usage unless %$usage;
+
+  # Timing: AKI reports durations already in SECONDS. Emit the engine-agnostic
+  # total_seconds (ADR 0011) plus the native compute_seconds, and deliberately do
+  # NOT emit a raw total_duration key -- Engine::Ollama uses that same key in
+  # nanoseconds, so an AKI seconds value under it collides by a factor of 1e9.
+  # -- karr k126
+  my $timing = {
+    defined $data->{total_duration}   ? ( total_seconds   => $data->{total_duration} )   : (),
+    defined $data->{compute_duration} ? ( compute_seconds => $data->{compute_duration} ) : (),
+  };
+  undef $timing unless %$timing;
+
   return Langertha::Response->new(
     content       => ( @$tool_calls ? $self->response_text_content($data) : ( $data->{text} // '' ) ),
     raw           => $data,
+    $data->{job_id}     ? ( id    => $data->{job_id} )     : (),
     $data->{model_name} ? ( model => $data->{model_name} ) : (),
-    $data->{total_duration} ? ( timing => { total_duration => $data->{total_duration} } ) : (),
-    @$tool_calls ? ( tool_calls => $tool_calls ) : (),
+    $usage              ? ( usage => $usage )              : (),
+    defined $data->{num_cached_tokens} ? ( cached_tokens => $data->{num_cached_tokens} ) : (),
+    $timing             ? ( timing => $timing )            : (),
+    @$tool_calls        ? ( tool_calls => $tool_calls )    : (),
   );
 }
 
@@ -285,7 +312,12 @@ sub chat_response {
 
 Parses a native AKI.IO chat response. Dies with an API error message if
 C<success> is false. Returns a L<Langertha::Response> with C<content>,
-C<model>, C<timing>, and C<raw>.
+C<id> (from the wire C<job_id>), C<model>, C<usage> (from C<prompt_length> /
+C<num_generated_tokens>), C<cached_tokens> (from C<num_cached_tokens>),
+C<timing> (C<total_seconds> / C<compute_seconds>, both already in seconds),
+C<tool_calls> (Hermes C<E<lt>tool_callE<gt>> tags), and C<raw>. The native
+token counts differ from the OpenAI-compatible shim for the same prompt —
+check C<< $response->model >> for which model answered.
 
 =cut
 
