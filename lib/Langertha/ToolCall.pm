@@ -85,9 +85,13 @@ sub from_anthropic {
   return undef unless ( $block->{type} // '' ) eq 'tool_use';
   my $name = $block->{name} // '';
   return undef unless length $name;
+  # Real Anthropic ships input as an object, but the AKI.IO /anthropic shim
+  # ships it as a JSON string (like the OpenAI wire). Route input through the
+  # same decoder from_openai uses so a stringified object is decoded rather
+  # than silently dropped to {}. -- karr k124
   return $class->new(
     name      => $name,
-    arguments => ( ref( $block->{input} ) eq 'HASH' ? $block->{input} : {} ),
+    arguments => _decode_args( $block->{input} ),
     id        => ( $block->{id} // '' ),
   );
 }

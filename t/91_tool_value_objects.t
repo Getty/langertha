@@ -100,6 +100,19 @@ use Langertha::ToolChoice;
   is( $call->arguments->{y}, 2, 'input mapped' );
 }
 
+# from_anthropic with input as a JSON *string* (AKI.IO /anthropic wire shape) -- karr k124
+{
+  my $call = Langertha::ToolCall->from_anthropic({
+    type  => 'tool_use',
+    id    => 'call_096bb7f8c49043adb6506902',
+    name  => 'add',
+    input => '{"a": 7, "b": 15}',
+  });
+  ok( $call, 'parsed anthropic tool_use with JSON-string input' );
+  is( $call->arguments->{a}, 7,  'string input decoded (a)' );
+  is( $call->arguments->{b}, 15, 'string input decoded (b)' );
+}
+
 # extract from openai response
 {
   my @calls = Langertha::ToolCall->extract_sniff({

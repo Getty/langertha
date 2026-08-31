@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - ToolCall::from_anthropic decodes a JSON-string tool input (karr #124).
+      The AKI.IO /anthropic shim returns tool_use `input` as a JSON string
+      rather than an object; from_anthropic now routes input through the same
+      decoder from_openai uses, so tool arguments are recovered instead of
+      being silently dropped to an empty hash.
+
     - ADR 0014 (karr #67, #68): canonical role-composition patterns. The
       `with map { 'Langertha::Role::'.$_ } qw(...)` idiom used by both
       Engine::OpenAIBase and Engine::AnthropicBase is captured as the
