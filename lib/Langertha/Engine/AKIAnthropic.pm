@@ -59,6 +59,14 @@ L<Langertha::Engine::AKIOpenAI> serves through
 L<Langertha::Role::HermesTools>), so tool calls against C</anthropic> are
 unverified — test before relying on them.
 
+B<Client errors arrive as HTTP 529:> AKI.IO returns some B<caller-side> errors
+as C<529> C<overloaded_error> — notably a token budget too small to finish a
+tool call (C<"Response finished before tool_call was completed! Try to raise
+max_gen_tokens">). That condition is deterministic and fixed by raising
+C<response_size> / C<max_tokens>, B<not> transient server overload: do not treat
+an AKI C<529> as a wait-and-retry signal, and read
+C<< $error->{error}{message} >> for the real diagnostic.
+
 Get your API key at L<https://aki.io/> and set C<LANGERTHA_AKI_API_KEY>.
 
 B<THIS API IS WORK IN PROGRESS>

@@ -10,6 +10,20 @@ with 'Langertha::Role::Tools', 'Langertha::Role::HermesTools';
 
 sub _build_tool_wire_format { 'hermes' }
 
+# AKI.IO ships the model's chain-of-thought under the bare `reasoning` key on
+# the OpenAI-compatible message, while Role::OpenAICompatible::chat_response
+# reads only the DeepSeek/Nous `reasoning_content` spelling. Lift AKI's spelling
+# onto Response.thinking here — AKI-scoped, so the role shared by ~25 engines is
+# not widened on one provider's quirk. -- karr k127
+around 'chat_response' => sub {
+  my ( $orig, $self, @args ) = @_;
+  my $resp = $self->$orig(@args);
+  return $resp if $resp->has_thinking;
+  my $reasoning = eval { $resp->raw->{choices}[0]{message}{reasoning} };
+  return $resp unless defined $reasoning && length $reasoning;
+  return $resp->clone_with( thinking => $reasoning );
+};
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::AKIOpenAI;
@@ -50,6 +64,19 @@ tool parameters).
 
 Embeddings and transcription are not supported. For native AKI.IO API features
 (C<top_k>, C<top_p>, C<max_gen_tokens>), use L<Langertha::Engine::AKI>.
+
+B<Chain-of-thought:> AKI.IO returns the model's reasoning under the bare
+C<reasoning> key on the message, not the C<reasoning_content> spelling the
+shared OpenAI-compatible path reads. This engine lifts that key onto
+L<Langertha::Response/thinking>, so C<< $response->thinking >> is populated.
+
+B<Client errors arrive as HTTP 529:> AKI.IO returns some B<caller-side> errors
+as C<529> C<overloaded_error> — notably a token budget too small to finish a
+tool call (C<"Response finished before tool_call was completed! Try to raise
+max_gen_tokens">). That condition is deterministic and fixed by raising
+C<response_size> / C<max_tokens>, B<not> transient server overload: do not treat
+an AKI C<529> as a wait-and-retry signal, and read
+C<< $error->{error}{message} >> for the real diagnostic.
 
 Get your API key at L<https://aki.io/> and set C<LANGERTHA_AKI_API_KEY>.
 
