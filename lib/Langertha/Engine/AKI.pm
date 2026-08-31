@@ -264,11 +264,18 @@ sub chat_response {
   croak "".(ref $self)." API error: ".($data->{error} || 'unknown')
     unless $data->{success};
   require Langertha::Response;
+  # The native endpoint composes Role::HermesTools (tool_wire_format 'hermes'),
+  # so tool calls ride as <tool_call> tags in the model text. Route them onto
+  # Response.tool_calls (ADR 0003) via the tag-aware role helpers rather than
+  # leaving them buried in content; strip the tags from content when a call is
+  # present. -- karr k123
+  my $tool_calls = $self->response_tool_calls($data);
   return Langertha::Response->new(
-    content       => $data->{text} // '',
+    content       => ( @$tool_calls ? $self->response_text_content($data) : ( $data->{text} // '' ) ),
     raw           => $data,
     $data->{model_name} ? ( model => $data->{model_name} ) : (),
     $data->{total_duration} ? ( timing => { total_duration => $data->{total_duration} } ) : (),
+    @$tool_calls ? ( tool_calls => $tool_calls ) : (),
   );
 }
 

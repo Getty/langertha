@@ -70,6 +70,28 @@ $mock_response->header('Content-Type' => 'application/json');
 
 my $result = $aki->chat_response($mock_response);
 is($result, 'Hello from AKI!', 'AKI chat response parsed correctly');
+ok(!$result->has_tool_calls, 'plain AKI response carries no tool_calls');
+
+# --- Chat response with a Hermes tool call (karr #123, ADR 0003) ---
+# AKI composes Role::HermesTools with tool_wire_format 'hermes'; a <tool_call>
+# block emitted in the native `text` field must land on Response.tool_calls,
+# not stay buried as raw text in content.
+
+my $tool_response = HTTP::Response->new(200, 'OK');
+$tool_response->content($json->encode({
+  success    => JSON->true,
+  text       => 'Let me add those. <tool_call>{"name": "add", "arguments": {"a": 7, "b": 15}}</tool_call>',
+  model_name => 'Meta-Llama-3-8B-Instruct',
+}));
+$tool_response->header('Content-Type' => 'application/json');
+
+my $tool_result = $aki->chat_response($tool_response);
+ok($tool_result->has_tool_calls, 'AKI hermes tool call lands on Response.tool_calls');
+is(scalar @{$tool_result->tool_calls}, 1, 'AKI response has one tool call');
+is($tool_result->tool_calls->[0]->name, 'add', 'AKI tool call name');
+is($tool_result->tool_calls->[0]->arguments->{a}, 7, 'AKI tool call argument a');
+is($tool_result->tool_calls->[0]->arguments->{b}, 15, 'AKI tool call argument b');
+unlike("$tool_result", qr/tool_call/, 'AKI content strips the tool_call tag');
 
 # --- Chat error response ---
 

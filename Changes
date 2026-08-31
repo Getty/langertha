@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::AKI native chat_response emits Response.tool_calls (karr #123).
+      The engine composes Role::HermesTools, so a <tool_call> block in the
+      native `text` field is parsed onto Response.tool_calls (ADR 0003) and
+      the tag is stripped from content, instead of being left buried as raw
+      text.
+
     - ToolCall::from_anthropic decodes a JSON-string tool input (karr #124).
       The AKI.IO /anthropic shim returns tool_use `input` as a JSON string
       rather than an object; from_anthropic now routes input through the same
