@@ -1,0 +1,154 @@
+---
+class: standard
+created: 2026-09-01T19:27:10Z
+id: 130
+priority: low
+status: backlog
+tags:
+- adr
+- drift
+- response
+- usage
+title: cached_tokens wire spellings live in Response::BUILDARGS, not in Langertha::Usage
+  (ADR 0018 home 1)
+updated: 2026-09-01T19:42:01Z
+---
+
+Filed by langertha-adr-auditor while recording ADR 0018 (provider wire-spelling normalization). Prose-only work is done; this is the code half.
+
+State at HEAD 07f6d68:
+
+  lib/Langertha/Response.pm:415-423  (karr k125, commit 196a274)
+    if ( !exists $params->{cached_tokens} && ref( $params->{usage} ) eq "HASH" ) {
+      my $usage = $params->{usage};
+      my $ptd   = $usage->{prompt_tokens_details};
+      if ( ref($ptd) eq "HASH" && defined $ptd->{cached_tokens} ) { ... }
+      elsif ( defined $usage->{cache_read_input_tokens} )         { ... }
+    }
+
+Two provider wire spellings of a usage quantity are hand-parsed in Response::BUILDARGS.
+Forty lines further down (Response.pm:463-467) the SAME BUILDARGS delegates the rest of the
+usage block to the value object: Langertha::Usage->from_hash( $params->{usage} ) -- and
+from_hash (Usage.pm:61-82) is already the multi-spelling inbound door, knowing three
+families for input (input_tokens / prompt_tokens / prompt_eval_count) and three for output
+(output_tokens / completion_tokens / eval_count).
+
+So the same method both delegates usage parsing to the value object and hand-parses two
+usage spellings itself. Under ADR 0001 ("the value object owns inbound parsing"), ADR 0017
+(Moment->from_wire is the lenient inbound door, "the parse lives in the value object, not
+in the engine") and ADR 0018 home 1, the cache-read spellings belong on Langertha::Usage.
+
+Root cause is placement, not carelessness: cached_tokens is modeled as a Response attribute
+(Response.pm:358) rather than on Langertha::Usage, so k125 had nowhere else to put the
+spellings. Engine::AKI (AKI.pm:302) passes cached_tokens explicitly for the same reason.
+
+Suggested shape (needs a decision, NOT a blind move):
+1. Add cached_tokens (or a cache read/write pair) to Langertha::Usage, parsed in from_hash
+   from both usage.prompt_tokens_details.cached_tokens and usage.cache_read_input_tokens.
+2. Response::BUILDARGS lifts the PARSED value off the Usage object, not off the raw hash --
+   Response keeps its attribute (public API, do not break it) and loses the wire knowledge.
+3. Decide what happens to Anthropic cache_creation_input_tokens (a write count, deliberately
+   not folded into cached_tokens today) -- a sibling attribute or nothing.
+4. Keep the precedence rules k125 established: an explicit cached_tokens parameter wins; the
+   OpenAI nesting wins over the Anthropic flat key when both are present; no autovivification
+   of the caller usage hash.
+
+Behavior today is CORRECT and gated (t/91_response_usage.t) -- this is a seam-consistency
+item, not a bug. Non-blocking.
+
+Related: ADR 0018 (Future work), ADR 0001, ADR 0017, karr k125.
+
+
+---
+
+# langertha-llm-advisor: market evidence for the cache-usage shape (2026-09-01)
+
+Docs read 2026-09-01, no live calls. Relevant to this ticket's open point 3 ("Decide what happens
+to Anthropic `cache_creation_input_tokens` -- a sibling attribute or nothing"). The market has
+answered: a single read-only scalar is already too narrow, on THREE providers.
+
+## 1. OpenAI now bills cache WRITES and reports them
+
+`developers.openai.com/api/docs/guides/prompt-caching` (platform.openai.com redirects there) plus
+the OpenAPI spec at raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml.
+`usage.prompt_tokens_details` now declares TWO counters, not one:
+
+    cached_tokens:      {type: integer, default: 0}  # "Cached tokens present in the prompt."
+    cache_write_tokens: {type: integer, default: 0}  # "The unadjusted number of prompt tokens written to cache."
+
+(Responses API: the same pair under `usage.input_tokens_details`.) It exists because writes became
+billable: "For GPT-5.6 and later, cache writes cost 1.25x the standard, uncached input-token rate...
+subsequent reads cost only 0.1x that rate." For GPT-5.5 and earlier there is "No additional
+cache-write charge".
+
+So the k125 comment in Response.pm ("The Anthropic write count `cache_creation_input_tokens` is a
+different quantity and is deliberately NOT folded in") is right about the semantics AND is now
+also true on the OpenAI wire, which has its own write counter Langertha does not read. A
+`cache_write_tokens` sibling is no longer an Anthropic-only concern.
+
+Two more OpenAI facts that affect what a value object should carry:
+- `cached_tokens` "Excludes hidden tokens and rounds down to a multiple of 128" (exact on 5.6+).
+  Any cost arithmetic built on it is approximate by construction -- worth a POD line.
+- Minimum cacheable prompt is "1,024 tokens for GPT-5.6 and later and 2,048 tokens for models
+  older than GPT-5.6" -- no longer the flat 1024 that older docs stated.
+
+## 2. Anthropic reports a per-TTL-tier breakdown, not a scalar
+
+`platform.claude.com/docs/en/build-with-claude/prompt-caching` (docs.claude.com redirects there):
+
+    "usage": {
+      "input_tokens": 2048,
+      "cache_read_input_tokens": 1800,
+      "cache_creation_input_tokens": 248,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 148,
+        "ephemeral_1h_input_tokens": 100
+      }
+    }
+
+Two TTL tiers exist (`"5m"` default and `"1h"`, the latter **no longer needing a beta header**),
+priced differently, and the write count is split across them under `cache_creation`. Max 4 cache
+breakpoints. So on Anthropic a faithful model is: one read count, and a write count that is
+itself a per-tier map.
+
+Silent-no-op trap worth POD'ing wherever cached_tokens is documented: the minimum cacheable prefix
+is model-dependent (512 / 1,024 / 2,048 / 4,096 tokens by model) and "Shorter prompts cannot be
+cached, even if marked with `cache_control`. **No error is returned**; the request is processed
+without caching." `usage` is the only evidence caching happened.
+
+## 3. Gemini and Mistral: two more spellings, one of them already handled
+
+- **Gemini generateContent** `usageMetadata` (verified against the v1beta discovery document):
+  `cachedContentTokenCount` (scalar) plus a `cacheTokensDetails[]` array. `Engine::Gemini`
+  already lifts the scalar into `usage.cached_content_token_count` (Gemini.pm:~404) -- note that
+  spelling does NOT match either of the two `Response::BUILDARGS` lift paths, so
+  `Response.cached_tokens` is `undef` on Gemini even though the count is right there. A third
+  inbound spelling for `Langertha::Usage::from_hash`.
+  (The new Interactions API uses `usage.total_cached_tokens` / `usage.total_thought_tokens`
+  instead -- a fourth spelling if Langertha ever targets it.)
+- **Mistral** now documents prompt caching too: request `prompt_cache_key`, response
+  `usage.prompt_tokens_details.cached_tokens`, always a multiple of 64, cached tokens billed at
+  10%. The OpenAI nesting, so the existing lift already catches it. Caveat: Mistral's published
+  `UsageInfo` schema does **not** declare `prompt_tokens_details` even though the prose shows it
+  -- parse leniently, do not validate.
+  Source: docs.mistral.ai/studio/conversations/advanced/prompt-caching
+
+## Recommendation for this ticket's point 3
+
+Do not add a bare `cache_write_tokens` scalar next to `cached_tokens`. Model it on
+`Langertha::Usage` as a small, explicitly-nullable pair with the per-tier detail kept native:
+
+    cache_read_tokens    Maybe[Int]   # OpenAI prompt_tokens_details.cached_tokens
+                                      # | Anthropic cache_read_input_tokens
+                                      # | Gemini cachedContentTokenCount
+    cache_write_tokens   Maybe[Int]   # OpenAI prompt_tokens_details.cache_write_tokens
+                                      # | Anthropic cache_creation_input_tokens
+
+with the Anthropic `cache_creation` per-TTL map and Gemini's `cacheTokensDetails[]` left in
+`Usage.raw` -- the same normalized-plus-native split as ADR 0011 (`timing`) and ADR 0017
+(`created` + `raw`). `Response.cached_tokens` stays as the back-compat alias of
+`cache_read_tokens` (public API, do not break), which is exactly this ticket's point 2.
+
+Three spellings for the read count, two for the write count, and a per-tier map on one provider is
+precisely the kind of inbound-spelling knowledge ADR 0018 home 1 says belongs in the value object
+rather than in `Response::BUILDARGS`. The market moved in the direction this ticket already argued.
