@@ -1,0 +1,61 @@
+---
+claimed_at: 2026-08-31T03:30:30Z
+claimed_by: weak-feel
+class: standard
+completed: 2026-09-01T19:19:20Z
+created: 2026-08-24T01:30:18Z
+id: 124
+priority: high
+started: 2026-08-31T03:29:02Z
+status: done
+tags:
+- engines
+- tools
+- aki
+- anthropic
+- wire
+title: ToolCall::from_anthropic drops tool arguments silently when input arrives as
+  a JSON string
+updated: 2026-09-01T19:19:20Z
+---
+
+Live-verified against AKI.IO 2026-08-24 (capture 5 of the karr #101 run, real key, 200 OK).
+
+AKI.IO /anthropic/v1/messages returns tool_use blocks whose "input" is a JSON *string*,
+not an object:
+
+  {"type":"tool_use","id":"call_096bb7f8c49043adb6506902","name":"add",
+   "input":"{\"a\": 7, \"b\": 15}"}
+
+lib/Langertha/ToolCall.pm:89 (from_anthropic):
+
+  arguments => ( ref( $block->{input} ) eq "HASH" ? $block->{input} : {} ),
+
+The ": {}" branch is a SILENT fallback to empty. Replaying the captured body through
+Engine::AKIAnthropic->chat_response yields:
+
+  tool_calls : 1
+     - id=call_096bb7f8c49043adb6506902 name=add
+       arguments ref=HASH value={}          <-- 7 and 15 are gone
+
+No croak, no warn. A Raider loop would invoke add() with no arguments and act on the
+result. This is the worst failure shape: correct id, correct name, empty payload.
+
+ASYMMETRY: from_openai (ToolCall.pm:77) handles exactly this case correctly via
+_decode_args($fn->{arguments}) -- the OpenAI wire always ships arguments as a string, so
+the decoder exists in the file already. from_anthropic never calls it because real
+Anthropic ships input as an object.
+
+Suggested fix: in from_anthropic, route a non-ref input through _decode_args, keep the
+HASH branch as-is, and keep {} only for genuinely unusable input. Cheap and local.
+
+Fixture available (verbatim capture, real server values):
+  akianthropic_tool_call_response.json  -- also carries a thinking block with a signature
+Gate the fix with it rather than a hand-written payload (that is the whole point of #101).
+
+Discovered by the live probe requested in karr #102. Engine built in #89 (closed as done)
+was never tool-tested -- its POD called the tool path unverified, correctly so.
+
+Fixed in 2653715: from_anthropic routes input through _decode_args (symmetric with from_openai); gated by a value-object unit test using the k124 captured tool_use block. Engine-level fixture replay (akianthropic_tool_call_response.json) belongs to k101 fixture infra which is not yet in the repo.
+
+Orchestrator review 2026-09-01: diff 2653715 verified. _decode_args passes HASH through, decodes strings, {} only for unusable input; unit test covers the k124 capture shape. prove -lr t/ green (3146 tests), perlcritic clean. Closing.
