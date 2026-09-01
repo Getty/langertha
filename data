@@ -1,0 +1,84 @@
+---
+class: standard
+created: 2026-09-01T19:36:26Z
+id: 134
+priority: high
+status: backlog
+tags:
+- advisor
+- anthropic
+- docs
+- gdpr
+- llm
+title: 'Anthropic inference_geo => ''eu'' does not exist: POD and t/50 promise an
+  EU data residency Anthropic does not offer'
+updated: 2026-09-01T19:36:26Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01. Docs-only verification, no live calls.
+
+lib/Langertha/Role/AnthropicCompatible.pm:112-129 declares `inference_geo` and its POD says:
+
+    Controls data residency for inference. Values: C<us>, C<eu>. When set, passed
+    as the C<inference_geo> parameter to keep processing in the specified region.
+
+        my $claude = Langertha::Engine::Anthropic->new(
+            api_key       => $ENV{ANTHROPIC_API_KEY},
+            inference_geo => 'eu',
+        );
+
+t/50_list_models.t:346-352 constructs an engine with `inference_geo => 'eu'` and asserts it.
+
+## The parameter is real. The value "eu" is not.
+
+https://platform.claude.com/docs/en/manage-claude/data-residency (read 2026-09-01). Verbatim:
+
+  "The `inference_geo` parameter controls where model inference runs for a specific API request.
+   Add it to any `POST /v1/messages` call."
+
+Accepted values -- exactly two:
+  "global"  -- "Default. Inference may run in any available geography for optimal performance
+                and availability."
+  "us"      -- "Inference runs only in US-based infrastructure."
+
+And explicitly under **Current limitations**:
+  "**Inference geo:** Only `\"us\"` and `\"global\"` are available."
+  "**Workspace geo:** Only `\"us\"` is currently available."
+
+There is no EU data-residency option on the first-party Claude API today. Per the same page, EU
+routing exists only via Amazon Bedrock / Google Cloud regional endpoints ("On Amazon Bedrock and
+Google Cloud, the inference region is determined by the endpoint URL or inference profile, so
+`inference_geo` is not applicable") or Microsoft Foundry's Data Zone deployments (US, not EU).
+
+## Why this is a priority rather than a typo
+
+Langertha's stated audience includes EU/GDPR users -- it ships AKI, T-Systems, Scaleway, Hetzner
+and Mistral engines specifically for that. A POD that says `inference_geo => 'eu'` "keeps
+processing in the specified region" is a **false data-residency assurance in the documentation of
+a compliance-relevant feature**, copy-pasteable straight out of the SYNOPSIS. A user who ships it
+believes their Claude traffic stays in the EU. It does not, and cannot.
+
+Wire behaviour of the bad value (both from the same page):
+  - `inference_geo` is supported on Claude 4.6 and later ONLY: "Requests with `inference_geo` on
+    Claude Opus 4.5, Claude Sonnet 4.5, Claude Haiku 4.5, or earlier models return a 400 error"
+    -- regardless of the value.
+  - On a 4.6+ model, `"eu"` is an out-of-enum value. Anthropic's request model appears to use
+    strict rejection (the errors page documents `Extra inputs are not permitted` phrasing for an
+    unrecognized nested field), so a 400 is the likely outcome rather than a silent downgrade to
+    `global`. NOT confirmed by an explicit doc statement -- flagged as inference.
+
+## Minimal fix
+
+1. POD: values are `global` (default) and `us`. Say plainly that no EU inference geo exists on
+   the first-party API, and point EU users at the EU-hosted engines Langertha already ships
+   (AKI, Mistral, Scaleway, T-Systems, Hetzner) or at Bedrock/Vertex regional endpoints.
+2. SYNOPSIS example: `inference_geo => 'us'`.
+3. t/50_list_models.t: swap 'eu' for 'us' (the test only checks the attribute round-trips).
+4. Consider a type constraint (enum global|us) so a wrong value fails at construction rather
+   than as an opaque 400 -- but note the value set will grow, so a `carp` on an unknown value may
+   age better than a hard enum. Maintainer call.
+5. Worth POD'ing two more facts from the same page: `usage.inference_geo` reports where the
+   request actually ran (verifiable, unlike a request-side promise), and `"us"` is billed at
+   **1.1x** standard across input, output, cache writes and cache reads.
+
+Source, read 2026-09-01: https://platform.claude.com/docs/en/manage-claude/data-residency
