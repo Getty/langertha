@@ -1,0 +1,40 @@
+---
+class: standard
+created: 2026-09-01T19:39:14Z
+id: 137
+priority: low
+status: backlog
+tags:
+- tests
+- http
+- rate-limit
+title: 't/12_rate_limit.t still hand-writes every header: AKI captures cannot replace
+  them'
+updated: 2026-09-01T19:39:14Z
+---
+
+Fallout from k101, recorded so the orchestrator's stated reason for capturing response headers is not silently unmet.
+
+The k101 decision was: capture the response HEADERS alongside the bodies so t/12_rate_limit.t
+can stop hand-writing them. The captures are landed (t/data/*.headers.json, five files), but
+they cannot serve that purpose:
+
+AKI.IO sends NO rate-limit headers on any of its three wires. The captured header sets are
+exactly access-control-allow-origin, connection, content-length, content-type, date, server.
+No x-ratelimit-* (Role::OpenAICompatible.pm:569-594 reads six of those) and no
+anthropic-ratelimit-* (Role::AnthropicCompatible.pm:582-612 reads twelve).
+
+What t/28_aki_fixtures.t does assert with them -- the most they can prove -- is that
+has_rate_limit stays false after a real 200 driven through the shims' own
+_parse_rate_limit_headers. A future AKI capture that DOES carry the headers will fail there
+rather than pass unnoticed.
+
+t/12_rate_limit.t is therefore unchanged and still builds every header by hand, which is the
+same class of gap k101 is about: the parser is only ever fed payloads written to fit it.
+
+To close this, a capture is needed from a provider that actually emits the headers -- OpenAI,
+Anthropic or Groq all do. That means a live call with a key Langertha's agents do not have
+standing approval for (memory rule: only AKI.IO is pre-approved), so this is blocked on the
+maintainer choosing a provider and authorising one cheap request. One request per wire family
+(one OpenAI-shaped, one Anthropic-shaped) is enough; the bodies are irrelevant, only the
+headers matter.
