@@ -1,0 +1,130 @@
+---
+class: standard
+created: 2026-09-01T19:40:04Z
+id: 138
+priority: high
+status: backlog
+tags:
+- advisor
+- capabilities
+- adr
+- tools
+- llm
+title: 'Capability registry carries zero discriminating information on the tool/structured-output
+  axis: 17 engines, one identical flag row, ~11 of them wrong'
+updated: 2026-09-01T19:40:04Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01, as the central finding of a concept red-team pass.
+All provider claims below are from docs read 2026-09-01. No live calls were made.
+
+## The observation
+
+ADR 0002 derives the capability flags from the composed role inventory, with
+`around engine_capabilities` as the sanctioned escape hatch for wire reality. Today the escape
+hatch is used SIX times in the whole distribution (AnthropicBase, OpenAIBase, Gemini, MiniMax,
+Moonshot, Perplexity) and none of those six touches a tool-choice or structured-output flag.
+
+Dumping `engine_capabilities` across the OpenAI-dialect fleet gives literally one row, repeated:
+
+    Groq Cerebras DeepSeek MiniMax Moonshot OllamaOpenAI LlamaCpp SGLang Scaleway
+    Hetzner OpenRouter HuggingFace NousResearch vLLM XAI Mistral TSystems
+      -> tool_choice_named=1 tool_choice_any=1 tool_choice_none=1
+         response_format_json_schema=1 response_format_json_object=1
+         tools_native=1 parallel_tool_use=1
+
+(Perplexity is the single engine that differs, because it composes no `Role::Tools`.)
+
+So on this axis the registry currently carries **zero discriminating information**. Every flag is
+a restatement of "this engine composes Role::Tools + Role::ResponseFormat". `chat_f`'s
+auto-rewrite matrix (ADR 0005) keys off exactly these flags, so it is deciding on a constant.
+
+## Where the wire disagrees -- verified, with the failure mode
+
+Loud (HTTP 400) unless noted; the SILENT ones are the dangerous half.
+
+| Engine | Flag that is wrong | Reality | Source |
+|---|---|---|---|
+| **DeepSeek** | `response_format_json_schema` | `response_format.type` enum is **`[text, json_object]`** only. No `json_schema`. Schema enforcement needs a forced tool with `strict:true` on the `/beta` base URL. | api-docs.deepseek.com/api/create-chat-completion , /guides/json_mode |
+| **Cerebras** | tools + response_format together | "**`tools` and `response_format` cannot be used in the same request**" (gpt-oss-120b hard-rejects) | inference-docs.cerebras.ai/capabilities/structured-outputs |
+| **Groq** | tools + response_format together; also streaming | "Streaming and tool use are not currently supported with Structured Outputs." `strict:true` only on `openai/gpt-oss-20b`, `-120b`, `qwen/qwen3.8-27b`. | console.groq.com/docs/structured-outputs , /docs/tool-use |
+| **Moonshot** | `tool_choice_named` on the DEFAULT model | "Forcing a specific tool is currently **incompatible with thinking**... returns a 400 error" -- and `kimi-k3` (the engine default) always thinks. Also `kimi-k2.6` / `kimi-k2.7-code` "do not support `required` and return an error if it is passed" -> `tool_choice_any` is wrong there too. | platform.kimi.ai/docs/guide/use-tool-choice |
+| **MiniMax** | `tool_choice_*`, `response_format_*` | `tool_choice` is **absent entirely** from the current `/v1/chat/completions` schema (0 occurrences), as is `response_format` and `parallel_tool_calls`. The deprecated native endpoint had `enum:[none,auto]`. | platform.minimax.io/docs/api-reference/text-chat-openai + openapi-chat-openai.json |
+| **Scaleway** | `tool_choice_any`; `parallel_tool_use`; `response_format_json_object` | `tool_choice` enum is **`none\|auto\|required`** -- no `any`. `parallel_tool_calls` is accepted but **inert**: "even if set `false` this parameter will be ignored and act as if set to `true`" (SILENT). `json_object` is "Deprecated... should not be used anymore". | scaleway.com/en/docs/generative-apis/ |
+| **Ollama /v1** | `tool_choice_named`, `_any`, `_none` | `tool_choice` is **not supported at all** -- the doc's own support checklist reads `- [ ] tool_choice`, and the Go server has no `DisallowUnknownFields`, so it is accepted, ignored, and answered **HTTP 200** (SILENT). | docs.ollama.com/api/openai-compatibility |
+| **llama.cpp** | `tool_choice_named` | The parser reads `tool_choice` as a `std::string`, so the object form is **silently downgraded to `"auto"`** (SILENT). `strict` is ignored. | ggml-org/llama.cpp `common/chat.cpp`, `tools/server/README.md` |
+| **SGLang** | `tool_choice_auto`, `_none` | Only the named form and the grammar backends are documented; `auto`/`none` are **not listed**, and named needs the `xgrammar` backend ("may not be fully supported with outlines"). `strict` undocumented. | docs.sglang.io/docs/advanced_features/tool_parser |
+| **Hetzner** | `tools_native`, all `tool_choice_*`, `response_format_*` | Tool calling and structured output are **documented nowhere** on Hetzner's inference page. The platform is explicitly experimental: "you should not use the platform for production environments." Only `/v1/models`, `/v1/completions`, `/v1/chat/completions` exist. | docs.hetzner.com/general/company-and-policy/experiments/inference/ |
+| **NousResearch** | `tools_native` + `tools_hermes` both set | Engine composes BOTH `Role::Tools` and `Role::HermesTools` while `tool_wire_format` is `hermes`, so `supports('tools_native')` is true for a prompt-injection wire. Separately: the hosted catalog (`inference-api.nousresearch.com/v1`, 376 models) contains **zero Hermes models**, and `default_model` is `Hermes-4-70B`. | live public /v1/models catalog; huggingface.co/NousResearch/Hermes-4-405B |
+| **Anthropic family** | `tool_choice_named`, `_any` | 400 on `claude-fable-5-1` / `claude-mythos-5-1` and under manual extended thinking. See k133. | platform.claude.com/docs/en/agents-and-tools/tool-use/tool-reference |
+
+Two of these directly contradict **ADR 0005**, whose premise is that structured output and forced
+tool calling are two faces of one mechanism that can be rewritten into each other: on Groq and
+Cerebras they are **mutually exclusive in one request**, so a caller passing both `tools` and
+`response_format` to `chat_f` builds a body the provider rejects. `chat_f` has no rule for
+"these two are exclusive here" because no flag can express it.
+
+## What the market is doing instead -- and it is worth copying
+
+Two providers already publish machine-readable per-model capability metadata, free and unauth'd:
+
+- **OpenRouter** `GET https://openrouter.ai/api/v1/models` -> `supported_parameters[]` per model.
+  Across the 419 live models: `tools` on 353, `tool_choice` on 345, `structured_outputs` on 335,
+  `response_format` on 360, `reasoning_effort` on 151, `parallel_tool_calls` on **7**. Finer still:
+  `GET /api/v1/models/{author}/{slug}/endpoints` gives per-PROVIDER
+  `supports_tool_choice: {none, auto, required, function}`, and two endpoints for the same model
+  genuinely diverge. There is also `provider: {require_parameters: true}` to refuse routing to a
+  provider that lacks a parameter -- and without it, unsupported params are **silently ignored**
+  ("providers that don't support all the LLM parameters specified in your request can still
+  receive the request, but will ignore unknown parameters").
+- **HuggingFace** `GET https://router.huggingface.co/v1/models` -> per provider
+  `supports_tools` (bool) and `supports_structured_output` (bool), plus `context_length`.
+  NOTE the negative: the Hub API (`?expand[]=inferenceProviderMapping`) does NOT carry these --
+  only the router does.
+- **AKI** publishes a per-model tool table in prose (with an undefined "Basic Support" tier -- k132).
+- **Anthropic** `GET /v1/models` gained `max_input_tokens`, `max_tokens` and **`capabilities`**
+  (changelog 2026-03-18).
+
+## The design question this ticket exists to raise
+
+`supports($cap)` is engine-scoped. The wire is model-scoped, and increasingly provider-scoped
+below the model (OpenRouter). Langertha already model-gates in three places, each invented
+independently and none of them named:
+
+  - `Engine::OpenAI::_max_tokens_key`      -- `$model =~ /\Agpt-5/ ? 'max_completion_tokens' : 'max_tokens'`
+  - `Langertha::Reasoning::to_gemini_level` -- per-model-family level clamps
+  - `Langertha::Reasoning::_is_fable_class` -- `/fable|mythos/i` -> omit the thinking field
+  - (and `DeepSeek::reasoning_kwargs`, which ADR 0009 decision 5 already sanctions as the
+    "divergence below the tag's resolution" escape hatch)
+
+Options, cheapest first, all needing a maintainer call:
+
+1. **Do nothing structural; spend the escape hatch.** Add ~10 `around engine_capabilities`
+   corrections from the table above. Cheap, honest, no new concept -- but it cannot express the
+   per-model cases (Moonshot k3 vs k2.6, Anthropic fable vs sonnet) or the pairwise exclusions
+   (Groq/Cerebras tools XOR response_format), which are the ones that 400.
+2. **Make `supports` model-aware**: `supports($cap, $model)` with the engine's `chat_model` as the
+   default, and a per-engine `%MODEL_CAPS` override table. Follows ADR 0002's spirit, extends its
+   resolution to where the wire actually lives. Biggest surface change.
+3. **A `Langertha::Capability` value object** with a third state -- yes / no / **unverified** --
+   so Hetzner's undocumented tools and AKI's "Basic Support" are not silently rounded up to yes.
+4. **Live capability discovery** for the providers that publish it (OpenRouter, HuggingFace,
+   Anthropic `/v1/models`), cached like `Role::Models` already caches the model list.
+5. **Model pairwise exclusions** are a separate shape from a flag; if `chat_f` is to stay
+   trustworthy it needs at minimum a per-engine `croak` when tools and response_format are
+   combined on Groq / Cerebras, rather than shipping a body that 400s.
+
+Recommendation: option 1 NOW for the loud cases plus the three silent ones (Ollama /v1,
+llama.cpp, Scaleway `parallel_tool_calls`), because a silently-ignored `tool_choice` is worse
+than a 400 -- the caller believes the tool was forced. Then decide 2 vs 3 deliberately, and
+record it as an ADR amending 0002. Do NOT do 4 first: it makes the engine construction path
+network-dependent.
+
+## What is NOT wrong
+
+Verified correct and worth not "fixing": Perplexity really still has no tool calling (see k138 for
+its EOL); xAI documents named tool_choice, structured outputs and `parallel_tool_calls` on every
+text model; Mistral accepts named tool_choice plus `any`/`required` synonyms and `json_schema`
+with `strict`; vLLM supports named tool_choice by default with no flag (only `auto` needs
+`--enable-auto-tool-choice`); T-Systems types `tools`/`tool_choice`/`response_format` as
+passthrough, so the flags follow whatever backend the model id routes to.
