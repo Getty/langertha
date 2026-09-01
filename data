@@ -1,0 +1,170 @@
+---
+class: standard
+created: 2026-09-01T19:20:01Z
+id: 129
+priority: medium
+status: backlog
+tags:
+- streaming
+- response
+- thinking
+- openai
+- anthropic
+title: 'Streamed thinking/reasoning deltas are dropped: Stream::Chunk has no thinking
+  field, OpenAI-family parse_stream_chunk reads delta.content only'
+updated: 2026-09-01T19:31:24Z
+---
+
+Found 2026-09-01 by the orchestrator while reviewing karr #127 (AKI bare `reasoning` key lifted onto Response.thinking, chat_response only).
+
+State of the code (HEAD 07f6d68):
+- Langertha::Stream::Chunk has no `thinking` attribute (grep thinking|reasoning in Stream/Chunk.pm, Stream.pm, Role/Streaming.pm: 0 hits).
+- Role::OpenAICompatible::parse_stream_chunk (~line 481) reads only $choice->{delta}{content}. Every streamed `delta.reasoning_content` (DeepSeek, NousResearch, xAI, ...) and `delta.reasoning` (AKI, OpenRouter) is discarded.
+- The non-streaming path DOES surface it: OpenAICompatible::chat_response:371 (reasoning_content), AKIOpenAI around chat_response (reasoning, k127), AnthropicCompatible::chat_response:303 (thinking blocks).
+
+Consequence: $response->thinking is populated for simple_chat but silently undef for simple_chat_stream / simple_chat_stream_realtime_f on the same engine and prompt. Same class of asymmetry as k125 (cached_tokens visible on one route only).
+
+Design shape (needs a decision before code, NOT a one-liner):
+1. Stream::Chunk gains a `thinking` (Maybe[Str]) field, parallel to `content` / `tool_calls`.
+2. Each dialect stream parser fills it from its own delta spelling: OpenAI-family `delta.reasoning_content` (+ AKI/OpenRouter `delta.reasoning` - decide whether the AKI-scoped override pattern from k127 extends to the stream parser), Anthropic `content_block_delta` with `thinking_delta`, Gemini parts with `thought: true`, Ollama `message.thinking` (native /api/chat with think=true).
+3. The aggregation into the final Response (Role::Chat, where aggregate_tool_calls lives) concatenates thinking the way it concatenates content, so the streamed Response ends up with the same ->thinking as the non-streamed one.
+4. Streaming callbacks: decide whether thinking chunks are delivered to the user callback (as chunk->thinking) or only aggregated.
+
+The langertha-llm-advisor is asked to verify the per-provider delta spellings before anyone implements. Relates: k127 (non-streaming AKI lift), ADR 0011 (ttft is only observable on the async stream path - thinking-first-token likely the same).
+
+
+---
+
+# langertha-llm-advisor: verified reasoning/thinking wire spellings (2026-09-01)
+
+All rows read from the providers' own current docs on 2026-09-01. NO live API calls were made.
+"not documented" means the provider's docs do not show a streaming reasoning payload at all --
+it is NOT an assumption that the stream mirrors the non-stream field.
+
+## Table: dialect -> non-stream field -> stream delta field
+
+| Provider / dialect | non-stream | stream delta | source (read 2026-09-01) |
+|---|---|---|---|
+| DeepSeek | `message.reasoning_content` | `delta.reasoning_content` | https://api-docs.deepseek.com/guides/thinking_mode/ |
+| SGLang | `message.reasoning_content` | `delta.reasoning_content` | https://docs.sglang.ai/advanced_features/separate_reasoning.html |
+| Moonshot / Kimi | `message.reasoning_content` | `delta.reasoning_content` (docs guarantee it fully precedes `content`) | https://platform.kimi.ai/docs/guide/use-thinking-models |
+| llama.cpp server | `message.reasoning_content` | NOT DOCUMENTED (README has no chunk schema) | https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md |
+| xAI Grok (/v1/chat/completions) | `message.reasoning_content` | NOT DOCUMENTED (only `message` is in the REST schema; chat-completions marked legacy) | https://docs.x.ai/llms.txt , https://docs.x.ai/developers/model-capabilities/text/reasoning |
+| **vLLM** | **`message.reasoning`** (RENAMED from `reasoning_content`) | **`delta.reasoning`** | https://docs.vllm.ai/en/latest/features/reasoning_outputs/ |
+| Groq | `message.reasoning` (with `reasoning_format:"parsed"`) | NOT DOCUMENTED (every reasoning example is `stream:false`) | https://console.groq.com/docs/reasoning |
+| Cerebras | `message.reasoning` (with `reasoning_format:"parsed"`) | `delta.reasoning` (explicit JSON example) | https://inference-docs.cerebras.ai/capabilities/reasoning |
+| OpenRouter | `message.reasoning` (string) AND `message.reasoning_details` (array) | `delta.reasoning_details` (array). A `delta.reasoning` string is NOT documented. | https://openrouter.ai/docs/guides/best-practices/reasoning-tokens |
+| AKI.IO (/openai/v1) | `message.reasoning` (k127 capture) | not verifiable from docs | k127 live capture |
+| MiniMax | default: inline `<think>...</think>` INSIDE `content`. With `reasoning_split:true`: `reasoning_content` + `reasoning_details` | `delta.reasoning_details` (array of `{text}`; their own example slices against a buffer, i.e. `text` looks CUMULATIVE, not incremental) | https://platform.minimax.io/docs/api-reference/text-openai-api |
+| Mistral | NO separate field. `message.content` becomes a LIST of chunks: `{type:"thinking", thinking:[TextChunk...]}` + `{type:"text"}` | `delta.content` is a LIST during thinking, then a plain string | https://docs.mistral.ai/capabilities/reasoning/ |
+| Ollama `/v1` (OpenAI-compatible) | NOT DOCUMENTED -- only request-side `reasoning_effort` is documented for /v1 | NOT DOCUMENTED | https://docs.ollama.com/api/openai-compatibility |
+| NousResearch | COULD NOT CONFIRM -- portal.nousresearch.com/api-docs is a client-rendered SPA, HTTP 429 to crawlers. No first-party statement found. | COULD NOT CONFIRM | -- |
+| **Anthropic Messages** | `content[]` blocks `{type:"thinking", thinking, signature}` and `{type:"redacted_thinking", data}` | `content_block_delta` with `delta.type=="thinking_delta"` (field `thinking`), then exactly ONE `delta.type=="signature_delta"` (field `signature`) right before `content_block_stop` | https://platform.claude.com/docs/en/build-with-claude/thinking |
+| **Gemini generateContent** | `candidates[].content.parts[]` with `thought:true` (+ `thoughtSignature`) | same shape per streamed chunk; there is NO separate thought event -- it is the same part discriminated by the boolean | https://ai.google.dev/gemini-api/docs/generate-content/thinking , https://ai.google.dev/api/generate-content |
+| **Ollama native /api/chat** | `message.thinking` | `message.thinking` (same field, partial text per NDJSON chunk) | https://github.com/ollama/ollama/blob/main/docs/api.md + api/types.go (`Thinking string \`json:"thinking,omitempty"\``) |
+| **OpenAI Responses** | `output[]` item `{type:"reasoning", summary:[{type:"summary_text",text}], encrypted_content}` | SIX events, all real: `response.reasoning_summary_part.added` / `.done`, `response.reasoning_summary_text.delta` / `.done` (indexed by `summary_index`), `response.reasoning_text.delta` / `.done` (indexed by `content_index`) | https://developers.openai.com/api/reference/resources/responses/streaming-events/ |
+
+Doc-domain moves noted in passing: Anthropic docs are now at platform.claude.com (docs.claude.com
+redirects); OpenAI at developers.openai.com; Gemini's guides split into an Interactions API (new
+default) and a "generateContent API (Legacy)" tree -- Langertha speaks the legacy one.
+
+## Findings on the NON-STREAMING path (this is bigger than the streaming gap)
+
+The ticket asked whether any dialect's non-streaming path already reads the wrong spelling. Four do.
+
+1. **`Role::OpenAICompatible::chat_response:371` reads ONLY `$msg->{reasoning_content}`.**
+   Five shipped engines put their reasoning under the bare `reasoning` key and are therefore
+   silently blank on `$response->thinking` today, on the NON-streamed route:
+   `Engine::vLLM` + `Engine::VLLMHook`, `Engine::Groq`, `Engine::Cerebras`, `Engine::OpenRouter`.
+   vLLM is the sharp one -- its own docs carry a migration warning: "`reasoning` used to be called
+   `reasoning_content` ... your client code could silently read an EMPTY `reasoning_content` even
+   when `reasoning` is populated." That is exactly the failure mode here.
+   `Engine::AKIOpenAI` already has the AKI-scoped `around chat_response` lift from k127 -- it is
+   the only engine that does. Minimal fix: read `reasoning_content`, else `reasoning` (guard
+   `!ref` so OpenRouter's `reasoning_details` ARRAY never lands in a Str attribute), in the shared
+   role, and drop the AKI-scoped override as redundant.
+
+2. **`Engine::Ollama::chat_response:~315` never reads `message.thinking` at all.**
+   Ollama's NATIVE path drops thinking on BOTH routes, not just streaming. The streaming half is
+   what this ticket is about; the non-streaming half is a separate one-liner.
+
+3. **`Role::AnthropicCompatible::chat_response:303` filters `grep { $_->{type} eq 'thinking' }`.**
+   Anthropic's docs warn against precisely this: "If your code filters content blocks by type
+   (for example, `block.type == "thinking"`) when round-tripping responses with tool use, also
+   include `redacted_thinking` blocks. Filtering on `block.type == "thinking"` alone silently
+   drops `redacted_thinking` blocks and breaks the multi-turn protocol."
+   Langertha's tool loop is safe here BY LUCK, because `Role::Tools::format_tool_results` echoes
+   `$data->{content}` verbatim (the whole raw block array) for `tool_wire_format eq 'anthropic'`
+   rather than rebuilding it -- keep it that way. But `$response->thinking` itself never surfaces
+   redacted blocks.
+   Bigger: on CURRENT Claude models `thinking.display` defaults to `"omitted"` (Opus 4.7/4.8/5,
+   Sonnet 5, Fable 5/5.1, Mythos 5/5.1), which means NO `thinking_delta` events are emitted and
+   the thinking text is empty -- only the `signature` is populated. So a stream parser that fills
+   `thinking` from `thinking_delta` will legitimately get nothing on today's default config;
+   `display:"summarized"` has to be requested. Anything asserting non-empty thinking on Anthropic
+   needs that set.
+
+4. **`Engine::Gemini::parse_stream_chunk:~534` reads `$parts->[0]->{text}` -- the FIRST PART ONLY.**
+   Two bugs in one line, both live today, independent of any new `thinking` field:
+   (a) when part 0 is a thought part, its text is emitted AS CONTENT (thought summary leaks into
+       `$chunk->content`);
+   (b) when part 0 is a thought part and part 1 is the real answer, the answer is DROPPED.
+   Non-streaming `Engine::Gemini::chat_response:~380` does it correctly (loops all parts, splits
+   on `$part->{thought}`). The stream parser should be brought to the same shape.
+   Also load-bearing for tool calling: Gemini's docs say the signature "might be returned in a
+   part with empty text content, so be sure to parse all parts until `finish_reason` is returned."
+
+## Design correction to the ticket's step 3
+
+The ticket says "the aggregation into the final Response ... so the streamed Response ends up with
+the same ->thinking as the non-streamed one". There IS no streamed Response today.
+`Role::Chat::chat_stream_realtime_f` returns `($content, \@all_chunks, \%timing)` and
+`simple_chat_stream` returns a plain joined string -- no `Langertha::Response` is ever built on the
+stream path. So step 3 has to be respecified as either
+  (a) an `aggregate_thinking(\@chunks)` helper mirroring the existing `aggregate_tool_calls`
+      (Role::Chat:675), returned alongside content, or
+  (b) a separate decision to start returning a Response from the stream path.
+(a) is the surgical one and matches the existing seam.
+
+## Type hazard that will bite the implementer (Mistral)
+
+`Langertha::Response.content` and `Langertha::Stream::Chunk.content` are both `isa => 'Str',
+required => 1`. Mistral's reasoning models return `message.content` as an ARRAY of chunks
+(ThinkChunk + TextChunk) and `delta.content` as an ARRAY during the thinking phase. Feeding that
+through `Role::OpenAICompatible::chat_response` (`content => $msg->{content} // ''`) or
+`parse_stream_chunk` (`content => $choice->{delta}{content} // ''`) is a Moose type-constraint
+death, not a silent drop. `Engine::Mistral`'s `default_model` is `mistral-small-latest`
+(non-reasoning) so nobody has hit it, but Mistral's docs say the native `magistral-*` line is
+deprecated in favour of reasoning in the mainline models. Whoever implements #129 should decide
+whether to normalize a list-shaped `content` (join the TextChunks, route the ThinkChunk to
+`thinking`) in the same change. Filed separately if it is not in scope here.
+
+## Round-trip obligations -- the reason this is not cosmetic
+
+Several providers REQUIRE the reasoning to be sent back, and two of them fail hard:
+
+- **DeepSeek: HTTP 400.** "all prior turns' `reasoning_content` must be sent back" when `tools`
+  is present. Without `tools` it is ignored.
+- **Moonshot / Kimi:** k3 has always-on preserved thinking; within one tool-call loop all
+  `reasoning_content` must be sent back. (`Engine::Moonshot::default_model` is `kimi-k3`.)
+- **Anthropic:** "when you return tool results, you must pass the thinking blocks from the
+  assistant message back to the API, complete and unmodified"; modified blocks -> 400.
+- **Gemini 3:** missing `thoughtSignature` in a function-calling turn -> 400, and there is a
+  dedicated `finishReason: MISSING_THOUGHT_SIGNATURE`.
+- **OpenRouter:** `reasoning_details` must be round-tripped unmodified and in original order.
+- **xAI:** dropping `reasoning_content` costs the prompt-cache hit.
+- **Mistral:** stripping the ThinkChunk "significantly degrades output quality".
+
+`Role::Tools::format_tool_results` echoes the RAW provider structure for the `anthropic`,
+`gemini` and `responses` dialects (safe), but the `openai` default branch REBUILDS the assistant
+echo from exactly three keys:
+
+    { role => 'assistant', content => $choice->{message}{content},
+      tool_calls => $choice->{message}{tool_calls} }
+
+so `reasoning_content` / `reasoning` / `reasoning_details` are dropped on every OpenAI-dialect
+engine. Per the DeepSeek doc that is a hard 400 on the second iteration of a tool loop against a
+DeepSeek thinking model, and a correctness/quality loss on Kimi, OpenRouter and Mistral. The
+`ollama` branch rebuilds the same way and drops `message.thinking`.
+That is a SEPARATE and higher-severity bug than the streaming gap this ticket tracks -- filed as
+its own karr ticket so #129 stays scoped to the stream parsers.
