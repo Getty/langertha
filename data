@@ -1,0 +1,53 @@
+---
+claimed_at: 2026-08-31T03:45:00Z
+claimed_by: weak-feel
+class: standard
+completed: 2026-09-01T19:19:20Z
+created: 2026-08-23T20:13:11Z
+id: 120
+priority: low
+started: 2026-08-31T03:43:44Z
+status: done
+tags:
+- json
+- roles
+- value-objects
+- docs
+title: Role::JSON's engine encoder has no convert_blessed, while five value objects'
+  POD calls it 'the house default'
+updated: 2026-09-01T19:19:20Z
+---
+
+Found while making Langertha::Response.created a Langertha::Moment (karr #117 / GH #3).
+
+Langertha::Usage, Langertha::Cost, Langertha::ToolChoice, Langertha::Tool, Langertha::ToolCall
+and Langertha::UsageRecord each carry the same POD comment above their TO_JSON:
+
+    # convert_blessed => 1 (the house default, see Langertha::Plugin::Langfuse).
+
+That is true of Langertha::Plugin::Langfuse (lib/Langertha/Plugin/Langfuse.pm:210 builds
+JSON::MaybeXS->new(utf8 => 1, canonical => 1, convert_blessed => 1)) but NOT of the engine
+encoder every engine actually uses:
+
+    lib/Langertha/Role/JSON.pm:45
+      sub _build__json { JSON::MaybeXS->new( utf8 => 1, canonical => 1 ) }
+
+So $engine->json->encode dies on any blessed value ("encountered object ..., but neither
+allow_blessed, convert_blessed nor allow_tags settings are enabled"). Today that is latent,
+not broken: the request bodies it encodes never contain value objects, and
+Role::Langfuse:480 ($self->json->encode({ batch => $batch })) is only reached with plain
+strings from the internal call sites. But langfuse_update_trace / _span / _generation take
+$opts{output} from the caller, and a caller passing a Langertha::Response there hits the
+croak — as would any user reaching for $engine->json as a convenience encoder.
+
+Two ways to reconcile, both cheap:
+  (a) add convert_blessed => 1 to Role::JSON::_build__json, making the POD true; or
+  (b) fix the six POD comments to name Plugin::Langfuse as the only encoder that enables it.
+
+(a) is the safer default and matches what every value object in the distribution already
+assumes about how it gets serialized. Deliberately NOT done as a drive-by inside the
+created/Time::Moment change: it touches the encoder every engine builds every request with.
+
+Fixed in b9ec772 via option (a): convert_blessed => 1 on Role::JSON::_build__json, making the six value objects' 'house default' POD true on the engine encoder. Request-body encoding unchanged (plain data). Gated by a round-trip test through a real engine->json.
+
+Orchestrator review 2026-09-01: diff b9ec772 verified. convert_blessed on the engine encoder, round-trip test through a real engine->json. Request bodies unaffected. Closing.
