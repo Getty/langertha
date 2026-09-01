@@ -112,6 +112,7 @@ Engine::Remote              url required, JSON + HTTP
   ├── Engine::OpenAIBase    /chat/completions format, Bearer auth, SSE streaming
   │     │  Cloud providers (url has default, api_key from env)
   │     ├── OpenAI          gpt-5.6 family, embeddings, whisper transcription, structured output
+  │     │     └── OpenAIResponses  /v1/responses API (reasoning models like gpt-5.5-pro); sole carrier of the `responses` tool/reasoning wire format; no streaming
   │     ├── DeepSeek        deepseek-v4-flash/pro, structured output
   │     ├── Groq            ultra-fast inference, whisper transcription, structured output
   │     ├── XAI             xAI Grok (grok-4.3), 1M context, agentic tool calling
@@ -190,6 +191,16 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **ReasoningEffort** (`reasoning_effort`) · **PromptCache** (`prompt_cache` / `prompt_cache_key`)
   — request-side controls serialized per-wire by value objects, keyed by per-concern
   `reasoning_wire_format` / `cache_wire_format` (separate from `tool_wire_format`). → **ADR 0009**.
+
+- **RuntimeKnobs** (`knob_wire_format` `vllm` | `sglang` | `llamacpp`) — self-hosted prefix-cache knobs
+  (`prefix_cache_salt`, `cache_prompt`, `n_cache_reuse`, `id_slot`, …) via `Langertha::Runtime::Knobs`;
+  composed by vLLM, SGLang, LlamaCpp. → **ADR 0012**.
+- **CachedContent** — Gemini explicit `cachedContent` resource lifecycle (create/get/list/update/delete).
+- **StaticModels** — hardcoded model list for engines without a usable `/models` endpoint
+  (Perplexity, NousResearch, MiniMaxAnthropic, MoonshotAnthropic, AKIAnthropic). **KeepAlive** — Ollama native
+  `keep_alive` (model residency duration).
+- **PluginHost** (Raider, Engine::Remote) · **Runnable** (Raider + Raid nodes async contract) — infrastructure
+  roles, not capabilities.
 
 ### Core classes
 
