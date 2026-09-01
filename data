@@ -1,0 +1,134 @@
+---
+class: standard
+created: 2026-09-01T19:41:22Z
+id: 140
+priority: medium
+status: backlog
+tags:
+- advisor
+- reasoning
+- gemini
+- openai
+- value-objects
+- llm
+title: 'Reasoning/structured-output clamps are stale: OpenAI drops ''max'' it should
+  keep, gemini-3.7-flash 400s on ''minimal'', Gemini responseSchema deprecated'
+updated: 2026-09-01T19:41:22Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01. Docs read 2026-09-01, no live calls. Two providers,
+four concrete drifts, all inside `Langertha::Reasoning` / `Engine::Gemini`.
+
+## 1. OpenAI: the `max` clamp is wrong, and `minimal` is passed to models that reject it
+
+`Langertha::Reasoning` (Reasoning.pm:107-109):
+
+    # OpenAI /chat/completions reasoning_effort accepts this subset of the
+    # normalized vocabulary; max is not accepted there and is dropped.
+    my %OPENAI_EFFORT = map { $_ => 1 } qw( none minimal low medium high xhigh );
+
+The current OpenAPI spec (raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml,
+`components.schemas.ReasoningEffort`) is:
+
+    enum: [none, minimal, low, medium, high, xhigh, max]
+    default: medium
+
+and Chat Completions `reasoning_effort` and Responses `reasoning.effort` **`$ref` the identical
+schema**. So `max` is NOT rejected by the Chat Completions surface; the clamp silently drops a
+value the user asked for. `to_responses` (Reasoning.pm:221-225) does not clamp at all, so the same
+engine honours `max` on one wire and drops it on the other -- an asymmetry with no wire basis.
+
+The real constraint is per MODEL, not per wire (guide:
+"Supported values are **model-dependent**... Some models support only a subset"):
+
+    gpt-5.6-sol / -terra / -luna : none, low, medium (default), high, xhigh, max   <- NO minimal
+    gpt-5.5                     : none, low, medium (default), high, xhigh
+    gpt-5                       : minimal, low, medium, high                       <- NO none/xhigh/max
+
+`Engine::OpenAI::default_model` is `gpt-5.6-terra`. Langertha passes `minimal` straight through to
+it, and `minimal` is not on that model's list. `none`/`xhigh`/`max` sent to `gpt-5` are the
+mirror problem. `minimal` is the legacy-generation spelling and `none`/`xhigh`/`max` the
+new-generation one; **they do not overlap on any single model**, so no wire-level clamp can be
+correct -- this needs model gating (see k138).
+Sources: developers.openai.com/api/docs/guides/reasoning.md and the per-model pages.
+(NOTE: platform.openai.com/docs now redirects to developers.openai.com/api/docs.)
+
+## 2. Gemini: `to_gemini_level`'s model table is stale, and gemini-3.7-flash will 400
+
+`Langertha::Reasoning` carries a comment block "verified 2026-08-10" and clamps accordingly
+(Reasoning.pm:~163-198):
+
+    gemini-3-flash-preview / gemini-3.5-flash* / *-flash-lite : minimal low medium high
+    gemini-3.1-pro-*                                          : low medium high
+    gemini-3-pro-*                                            : low high
+
+Only `/\Agemini-3\.1-pro/` and `/\Agemini-3-pro/` are special-cased; every other `gemini-3*` model
+keeps the full `%GEMINI3_LEVEL` map including `minimal`. The current per-model table
+(ai.google.dev/gemini-api/docs/thinking, read 2026-09-01) is:
+
+    gemini-3.7-flash       default medium   levels: low, medium, high      <- NO minimal
+    gemini-3.6-flash       default medium   levels: minimal, low, medium, high
+    gemini-3.5-flash-lite  default minimal  levels: minimal, low, medium, high
+    gemini-3.1-pro-preview default high     levels: low, medium, high
+    gemini-2.5-pro/-flash                   levels: low, medium, high (via thinkingBudget)
+
+So `reasoning_effort => 'none'` or `'minimal'` on **`gemini-3.7-flash`** emits
+`thinkingConfig.thinkingLevel = "minimal"`, which that model does not accept. The API reference is
+explicit that an unsupported level is an error, not a clamp. There is also no `gemini-3-pro-*`
+TEXT model in the current catalogue at all (only `gemini-3-pro-image`), so that branch guards
+nothing.
+
+`Engine::Gemini::default_model` is `gemini-3-flash-preview`, which IS still listed (Preview tier)
+-- no action needed there, but it is a preview id and worth revisiting.
+
+## 3. Gemini: `responseSchema` is DEPRECATED; the current field is `responseJsonSchema`
+
+`Engine::Gemini::chat_request:340` and `chat_stream_request:517` both emit
+
+    $generation_config{responseMimeType} = 'application/json';
+    $generation_config{responseSchema}   = $rf->{json_schema}{schema};
+
+The v1beta discovery document and the REST reference both now mark it deprecated:
+
+    responseMimeType    : string                 -- current
+    responseSchema      : Schema   [DEPRECATED]  -- "This item is deprecated!"
+    responseJsonSchema  : any                    -- current
+    responseFormat      : ResponseFormatConfig   -- NEW
+
+Reference verbatim on the replacement: "Optional. Output schema of the generated response. This is
+an alternative to `responseSchema` that accepts JSON Schema. If set, `responseSchema` must be
+omitted, but `responseMimeType` is required."
+
+`responseJsonSchema` is the better fit for Langertha anyway: `chat_f` receives an OpenAI-shaped
+`response_format.json_schema.schema`, i.e. already JSON Schema, while `responseSchema` wants
+Google's own `Schema` proto dialect. The supported keyword subset is enumerated in the reference
+(`$id $defs $ref $anchor type format title description enum items prefixItems minItems maxItems
+minimum maximum anyOf oneOf properties additionalProperties required` + non-standard
+`propertyOrdering`). No removal date is announced -- migration is not urgent, but it is the
+direction of travel.
+Sources: ai.google.dev/api/generate-content ,
+https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta
+
+## 4. Gemini: `functionCallingConfig` gained a `VALIDATED` mode
+
+Discovery doc: `FunctionCallingConfig.mode enum = [MODE_UNSPECIFIED, AUTO, ANY, NONE, VALIDATED]`.
+Reference verbatim: "**VALIDATED** -- Model decides to predict either a function call or a natural
+language response, but will validate function calls with constrained decoding." And
+`allowedFunctionNames` widened: "This should only be set when the Mode is **ANY or VALIDATED**."
+
+`Langertha::ToolChoice` maps `auto`/`any`/`none` only. `VALIDATED` has no equivalent in the
+canonical vocabulary (`none|auto|required|named`) -- it is "auto, but if it calls, the call is
+schema-valid", which is genuinely a fifth policy. Not a bug; a deliberate decision about whether
+the canonical vocabulary grows. Worth an explicit "we are not modelling this" note if the answer
+is no, so the next reader does not re-derive the question.
+
+## Context note for whoever picks this up
+
+Google has shipped a new **Interactions API** (`POST /v1beta/interactions`, OpenAI-Responses-shaped)
+and has REWRITTEN the prose guides around it -- the function-calling, structured-output, thinking
+and caching guides now document only Interactions. `generateContent` is NOT deprecated (verified
+against the v1beta discovery document: `models.generateContent` and `models.streamGenerateContent`
+carry no `deprecated` flag, unlike `generateText`/`embedText`/`generateAnswer` which do), but the
+REST reference at ai.google.dev/api/generate-content is now its ONLY prose source. Expect the
+generateContent docs to keep thinning. Not an action item today; a heads-up for
+`Engine::Gemini`'s medium-term future.
