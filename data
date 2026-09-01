@@ -1,0 +1,170 @@
+---
+class: standard
+created: 2026-08-23T20:26:39Z
+id: 121
+priority: low
+status: backlog
+tags:
+- response
+- value-objects
+- rate-limit
+title: RateLimit.requests_reset / tokens_reset are Maybe[Str] holding three different
+  shapes (seconds, RFC3339, epoch)
+updated: 2026-09-01T19:32:55Z
+---
+
+Found while writing ADR 0017 (Response.created becomes a Langertha::Moment).
+
+lib/Langertha/RateLimit.pm:70 and :107 declare requests_reset / tokens_reset as Maybe[Str],
+and their own POD says the format "varies by provider (seconds, RFC 3339 timestamp, or epoch)".
+That is the same untyped-wire-value problem Response.created had before ADR 0017 -- one
+attribute holding whatever the provider header said -- except that here the shapes are not all
+the same KIND of value: "seconds" is a duration, RFC3339 and epoch are instants.
+
+So Langertha::Moment is NOT a straight drop-in: from_wire would happily turn the bare
+duration "60" into an instant at 1970-01-01T00:01:00Z, which is wrong, not merely lossy.
+Any fix has to decide first whether the attribute means "when" or "in how long", and
+probably split it (reset_after_seconds vs reset_at) rather than widen the type.
+
+Not urgent: unlike GH #3 nothing croaks today, because Maybe[Str] accepts every shape. The
+cost is on consumers, who cannot tell which shape they got without knowing the provider.
+
+Deliberately NOT bundled into the created/Time::Moment change -- different question, and it
+touches the rate-limit header readers of every engine family.
+
+Reviewed 2026-08-31 (weak-feel): stays in backlog, needs a maintainer design decision before code.
+Nothing croaks today (Maybe[Str] accepts every shape), so this is not a latent bug like GH #3 was.
+The fix is not a type-widen: the attribute conflates a duration ("in how long", seconds) with an
+instant ("when", RFC3339/epoch), so Langertha::Moment->from_wire would turn a bare "60" into
+1970-01-01T00:01:00Z -- wrong, not merely lossy. The real fix is an API split (reset_after_seconds
+vs reset_at) that touches the rate-limit header readers of every engine family (OpenAICompatible
+x-ratelimit-*, AnthropicCompatible anthropic-ratelimit-*). That is a product/API decision, not a
+worker call -- deferring rather than guessing a new public shape. Possibly langertha-llm-advisor.
+
+
+---
+
+# langertha-llm-advisor: verified header shapes + one recommended API (2026-09-01)
+
+Provider docs read 2026-09-01. No live API calls. The ticket's premise ("seconds, RFC3339, or
+epoch") is right in kind but wrong in detail: the dominant shape is neither bare seconds nor
+epoch, it is a **Go `time.Duration.String()` string**, and it can be compound and sub-second.
+
+## What the wire actually carries
+
+| Provider | reset header(s) | value format | verbatim doc example | source (read 2026-09-01) |
+|---|---|---|---|---|
+| OpenAI | `x-ratelimit-reset-requests` / `-tokens` | Go-duration string | `1s`, `6m0s` | developers.openai.com/api/docs/guides/rate-limits (platform.openai.com redirects there) |
+| OpenAI (NEW, not read by us) | `x-ratelimit-{limit,remaining,reset}-project-tokens` | int / int / Go-duration (`3s`) | `60000`, `57000`, `3s` | ″ |
+| Groq | `x-ratelimit-reset-requests` / `-tokens` | Go-duration string | `2m59.56s`, `7.66s` | console.groq.com/docs/rate-limits |
+| Scaleway | `x-ratelimit-reset-requests` / `-tokens` | Go-duration string | `250ms`, `35ms` | scaleway.com/en/docs/generative-apis/reference-content/rate-limits/ |
+| T-Systems LLM Hub | `x-ratelimit-reset-requests` / `-tokens` | duration string | `3s` | docs.llmhub.t-systems.net/reference/rate-limits/ (documented for the AZURE-hosted models only; T-Cloud open-weight models unspecified) |
+| Anthropic | `anthropic-ratelimit-{requests,tokens,input-tokens,output-tokens}-reset` | RFC 3339 instant | (docs give no example, but say "RFC 3339 format" six times) | platform.claude.com/docs/en/api/rate-limits |
+| Anthropic (NOT read by us) | `anthropic-priority-{input,output}-tokens-*` (Priority Tier), `anthropic-fast-{input,output}-tokens-*` (fast mode) | int / int / RFC 3339 | — | ″ + /docs/en/build-with-claude/fast-mode |
+| Cerebras | UNDOCUMENTED. Observed in the wild: `x-ratelimit-reset-requests-day` | bare FRACTIONAL seconds, window suffix in the NAME | `11726.2840924263` | docs silent (1.2 MB llms-full.txt, zero hits); value from a HuggingFace forum post -- unofficial |
+| OpenRouter | `X-RateLimit-{Limit,Remaining,Reset}` -- **on error responses only**, never on a 200 | format NOT documented | — | openrouter.ai/docs/api-reference/limits. Third-party lib (pkg.go.dev ai-provider-kit) claims epoch-ms; unofficial |
+| Mistral | only `X-RateLimit-Remaining` documented, **no reset header at all**. Observed names are DIFFERENT: `x-ratelimit-limit-tokens-minute`, `-remaining-tokens-minute`, `x-ratelimit-tokens-query-cost`, `x-ratelimit-limit-req-minute` | n/a | — | docs.mistral.ai/resources/known-limitations |
+| xAI, DeepSeek, Gemini, Hetzner | none documented | — | — | docs.x.ai/developers/rate-limits, api-docs.deepseek.com/quick_start/rate_limit, ai.google.dev/gemini-api/docs/rate-limits, docs.hetzner.com/.../inference/ |
+| Ollama, vLLM, SGLang, llama.cpp | emit nothing (0 `X-RateLimit` hits in the sources) | — | — | GitHub code search |
+
+`Retry-After` (RFC 9110 10.2.3) is `HTTP-date / delay-seconds`; every LLM provider that documents
+it uses delay-seconds only. Langertha reads it nowhere.
+
+The IETF draft (`draft-ietf-httpapi-ratelimit-headers`, rev -11, May 2026) is NOT what any of
+these implement, and it has moved on from the shape people remember: it no longer defines
+`RateLimit-Limit`/`-Remaining`/`-Reset` at all, but two Structured-Field headers
+(`RateLimit-Policy: "fixedwindow";q=100;w=60` and `RateLimit: "fixedwindow";r=99;t=50`) whose
+`w`/`t` are INTEGER SECONDS with sub-second precision explicitly forbidden. Do not design toward
+it; nothing in this market speaks it.
+
+## Recommended API
+
+Four points. The first is a bug fix the ticket did not know about; the rest are the split.
+
+### 1. Fix `raw` first -- it is not what its POD claims
+
+`Langertha::RateLimit::raw`'s POD says "HashRef of all rate-limit-related headers as returned by
+the provider". It is not: both readers enumerate a fixed list
+(`Role::OpenAICompatible::_parse_rate_limit_headers`, six names;
+`Role::AnthropicCompatible::_parse_rate_limit_headers`, twelve) and everything else is DISCARDED
+before `raw` is built. Headers that exist today and are lost entirely:
+`x-ratelimit-*-project-tokens` (OpenAI), `anthropic-priority-*` and `anthropic-fast-*`
+(Anthropic), and every Mistral header (their names carry a `-minute` window suffix and match
+neither list). Fix: collect every response header matching
+`/^(x-ratelimit-|anthropic-ratelimit-|anthropic-priority-|anthropic-fast-|ratelimitbysize-)/i`
+plus `retry-after` into `raw`, then normalize the known subset out of it. That is a strict
+superset of today's behaviour and loses nothing -- and it is the precondition for the split
+below, because "keep the raw header value" only means something if the header reached `raw`.
+
+### 2. Split each bucket into an instant and a duration, both `Maybe`
+
+    requests_reset_at        Maybe[Langertha::Moment]   # WHEN     (ADR 0017 value object)
+    requests_reset_after     Maybe[Num]                 # IN HOW LONG, seconds (may be fractional)
+    tokens_reset_at          Maybe[Langertha::Moment]
+    tokens_reset_after       Maybe[Num]
+
+Only the attribute the wire actually spoke is populated by the parser. Deriving the other one
+needs a receive instant, so:
+
+### 3. Add `received` (Langertha::Moment) and derive lazily, never eagerly
+
+    received  Langertha::Moment   # stamped when the headers were parsed
+
+`requests_reset_at` is then a lazy builder: `received + requests_reset_after` when only the
+duration was sent. `requests_reset_after` is the mirror: `requests_reset_at - received` when only
+the instant was sent. Both stay `undef` when neither was sent (Mistral, xAI, DeepSeek, Gemini,
+Hetzner, every self-hosted server) -- absence is the EXPECTED path here, not an error, and no
+default may be invented. This is the same normalized-plus-native split as ADR 0011 (`timing`) and
+ADR 0017 (`created` + `raw`), applied to a third response-side surface.
+
+`received` is worth having on its own: it is the only thing that makes an Anthropic RFC 3339
+reset actionable without asking the caller to trust its own clock against Anthropic's.
+
+### 4. Keep `requests_reset` / `tokens_reset` as they are, deprecated
+
+They stay `Maybe[Str]` returning the verbatim header, POD'd as deprecated in favour of the pair.
+Nothing that reads them breaks; the ticket's stated cost ("consumers cannot tell which shape they
+got") is paid off by the new attributes, not by mutating the old ones. Removing them is a
+separate, later decision.
+
+## The parser -- three branches, and one that must not be `^\d+s$`
+
+    _parse_reset($string) -> ( at => Moment ) | ( after => Num ) | ()
+
+1. **Go duration** -- `/^(\d+(?:\.\d+)?(?:ns|us|\x{00b5}s|ms|s|m|h))+$/`, summed. MUST handle
+   compound (`6m0s`, `2m59.56s`), sub-second (`250ms`, `35ms`, `20ms`) and fractional (`7.66s`).
+   A naive `^(\d+)s$` breaks on Groq's own documented example and on every Scaleway response.
+   -> `after`.
+2. **RFC 3339** -- hand to `Langertha::Moment->from_wire` (ADR 0017's lenient inbound door; it
+   already never dies and drops what it cannot read). -> `at`.
+3. **Bare number** -- ambiguous, and the ONLY branch where guessing happens. Disambiguate by
+   magnitude, document the heuristic in the POD, and keep `raw` so a caller can override:
+   `>= 1e12` -> epoch milliseconds -> `at`; `>= 1e9` -> epoch seconds -> `at`; otherwise seconds
+   -> `after`. This branch exists for Cerebras (undocumented fractional seconds) and possibly
+   OpenRouter (unofficial epoch-ms, error responses only). Both are UNCONFIRMED against
+   first-party docs -- the heuristic is a best effort over an undocumented wire, and the POD
+   should say so rather than implying it is authoritative.
+4. Anything else -> return nothing; `raw` still has the string. Never die on a rate-limit header.
+
+## Two semantic traps to POD, not to normalize away
+
+- **Groq's `x-ratelimit-*-requests` is Requests Per DAY**, not per minute -- their docs state it
+  explicitly ("Always refers to Requests Per Day (RPD)") while `*-tokens` is TPM. Two buckets with
+  different windows land in the same two normalized fields today. Do not try to model the window;
+  just say so in the POD and leave the window visible in `raw`.
+- **Cerebras puts the window in the header NAME** (`-requests-day`), so a name-list reader misses
+  it entirely. Another argument for the prefix-match `raw` in point 1.
+
+## Scope note
+
+The split touches both readers plus `to_hash` / `TO_JSON`, and `TO_JSON` must keep excluding
+`raw` (that exclusion is a deliberate privacy decision already recorded in RateLimit.pm's POD --
+do not let a wider `raw` leak into traces). Nothing here changes behaviour for a caller that
+reads only `requests_remaining` / `tokens_remaining`.
+
+## Verdict
+
+The ticket's instinct is correct and the API split is the right fix. The one thing the ticket
+underestimates: `raw` does not currently hold the raw headers for anything outside the twelve
+enumerated names, so "do not lose the raw value" is not yet true today and should be fixed in the
+same change.
