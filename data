@@ -1,0 +1,72 @@
+---
+claimed_at: 2026-08-31T03:48:16Z
+claimed_by: weak-feel
+class: standard
+completed: 2026-09-01T19:19:20Z
+created: 2026-08-24T01:31:31Z
+id: 127
+priority: low
+started: 2026-08-31T03:46:06Z
+status: done
+tags:
+- engines
+- aki
+- response
+- http
+title: 'AKI.IO wire quirks: reasoning field ignored by OpenAICompatible; client errors
+  returned as HTTP 529 overloaded_error'
+updated: 2026-09-01T19:19:20Z
+---
+
+Two side observations from the live karr #101 capture run, 2026-08-24. Both verified against
+real AKI.IO responses; neither is urgent, both are POD-worthy at minimum.
+
+1) THINKING IS DROPPED ON THE OPENAI SHIM
+
+Captured AKIOpenAI tool-call response carries the model reasoning under "reasoning":
+
+  "message":{"role":"assistant",
+             "reasoning":"The user wants me to add 7 and 15 using the add tool.",
+             "tool_calls":[...]}
+
+Role::OpenAICompatible::chat_response:371 reads only reasoning_content:
+
+  defined $msg->{reasoning_content} ? ( thinking => $msg->{reasoning_content} ) : (),
+
+so $response->thinking is undef although the model reasoning is on the wire. Compare the
+Anthropic shim on the identical prompt, which DOES surface it (thinking block -> ->thinking
+populated). Same provider, same model, reasoning visible on one route only.
+
+reasoning_content is the DeepSeek/NousResearch spelling and is correct for them; the bare
+"reasoning" spelling is what AKI ships. Whoever fixes this should check whether accepting
+both in the shared role is right, or whether it belongs in an AKI-side override -- the role
+is shared by ~25 engines, so widening it is not free. Do not widen on this single data point
+without checking what the other providers actually send.
+
+Fixture: akiopenai_tool_call_response.json
+
+2) CLIENT ERRORS ARRIVE AS HTTP 529 / overloaded_error
+
+Capture 5 with max_tokens=64 returned:
+
+  <- 529 UNKNOWN
+  {"type":"error","error":{"type":"overloaded_error",
+    "message":"Response finished before tool_call was completed! Try to raise
+               max_gen_tokens (or max_tokens in OpenAI or Anthropic Interface)"}}
+
+The condition is a caller-side token budget too small to finish a tool_call -- deterministic,
+reproducible, and fixed by raising max_tokens (the identical request at 512 returned 200 OK).
+AKI reports it as 529 overloaded_error, i.e. as transient server overload.
+
+Langertha carries no retry/backoff layer today (grepped: nothing in lib/), so nothing inside
+the distribution misbehaves right now. The hazard is downstream: any consumer -- or any future
+Langertha retry policy -- that treats 429/529 as "wait and retry" will loop forever on a
+request that can never succeed at that token budget, and pay for every attempt.
+
+Worth a POD warning on Engine::AKIAnthropic / Engine::AKIOpenAI, and worth remembering if a
+retry layer is ever added: AKI 529 is not a reliable overload signal, the error.message text
+is the real diagnostic.
+
+Fixed in ca56b86. Part 1 (reasoning dropped): lifted AKI's bare 'reasoning' key onto Response.thinking via an AKI-scoped around chat_response (VLLMHook precedent), NOT by widening the shared OpenAICompatible role. Part 2 (529 overloaded_error): POD warnings on AKIOpenAI + AKIAnthropic that AKI returns deterministic caller-side errors as 529, with error.message as the diagnostic. New t/27_akiopenai_requests.t covers part 1.
+
+Orchestrator review 2026-09-01: diff ca56b86 verified. AKI-scoped around chat_response, reasoning_content precedence kept, shared role untouched; 529 POD on both shims. Note for follow-up: the lift covers chat_response only - the streaming path drops thinking for the WHOLE OpenAI family (Stream::Chunk has no thinking field, parse_stream_chunk reads delta.content only), filed as its own ticket. Closing.
