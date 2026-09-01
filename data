@@ -1,0 +1,100 @@
+---
+class: standard
+created: 2026-09-01T19:43:01Z
+id: 141
+priority: medium
+status: backlog
+tags:
+- advisor
+- openai
+- responses
+- capabilities
+- docs
+- llm
+title: Engine::OpenAIResponses sends response_format (the Responses API uses text.format),
+  advertises streaming it disabled, and is absent from CLAUDE.md
+updated: 2026-09-01T19:43:01Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01. Docs read 2026-09-01 (note: platform.openai.com/docs
+now redirects to developers.openai.com/api/docs), no live calls.
+
+`Engine::OpenAIResponses` is the only carrier of the `responses` tool_wire_format and
+reasoning_wire_format -- the dialect ADR 0001, ADR 0009, ADR 0010 and CONTEXT.md all name. Three
+problems, in descending severity.
+
+## 1. It emits `response_format` on a wire that has no such parameter
+
+`OpenAIResponses.pm:137-141` builds:
+
+    exists $controls->{response_format}
+        ? ( response_format => $controls->{response_format} )
+        : ( ...has_response_format... ? ( response_format => $self->response_format ) : () ),
+
+The Responses API's structured-output parameter is **`text.format`**, not `response_format`:
+
+    "text": { "format": { "type": "json_schema", "strict": true, "schema": { ... } } }
+
+(developers.openai.com/api/docs/guides/structured-outputs -- "Both Structured Outputs and JSON
+mode are supported in the Responses API, Chat Completions API, ..."; the Responses shape is
+`text.format`, the Chat Completions shape is `response_format`. Neither is deprecated.)
+
+Because `Engine::OpenAIResponses` extends `Engine::OpenAI` it also inherits `Role::ResponseFormat`
+and therefore advertises `response_format_json_object` / `response_format_json_schema` -- so
+`chat_f`'s ADR 0005 matrix believes native structured output works here and will not rewrite.
+It sends a body field the API does not define.
+
+Same line 146 emits `seed => $controls->{seed}`. `seed` is marked **deprecated** on
+`CreateChatCompletionRequest` in OpenAI's current OpenAPI spec, and I could NOT confirm it exists
+on the Responses request at all -- flagging as unverified rather than asserting. Worth checking in
+the same pass.
+
+## 2. It advertises `streaming` while streaming is switched off
+
+    $ perl -Ilib -e '...Engine::OpenAIResponses->new(api_key=>"x", model=>"gpt-5.5-pro")...'
+    supports(streaming)=1   stream_format=undef   can(chat_stream_request)=1
+
+`OpenAIResponses.pm:245` is `sub stream_format { return undef }  # Streaming not supported`, but
+the engine has no `around engine_capabilities`, so `Role::Streaming` (inherited from
+`Engine::OpenAI`) still sets the flag. A caller routing on `supports('streaming')` -- which is
+exactly what ADR 0002 says `supports()` is for -- gets a true answer and then reaches an inherited
+`chat_stream_request` that builds an OpenAI **chat-completions** body.
+
+Fix is the sanctioned escape hatch: `around engine_capabilities` deleting `streaming`.
+(For the record, the Responses API DOES stream, richly -- six documented reasoning events alone:
+`response.reasoning_summary_part.added`/`.done`, `response.reasoning_summary_text.delta`/`.done`,
+`response.reasoning_text.delta`/`.done`. Implementing it is a separate, larger piece of work; this
+ticket is only about not lying in the meantime.)
+
+Other inherited flags checked and NOT wrong: `embedding`, `transcription`, `image_generation` are
+inherited from `Engine::OpenAI` but the base URL and key are the same api.openai.com/v1, so those
+endpoints genuinely work from this object. Leave them.
+
+## 3. It is missing from CLAUDE.md's engine hierarchy
+
+`grep -c OpenAIResponses CLAUDE.md` is 0. The architecture map in CLAUDE.md lists every other
+engine under `OpenAIBase` but not this one (it extends `Engine::OpenAI`, so it is a level deeper),
+which means the engine implementing a `tool_wire_format` value that four ADRs and CONTEXT.md
+reference is invisible in the project's own map.
+
+Same file, same class of drift, cheap to fix in the same pass:
+- CLAUDE.md's "Roles" section omits `Role::CachedContent`, `Role::KeepAlive`, `Role::RuntimeKnobs`,
+  `Role::Runnable` and `Role::StaticModels` (verified against `find lib/Langertha/Role`).
+- `.claude/skills/perl-ai-langertha/SKILL.md` -- which is force-loaded into EVERY Langertha
+  subagent via `briefing.skills`, so its staleness propagates -- has an "Available Engine
+  Families" table missing XAI, Moonshot, MoonshotAnthropic, AKIAnthropic, Hetzner, VLLMHook and
+  OpenAIResponses, and its examples use `claude-sonnet-4-6` and `gpt-4o` while the shipped
+  defaults are `claude-sonnet-5` and `gpt-5.6-terra`. (`claude-sonnet-4-6` is now a legacy model;
+  `gpt-4o` is two generations back.) Worth one pass so agents stop being briefed with 2025 model
+  ids. Docs-only, no behaviour.
+
+## Related market context (not action items)
+
+The Responses reasoning surface has moved on in ways a future implementation should know:
+`reasoning.effort` accepts `none|minimal|low|medium|high|xhigh|max` (model-dependent);
+`reasoning.summary` accepts `auto|concise|detailed` and summaries are opt-in; stateless
+round-trip no longer needs `include: ["reasoning.encrypted_content"]` ("The API still accepts the
+legacy value in `include` for compatibility, but doesn't require it" -- `store:false` alone
+suffices); and a new `reasoning.context` knob (`auto|current_turn|all_turns`) governs multi-turn
+reasoning reuse, defaulting to `all_turns` on the GPT-5.6 family. Reasoning items are reusable
+only within one model family.
