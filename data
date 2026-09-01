@@ -1,0 +1,90 @@
+---
+claimed_at: 2026-09-01T19:48:27Z
+claimed_by: langertha-worker
+class: standard
+created: 2026-09-01T19:39:00Z
+id: 136
+priority: high
+started: 2026-09-01T19:48:27Z
+status: in-progress
+tags:
+- advisor
+- tools
+- reasoning
+- engines
+- llm
+title: format_tool_results rebuilds the OpenAI assistant echo without reasoning_content
+  - DeepSeek 400s on the 2nd tool-loop iteration
+updated: 2026-09-01T19:48:27Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01. Provider docs read 2026-09-01, no live calls.
+
+## The code
+
+`Role::Tools::format_tool_results` (lib/Langertha/Role/Tools.pm:365-378) rebuilds the assistant
+echo for the `openai` dialect from exactly three keys:
+
+    my $choice = $data->{choices}[0];
+    return (
+      { role       => 'assistant',
+        content    => $choice->{message}{content},
+        tool_calls => $choice->{message}{tool_calls} },
+      map { Langertha::ToolResult->new(...)->to('openai') } @$results,
+    );
+
+Everything else on the assistant message is discarded -- including `reasoning_content`,
+`reasoning` and `reasoning_details`. The `ollama` branch (:308-317) does the same and discards
+`message.thinking`.
+
+By contrast the `anthropic` (:288-291), `gemini` (:302-305) and `responses` (:327-339) branches
+echo the RAW provider structure, so thinking blocks / thought parts / reasoning items survive
+there. The `openai` branch is the odd one out, and it is the branch ~20 engines use.
+
+## Why that is a hard error, not a nicety
+
+DeepSeek, https://api-docs.deepseek.com/guides/thinking_mode/ (read 2026-09-01): when `tools` is
+present, **all prior turns' `reasoning_content` must be sent back or the API returns HTTP 400.**
+Without `tools` it is ignored. `Engine::DeepSeek::default_model` is `deepseek-v4-flash`, a
+thinking model, and thinking mode explicitly DOES support tools.
+
+So: `Langertha::Engine::DeepSeek` + `chat_with_tools_f` (or `Langertha::Raider`, or
+`Langertha::Chat`) fails with a 400 on the SECOND iteration of any tool loop. Every one of the
+three loops routes through the same `format_tool_results`, so all three are affected.
+
+Same obligation, softer failure modes, on four more providers:
+
+- **Moonshot / Kimi** (platform.kimi.ai/docs/guide/use-thinking-models): `kimi-k3` has always-on
+  preserved thinking and "within one tool-call loop all `reasoning_content` must be sent back".
+  `Engine::Moonshot::default_model` is `kimi-k3`.
+- **OpenRouter** (openrouter.ai/docs/guides/best-practices/reasoning-tokens): `reasoning_details`
+  must be round-tripped "unmodified" and the sequence "must match exactly". Encrypted blocks
+  (`reasoning.encrypted.data`) and signatures (`reasoning.text.signature`) live there.
+- **Mistral** (docs.mistral.ai/capabilities/reasoning/): the assistant message must be replayed
+  including its `ThinkChunk`; stripping it "significantly degrades output quality".
+- **xAI** (docs.x.ai prompt-caching): "you must include `reasoning_content` from previous
+  responses" or the prompt cache misses.
+
+## Minimal fix direction
+
+Echo the raw assistant message and add the tool_calls, rather than rebuilding three fields:
+
+    my $msg = $data->{choices}[0]{message};
+    return ( { %$msg, role => 'assistant' }, ...results... );
+
+That is a strict superset of today's behaviour for every provider (the extra keys are exactly the
+ones the providers asked us to send back) and it makes the `openai` branch behave like the other
+four. Risks to check before doing it:
+
+- `Langertha::Chat` / `Raider` push these elements into `session_history`, which is rendered for
+  the `raider_session_history` self-tool -- a fatter assistant element must still render (see the
+  comment at Raider.pm:898-906, which already documents that element shapes differ per dialect).
+- Some OpenAI-compatible servers reject unknown keys on an inbound assistant message. Unknown
+  today; worth one probe per major provider, or a per-engine allowlist of echo keys if a strict
+  server turns up.
+- Mistral's `content` is an ARRAY during thinking; `{ %$msg }` passes it through unchanged, which
+  is what Mistral wants. (Note the separate hazard that `Langertha::Response.content` is
+  `isa => 'Str'` and would die on that array -- see k129.)
+
+This is a correctness bug on a documented hard-error path, not a design question. Higher severity
+than k129 (which is about the STREAM parsers); k129's advisor note cross-references this ticket.
