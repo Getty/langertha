@@ -1,0 +1,245 @@
+---
+claimed_at: 2026-09-01T19:47:48Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-01T19:47:48Z
+created: 2026-08-17T03:46:17Z
+id: 101
+priority: medium
+started: 2026-09-01T19:20:07Z
+status: done
+tags:
+- tests
+- engines
+- coverage
+title: chat_response unit tests feed hand-written payloads; only Ollama + Responses
+  have captured server fixtures
+updated: 2026-09-01T19:47:48Z
+---
+
+Generalization of the gap that let karr #92 live in main since 1fac6c4.
+
+The class of bug: every chat_response unit test builds its payload by hand, and
+a hand-written payload is written to fit Langertha::Response rather than to
+match the wire. karr #92 was invisible for exactly that reason -- the Ollama
+block in t/70_response.t (lines ~164-205) omitted created_at, the one field a
+real Ollama server always sends, and it sends it in a shape Maybe[Int] rejects.
+
+State after #92 (surveyed 2026-08-17):
+
+  Response->new call sites in lib/: 7
+    Role::OpenAICompatible:361   created <- epoch Int (wire agrees)
+    Role::AnthropicCompatible:318 no created
+    Engine::Ollama               created <- RFC3339, now normalized (#92)
+    Engine::Gemini:411, Engine::AKI:262, Engine::OpenAIResponses:213  no created
+
+  created is therefore the only Int-typed attribute fed straight from a
+  provider field, and both producers are now honest. cached_tokens (Maybe[Int])
+  comes from usage.prompt_tokens_details on the OpenAI wire, an integer there.
+  So no second latent croak of the same kind was found -- but the coverage
+  shape that hid the first one is unchanged.
+
+  Captured real-server fixtures exist only for:
+    t/data/ollama_tool_call_response.json, ollama_tool_result_response.json
+    t/data/responses_api_*.json
+  Every other engine chat_response test uses a synthesized hash.
+
+  Engine::LMStudio (native, lib/Langertha/Engine/LMStudio.pm:317) has its own
+  chat_response and NO unit coverage at all -- only 00_load / 10_engine_hierarchy
+  / 11_basic_auth touch the class, plus the gated live t/83_live_chat.t. Its
+  Response construction path is unit-untested today (nothing Int-typed goes in,
+  so no known croak, but it is the same blind spot).
+
+Suggested work:
+  1. capture one real response per engine into t/data/ (offline, from whatever
+     the maintainer runs) and drive chat_response over it, the way
+     t/70_response.t now does for Ollama
+  2. start with Engine::LMStudio, which has no unit coverage of the path at all
+  3. blocked on the maintainer for real payloads -- fabricating them would
+     recreate the exact problem
+
+See also karr #93 (OllamaOpenAI / LMStudio lane).
+
+Korrektur zweier Aussagen im Ticket-Body, verifiziert 2026-08-24 gegen df531dd:
+
+1) 'Captured real-server fixtures exist only for: ollama_*.json + responses_api_*.json' ist zu
+   grosszuegig. Die drei t/data/responses_api_*.json sind SHAPE-echt (Commit 7199611: verified
+   end-to-end against live gpt-5.5-pro), ihre WERTE aber synthetisch: id resp_abc123, call_abc123,
+   msg_abc/rs_abc/fc_abc, created_at 1760000000/1760000001/1761000002. Die Ollama-Dateien tragen
+   dagegen echte Serverwerte (call_mlfrsbbl, total_duration 7319258765, Nanosekundenstempel).
+   => Verbatim-Captures existieren im gesamten Repo nur zwei, beide Ollama. Role::OpenAICompatible
+   ::chat_response - der Pfad, den ~25 Engines teilen - hat NULL echte Fixture. Hoechste Prioritaet.
+
+2) 'created ist das einzige Int-typisierte Attribut, das direkt aus einem Provider-Feld gefuettert
+   wird' ist seit karr #119 / ADR 0017 ueberholt. created ist heute Maybe[Langertha::Moment],
+   zentral normalisiert in Response BUILDARGS via Moment->from_wire mit delete statt Croak - diese
+   Bugklasse ist fuer created distributionsweit geschlossen. Die verbliebenen Flaechen derselben
+   Bauart (per Typ-Constraint-Probe verifiziert):
+     - Response.pm:110  content ist Str REQUIRED -> ArrayRef croakt. Greift, sobald ein
+       OpenAI-Shim message.content als Blockliste schickt. Einspeisung ungeschuetzt:
+       Role/OpenAICompatible.pm:361
+     - Response.pm:358  cached_tokens Maybe[Int] -> 1.5 und '1e3' croaken, '0'/'12' passieren
+     - Role/AnthropicCompatible.pm:301  @{$data->{content}} ohne Guard -> harter 'Can't use an
+       undefined value as an ARRAY reference', wenn content fehlt (Gemini.pm:372-379 ist mit || []
+       abgesichert, hier nicht)
+     - Engine/LMStudio.pm:325  $data->{stats}{input_tokens} -> stirbt, wenn stats kein HashRef ist
+
+Response->new-Call-Sites weiterhin 7, Zeilen leicht verschoben: OpenAICompatible:360,
+AnthropicCompatible:317, Gemini:411, Ollama:314, AKI:267, LMStudio:330, OpenAIResponses:213.
+Achter Beruehrungspunkt, im Body nicht erwaehnt: VLLMHook.pm:165 (around chat_response, haengt
+probes via clone_with an, baut keine eigene Response).
+
+LMStudio-Behauptung bestaetigt und verschaerft: null Unit-Coverage UND share/lmstudio.yaml:49-51
+hat fuer /api/v1/chat gar kein Response-Schema - die Feldnamen, die chat_response liest
+(response_id, model_instance_id, output[].type, stats.*), sind nirgends im Repo belegt.
+
+Konvention, der neue Fixtures folgen muessen: t/70_response.t:298-347 (Ollama-Block). Datei-Bytes
+per path(__FILE__)->parent->child('data') + slurp_raw direkt in den HTTP-Body, chat_response im
+eval, dann ok(defined ...) - NICHT ok(...), weil eine Tool-Call-only-Response zu leerem Content
+stringifiziert. t/60_responses_requests.t weicht davon ab (relativer Pfad, decode+re-encode, kein
+eval) und sollte angeglichen werden.
+
+Entscheidung getroffen (Orchestrator): bei den Live-Captures werden die Response-HEADER
+mitgeschnitten. t/12_rate_limit.t arbeitet bis heute komplett mit handgesetzten Headern, und
+rate_limit kommt ausschliesslich von dort (OpenAICompatible.pm:569-594 x-ratelimit-*,
+AnthropicCompatible.pm:582-612 anthropic-ratelimit-*). Kostet keinen zusaetzlichen Request.
+
+Nebenbefund als #123 gefiled (Engine::AKI setzt nie Response.tool_calls).
+
+CAPTURES EXIST 2026-08-24. Five verbatim real-server payloads taken with the maintainer key,
+sent THROUGH the Langertha engines themselves (not curl), so the captured bytes are exactly
+what chat_response sees. All 200 OK. Cost: 6 requests, <= 512 output tokens each.
+
+  akiopenai_chat_response.json         Role::OpenAICompatible   <- the one that mattered most
+  akianthropic_chat_response.json      Role::AnthropicCompatible
+  aki_chat_response.json               Engine::AKI (native)
+  akiopenai_tool_call_response.json    OpenAICompatible + native tool_calls
+  akianthropic_tool_call_response.json AnthropicCompatible + tool_use + thinking block
+
+This closes the headline gap named in the correction above: Role::OpenAICompatible::chat_response
+-- the path ~25 engines share -- now has a real fixture instead of zero. It carries real values
+for created (1787534745, epoch Int, ADR 0017 confirmed against a real wire), cached_tokens (48
+via prompt_tokens_details), service_tier, annotations, refusal, and the full
+completion_tokens_details block that hand-written payloads never bother to include.
+
+Currently held at
+  /tmp/claude-1000/-home-getty-dev-langertha/df793cb4-.../scratchpad/aki-captured/
+alongside capture.pl. THAT IS VOLATILE -- moving them into t/data/ and driving chat_response
+over them is the remaining work of this ticket, and it is the part that is not done.
+
+Replaying them offline through the real chat_response paths immediately produced four defects
+that no hand-written payload would ever have contained. That is the thesis of this ticket,
+demonstrated:
+
+  karr #124 (high)   from_anthropic silently empties tool arguments (input as JSON string)
+  karr #125 (medium) cached_tokens blind on the entire Anthropic family
+  karr #126 (medium) Engine::AKI drops usage + id; total_duration unit collision with Ollama
+  karr #127 (low)    reasoning field ignored; client errors returned as HTTP 529
+
+Suggested sequencing for whoever picks this up: land the fixtures in t/data/ FIRST with tests
+that assert todays behavior, then let #124-#127 flip those assertions one by one. That way each
+fix is gated by a real payload, which is exactly what karr #92 lacked.
+
+Still open from the original body and NOT addressed by this run: Engine::LMStudio (native) has
+no unit coverage of its chat_response path at all, and no capture exists for it -- it needs a
+running LM Studio, not an API key.
+
+Status 2026-08-31 (weak-feel): BLOCKED, remains in backlog.
+
+Checked for the five verbatim captures named in the body
+(akiopenai_chat_response.json, akianthropic_chat_response.json, aki_chat_response.json,
+akiopenai_tool_call_response.json, akianthropic_tool_call_response.json). They were held in
+/tmp/claude-1000/-home-getty-dev-langertha/df793cb4-.../scratchpad/aki-captured/ -- a different
+session's scratchpad -- and are gone. find / turns up nothing. t/data/ still holds only the two
+verbatim Ollama fixtures + the three shape-real/synthetic-valued responses_api_*.json.
+
+Core deliverable (land real captures in t/data/ and drive chat_response over them) cannot proceed
+without either the maintainer re-running capture.pl with the real key (live calls, approval
+required) or, for Engine::LMStudio native, a running LM Studio server. Per the ticket's own thesis
+I did NOT fabricate replacements.
+
+Not blocked in the meantime -- the four defects this run seeded were fixed and gated with
+value-object / mock-response tests instead of the lost fixtures:
+  k124 done (from_anthropic JSON-string args)  -> t/91_tool_value_objects.t
+  k123 done (Engine::AKI tool_calls)           -> t/25_aki_requests.t (mock hermes body)
+  k125 done (Anthropic cached_tokens)          -> t/91_response_usage.t (engine-level mock)
+  k126 done (AKI id/usage/timing collision)    -> t/25 + t/70 (capture-3 shape from the body)
+  k127 still open (low)
+
+Unblock path: maintainer regenerates the five captures into t/data/ following the t/70_response.t
+Ollama convention (slurp_raw bytes into the HTTP body, chat_response in eval, ok(defined ...));
+then this ticket lands them with assert-today tests. The t/60 responses-fixture test should be
+aligned to that same convention at the same time.
+
+DONE 2026-09-01 (langertha-worker), commit 8155f63. Fixtures are IN t/data/ this time -- the
+volatile-scratchpad loss cannot repeat.
+
+Live budget: 8 requests authorised, 7 used (1 probe + 6 captures), all sent through the
+Langertha engines' own chat_request / user_agent / chat_response path, bodies saved verbatim
+as bytes.
+
+Landed in t/data/ (each with a sibling <name>.headers.json; LWP's client-* pseudo-headers are
+filtered out so the file holds what the server sent):
+  akiopenai_chat_response.json          Role::OpenAICompatible -- the ~25-engine path, its
+                                        first real fixture ever. created 1788290649 (epoch
+                                        Int, ADR 0017), prompt_tokens_details.cached_tokens
+                                        64, service_tier, refusal, annotations
+  akianthropic_chat_response.json       Role::AnthropicCompatible; same model and prompt as
+                                        above, so the pair is a controlled comparison of the
+                                        two envelopes. No `created` on this wire;
+                                        cache_read_input_tokens 64
+  aki_chat_response.json                Engine::AKI native; job_id, prompt_length 38,
+                                        num_generated_tokens 3, num_cached_tokens 16,
+                                        total_duration 0.428, compute_duration 0.419
+  akiopenai_tool_call_response.json     native OpenAI tool_calls, arguments intact -- this
+                                        file IS the k102 probe capture, see that ticket
+  akianthropic_tool_call_response.json  tool_use whose input is a JSON STRING, the exact k124
+                                        shape, now decoded to {a:7,b:15}
+
+Test: NEW t/28_aki_fixtures.t rather than folding into t/25 / t/26 / t/27. Reason: the five
+captures span three engine classes and their value is the comparison BETWEEN the wires; the
+per-engine files would split that up. Follows t/70_response.t exactly -- slurp_raw bytes into
+the HTTP body, chat_response in eval, ok(defined ...) and not ok(...).
+
+Also done, per this ticket's body:
+- t/60_responses_requests.t aligned to the convention: path(__FILE__)->parent->child('data'),
+  slurp_raw bytes into the body (no decode + re-encode), chat_response in an eval behind a
+  definedness check. Decoded copies kept only for the HashRef-consuming assertions
+  (response_tool_calls / format_tool_results / ToolCall->extract). No assertion changed.
+- t/91_response_usage.t: the stale "GAP: Response.pm has no accessor for cache tokens" comment
+  is gone; it now states only what is still true (prompt_tokens is the uncached count by
+  design, karr #18e).
+
+Two things this run learned that the ticket did not anticipate:
+
+1) minimax-m2.5-230b is CURRENTLY DISABLED at AKI. Both shims refused it:
+     /openai/v1  -> HTTP 500 {"error":{"message":"Endpoint disabled!","type":
+                    "invalid_request_error","code":"request_failed"}}
+     /anthropic  -> HTTP 529 {"type":"error","error":{"type":"overloaded_error",
+                    "message":"Endpoint disabled!"}}
+   Both tool captures were therefore taken on llama3-chat-8b. The 529 is a SECOND confirmed
+   class of non-transient condition arriving as overloaded_error (k127 knew only the
+   too-small-max_tokens one), so the POD warning k127 added is if anything understated.
+
+2) THE HEADER CAPTURE CANNOT FEED t/12_rate_limit.t. AKI.IO sends no x-ratelimit-* and no
+   anthropic-ratelimit-* headers on any of its three wires -- the captured header sets hold
+   access-control-allow-origin, connection, content-length, content-type, date, server and
+   nothing else. t/28 asserts that fact (has_rate_limit stays false after a real 200 driven
+   through the shims' real parsers), which is the most those headers can prove. Replacing
+   t/12's hand-written headers needs a capture from a provider that actually sends them.
+
+STILL OPEN from the original body, untouched: Engine::LMStudio (native) has no unit coverage
+of its chat_response path and no capture exists -- that one needs a running LM Studio server,
+not an API key.
+
+Capture script: written to the session scratchpad only, deliberately not committed (it makes
+live billed calls). A maint/ version would make regeneration cheap; not done here to stay in
+scope.
+
+Verified: prove -lr t/ green, 94 files / 3161 tests (3152 before k102's test additions); every
+t/8x live test SKIPPED (no TEST_LANGERTHA_* in the test run's environment).
+perlcritic --profile .perlcriticrc lib/ bin/ maint/ clean.
+
+2026-09-01 19:38 Five verbatim AKI.IO captures + their response headers landed in t/data/ and replayed by the new t/28_aki_fixtures.t; t/60 aligned to the slurp_raw convention, t/91 cache comment corrected. 7 of 8 authorised live requests used. Commit 8155f63. Two residues: Engine::LMStudio native still has no capture (needs a running server), and the header capture cannot feed t/12_rate_limit.t because AKI sends no rate-limit headers at all.
+
+Orchestrator review 2026-09-01: 8155f63 verified. Five verbatim captures + headers in t/data, t/28 replays all through the shipped chat_response paths (k124/k125/k126 gates on real bytes), t/60 aligned, no secrets in fixtures. LMStudio native capture still needs a running LM Studio server; not blocking. Closing.
