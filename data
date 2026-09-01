@@ -1,0 +1,79 @@
+---
+claimed_at: 2026-08-31T03:40:36Z
+claimed_by: weak-feel
+class: standard
+completed: 2026-09-01T19:19:20Z
+created: 2026-08-24T01:30:56Z
+id: 126
+priority: medium
+started: 2026-08-31T03:38:48Z
+status: done
+tags:
+- engines
+- aki
+- response
+- timing
+title: Engine::AKI native chat_response drops usage and id; total_duration collides
+  with Ollama on units
+updated: 2026-09-01T19:19:20Z
+---
+
+Live-verified 2026-08-24 against a real AKI.IO /api/call response (capture 3 of the karr #101 run).
+
+Captured body:
+
+  {"text":"OK","success":true,"job_id":"a871d5bd-...-97ad","model_name":"Llama-3.1-8B-Instruct",
+   "prompt_length":37,"num_generated_tokens":2,"num_cached_tokens":16,
+   "current_context_length":39,"max_seq_len":65536,
+   "total_duration":0.14,"compute_duration":0.123,"ep_version":3}
+
+Replayed through Engine::AKI::chat_response (lib/Langertha/Engine/AKI.pm:262-273):
+
+  content       OK
+  model         Llama-3.1-8B-Instruct
+  timing        total_duration=0.14
+  id            -- UNSET --      although job_id is right there
+  usage         -- UNSET --      although the token counts are right there
+  finish_reason -- UNSET --
+
+Three findings, in ascending order of blast radius:
+
+1. id: job_id is the natural Response.id. Every other engine sets one; AKI does not.
+
+2. usage: prompt_length 37 / num_generated_tokens 2 map onto Langertha::Usage
+   input_tokens / output_tokens directly, and num_cached_tokens 16 is the same quantity
+   as cached_tokens. Today ->usage is undef, so AKI native is invisible to every
+   token-accounting consumer (Langfuse generations, Raider metrics, cost tracking).
+   Note the counts disagree with the OpenAI shim for the same prompt (37 vs 64) -- worth
+   a POD line, not a blocker.
+
+3. total_duration UNIT COLLISION -- the interesting one. ADR 0011 declares engine-native
+   stage keys unreserved by the framework, and two engines have now independently claimed
+   the same key with different units:
+
+     Engine::Ollama.pm  total_duration = NANOSECONDS (7319258765 in the shipped fixture),
+                        and it derives total_seconds alongside, per ADR 0011
+     Engine::AKI.pm:271 total_duration = SECONDS (0.14), and derives nothing
+
+   So $response->timing->{total_duration} means ns on one engine and s on another. Any
+   consumer reading the raw hashref -- which ADR 0011 explicitly sanctions for stage keys --
+   is wrong by a factor of 1e9 depending on which engine answered. AKI additionally drops
+   compute_duration 0.123 entirely.
+
+   AKI should follow the Ollama precedent: emit total_seconds (already in seconds, no
+   conversion) plus compute_seconds, and decide whether to keep the raw total_duration key
+   at all -- it has no back-compat claim as strong as Ollama has, and keeping it is what
+   perpetuates the collision. Role::Chat first-write-wins (Chat.pm:270) means a provider
+   total_seconds correctly trumps the client-measured one.
+
+   ADR 0011 consequence worth recording: "no engine-native key is reserved" implicitly
+   assumed engine-native keys are read per-engine. This is the first proof that they are
+   not namespaced and can collide semantically. Candidate for an ADR 0011 amendment
+   rather than a silent fix -- raise with the adr-auditor lane.
+
+Fixture available: aki_chat_response.json (verbatim, real server values).
+Related: karr #123 (Engine::AKI never sets tool_calls), karr #122 (no Role::ResponseSize).
+
+Fixed in b4da770: id (job_id), usage (prompt_length/num_generated_tokens), cached_tokens (num_cached_tokens), and timing (total_seconds + compute_seconds, no raw total_duration -> ends the Ollama-ns collision). ADR 0011 amendment about non-namespaced native timing keys filed as karr k128 for the adr-auditor lane.
+
+Orchestrator review 2026-09-01: diff b4da770 verified. id/usage/cached_tokens/total_seconds/compute_seconds all gated in t/25 with the capture-3 shape; raw total_duration gone (t/70 asserts absence). ADR 0011 amendment is k128. Closing.
