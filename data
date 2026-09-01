@@ -1,0 +1,39 @@
+{"action":"move","agent":"weak-feel","detail":"done","task_id":124,"ts":"2026-09-01T19:19:20Z"}
+{"action":"move","agent":"weak-feel","detail":"done","task_id":125,"ts":"2026-09-01T19:19:20Z"}
+{"action":"move","agent":"weak-feel","detail":"done","task_id":126,"ts":"2026-09-01T19:19:20Z"}
+{"action":"move","agent":"weak-feel","detail":"done","task_id":127,"ts":"2026-09-01T19:19:20Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":129,"ts":"2026-09-01T19:20:01Z"}
+{"action":"move","agent":"langertha-worker","detail":"in-progress","task_id":101,"ts":"2026-09-01T19:20:07Z"}
+{"action":"move","agent":"langertha-worker","detail":"in-progress","task_id":102,"ts":"2026-09-01T19:20:07Z"}
+{"action":"move","agent":"langertha-adr-auditor","detail":"in-progress","task_id":128,"ts":"2026-09-01T19:20:14Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":130,"ts":"2026-09-01T19:27:10Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":131,"ts":"2026-09-01T19:29:34Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"backlog","task_id":129,"ts":"2026-09-01T19:31:24Z"}
+{"action":"edit","agent":"langertha-adr-auditor","detail":"in-progress","task_id":128,"ts":"2026-09-01T19:31:28Z"}
+{"action":"handoff","agent":"langertha-adr-auditor","detail":"review","task_id":128,"ts":"2026-09-01T19:31:41Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"backlog","task_id":121,"ts":"2026-09-01T19:32:55Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":132,"ts":"2026-09-01T19:34:55Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":133,"ts":"2026-09-01T19:35:56Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":134,"ts":"2026-09-01T19:36:26Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":135,"ts":"2026-09-01T19:37:04Z"}
+{"action":"edit","agent":"langertha-worker","detail":"in-progress","task_id":101,"ts":"2026-09-01T19:37:13Z"}
+{"action":"edit","agent":"langertha-worker","detail":"in-progress","task_id":101,"ts":"2026-09-01T19:37:54Z"}
+{"action":"edit","agent":"langertha-worker","detail":"in-progress","task_id":101,"ts":"2026-09-01T19:38:06Z"}
+{"action":"handoff","agent":"langertha-worker","detail":"review","task_id":101,"ts":"2026-09-01T19:38:12Z"}
+{"action":"edit","agent":"langertha-worker","detail":"in-progress","task_id":102,"ts":"2026-09-01T19:38:45Z"}
+{"action":"handoff","agent":"langertha-worker","detail":"review","task_id":102,"ts":"2026-09-01T19:38:56Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":136,"ts":"2026-09-01T19:39:00Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":137,"ts":"2026-09-01T19:39:14Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":138,"ts":"2026-09-01T19:40:04Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":139,"ts":"2026-09-01T19:40:36Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":140,"ts":"2026-09-01T19:41:22Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"backlog","task_id":130,"ts":"2026-09-01T19:42:01Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":141,"ts":"2026-09-01T19:43:01Z"}
+{"action":"edit","agent":"langertha-worker","detail":"review","task_id":101,"ts":"2026-09-01T19:47:30Z"}
+{"action":"edit","agent":"langertha-worker","detail":"review","task_id":102,"ts":"2026-09-01T19:47:36Z"}
+{"action":"edit","agent":"langertha-adr-auditor","detail":"review","task_id":128,"ts":"2026-09-01T19:47:42Z"}
+{"action":"move","agent":"langertha-worker","detail":"done","task_id":101,"ts":"2026-09-01T19:47:48Z"}
+{"action":"move","agent":"langertha-worker","detail":"done","task_id":102,"ts":"2026-09-01T19:47:48Z"}
+{"action":"move","agent":"langertha-adr-auditor","detail":"done","task_id":128,"ts":"2026-09-01T19:47:55Z"}
+{"action":"move","agent":"langertha-worker","detail":"in-progress","task_id":136,"ts":"2026-09-01T19:48:27Z"}
+{"action":"move","agent":"langertha-worker","detail":"in-progress","task_id":131,"ts":"2026-09-01T19:54:53Z"}
