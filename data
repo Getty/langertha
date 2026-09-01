@@ -1,0 +1,194 @@
+---
+claimed_at: 2026-09-01T19:47:48Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-01T19:47:48Z
+created: 2026-08-17T03:46:21Z
+id: 102
+priority: low
+started: 2026-08-17T06:21:10Z
+status: done
+tags:
+- engines
+- aki
+- tools
+title: 'AKIOpenAI hermes tool format may be stale: AKI docs now document OpenAI-standard
+  tool calling'
+updated: 2026-09-01T19:47:48Z
+---
+
+Found while implementing #89 (AKIAnthropic), from public docs only — NOT live verified.
+
+Engine::AKIOpenAI composes Role::HermesTools with the comment:
+
+  # AKI's /openai/v1 endpoint does not support native tool parameters
+
+AKI.IO's current public docs contradict that. https://aki.io/docs/compatibility/for-ai-coding-agents/
+section "B. Tool Calling (Function Calling)" states:
+
+  "AKI.IO supports OpenAI-standard tool calling. Pass your tools in the tools array.
+   Use tool_choice: auto to let the model decide. When executing a tool, append the tool
+   result as a message with role: tool and the matching tool_call_id."
+
+The same page carries a per-model support table (Tool Calling / JSON Mode): gpt-oss-120b,
+gemma4-chat-26b, kimi-k2.7-code-1100b, minimax-m2.5-230b, mistral4-119b, qwen3.6-chat-35b
+= supported; apertus-chat-70b, llama3-chat-8b, llama3-chat-70b = "Basic Support".
+
+Either the provider gained native tool support since the hermes decision, or the docs
+overstate it. Needs ONE live probe with a real AKI key (tools array + tool_choice auto against
+/openai/v1/chat/completions) before changing tool_wire_format — the hermes fallback works
+either way, so this is not urgent.
+
+If native tools are real, the same question applies to Engine::AKIAnthropic (#89), which
+currently inherits the anthropic tool wire format untested (AKI does not document tools on
+/anthropic at all).
+
+---
+
+# langertha-llm-advisor report (2026-08-17)
+
+verdict: UNCERTAIN — leaning strongly STALE
+
+evidence:
+- AKI Agents Integration Guide documents OpenAI-standard tool calling on /openai/v1.
+- BUT canonical OpenAI compat page does NOT list tools/tool_choice — internal doc drift.
+- AKIOpenAI default_model (llama3-chat-8b) is "Basic Support" in AKI's per-model table, not "Supported".
+- No live probe possible without LANGERTHA_AKI_API_KEY.
+
+proposed_fix (two paths):
+- Path A: live probe against a Supported model first; flip override if response carries tool_calls.
+- Path B: trust docs, flip the override with one-line restore as fallback.
+- Engine::AKI native (/api/call/{model}) is a separate question — docs say nothing; leave alone.
+
+drift_to_flag after flip:
+- lib/Langertha/Role/Tools.pm:115-118 — drop AKIOpenAI from inline comment.
+- README.md:382, :449 — drop AKIOpenAI from prose/table.
+- lib/Langertha/Engine/AKIOpenAI.pm:9 — drop HermesTools composition; :11 delete _build_tool_wire_format; :48 update DESCRIPTION POD.
+- t/80_live_tool_calling.t — re-run with LANGERTHA_AKI_API_KEY against a Supported model.
+
+sources: https://aki.io/docs/compatibility/for-ai-coding-agents/ (Agents Integration Guide documents OpenAI-standard tool calling) and https://aki.io/docs/compatibility/openai-api-compatibility/ (canonical compat — does NOT list tools).
+
+decision needed: Path A / Path B / wontfix? Blocked on maintainer — live calls require explicit approval per memory rule, default-model-is-Basic-Support + internal doc drift means Path B carries non-trivial risk.
+
+LIVE PROBE DONE 2026-08-24 -- the one probe this ticket asked for. VERDICT: AKI.IO /openai/v1
+speaks native OpenAI tool calling. The hermes route is unnecessary.
+
+Request sent through Engine::AKIAnthropic-free path, AKIOpenAI with tool_wire_format overridden
+to "openai" (model minimax-m2.5-230b, the docs table lists it as fully supported):
+
+  POST https://aki.io/openai/v1/chat/completions
+  {"tools":[{"type":"function","function":{"name":"add","description":"Add two numbers",
+    "parameters":{"type":"object","properties":{"a":{"type":"number"},"b":{"type":"number"}},
+    "required":["a","b"]}}}],"tool_choice":"auto", ...}
+
+  <- 200 OK
+  "message":{"role":"assistant","reasoning":"The user wants me to add 7 and 15 using the add tool.",
+    "tool_calls":[{"id":"call_a4b814fb215b4738a83bed34","type":"function",
+      "function":{"name":"add","arguments":"{\"a\": 7, \"b\": 15}"}}]}
+  finish_reason: stop
+
+Native tools array accepted, native tool_calls block returned, arguments intact. The docs were
+right and the code comment in Engine::AKIOpenAI ("AKI /openai/v1 endpoint does not support
+native tool parameters") is stale.
+
+Replayed through chat_response as shipped (tool_wire_format still hermes): tool_calls comes
+back correctly populated with id, name and arguments {"a":7,"b":15}. That is not luck --
+Role::OpenAICompatible::chat_response deliberately pins the extractor to "openai" regardless
+of tool_wire_format (the comment at OpenAICompatible.pm:~355 says so). So the RESPONSE side is
+already native-ready; only the REQUEST side still builds the hermes prompt scaffold.
+
+Consequence: switching Engine::AKIOpenAI off Role::HermesTools is a request-side change only.
+Expect it to also cut prompt_tokens -- the hermes scaffold is pure prompt overhead the model no
+longer needs to be taught.
+
+Caveats for whoever implements:
+- Verified on minimax-m2.5-230b only. The AKI docs table rates llama3-chat-8b / llama3-chat-70b
+  / apertus-chat-70b as "Basic Support" only. Probe at least one "Basic Support" model before
+  dropping the hermes path outright -- it may still be the right fallback for those.
+- The last paragraph of this ticket asked the same question for AKIAnthropic. Answered too:
+  tools ARE accepted there, but the arguments come back as a JSON string and Langertha throws
+  them away silently. Filed as karr #124 (high) -- fix that before anyone relies on AKI tools.
+
+Fixture: akiopenai_tool_call_response.json (verbatim capture, real server values).
+
+REVIEW verified 2026-08-31 (weak-feel). Condition CONFIRMED but fix NOT implemented -> back to backlog.
+
+State of the code today:
+- Engine::AKIOpenAI still composes Role::HermesTools and _build_tool_wire_format returns 'hermes'. The request-side switch documented in this ticket has NOT been made.
+- The stale-comment claim is confirmed by the live probe recorded above: /openai/v1 accepts a native tools array and returns a native tool_calls block (minimax-m2.5-230b). The response side is already native-ready (OpenAICompatible pins the extractor to 'openai'), so the switch is request-side only.
+
+Why not finished now:
+- default_model is llama3-chat-8b, rated only "Basic Support" in AKI's own table and NEVER probed. The advisor caveat says to probe at least one Basic-Support model before dropping the hermes path outright.
+- A live probe needs a real LANGERTHA_AKI_API_KEY + maintainer approval (memory rule: live calls cost money) -- not available to this agent.
+- The advisor left an explicit maintainer decision open: Path A (probe a Basic-Support model, flip on evidence) vs Path B (trust docs, flip with one-line restore). Low priority, non-trivial risk on the default model.
+
+Next actionable step: maintainer runs the Basic-Support probe (or picks Path A/B); then flip is a request-side change (drop HermesTools composition + _build_tool_wire_format, update DESCRIPTION POD, drop AKIOpenAI from Role::Tools comment + README, re-run t/80_live_tool_calling.t). The response side needs nothing.
+
+BASIC-SUPPORT PROBE DONE 2026-09-01 (langertha-worker). VERDICT: NATIVE TOOL CALLS WORK ON THE
+DEFAULT MODEL. Path A completed, flip implemented in commit e161507.
+
+The probe the 2026-08-31 review asked for -- llama3-chat-8b, this engine's default_model and a
+"Basic Support" entry in AKI's own table, never tested before. One request, sent through
+Engine::AKIOpenAI with tool_wire_format overridden to 'openai', response_size 512:
+
+  POST https://aki.io/openai/v1/chat/completions
+  {"max_tokens":512,"messages":[{"content":"What is 7 plus 15? Use the add tool.",
+    "role":"user"}],"model":"llama3-chat-8b","stream":false,"tool_choice":"auto",
+   "tools":[{"function":{"description":"Add two numbers","name":"add","parameters":
+    {"properties":{"a":{"type":"number"},"b":{"type":"number"}},"required":["a","b"],
+     "type":"object"}},"type":"function"}]}
+
+  <- 200 OK
+  "message":{"role":"assistant","tool_calls":[{"id":"call_9c176c2b6041471da6177c00",
+     "type":"function","function":{"name":"add","arguments":"{\"a\": 7, \"b\": 15}"}}],
+     "refusal":null,"annotations":[]}
+  finish_reason: stop
+  usage: prompt_tokens 227, completion_tokens 23, prompt_tokens_details.cached_tokens 128
+
+Native tools array accepted, native tool_calls block returned, arguments intact. The advisor
+caveat that gated this ticket ("probe at least one Basic Support model before dropping the
+hermes path outright") is answered: the weakest documented case is the one that works.
+
+That response body is committed as t/data/akiopenai_tool_call_response.json (karr #101) and is
+replayed by t/28_aki_fixtures.t, so the evidence for this decision lives in the suite rather
+than only in this ticket.
+
+IMPLEMENTED (e161507), exactly the drift list from the advisor report:
+- Engine/AKIOpenAI.pm: Role::HermesTools composition dropped, _build_tool_wire_format deleted,
+  so the engine inherits 'openai' from Role::Tools. DESCRIPTION rewritten -- the claim that
+  /openai/v1 "does not support native tool parameters" is gone, replaced by what was verified
+  and on which model.
+- Role/Tools.pm: AKIOpenAI dropped from the tool_wire_format override comment.
+- README.md: dropped from the HermesTools example and from the hermes row of the wire table;
+  also removed the orphaned "\*" footnote marker on AKIAnthropic (it referenced nothing).
+- t/80_live_tool_calling.t: the section comment named the retired hermes path.
+- Langertha.pm and Role/Capabilities.pm needed nothing -- neither names AKIOpenAI in a hermes
+  context.
+- The k127 `around chat_response` is untouched and still applies (t/27 still green).
+- Gated by new assertions in t/27_akiopenai_requests.t: tool_wire_format eq 'openai', does NOT
+  do HermesTools, supports(tools_native) and !supports(tools_hermes), and -- the part that
+  actually changed -- build_tool_chat_request now puts a native tools array on the wire and
+  prepends no XML system prompt.
+
+AKIANTHROPIC POD, the open question in this ticket's last paragraph, also settled and updated
+in the same commit. "Tool calling is undocumented on this endpoint ... unverified -- test
+before relying on them" was stale. Re-verified live 2026-09-01 on llama3-chat-8b: the
+undocumented `tools` array IS accepted on /anthropic/v1/messages and a tool_use block comes
+back, with input as a JSON string that Langertha::ToolCall decodes since k124. The POD now
+says tool calling works, names the model and date, keeps the fact that AKI does not document
+the parameter (so it owes it no stability), and points at the committed fixture.
+
+Side finding, relevant to whoever reads this next: minimax-m2.5-230b -- the model this ticket's
+2026-08-24 probe used and the docs table calls fully "Supported" -- is CURRENTLY DISABLED at
+AKI. /openai/v1 answers HTTP 500 "Endpoint disabled!", /anthropic answers HTTP 529
+overloaded_error with the same message. Both tool captures were taken on llama3-chat-8b
+instead, which is the stronger evidence for this ticket anyway.
+
+Live budget: 8 requests authorised for k101 + k102 together, 7 used; this probe was 1 of them.
+
+Verified: prove -lr t/ green (94 files, 3161 tests), all t/8x live tests skipped, perlcritic
+clean.
+
+2026-09-01 19:38 Basic-Support probe done on llama3-chat-8b: native tools array accepted, native tool_calls returned, arguments intact. Path A completed -- HermesTools composition and the hermes tool_wire_format dropped from Engine::AKIOpenAI, POD/README/Role::Tools drift cleared, gated in t/27 and by the committed probe capture in t/28. AKIAnthropic's stale 'tool calling unverified' POD paragraph updated in the same commit. Commit e161507.
+
+Orchestrator review 2026-09-01: e161507 verified. Path A executed: llama3-chat-8b (default, Basic Support) returns native tool_calls with intact args -> HermesTools dropped from AKIOpenAI, POD/README/Tools.pm comment cleared, AKIAnthropic POD states the verified state. Suite 94/3161 green. Closing. Advisor docs report landed in k132 because this ticket was claimed.
