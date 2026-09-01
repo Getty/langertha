@@ -1,0 +1,50 @@
+---
+claimed_at: 2026-09-01T19:54:53Z
+claimed_by: langertha-worker
+class: standard
+created: 2026-09-01T19:29:34Z
+id: 131
+priority: low
+started: 2026-09-01T19:54:53Z
+status: in-progress
+tags:
+- adr
+- drift
+- tools
+- gemini
+title: ToolCall::from_gemini still drops a JSON-string args, the exact shape k124
+  fixed for from_anthropic
+updated: 2026-09-01T19:54:53Z
+---
+
+Filed by langertha-adr-auditor during the k120-k127 drift audit (ADR 0010 symmetry check).
+
+k124 (commit 2653715) taught ToolCall::from_anthropic to route tool_use input through
+_decode_args, because the AKI.IO /anthropic shim ships input as a JSON *string* while real
+Anthropic ships an object. After that fix four of the five inbound constructors decode a
+stringified argument object; one does not:
+
+  ToolCall.pm:77   from_openai     arguments => _decode_args( $fn->{arguments} )
+  ToolCall.pm:94   from_anthropic  arguments => _decode_args( $block->{input} )      # k124
+  ToolCall.pm:108  from_ollama     arguments => _decode_args( $fn->{arguments} )
+  ToolCall.pm:143  from_responses  $args = _decode_args($args)
+  ToolCall.pm:124  from_gemini     arguments => ( ref( $fc->{args} ) eq "HASH" ? $fc->{args} : {} )
+
+So a Gemini-shaped functionCall whose args arrive as a JSON string is silently reduced to {}
+-- the model called the tool, the tool runs with no arguments, and nothing warns. That is the
+identical failure k124 was filed for.
+
+Google native always sends args as an object, so this is not a live bug on the first-party
+wire. It is a shim exposure: the same class of provider that produced k124 (a compatibility
+endpoint re-encoding one dialect inside another -- OpenRouter, LM Studio, Vertex-style
+proxies) is what would trip it, and Langertha ships several such engines.
+
+Suggested fix (one line + a test, symmetric with k124):
+  arguments => _decode_args( $fc->{args} ),
+plus a case in t/91_tool_value_objects.t alongside the from_anthropic JSON-string case.
+
+Consider at the same time whether _decode_args should be the documented single door for
+every inbound argument blob, since ADR 0010 makes symmetry across the value objects the
+stated property -- an asymmetry that has to be rediscovered per-constructor is the drift.
+
+Verified at HEAD 07f6d68. Related: ADR 0001, ADR 0010, karr k124.
