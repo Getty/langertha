@@ -1,0 +1,75 @@
+---
+class: standard
+created: 2026-09-01T19:40:36Z
+id: 139
+priority: high
+status: backlog
+tags:
+- advisor
+- perplexity
+- engines
+- adr
+- llm
+title: Perplexity Sonar is EOL 2026-09-27 - Engine::Perplexity breaks, and ADR 0005
+  rewrite direction 1 loses its only exemplar
+updated: 2026-09-01T19:40:36Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01. Docs read 2026-09-01, no live calls.
+
+## Deadline: 26 days
+
+Every Perplexity Sonar doc page now carries the banner, verbatim:
+
+  "Sonar Chat Completions is now Agent API. Sonar will be supported until **September 27, 2026**."
+
+`Engine::Perplexity::default_model` is `sonar`. The engine's model list
+(`sonar`, `sonar-pro`, `sonar-deep-research`, `sonar-reasoning-pro`) still matches the docs enum
+exactly -- the engine is accurate TODAY and stops working in under four weeks.
+
+Sources (read 2026-09-01): docs.perplexity.ai/api-reference/sonar-post ,
+docs.perplexity.ai/docs/sonar/models.md , /docs/sonar/features.md
+
+## What replaces it, and why neither successor is a drop-in
+
+Perplexity has split the surface in two, and BOTH invalidate a Langertha assumption:
+
+1. **Agent API** -- the named successor to Sonar Chat Completions. Non-OpenAI request shape.
+   `Engine::Perplexity` extends `OpenAIBase`; if the Agent API is where search-augmented chat
+   lives after 2026-09-27, that is a wire-envelope change (ADR 0006 dialect axis), not a URL swap.
+2. **Router API** -- `POST /router/v1/chat/completions`, full OpenAI shape INCLUDING named
+   `tool_choice`, `allowed_tools`, `parallel_tool_calls` (default true), and
+   `response_format.json_schema` which "always runs in strict mode". **Private preview,
+   email-gated.** Catalog is six open-weight models (`perplexity/kimi-k3`,
+   `deepseek-v4-flash-0731`, `glm-5.2`, `glm-5.3`, two nemotron), i.e. it is a routing product,
+   not Sonar.
+   Source: docs.perplexity.ai/api-reference/gateway-chat-completions-post , /docs/router/models.md
+
+**This matters beyond one engine.** Perplexity is the single load-bearing example behind ADR 0005
+rewrite direction 1 -- "forced named tool -> response_format" fires on
+`!supports('tool_choice_named') && supports('response_format_json_schema')`, and Perplexity is
+the only engine in the distribution that hits it (`t/78_engine_capabilities.t:38` asserts exactly
+that). If Perplexity's successor surface gains named tool_choice (the Router API has it), the
+rewrite direction loses its only real-world consumer and ADR 0005 needs a note saying so.
+
+Also confirmed still true and NOT to be "fixed": Sonar genuinely has no tool calling. `tools` and
+`tool_choice` appear nowhere in the Sonar API reference or guides, and the repo's own live 400
+("Tool calling is not supported for this model") stands.
+
+## Second, smaller drift on the same engine
+
+`Engine::Perplexity` does `delete $caps->{reasoning_effort}` in its `around engine_capabilities`
+(Perplexity.pm:92-96). The current Sonar API reference documents `reasoning_effort` as an accepted
+body parameter with values `minimal|low|medium|high`. So that correction is now itself stale --
+the flag should come back (it is also the kind of thing `sonar-reasoning-pro` exists for).
+`delete $caps->{prompt_cache_key}` in the same block was not re-checked and may or may not still
+hold.
+
+## Suggested action
+
+1. Decide before 2026-09-27 whether Langertha follows Perplexity to the Agent API (new wire
+   envelope), to the Router API (needs preview access), or deprecates `Engine::Perplexity`.
+   Doing nothing means the engine breaks on that date.
+2. Independently and cheaply: restore `reasoning_effort` on Perplexity, and re-verify
+   `prompt_cache_key`.
+3. Note in ADR 0005 that rewrite direction 1's exemplar is time-limited, whichever way (1) goes.
