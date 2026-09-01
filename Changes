@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Real AKI.IO server captures back the response tests (karr #101). t/data
+      carries five verbatim response bodies and their response headers, taken
+      through the engines themselves, and t/28_aki_fixtures.t replays them
+      through the shipped chat_response paths of Engine::AKI, AKIOpenAI and
+      AKIAnthropic. Role::OpenAICompatible::chat_response — the path ~25
+      engines share — is covered by a real payload for the first time.
+
     - Engine::AKIOpenAI surfaces the model reasoning field (karr #127).
       AKI.IO ships chain-of-thought under the bare `reasoning` key that the
       shared OpenAI-compatible path (reasoning_content only) drops; AKIOpenAI

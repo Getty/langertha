@@ -13,11 +13,21 @@ use Langertha::ToolCall;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-# Load fixtures
-my $text_fixture    = $json->decode( path('t/data/responses_api_text.json')->slurp );
-my $toolcall_fixture = $json->decode( path('t/data/responses_api_toolcall.json')->slurp );
-my $toolcall_toplevel_fixture
-    = $json->decode( path('t/data/responses_api_toolcall_toplevel.json')->slurp );
+# Load fixtures. Convention (karr k101, mirroring the Ollama block in
+# t/70_response.t): the file bytes go into the HTTP body verbatim via
+# slurp_raw, so chat_response is fed what a server sends rather than a
+# decode + re-encode round trip that quietly normalizes the wire. The decoded
+# copies below exist only for the assertions that take a HashRef directly
+# (response_tool_calls, format_tool_results, ToolCall->extract).
+my $data_dir = path(__FILE__)->parent->child('data');
+
+my $text_bytes             = $data_dir->child('responses_api_text.json')->slurp_raw;
+my $toolcall_bytes         = $data_dir->child('responses_api_toolcall.json')->slurp_raw;
+my $toolcall_toplevel_bytes = $data_dir->child('responses_api_toolcall_toplevel.json')->slurp_raw;
+
+my $text_fixture              = $json->decode($text_bytes);
+my $toolcall_fixture          = $json->decode($toolcall_bytes);
+my $toolcall_toplevel_fixture = $json->decode($toolcall_toplevel_bytes);
 
 subtest 'engine creation' => sub {
     my $engine = Langertha::Engine::OpenAIResponses->new(
@@ -160,10 +170,15 @@ subtest 'chat_response - text response' => sub {
         model   => 'gpt-5.5-pro',
     );
 
-    # Build a mock HTTP response object
-    my $mock_response = _build_mock_response($text_fixture);
+    # Build a mock HTTP response object from the fixture bytes
+    my $mock_response = _build_mock_response($text_bytes);
 
-    my $resp = $engine->chat_response($mock_response);
+    my $resp = eval { $engine->chat_response($mock_response) };
+    # Definedness, not truth: a tool-call-only Response has empty content and
+    # stringifies false, so ok($resp) would be the wrong gate here (karr k101).
+    ok( defined $resp, 'Response constructed, no type-constraint croak' ) or diag($@);
+    return unless defined $resp;
+
     is( $resp->content, 'Hello! How are you?', 'content extracted from output_text' );
     is( $resp->id, 'resp_abc123', 'id from response' );
     is( $resp->model, 'gpt-5.5-pro', 'model from response' );
@@ -181,8 +196,11 @@ subtest 'chat_response - with thinking' => sub {
         model   => 'gpt-5.5-pro',
     );
 
-    my $mock_response = _build_mock_response($text_fixture);
-    my $resp = $engine->chat_response($mock_response);
+    my $mock_response = _build_mock_response($text_bytes);
+    my $resp = eval { $engine->chat_response($mock_response) };
+    ok( defined $resp, 'Response constructed, no type-constraint croak' ) or diag($@);
+    return unless defined $resp;
+
     is( $resp->thinking, 'The user is asking for a simple greeting',
         'thinking from reasoning summary' );
 };
@@ -193,8 +211,10 @@ subtest 'chat_response - tool call extraction' => sub {
         model   => 'gpt-5.5-pro',
     );
 
-    my $mock_response = _build_mock_response($toolcall_fixture);
-    my $resp = $engine->chat_response($mock_response);
+    my $mock_response = _build_mock_response($toolcall_bytes);
+    my $resp = eval { $engine->chat_response($mock_response) };
+    ok( defined $resp, 'Response constructed, no type-constraint croak' ) or diag($@);
+    return unless defined $resp;
 
     ok( $resp->has_tool_calls, 'tool_calls present' );
     is( scalar @{$resp->tool_calls}, 1, 'one tool call' );
@@ -258,8 +278,10 @@ subtest 'chat_response handles top-level function_call (real API shape)' => sub 
         model   => 'gpt-5.5-pro',
     );
 
-    my $mock_response = _build_mock_response($toolcall_toplevel_fixture);
-    my $resp = $engine->chat_response($mock_response);
+    my $mock_response = _build_mock_response($toolcall_toplevel_bytes);
+    my $resp = eval { $engine->chat_response($mock_response) };
+    ok( defined $resp, 'Response constructed, no type-constraint croak' ) or diag($@);
+    return unless defined $resp;
 
     ok( $resp->has_tool_calls, 'top-level function_call produces tool_calls' );
     is( scalar @{$resp->tool_calls}, 1, 'exactly one tool call' );
@@ -398,16 +420,15 @@ subtest 'no tools in request when not provided' => sub {
     ok( !$body->{tool_choice}, 'no tool_choice when not provided' );
 };
 
-# Helper to build a mock HTTP::Response-like object
+# Helper to build a mock HTTP::Response from the fixture bytes verbatim.
 sub _build_mock_response {
-    my ($data) = @_;
+    my ($body) = @_;
     require HTTP::Response;
-    my $json_text = $json->encode($data);
     return HTTP::Response->new(
         200,
         'OK',
         [ 'Content-Type' => 'application/json' ],
-        $json_text,
+        $body,
     );
 }
 

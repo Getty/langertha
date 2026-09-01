@@ -288,12 +288,10 @@ subtest 'cache tokens: Anthropic survives verbatim' => sub {
     is($resp->cached_tokens, 8192,
         'Anthropic cache_read_input_tokens lifts onto cached_tokens (karr k125)');
 
-    # GAP: Response.pm has no accessor for cache tokens. The canonical
-    # `prompt_tokens` accessor ignores them. Callers today read
-    # `$resp->usage->{cache_*}` directly. Until an accessor exists,
-    # this is the documented contract — do NOT add a fake accessor here
-    # to "fix" it (karr #18e: Response.usage cached_content_token_count
-    # telemetry).
+    # `prompt_tokens` is the uncached input count and deliberately excludes the
+    # cache tokens — they are a separate quantity, reachable via cached_tokens
+    # (above) and verbatim under usage.cache_*. Do not fold them in here
+    # (karr #18e: Response.usage cached_content_token_count telemetry).
     is($resp->prompt_tokens, 50,
         'prompt_tokens accessor does NOT include cache tokens (by design — karr #18e)');
 };
