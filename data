@@ -1,0 +1,90 @@
+---
+class: standard
+created: 2026-09-01T19:37:04Z
+id: 135
+priority: medium
+status: backlog
+tags:
+- advisor
+- anthropic
+- engines
+- llm
+title: 'Anthropic wire drift: temperature 400s on Opus 4.7+, thinking.display now
+  defaults to omitted (thinking always empty)'
+updated: 2026-09-01T19:37:04Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01. Docs read 2026-09-01 at platform.claude.com
+(docs.claude.com / docs.anthropic.com now redirect there). No live calls. Three separate wire
+facts that each make a Langertha AnthropicBase request wrong or a Response empty. Grouped because
+they are all "the Anthropic wire moved under a field we already emit or read".
+
+## 1. temperature is deprecated and 400s with a non-default value on current Opus models
+
+`Role::AnthropicCompatible::chat_request` (:183-185) and `chat_stream_request` (:408-410) emit
+
+    $self->has_temperature ? ( temperature => $self->temperature ) : ()
+
+unconditionally whenever the attribute is set. `Role::Temperature` is composed by
+`Engine::AnthropicBase`, so it is set-able on every Anthropic-family engine.
+
+Anthropic changelog 2026-05-28, verbatim: "Setting the sampling parameters `temperature`, `top_p`,
+or `top_k` to a non-default value returns a 400 error on Claude Opus 4.8, same as on Claude Opus
+4.7." The Messages API reference now lists `temperature` / `top_p` / `top_k` as **deprecated**.
+
+So `Langertha::Engine::Anthropic->new(model => 'claude-opus-4-8', temperature => 0.5)` is a hard
+400. The set of affected models is growing, not shrinking. Options: model-gated suppression (the
+`Engine::OpenAI::_max_tokens_key` precedent), an `around engine_capabilities` clearing
+`temperature` for those models, or at minimum a POD warning. Note it cannot be fixed purely in
+`engine_capabilities` today because the flag is engine-wide, not model-wide -- same root cause as
+k133 point 2.
+
+Source: https://platform.claude.com/docs/en/release-notes/api ,
+https://platform.claude.com/docs/en/api/messages
+
+## 2. thinking.display now defaults to "omitted" -- $response->thinking is empty on every current model
+
+https://platform.claude.com/docs/en/build-with-claude/thinking (read 2026-09-01).
+`thinking: {type:"adaptive"}` takes an optional `display`: `"summarized"` | `"omitted"` |
+`"updates"` (the last is beta, header `thinking-display-updates-2026-08-18`).
+
+The default is **"omitted"** on Fable 5.1, Mythos 5.1, Fable 5, Mythos 5, Opus 5, Sonnet 5,
+Opus 4.8, Opus 4.7 and Mythos Preview. It is `"summarized"` only on Opus 4.6, Sonnet 4.6 and
+earlier. Under `display: "omitted"` **no `thinking_delta` events are emitted at all** -- the
+thinking block opens, emits one `signature_delta`, and closes.
+
+`Langertha::Reasoning::to_anthropic` emits `thinking => { type => 'adaptive' }` with no `display`
+key, so on every model in that first list `$response->thinking` comes back empty --
+`Role::AnthropicCompatible::chat_response:303` collects `thinking` blocks whose `thinking` field
+is the empty string. Not a crash, just a silently blank feature on the default path.
+
+Fix direction: let the caller ask for summaries. Either a `thinking_display` knob on
+`Role::ReasoningEffort` serialized by `Langertha::Reasoning::to_anthropic`, or make
+`display => 'summarized'` the Langertha default (a product call -- summaries cost tokens). At
+minimum POD the fact, because "Anthropic returns no thinking" reads as a Langertha bug otherwise.
+Relates to k129 (streamed thinking deltas): a stream test asserting non-empty thinking on a
+current Claude model will fail for this reason, not for a parser reason.
+
+Also from the same family, and NOT read by Langertha today:
+`usage.output_tokens_details.thinking_tokens` (shipped 2026-05-27; on the streaming path it
+appears only on the final `message_delta`). That is the only way to see that thinking happened
+when `display` is `"omitted"`.
+
+## 3. Anthropic prompt caching: two facts worth POD'ing
+
+Both from https://platform.claude.com/docs/en/build-with-claude/prompt-caching (read 2026-09-01).
+
+(a) The top-level `cache_control` form Langertha emits (`Langertha::PromptCache::to_anthropic`)
+    is CORRECT and documented -- it is the "Automatic caching" feature shipped 2026-02-19:
+    "Instead of placing `cache_control` on individual content blocks, add a single `cache_control`
+    field at the top level of your request body. The system automatically applies the cache
+    breakpoint to the last cacheable block." It composes with block-level breakpoints and consumes
+    one of the 4 available slots. No change needed -- recording it so nobody "fixes" it later.
+
+(b) Silent no-op trap: the minimum cacheable prefix is model-dependent -- 512 tokens
+    (Fable 5.1 / Mythos 5.1 / Opus 5 / Fable 5 / Mythos 5), 1,024 (Opus 4.8, Sonnet 5, Sonnet 4.6,
+    Sonnet 4.5), 2,048 (Opus 4.7, Mythos Preview), 4,096 (Opus 4.6, Opus 4.5, Haiku 4.5).
+    Verbatim: "Shorter prompts cannot be cached, even if marked with `cache_control`. No error is
+    returned; the request is processed without caching." So `prompt_cache => 1` succeeding proves
+    nothing; only `usage.cache_read_input_tokens` / `cache_creation_input_tokens` does.
+    t/86_live_prompt_cache.t already asserts on usage rather than on a 200 -- correct, keep it.
