@@ -1,0 +1,60 @@
+---
+claimed_at: 2026-08-31T03:36:36Z
+claimed_by: weak-feel
+class: standard
+completed: 2026-09-01T19:19:20Z
+created: 2026-08-24T01:30:40Z
+id: 125
+priority: medium
+started: 2026-08-31T03:35:39Z
+status: done
+tags:
+- response
+- usage
+- anthropic
+- cache
+title: Response.cached_tokens is structurally blind on the whole Anthropic family
+updated: 2026-09-01T19:19:20Z
+---
+
+Found while replaying the karr #101 AKI captures 2026-08-24; verified offline against df531dd.
+
+Langertha::Response.cached_tokens documents itself (Response.pm:367) as the engine-agnostic
+"cached prompt tokens as the provider reports it". It is populated in exactly two places, both
+OpenAI-shaped:
+
+  Role::OpenAICompatible::chat_response  <- usage.prompt_tokens_details.cached_tokens
+  Response.pm:409-415 (BUILDARGS lift)   <- usage.prompt_tokens_details.cached_tokens
+
+The Anthropic wire reports the same quantity as usage.cache_read_input_tokens.
+Role::AnthropicCompatible::chat_response never maps it. Result on a real captured body:
+
+  AKIAnthropic  usage {input_tokens 64, output_tokens 2, cache_read_input_tokens 48}
+                -> $response->cached_tokens = undef
+  AKIOpenAI     usage {..., prompt_tokens_details {cached_tokens 48}}
+                -> $response->cached_tokens = 48
+
+Same provider, same prompt, same 48 cached tokens, one number visible and one not, purely
+by which shim answered. Affects all five AnthropicCompatible consumers -- Anthropic itself,
+MiniMaxAnthropic, MoonshotAnthropic, AKIAnthropic, LMStudioAnthropic. The real Anthropic
+engine is the one that matters most: prompt caching is a headline feature there and
+ADR 0009 gives it a first-class request-side surface, so the response side reading undef is
+a visible gap in the pair.
+
+The value is NOT lost -- it survives verbatim inside ->usage, and t/91_response_usage.t:281
+asserts exactly that. But that test locks in usage passthrough and never asks about
+cached_tokens, which is why the gap has been invisible.
+
+Suggested fix: map usage.cache_read_input_tokens -> cached_tokens in
+Role::AnthropicCompatible::chat_response (or extend the Response BUILDARGS lift to know both
+wire spellings -- decide which layer owns it; the BUILDARGS lift already sets the precedent).
+Open question for whoever takes it: cache_creation_input_tokens is a different quantity
+(write, not read) and should NOT be folded in.
+
+Fixtures available from the #101 run, both carrying real nonzero values:
+  akianthropic_chat_response.json       cache_read_input_tokens 48
+  akianthropic_tool_call_response.json  cache_read_input_tokens 192
+
+Fixed in 196a274: Response BUILDARGS lift now maps usage.cache_read_input_tokens -> cached_tokens (single owner, covers all five Anthropic engines + streamed usage). cache_creation_input_tokens deliberately excluded. Gated by the existing engine-level Anthropic subtest in t/91_response_usage.t (real Engine::Anthropic->chat_response + mock body), no new fixture needed.
+
+Orchestrator review 2026-09-01: diff 196a274 verified. BUILDARGS lift reads both spellings into lexicals (no autoviv), OpenAI shape wins if both present, cache_creation excluded. Note: the GAP comment right after the new assertion in t/91_response_usage.t is now stale (says no accessor exists) - handed to the k101 worker as a side cleanup. Closing.
