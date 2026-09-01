@@ -315,7 +315,7 @@ async sub run_tests {
     engine_fail('Scaleway');
   }
 
-  # --- AKI.IO (via OpenAI-compatible API, HermesTools) ---
+  # --- AKI.IO (via OpenAI-compatible API, native tool_calls) ---
   if ($ENV{TEST_LANGERTHA_AKI_API_KEY}) {
     require Langertha::Engine::AKIOpenAI;
     # qwen3-chat is retired (500 even with a larger response_size); the current

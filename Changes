@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::AKIOpenAI does native OpenAI tool calling (karr #102). The engine
+      no longer composes Role::HermesTools and no longer forces
+      tool_wire_format 'hermes': tools go out as the native `tools` array and
+      come back as a `tool_calls` block, which drops the XML prompt scaffold
+      and the prompt tokens it cost. Live-verified on llama3-chat-8b, the
+      default model and the weakest case in AKI's own support table.
+      Engine::AKIAnthropic's POD now says that tools work on /anthropic too,
+      undocumented by AKI and with tool_use `input` arriving as a JSON string.
+
     - Real AKI.IO server captures back the response tests (karr #101). t/data
       carries five verbatim response bodies and their response headers, taken
       through the engines themselves, and t/28_aki_fixtures.t replays them

@@ -49,15 +49,18 @@ Models documented for this endpoint: C<apertus-chat-70b>, C<gpt-oss-120b>,
 C<gemma4-26b>, C<kimi-k2.7-code-1100b>, C<llama3-chat-8b>, C<llama3-chat-70b>,
 C<minimax-m2.5-230b>, C<mistral4-119b>, C<qwen3.6-35b>.
 
-B<Tool calling is undocumented on this endpoint.> AKI.IO's Anthropic
+B<Tool calling works but is undocumented on this endpoint.> AKI.IO's Anthropic
 compatibility page lists only C<model>, C<messages>, C<max_tokens>,
 C<temperature>, C<top_p>, C<top_k>, C<stop_sequences>, C<stream> and C<system>
-as request parameters — no C<tools>. This class inherits the native Anthropic
-tool wire format from L<Langertha::Engine::AnthropicBase> (tool calling is
-documented by AKI.IO only for the OpenAI-compatible endpoint, which
-L<Langertha::Engine::AKIOpenAI> serves through
-L<Langertha::Role::HermesTools>), so tool calls against C</anthropic> are
-unverified — test before relying on them.
+as request parameters — no C<tools>. It nevertheless accepts the native
+Anthropic C<tools> array this class inherits from
+L<Langertha::Engine::AnthropicBase> and answers with a C<tool_use> block,
+verified live against C<llama3-chat-8b> (2026-08-24, re-verified 2026-09-01;
+fixture C<t/data/akianthropic_tool_call_response.json>). One deviation from
+real Anthropic: the C<input> of that block arrives as a B<JSON string>, not an
+object — L<Langertha::ToolCall> decodes it, so C<< $tc->arguments >> is a
+HashRef either way. Since the parameter is undocumented, AKI.IO owes it no
+stability; check C<< $response->has_tool_calls >> rather than assuming.
 
 B<Client errors arrive as HTTP 529:> AKI.IO returns some B<caller-side> errors
 as C<529> C<overloaded_error> — notably a token budget too small to finish a

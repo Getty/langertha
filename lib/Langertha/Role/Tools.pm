@@ -114,7 +114,7 @@ has tool_wire_format => (
 
 # Defaults to the OpenAI dialect; AnthropicCompatible, HermesTools, and
 # OpenAIResponses override the builder via -excludes, while Engines (Ollama,
-# Gemini, AKI, AKIOpenAI, NousResearch) ship their own override. See
+# Gemini, AKI, NousResearch) ship their own override. See
 # Langertha::Engine::AnthropicBase:9-23 for the canonical -excludes exemplar.
 sub _build_tool_wire_format { 'openai' }
 

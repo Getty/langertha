@@ -6,9 +6,13 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Tools', 'Langertha::Role::HermesTools';
-
-sub _build_tool_wire_format { 'hermes' }
+# Native OpenAI tool calling, live-verified 2026-09-01 against
+# /openai/v1/chat/completions: a native `tools` array is accepted and answered
+# with a native `tool_calls` block, arguments intact — on llama3-chat-8b, this
+# engine's default model and one AKI's own table rates only "Basic Support".
+# So no Role::HermesTools and no tool_wire_format override: the `openai` default
+# of Langertha::Role::Tools is the wire reality. -- karr k102
+with 'Langertha::Role::Tools';
 
 # AKI.IO ships the model's chain-of-thought under the bare `reasoning` key on
 # the OpenAI-compatible message, while Role::OpenAICompatible::chat_response
@@ -57,10 +61,13 @@ Provides access to AKI.IO's OpenAI-compatible API at C<https://aki.io/openai/v1>
 Composes L<Langertha::Role::OpenAICompatible> for the standard OpenAI format.
 
 AKI.IO is a European AI model hub (Germany) — fully GDPR-compliant with all
-inference on EU infrastructure. Supports chat completions (with SSE streaming)
-and dynamic model listing. Composes L<Langertha::Role::HermesTools> for MCP
-tool calling via XML tags (AKI's C</openai/v1> endpoint does not support native
-tool parameters).
+inference on EU infrastructure. Supports chat completions (with SSE streaming),
+dynamic model listing, and native OpenAI-standard tool calling: tools go out as
+the C<tools> array and come back as a C<tool_calls> block, the shared default of
+L<Langertha::Role::Tools>. Verified live against C<llama3-chat-8b>, the default
+model here and one AKI's own support table rates only "Basic Support", so the
+weakest documented case works — earlier releases routed this engine through
+L<Langertha::Role::HermesTools> instead, which is no longer necessary.
 
 Embeddings and transcription are not supported. For native AKI.IO API features
 (C<top_k>, C<top_p>, C<max_gen_tokens>), use L<Langertha::Engine::AKI>.

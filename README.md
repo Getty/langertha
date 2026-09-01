@@ -381,7 +381,7 @@ Works with **all engines** that support tool calling (see table above).
 For models that support the [Hermes tool calling format](https://nousresearch.com/) (via `<tool_call>` XML tags) but lack API-level tool support, engines compose `Langertha::Role::HermesTools`:
 
 ```perl
-# NousResearch, AKI, and AKIOpenAI compose HermesTools out of the box
+# NousResearch and AKI compose HermesTools out of the box
 my $nous = Langertha::Engine::NousResearch->new(
     api_key     => $ENV{NOUSRESEARCH_API_KEY},
     mcp_servers => [$mcp],
@@ -444,11 +444,11 @@ flowchart TD
 | Provider family | Tools wire | tool_choice forms | response_format mechanism | Tool calls in response |
 |---|---|---|---|---|
 | OpenAIBase (OpenAI, DeepSeek, Groq, Mistral, Cerebras, MiniMax, OpenRouter, Replicate, HuggingFace, vLLM, SGLang, LlamaCpp, Ollama-OpenAI, LMStudioOpenAI, AKIOpenAI, TSystems, Scaleway) | `tools=[{type=>'function',function=>{...}}]` | string `auto`/`required`/`none` + `{type=>'function',function=>{name=>X}}` | native `response_format` block (json_object / json_schema) | `choices[0].message.tool_calls` |
-| AnthropicBase (Anthropic, MiniMaxAnthropic, MoonshotAnthropic, LMStudioAnthropic, AKIAnthropic\*) | `tools=[{name=>...,input_schema=>...}]` | `{type=>'auto'/'any'/'none'/'tool',name=>X}` | engine-internal: synthesizes tool + forces it; lifts tool_use input into Response.content as JSON | `content[*]` blocks with `type=>'tool_use'` |
+| AnthropicBase (Anthropic, MiniMaxAnthropic, MoonshotAnthropic, LMStudioAnthropic, AKIAnthropic) | `tools=[{name=>...,input_schema=>...}]` | `{type=>'auto'/'any'/'none'/'tool',name=>X}` | engine-internal: synthesizes tool + forces it; lifts tool_use input into Response.content as JSON | `content[*]` blocks with `type=>'tool_use'` |
 | Gemini | `tools=[{functionDeclarations=>[...]}]` | `toolConfig.functionCallingConfig` (`mode` + `allowedFunctionNames` for named) | `generationConfig.responseSchema` + `responseMimeType='application/json'` | `candidates[0].content.parts[*].functionCall` |
 | Ollama (native) | OpenAI-shape tools natively | OpenAI-shape `tool_choice` | `format='json'` (json_object) or schema HashRef (json_schema) | `message.tool_calls` |
 | Perplexity | NO tool calling on the wire | string `auto`/`required`/`none` only (named coerced to `required`) | native `response_format=json_schema` | (synthetic, via `chat_f` auto-rewrite) |
-| Hermes engines (NousResearch, AKI, AKIOpenAI) | tools injected into system prompt as XML | (model decides via prompt) | (use response_format on AKIOpenAI / NousResearch where applicable) | `<tool_call>...</tool_call>` parsed from text |
+| Hermes engines (NousResearch, AKI) | tools injected into system prompt as XML | (model decides via prompt) | (use response_format on NousResearch where applicable) | `<tool_call>...</tool_call>` parsed from text |
 
 #### Reading tool calls back
 
