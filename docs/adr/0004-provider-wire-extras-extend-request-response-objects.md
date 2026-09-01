@@ -84,6 +84,12 @@ Response attribute in — stops the next engine author from re-deriving it the h
   that the `probes` work (karr #4) had to step around by hand. The list is the fragility, not
   the pattern; making `clone_with` attribute-driven is tracked separately (see Future work).
 
+- **This ADR is about a *new* field, not a new spelling of an existing one.** When a provider
+  reports a quantity `Langertha::Response` already models, under a different key, no new
+  attribute is added — the spelling is normalized in the value object, the dialect role, or an
+  engine-scoped `around 'chat_response'`, per **ADR 0018**. `VLLMHook`'s `around 'chat_response'`
+  is the shared mechanism; which layer it belongs in is the question ADR 0018 answers.
+
 ## Future work
 
 - **Drive `clone_with` off the meta attribute inventory** rather than a hand-maintained `qw(...)`

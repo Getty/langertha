@@ -61,7 +61,18 @@ seam (`tool_wire_format`, **Tool**, **ToolCall**, **ToolResult**, **Result envel
   messages, Anthropic/Gemini one message with N blocks) is assembled by the orchestration. This
   split is deliberate: the block formatter knows nothing about the surrounding conversation.
 - `Role::HermesTools` keeps the tags/template but is no longer a parallel tool-calling
-  subsystem — it is the data behind one tag value.
+  subsystem — it is the data behind one tag value. It is not retired: it also carries the
+  overridable `hermes_extract_content` (for engines whose response shape is not OpenAI's) and
+  is the `does()` source of the `tools_hermes` capability flag (ADR 0002).
+- **`TO_JSON` is the canonical shape, not a wire shape.** `Role::JSON`'s shared encoder gained
+  `convert_blessed` (karr k120, commit `b9ec772`) so the distribution's value objects serialize
+  through their `TO_JSON` instead of croaking — that is for traces, logs and `UsageRecord`-style
+  data, and it is **not** a second outbound door. Note the sharp edge it introduces: handing a
+  `Langertha::Tool` straight into a request body now yields `to_hash`
+  (`name` / `description` / `input_schema`), which is byte-identical to `to_anthropic` — so on
+  any wire that is not Anthropic's it is the wrong dialect, emitted silently, where it used to
+  be a loud croak. The tag remains the only outbound door: `Tool->to($fmt)` /
+  `->format_list($fmt, \@mcp_tools)`.
 
 ## Future work
 

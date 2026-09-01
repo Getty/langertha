@@ -93,6 +93,14 @@ future refactor. Two independent reasons:
 - A new provider that carries a wire-level tool_choice is added by extending `ToolChoice` and
   `%TO_METHOD`; one that does not (like Ollama/Hermes) simply isn't in the map and croaks loudly
   if asked — the absence is explicit.
+- **The symmetry is a property to be maintained, not one that holds by construction.** Each
+  inbound constructor is still written by hand, so a tolerance added to one does not reach its
+  siblings. karr k124 taught `from_anthropic` to decode a JSON-string argument blob (the AKI
+  `/anthropic` shim ships the OpenAI encoding inside an Anthropic block); `from_openai`,
+  `from_ollama` and `from_responses` already did — `from_gemini` still does not, and silently
+  reduces a stringified `args` to `{}`. Tracked as karr k131. The lesson generalizes: a
+  compatibility endpoint re-encoding one dialect inside another is now a routine wire reality,
+  so per-constructor leniency has to be kept in step deliberately.
 - Cross-links: **ADR 0001** — this completes the value-object wire-translation symmetry it
   established and resolves its "Future work" item. **ADR 0003** — every `ToolCall` that
   `extract` produces lands on `Response.tool_calls`, the single sink. **ADR 0005** — records

@@ -58,6 +58,7 @@ refactors:
 - **0015** — `-excludes` role-composition pattern + per-family `engine_capabilities` correction (cache-control direction-pair); the per-dialect generation-parameter block as a deliberate dialect split
 - **0016** — a wire envelope becomes a `Role::<X>Compatible` only when a second consumer needs it from a different parent; capability roles are roles from day one
 - **0017** — `Response.created` is a `Langertha::Moment` value object (`0+` = epoch, `""` = ISO stamp with sub-seconds), reversing karr #92's engine-side epoch conversion
+- **0018** — where a provider's wire *spelling* of a canonical field is normalized: value-object inbound door (universal) / dialect role (family) / engine-scoped `around chat_response` (one provider's quirk, guarded by the canonical predicate)
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision

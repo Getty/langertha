@@ -67,7 +67,8 @@ wins policy is the *right* policy for `total_seconds` specifically — see
     `eval_seconds` (Float, seconds) plus the original `*_duration` keys in nanoseconds
     preserved for back-compat.
   - Future engines add engine-specific keys the same way. No engine-native key is
-    reserved by the framework.
+    reserved by the framework. **Narrowed by the Update below (karr k126): no
+    engine-native key *stem* is reserved, but the `_seconds` *suffix* is.**
 
 The two classes coexist in the same HashRef and are accessed by the same
 `$response->timing` accessor. Engine-agnostic keys take precedence in the public
@@ -196,10 +197,75 @@ auto-clone). The cost is small; the regression is no longer possible.
   body through `simple_chat_stream_realtime_f` to assert that `ttft_seconds` is
   set at the first chunk. Follow-up: karr #34 (W10) for the end-to-end test
   with a `Net::Async::HTTP` fake.
+- **The route asymmetry named in Decision 3 is a class, not a one-off.**
+  `ttft_seconds` exists on the async streaming path and reads `undef` on the
+  sync one. The same shape has since turned up on a neighbouring field:
+  `Response.thinking` is filled on the non-streaming route (by the dialect
+  role's `chat_response`, by `Role::ThinkTag`, or by an engine-scoped lift —
+  ADR 0018) while `Langertha::Stream::Chunk` has no `thinking` attribute at
+  all, so a streamed call on the very same engine and prompt reads `undef`.
+  Tracked as karr k129. The policy this ADR set for timing holds for the
+  class: document the gap on the accessor and gate it behind a predicate —
+  never let one route silently answer for the other.
 - **Cross-links.** **ADR 0001 / 0003 / 0010** — the tool wire-translation
   seam, which the response-side timing surface parallels (one attribute, two
   key classes, no per-engine specialization at the accessor layer). **ADR 0009**
   — the request-side controls (reasoning / cache) that already follow the same
-  shape and informed the design. `CONTEXT.md` fixes the vocabulary (the
-  "Response-side observability" section under "sibling seams" was added in the
-  same release).
+  shape and informed the design. **ADR 0018** — where a provider's *spelling*
+  of a canonical response field is normalized; the timing keys are the case
+  where no normalization layer existed and the units diverged (see the Update
+  below). `CONTEXT.md` fixes the vocabulary (the "Response-side observability"
+  section under "sibling seams" was added in the same release).
+
+## Update (karr k126 — engine-native timing keys share one flat namespace)
+
+Decision 1 closes with "No engine-native key is reserved by the framework."
+That sentence quietly assumed engine-native keys are *read* per-engine, by a
+consumer who already knows which engine answered. `karr k126` is the first
+proof that they are not:
+
+    Engine::Ollama   timing->{total_duration} = 7319258765   # NANOSECONDS
+    Engine::AKI      timing->{total_duration} = 0.14         # SECONDS
+
+One flat HashRef, one key stem, two units, no namespace and no unit metadata —
+and reading the raw hashref is exactly what this ADR sanctions for stage keys.
+A dashboard doing `$response->timing->{total_duration}` was wrong by a factor
+of 1e9 depending on which engine replied, and nothing in the framework could
+catch it.
+
+Three resolutions were weighed (karr k128):
+
+- **(a) Guidance only** — "prefer the engine-agnostic accessors; engine-native
+  keys carry no cross-engine unit guarantee."
+- **(b) A unit-bearing suffix convention** — `_seconds` means seconds;
+  `_duration` stays nanoseconds and stays Ollama's.
+- **(c) Namespace native keys per engine** — `timing->{ollama}{total_duration}`.
+
+**The code follows (b), with (a) as the consumer-facing guidance.** The
+`_seconds` suffix is now **reserved and unit-bearing**: any key ending in
+`_seconds` is a Float in seconds, engine-agnostic and engine-native alike, and
+an engine that reports a stage timing emits it under that suffix — converting
+if the wire uses another unit. `*_duration` is *not* a parallel convention: it
+is `Engine::Ollama`'s back-compat legacy in nanoseconds, kept because it
+shipped, and no new engine adds one. `Engine::AKI` (commit `b4da770`) is the
+first engine written under the rule — it emits `total_seconds` and the native
+`compute_seconds` from a wire that already reports seconds, and deliberately
+emits no raw `total_duration` at all, which is what ended the collision.
+
+Decision 1 is therefore narrowed, not reversed: **no engine-native key *stem*
+is reserved; the `_seconds` *suffix* is.** Native keys still share one flat
+namespace with no per-engine prefix, so two engines may still land on the same
+stem — but under the suffix rule such a collision is unit-compatible, which is
+the survivable kind. The one hazard that remains is a `*_seconds` key whose
+*meaning* differs across engines (whose clock, which stage); that is a
+documentation problem, not a silent 1e9.
+
+(c) was rejected: it would break the shipped Ollama keys and the flat
+`HashRef[Num]` type, force `_merge_timing_field` and the Langfuse anchor to
+learn a nesting level, and buy nothing the suffix rule does not already give.
+
+This is an amendment in place rather than a superseding ADR because none of the
+four shape decisions above changed — one HashRef, two key classes, first-write-
+wins, metaclass `clone_with` all stand. Only one sentence of Decision 1 is
+narrowed and a hazard is recorded. Contrast ADR 0006 → ADR 0013, where the
+placement axis of the thing itself moved and a new number was right.

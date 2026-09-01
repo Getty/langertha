@@ -134,10 +134,19 @@ The response-side timing surface. Holds two classes of keys:
 - *engine-agnostic* (standard): `ttft_seconds`, `total_seconds` — Float,
   seconds. `ttft_seconds` only meaningful for async streaming (LWP
   sync streaming buffers the body and cannot observe it).
-- *engine-native* (optional, engine-populated): provider-specific stage
-  durations. Currently Ollama: `total_seconds`/`load_seconds`/
-  `prompt_eval_seconds`/`eval_seconds` (Float, seconds) plus the
-  original `*_duration` keys in nanoseconds preserved for back-compat.
+- *engine-native* (optional, engine-populated): provider-reported stage
+  durations, in the *same* flat HashRef — Ollama `load_seconds`/
+  `prompt_eval_seconds`/`eval_seconds`, AKI `compute_seconds`, each
+  alongside its own `total_seconds`.
+  The **`_seconds` suffix is reserved and unit-bearing**: every key
+  ending in it is a Float in seconds, engine-agnostic and engine-native
+  alike, and an engine reporting a stage timing emits it under that
+  suffix (converting if its wire uses another unit). `*_duration` is
+  **not** a parallel convention — it is Ollama's back-compat legacy in
+  nanoseconds, and no new engine adds one. Native keys share one flat
+  namespace with no per-engine prefix, so the suffix is the only thing
+  keeping a stem two engines both claim (`total_*`) unit-compatible;
+  that hazard is the subject of the ADR 0011 Update (karr k126).
 
 **_merge_timing_field** (Role::Chat private):
 First-write-wins merge primitive. Provider-supplied keys (e.g. Ollama
@@ -212,7 +221,13 @@ for moving an *envelope*, never for placing a *capability*
   blocks plus the **Assistant echo** into provider-shaped messages.
 - `hermes` is a **tool_wire_format** value like any other — its outbound is
   prompt-injection and its inbound is `<tool_call>` text parsing, selected by the
-  same tag (retiring `Role::HermesTools` as a separate role).
+  same tag. `Role::HermesTools` is **not** retired by that: the *behaviour* moved
+  out into the tag-driven defaults of `Role::Tools`, and the role stays as the
+  configuration carrier those defaults read — the call/response tag names, the
+  prompt template, and the overridable `hermes_extract_content` for engines whose
+  response shape is not OpenAI's. It is also the `does()` source of the
+  `tools_hermes` capability flag (ADR 0002), so composing it is how an engine
+  advertises the path at all.
 
 ## Example dialogue
 
