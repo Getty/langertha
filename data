@@ -1,0 +1,54 @@
+---
+claimed_at: 2026-08-31T03:34:32Z
+claimed_by: weak-feel
+class: standard
+completed: 2026-09-01T19:19:20Z
+created: 2026-08-24T00:39:31Z
+id: 123
+priority: medium
+started: 2026-08-31T03:33:49Z
+status: done
+tags:
+- engines
+- aki
+- tools
+- adr
+title: Engine::AKI setzt nie Response.tool_calls, obwohl es Tools+HermesTools komponiert
+  (ADR 0003 Drift)
+updated: 2026-09-01T19:19:20Z
+---
+
+Offline verifiziert 2026-08-24 (Stand df531dd), gefunden bei der Vorbereitung der #101-Captures.
+
+Engine::AKI::chat_response (lib/Langertha/Engine/AKI.pm:261-273) konstruiert die Response
+ausschliesslich aus content/raw/model/timing. Ein tool_calls-Zweig fehlt vollstaendig; der
+String "ToolCall" kommt in der gesamten Datei 0 mal vor (grep -c).
+
+Gleichzeitig komponiert die Engine Langertha::Role::Tools + Langertha::Role::HermesTools
+(AKI.pm:10ff, calculate_all_roles bestaetigt: Models, Temperature, SystemPrompt, Chat, Tools,
+HermesTools) und liefert _build_tool_wire_format => hermes.
+
+Folge: emittiert ein AKI-Modell einen <tool_call>...</tool_call>-Block, landet der als roher
+Text in Response.content und NIE auf Response.tool_calls. Das widerspricht ADR 0003
+(Response.tool_calls ist die einzige Quelle der Wahrheit fuer emittierte Tool-Calls, native
+wie synthetische).
+
+Warum es bisher niemandem auffiel: die anderen Hermes-Engines (NousResearch, AKIOpenAI) haben
+kein eigenes chat_response und erben das von Role::OpenAICompatible, das ueber
+parse_tool_calls laeuft - dort existiert der hermes-Zweig (Role/Tools.pm:181ff,
+hermes_extract_content). Engine::AKI umgeht diesen Pfad mit seiner eigenen Implementierung.
+Und chat_with_tools_f ruft parse_tool_calls separat auf und gibt am Ende reinen Text zurueck
+(Role/Tools.pm:428-437), funktioniert also - die Luecke betrifft nur den Response-Pfad.
+
+Vergleichsfall ohne Problem: Engine::LMStudio setzt ebenfalls nie tool_calls, komponiert aber
+korrekterweise auch kein Role::Tools (grep -c Langertha::Role::Tools = 0). Dort ist es richtig.
+
+Zu tun: in AKI::chat_response parse_tool_calls (bzw. den hermes-Pfad ueber
+hermes_extract_content, AKI.pm:88-91) einhaengen und tool_calls setzen. Test dazu; ein echter
+Capture kaeme aus Request 6 der #101-Capture-Liste (AKI nativ mit Hermes-Prompt).
+
+Relates: karr #101 (Capture-Liste), ADR 0003.
+
+Fixed in 1c8deee: chat_response now feeds response_tool_calls (tag-aware hermes path) onto Response.tool_calls and strips tags from content via response_text_content. Tested with a mock hermes tool response + a plain response in t/25 (the file's existing mock-response harness); a captured native fixture stays a k101 concern.
+
+Orchestrator review 2026-09-01: diff 1c8deee verified. response_tool_calls/response_text_content take the hermes branch via AKI's hermes_extract_content (reads $data->{text}); tags stripped from content only when a call is present. t/25 covers call + plain. Suite green. Closing.
