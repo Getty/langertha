@@ -1,0 +1,78 @@
+---
+claimed_at: 2026-09-01T19:47:55Z
+claimed_by: langertha-adr-auditor
+class: standard
+completed: 2026-09-01T19:47:55Z
+created: 2026-08-31T03:40:13Z
+id: 128
+priority: low
+started: 2026-09-01T19:20:14Z
+status: done
+tags:
+- adr
+- response
+- timing
+title: 'ADR 0011 amendment: engine-native timing keys are not namespaced and can collide
+  semantically'
+updated: 2026-09-01T19:47:55Z
+---
+
+Surfaced while fixing karr #126. ADR 0011 declares engine-native stage keys "unreserved by the framework" and read per-engine. k126 is the first proof that they are NOT namespaced and can collide semantically:
+
+  Engine::Ollama  timing.total_duration = NANOSECONDS
+  Engine::AKI     timing.total_duration = SECONDS (before k126)
+
+Any consumer reading the raw hashref -- which ADR 0011 explicitly sanctions for stage keys -- was wrong by 1e9 depending on which engine answered.
+
+k126 fixed the code side: Engine::AKI now emits the engine-agnostic total_seconds (ADR 0011 standard key) plus a native compute_seconds, and no longer emits a raw total_duration key at all. That ends this specific collision.
+
+ADR-worthy amendment (adr-auditor lane): record that engine-native timing keys share one flat namespace, so a native key that duplicates another engine's spelling with different units is a semantic collision the framework does not catch. Options to weigh: (a) document "prefer the engine-agnostic *_seconds accessors; native keys carry no unit guarantee across engines"; (b) reserve unit-suffixed conventions (_seconds vs _duration=ns) as house rule; (c) namespace native keys by engine. Amend ADR 0011 Consequences accordingly.
+
+Done by langertha-adr-auditor 2026-09-01 (uncommitted in the working tree; orchestrator commits).
+
+DECISION: amendment IN PLACE in ADR 0011, not a new ADR that supersedes it.
+Reason: none of ADR 0011's four shape decisions changed -- one timing HashRef, two key classes,
+first-write-wins, metaclass clone_with all stand. Only one sentence of Decision 1 is narrowed
+and a hazard is recorded. The house precedent for minting a new number is ADR 0006 -> 0013,
+where the placement axis of the thing itself moved (and 0006 got a "## Update (ADR 0013)"
+back-pointer section). Nothing moved here.
+
+WHAT WAS WRITTEN
+
+docs/adr/0011-response-timing-seam.md
+  - new "## Update (karr k126 -- engine-native timing keys share one flat namespace)" section
+    at the end: the Ollama-ns vs AKI-s collision under one stem, the three options weighed,
+    and the resolution the code actually follows.
+  - Decision 1's sentence "No engine-native key is reserved by the framework" now carries an
+    inline "Narrowed by the Update below" marker, so a reader of Decision 1 cannot take the
+    old wording at face value.
+  - new Consequences bullet: the sync/async route asymmetry of Decision 3 is a CLASS, not a
+    one-off -- Response.thinking has the same shape (karr k129), pointer only, no design.
+  - Cross-links bullet now names ADR 0018.
+
+OPTION CHOSEN: (b) unit-bearing suffix convention, with (a) as consumer-facing guidance.
+  The _seconds suffix is now reserved and unit-bearing: any key ending in _seconds is a Float
+  in seconds, engine-agnostic and engine-native alike, and an engine reporting a stage timing
+  emits it under that suffix, converting if its wire uses another unit. *_duration is NOT a
+  parallel convention -- it is Engine::Ollama's back-compat legacy in nanoseconds, kept because
+  it shipped, and no new engine adds one. Engine::AKI (b4da770) is the first engine written
+  under the rule (total_seconds + compute_seconds, no raw total_duration).
+  Narrowing: no engine-native key STEM is reserved; the _seconds SUFFIX is. Native keys still
+  share one flat namespace, so two engines may still land on the same stem -- but under the
+  suffix rule such a collision is unit-compatible, the survivable kind.
+  (c) rejected: namespacing would break the shipped Ollama keys and the flat HashRef[Num]
+  type, force _merge_timing_field and the Langfuse anchor to learn a nesting level, and buy
+  nothing the suffix rule does not already give.
+
+CONTEXT.md "Response-side observability" timing entry rewritten: it claimed only Ollama
+populates native keys. It now names both engines, states the reserved unit-bearing _seconds
+suffix, marks *_duration as Ollama back-compat legacy rather than a convention, and points at
+the ADR 0011 Update.
+
+CLAUDE.md ADR index: not touched for this ticket (no new number for the timing amendment); a
+0018 line was added for the separate ADR written under task 2 (provider wire-spelling
+normalization). Drift audit of the k120-k127 batch also produced karr k130 and k131.
+
+2026-09-01 19:31 ADR 0011 amended in place (Update section + narrowed Decision 1 sentence + k129 Consequences pointer); CONTEXT.md timing entry rewritten for the two key classes and the reserved _seconds suffix. Chose option (b) unit-bearing suffix + (a) guidance; (c) namespacing rejected. Drift audit of the k120-k127 batch also landed: new ADR 0018 (provider wire-spelling normalization: value object / dialect role / engine-scoped around), a TO_JSON-is-not-a-wire-shape note in ADR 0001, a symmetry note in ADR 0010, a scope back-link in ADR 0004, the CONTEXT.md hermes wording fixed (HermesTools is not retired, it is a configuration carrier), and CLAUDE.md's ADR index extended by 0018. Code drift ticketed as k130 (cached_tokens spellings belong on Langertha::Usage) and k131 (ToolCall::from_gemini still drops a JSON-string args). All edits UNCOMMITTED in the working tree: docs/adr/0001, 0004, 0010, 0011, new 0018, CONTEXT.md, CLAUDE.md. No lib/ or t/ touched.
+
+Orchestrator review 2026-09-01: committed as a4bff1b. In-place Update on ADR 0011 (suffix rule, option b + a) plus new ADR 0018 for the spelling-normalization homes. Closing.
