@@ -1,0 +1,177 @@
+---
+class: standard
+created: 2026-09-01T19:34:55Z
+id: 132
+priority: high
+status: backlog
+tags:
+- advisor
+- aki
+- engines
+- llm
+title: AKI default_model llama3-chat-8b is EOL 2026-09-30 - three engines will silently
+  fall back to MiniMax M2.5
+updated: 2026-09-01T19:34:55Z
+---
+
+
+---
+
+# langertha-llm-advisor: AKI.IO docs side, re-read 2026-09-01
+
+Docs-only pass (no API calls, no key). The worker's live-probe half is already in the tree —
+`Engine::AKIOpenAI` now composes `Role::Tools` with the `openai` default and the code comment
+records the llama3-chat-8b probe. This note covers what the DOCS say today and what changed.
+
+## Has anything changed since 2026-08-24?
+
+Docs live at `https://aki.io/docs/` (not docs.aki.io). There is **no changelog page** —
+`/changelog`, `/docs/changelog`, `/release-notes`, `/docs/release-notes`, `/status` all 404. The
+sitemap (`https://aki.io/sitemap_aki.xml`) carries `lastmod`; everything modified after
+2026-08-24 is:
+
+- 2026-09-01 `https://aki.io/` (homepage)
+- 2026-08-31 two blog posts
+- **2026-08-29** `/docs/compatibility/openai-api-compatibility/`,
+  `/docs/compatibility/for-ai-coding-agents/`, `/docs/compatibility/anthropic-api-compatibility/`
+
+Everything else is 2026-08-17 or older; the whole `llm-chat/*` (native API) tree is February 2026.
+
+Caveat stated plainly: the only Wayback snapshots are 2026-06-09 and 2026-07-10 — there is **no
+snapshot between 2026-08-24 and now**, so the 2026-08-29 edit cannot be isolated. Diffing live
+against 2026-07-10, the compatibility pages gained:
+
+- `deepseek-v4-flash-0731-284b` (1048576 / 81920) — rated **Supported** for tools
+- `qwen3.8-27b` / capability-table id `qwen3.8-chat-27b` — rated **Supported**
+- "Qwen 3.6 35B" renamed "Qwen 3.6 35B A3B"
+- a new `/v1/embeddings` section on the OpenAI page
+
+**The "Basic Support" tier composition did NOT change** — apertus-chat-70b, llama3-chat-8b,
+llama3-chat-70b were already the three warning cells on 2026-07-10. **The MiniMax M2.5 fallback
+sentence is unchanged** since at least 2026-07-10.
+
+## "Basic Support" — the docs define it NOWHERE
+
+This is the ticket's central open question and the answer is: there is no answer in the docs. The
+string occurs **only** as three bare table cells on the Agents Integration Guide. Checked: the
+rendered text around the table, the raw page HTML for a legend or footnote, every `title` /
+`data-tooltip` / `aria-label` / `alt` attribute, `https://aki.io/llms-full.txt` (89 KB, the whole
+doc set as one file) and a site-wide search. No legend, no footnote, no glossary. The page even
+disclaims the table as editorial rather than technical: *"While the API provides technical limits,
+it does not provide use-case recommendations. Use this table to route tasks to the most capable
+model."*
+
+So the semantics of "Basic Support" can only come from probing. The worker's llama3-chat-8b probe
+IS the definition of record for this repo — nothing on aki.io contradicts or confirms it.
+
+## The current per-model table (verbatim, Agents guide, read 2026-09-01)
+
+Supported: `deepseek-v4-flash-0731-284b`, `gpt-oss-120b`, `gemma4-chat-26b`,
+`kimi-k2.7-code-1100b`, `minimax-m2.5-230b`, `mistral4-119b`, `qwen3.6-chat-35b`,
+`qwen3.8-chat-27b`.
+Basic Support: `apertus-chat-70b`, `llama3-chat-8b`, `llama3-chat-70b`.
+
+## NEW AND URGENT: the default model of two engines is EOL in four weeks
+
+The homepage price list now marks:
+
+- **`llama3-chat-8b` ("Llama 3.1 8B") — EOL 30.09.26**
+- **`llama3-chat-70b` ("Llama 3.3 70B") — EOL 30.09.26**
+- `kimi-k2.7-code-1100b` — **EOL 11.09.26** (ten days)
+
+`llama3-chat-8b` is `Engine::AKIOpenAI::default_model` AND `Engine::AKIAnthropic::default_model`;
+`Engine::AKI::default_model` is `llama3_8b_chat`, the native-endpoint name of the same model. Per
+AKI's own documented behaviour ("Requests to unknown model names will fall back onto the Minimax
+M2.5 model"), after 2026-09-30 every Langertha AKI engine used with its default model will
+**silently answer from MiniMax M2.5 instead** — no error, no warning, a different model, a
+different context window (65536 -> 196680) and a different price. This is exactly the trap
+CLAUDE.md already warns about ("check `$response->model` if it matters which model replied"),
+except it will fire on the default path.
+
+Recommendation: pick a new default before 2026-09-30. `minimax-m2.5-230b` is the honest choice —
+it is what the silent fallback lands on anyway, it is rated Supported for tools, and it is the
+model the worker's earlier 2026-08-24 probe used. Ironically it is also **absent from the public
+price list** (it appears only as a vendor logo), despite being the documented fallback target.
+Worth its own ticket if this one is about to close.
+
+## Still-unresolved doc drift (unchanged since the 2026-08-17 advisor pass)
+
+- The **OpenAI compatibility page's own** "Chat Completions Parameters" list still contains only
+  `model`, `messages`, `temperature`, `max_tokens`, `stream`, `stop` — **no `tools`, no
+  `tool_choice`, no `response_format`**. Only the Agents Integration Guide documents tool calling
+  ("AKI.IO supports OpenAI-standard tool calling. Pass your tools in the `tools` array. Use
+  `\"tool_choice\": \"auto\"` ... append the tool result as a message with `role: \"tool\"` and the
+  matching `tool_call_id`."). The two pages have not been reconciled.
+- **Base URL contradiction inside single pages**: the OpenAI page's Base URL section says
+  `https://aki.io/openai/v1` while its own agent-instruction block and "Differences" section say
+  `https://aki.io/v1`. The Anthropic page's agent block says `base_url="https://aki.io/anthropic/v1"`
+  **and "Bearer token authentication"**, contradicting its own `x-api-key` section three paragraphs
+  up. (`anthropic-version` is "accepted but not required".)
+- **Model-discovery contradiction**: the Anthropic page tells you to call `/v1/models`; the Agents
+  guide says "Model discovery uses the OPENAI-compatible endpoint /v1/models (not Anthropic)".
+- **Context limits contradict themselves three ways.** Three separate `fallback_context_limits`
+  JSON blocks disagree with each other and with the model table — `llama3-chat-70b` is
+  128000 / 65536 / 131072; `minimax-m2.5-230b` is 196680 / 128000 / 196608; `gemma4-26b` is
+  256000 / 262144. Two blocks still list a stale `kimi-k2.6-1100b`. AKI's own advice:
+  *"Always query GET /v1/models first. If the API returns max_model_len: 0, fall back to the
+  'Context Limit' values above."* -> `Role::ContextSize` should not be seeded from these docs.
+- **The capability table's model IDs are not the real model IDs.** It says `gemma4-chat-26b`,
+  `qwen3.6-chat-35b`, `qwen3.8-chat-27b`; the authoritative model tables say `gemma4-26b`,
+  `qwen3.6-35b`, `qwen3.8-27b`. Three IDs in the capability table do not exist. Combined with the
+  silent fallback, copying an ID out of that table lands you on MiniMax M2.5.
+
+## /anthropic and the native /api/call — both still undocumented for tools
+
+- **`/anthropic`**: the compatibility page's parameter list is `model`, `messages`, `max_tokens`,
+  `temperature`, `top_p`/`top_k`, `stop_sequences`, `stream`, `system`. **Tool use is documented
+  nowhere on that page** — neither supported nor excluded. `Engine::AKIAnthropic` inheriting the
+  `anthropic` tool wire format is still untested-by-docs. (k124 already tracks the real bug found
+  there: arguments come back as a JSON string and are dropped.)
+- **Native `/api/call/{model}`**: explicitly not ready. Verbatim from
+  `https://aki.io/docs/llm-chat/llm-chat-context/` (lastmod 2026-02-14): *"We are currently
+  extending the chat context format with tool calling mechanisms, we will publish an updated
+  specification soon."* The only hint is
+  `https://aki.io/docs/llm-chat/llm-output-format/`: `chat_output_format: "json"` *"can embed
+  reasoning channels, multimodal output and support for tool calls"* — but the documented JSON
+  example shows only `thinking` and `content` keys, no tool-call shape.
+- There is **zero** occurrence of `hermes`, `<tool_call` or `xml` anywhere in aki.io's docs. The
+  original HermesTools composition never had a documentary basis; the flip was right.
+
+## Two capability flags AKIOpenAI advertises that the docs do not support
+
+1. **`response_format_json_schema`.** AKI documents `response_format` only on the Agents guide and
+   only as `{"type": "json_object"}`, with the note *"Ensure your system prompt explicitly asks the
+   model to output valid JSON."* **`json_schema` has zero occurrences in the entire doc set**, as do
+   "strict" and "structured outputs". `Engine::AKIOpenAI` composes `Role::ResponseFormat`, which
+   grants both `response_format_json_object` and `response_format_json_schema` (ADR 0002
+   `%ROLE_TO_CAPS`) — so `supports('response_format_json_schema')` is true and undocumented. Needs
+   a probe or an `around engine_capabilities` deleting the flag.
+2. **`reasoning_effort`.** `reasoning_effort` has **zero occurrences** in the AKI docs; no
+   `reasoning` response key is documented anywhere either (the k127 lift is real but undocumented
+   behaviour — the native docs describe `<think>` inline in `chatml` output and a
+   `{'thinking': ..., 'content': ...}` shape in `json` output, neither of which is the OpenAI-compat
+   `message.reasoning` the capture found). The flag comes free from `OpenAIBase` composing
+   `Role::ReasoningEffort`. AKI's own marketing landing page even tells agents to configure
+   `reasoning: false`.
+
+## EU / GDPR claims (for the record — these are the reason the engine exists)
+
+Homepage FAQ, verbatim: *"Inference requests are currently processed on GPU infrastructure in
+German data centers... Under the DPA, processing of customer-provided inference data is restricted
+to the EU/EEA and does not take place in third countries. AKI.IO does not use hyperscaler
+infrastructure for inference."* Zero-retention claimed: *"Prompts, inputs, and generated outputs
+are processed in volatile memory and are not logged, stored, or analyzed."* Art. 28 GDPR DPA on
+company-account setup; § 203 StGB professional-secrecy addendum available. Certifications are
+attributed carefully — *"ISO 27001, TÜVIT TSI, DIN EN 50600 and other certifications apply to the
+respective data center operators"*, i.e. to the DC operators, not to AKI.IO. The Privacy Policy
+(lastmod 2026-06-26) scopes the EU guarantee to inference only: *"certain third-party services may
+involve transfers of personal data to countries outside the EEA, including the United States"*
+(Google/LinkedIn Ads, Google/GitHub SSO). Controller AKI.IO GmbH, Berlin. B2B only.
+
+## Verdict on this ticket
+
+Docs side confirms the flip that already landed: OpenAI-standard tool calling is documented on
+/openai/v1, no XML/Hermes format has ever been documented, and nothing changed on that question
+between 2026-08-24 and today. The remaining doc-side risk is NOT tool calling — it is the
+**2026-09-30 EOL of `llama3-chat-8b`**, the default model of three engines, which will silently
+become MiniMax M2.5.
