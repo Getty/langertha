@@ -337,4 +337,91 @@ for my $case (@cases) {
   };
 }
 
+# karr k136: the reasoning fields of the assistant turn must be back on the
+# wire in the next iteration. DeepSeek returns HTTP 400 for a tool loop whose
+# earlier assistant turn lost its reasoning_content (Moonshot requires the
+# same, OpenRouter requires reasoning_details unmodified). Only the second
+# request body proves it, so this drives the loop like the cases above.
+subtest 'openai assistant echo carries reasoning fields onto the next request' => sub {
+  my $details = [ { type => 'reasoning.text', text => 'I should call get_time.',
+    signature => 'sig_1' } ];
+  my $mcp = ToolLoopMCP->new(
+    get_time => sub { { content => [ { type => 'text', text => '12:00' } ] } },
+  );
+  my $user_agent = ToolLoopUserAgent->new(
+    canned_http( {
+      id => 'chatcmpl-r1',
+      choices => [ { index => 0, finish_reason => 'tool_calls', message => {
+        role => 'assistant', content => undef,
+        reasoning_content => 'I should call get_time.',
+        reasoning_details => $details,
+        tool_calls => [ { id => 'call_1', type => 'function',
+          function => { name => 'get_time', arguments => '{}' } } ],
+      } } ],
+    } ),
+    canned_http( {
+      id => 'chatcmpl-r2',
+      choices => [ { index => 0, finish_reason => 'stop',
+        message => { role => 'assistant', content => 'It is 12:00.' } } ],
+    } ),
+  );
+  my $chat = Langertha::Chat->new(
+    engine => Langertha::Engine::OpenAI->new(
+      api_key => 'test-key', model => 'gpt-x', user_agent => $user_agent,
+    ),
+    mcp_servers => [$mcp],
+  );
+
+  is( $chat->simple_chat_with_tools('What time is it?'), 'It is 12:00.',
+    'the loop ran to its final answer' );
+
+  my $body = $json->decode( $user_agent->sent->[1]->content );
+  my ($echo) = grep { ( $_->{role} // '' ) eq 'assistant' } @{ $body->{messages} // [] };
+  ok( $echo, 'turn 2 carries the assistant echo' );
+  is( $echo->{reasoning_content}, 'I should call get_time.',
+    'reasoning_content is back on the wire' );
+  is_deeply( $echo->{reasoning_details}, $details,
+    'reasoning_details round-tripped unmodified, signature included' );
+  ok( !exists $echo->{reasoning},
+    'a reasoning spelling the provider never sent is not invented' );
+};
+
+# The counterpart: a provider that sends no reasoning must produce the same
+# echo it always did -- an allowlist, not a passthrough of the whole message.
+subtest 'openai assistant echo without reasoning is unchanged' => sub {
+  my $mcp = ToolLoopMCP->new(
+    get_time => sub { { content => [ { type => 'text', text => '12:00' } ] } },
+  );
+  my $user_agent = ToolLoopUserAgent->new(
+    canned_http( {
+      id => 'chatcmpl-p1',
+      choices => [ { index => 0, finish_reason => 'tool_calls', message => {
+        role => 'assistant', content => undef, refusal => undef,
+        tool_calls => [ { id => 'call_1', type => 'function',
+          function => { name => 'get_time', arguments => '{}' } } ],
+      } } ],
+    } ),
+    canned_http( {
+      id => 'chatcmpl-p2',
+      choices => [ { index => 0, finish_reason => 'stop',
+        message => { role => 'assistant', content => 'It is 12:00.' } } ],
+    } ),
+  );
+  my $chat = Langertha::Chat->new(
+    engine => Langertha::Engine::OpenAI->new(
+      api_key => 'test-key', model => 'gpt-x', user_agent => $user_agent,
+    ),
+    mcp_servers => [$mcp],
+  );
+
+  is( $chat->simple_chat_with_tools('What time is it?'), 'It is 12:00.',
+    'the loop ran to its final answer' );
+
+  my $body = $json->decode( $user_agent->sent->[1]->content );
+  my ($echo) = grep { ( $_->{role} // '' ) eq 'assistant' } @{ $body->{messages} // [] };
+  is_deeply( [ sort keys %$echo ], [qw( content role tool_calls )],
+    'exactly role/content/tool_calls -- no reasoning_content => undef, no refusal' );
+};
+
+
 done_testing;

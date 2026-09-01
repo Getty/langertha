@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - The assistant echo in a tool loop carries the reasoning fields back
+      (karr k136). Role::Tools::format_tool_results rebuilt the echo for the
+      openai dialect (~20 engines) from role/content/tool_calls only, dropping
+      reasoning_content, reasoning and reasoning_details; the ollama branch
+      dropped message.thinking the same way. DeepSeek answers HTTP 400 on the
+      second iteration of a tool loop when reasoning_content is missing while
+      tools are present, so Engine::DeepSeek plus chat_with_tools_f, Chat or
+      Raider failed outright; Moonshot, OpenRouter, Mistral and xAI carry the
+      same obligation in softer forms. Those keys are now echoed when the
+      provider sends them, and nothing else: a response without them produces
+      exactly the message it produced before.
+
     - Engine::AKIOpenAI does native OpenAI tool calling (karr #102). The engine
       no longer composes Role::HermesTools and no longer forces
       tool_wire_format 'hermes': tools go out as the native `tools` array and

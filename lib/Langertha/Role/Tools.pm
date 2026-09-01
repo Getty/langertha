@@ -306,10 +306,18 @@ sub format_tool_results {
   }
 
   if ( $fmt eq 'ollama' ) {
+    my $msg  = $data->{message};
+    my %echo = (
+      role       => 'assistant',
+      content    => $msg->{content},
+      tool_calls => $msg->{tool_calls},
+    );
+    # Ollama returns the chain-of-thought in message.thinking; echo it back for
+    # the same reason the openai branch below echoes reasoning_content
+    # (karr k136).
+    $echo{thinking} = $msg->{thinking} if defined $msg->{thinking};
     return (
-      { role       => 'assistant',
-        content    => $data->{message}{content},
-        tool_calls => $data->{message}{tool_calls} },
+      \%echo,
       map {
         Langertha::ToolResult->new( content => ( $_->{result}{content} // [] ) )->to('ollama')
       } @$results,
@@ -364,11 +372,25 @@ sub format_tool_results {
   }
 
   # openai (default)
-  my $choice = $data->{choices}[0];
+  my $msg  = $data->{choices}[0]{message};
+  my %echo = (
+    role       => 'assistant',
+    content    => $msg->{content},
+    tool_calls => $msg->{tool_calls},
+  );
+  # Carry the provider's reasoning fields back into the assistant echo.
+  # DeepSeek returns HTTP 400 on the next iteration of a tool loop when
+  # reasoning_content is not sent back while tools are present; Moonshot
+  # (kimi) requires the same within one tool-call loop, OpenRouter requires
+  # reasoning_details to round-trip unmodified, Mistral loses output quality
+  # and xAI misses the prompt cache without it. Deliberately an allowlist and
+  # not the whole message: some OpenAI-compatible servers reject unknown keys
+  # on an inbound assistant message (karr k136).
+  for my $key (qw( reasoning_content reasoning reasoning_details )) {
+    $echo{$key} = $msg->{$key} if defined $msg->{$key};
+  }
   return (
-    { role       => 'assistant',
-      content    => $choice->{message}{content},
-      tool_calls => $choice->{message}{tool_calls} },
+    \%echo,
     map {
       Langertha::ToolResult->new(
         id      => ( $_->{tool_call}{id} // '' ),
@@ -385,6 +407,11 @@ sub format_tool_results {
 Assembles tool execution results into the provider-shaped message envelope for
 the next turn: the assistant echo of the prior turn plus one
 L<Langertha::ToolResult> block per result (arity varies by format).
+
+For the C<openai> and C<ollama> dialects the echo also carries the provider's
+reasoning back when the turn had it — C<reasoning_content>, C<reasoning>,
+C<reasoning_details> and C<thinking> respectively — because DeepSeek rejects a
+tool loop whose earlier assistant turn lost it.
 
 Always returns a LIST, for every C<tool_wire_format> — the callers append it
 straight onto the conversation with
