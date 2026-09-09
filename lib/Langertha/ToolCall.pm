@@ -119,9 +119,13 @@ sub from_gemini {
   return undef unless ref($fc) eq 'HASH';
   my $name = $fc->{name} // '';
   return undef unless length $name;
+  # Google-native ships args as an object, but Vertex-style proxies / OpenRouter
+  # / LM Studio can ship it as a JSON string. Route args through the same decoder
+  # the other constructors use so a stringified object is decoded rather than
+  # silently dropped to {}. -- karr k131 (symmetric to k124's from_anthropic fix)
   return $class->new(
     name      => $name,
-    arguments => ( ref( $fc->{args} ) eq 'HASH' ? $fc->{args} : {} ),
+    arguments => _decode_args( $fc->{args} ),
     id        => ( $fc->{id} // '' ),
   );
 }

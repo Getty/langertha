@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - ToolCall::from_gemini decodes a JSON-string args object (karr k131).
+      A Gemini functionCall whose `args` arrive as a JSON string — Vertex-style
+      proxies, OpenRouter or LM Studio re-encoding one dialect inside another —
+      was silently reduced to {}, so the model called the tool and it ran with
+      no arguments and no warning. from_gemini now routes args through the same
+      _decode_args door the other four inbound constructors use, symmetric with
+      the k124 fix for from_anthropic. Google-native (args as an object) is
+      unaffected; this is a compatibility-shim exposure.
+
     - The assistant echo in a tool loop carries the reasoning fields back
       (karr k136). Role::Tools::format_tool_results rebuilt the echo for the
       openai dialect (~20 engines) from role/content/tool_calls only, dropping

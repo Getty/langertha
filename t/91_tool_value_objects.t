@@ -113,6 +113,25 @@ use Langertha::ToolChoice;
   is( $call->arguments->{b}, 15, 'string input decoded (b)' );
 }
 
+# from_gemini with args as a HASH (Google-native functionCall shape)
+{
+  my $call = Langertha::ToolCall->from_gemini({
+    functionCall => { name => 'calc', args => { x => 1, y => 2 } },
+  });
+  ok( $call, 'parsed' );
+  is( $call->arguments->{y}, 2, 'object args mapped' );
+}
+
+# from_gemini with args as a JSON *string* (Vertex-style proxy / OpenRouter / LM Studio) -- karr k131
+{
+  my $call = Langertha::ToolCall->from_gemini({
+    functionCall => { name => 'add', args => '{"a": 7, "b": 15}' },
+  });
+  ok( $call, 'parsed gemini functionCall with JSON-string args' );
+  is( $call->arguments->{a}, 7,  'string args decoded (a)' );
+  is( $call->arguments->{b}, 15, 'string args decoded (b)' );
+}
+
 # extract from openai response
 {
   my @calls = Langertha::ToolCall->extract_sniff({
