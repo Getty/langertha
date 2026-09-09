@@ -164,6 +164,99 @@ subtest 'chat_request - reasoning_effort (nested)' => sub {
     ok( !exists $pbody->{reasoning}, 'no reasoning when reasoning_effort unset' );
 };
 
+# karr #141 part 1: the Responses API has no response_format param. Structured
+# output goes under text.format, and the json_schema object is FLAT there (the
+# Chat Completions json_schema wrapper is pulled up one level).
+subtest 'chat_request - response_format json_schema -> text.format (flat)' => sub {
+    my $schema = {
+        type       => 'object',
+        properties => { answer => { type => 'string' } },
+        required   => ['answer'],
+        additionalProperties => JSON->false,
+    };
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+        response_format => {
+            type        => 'json_schema',
+            json_schema => {
+                name   => 'answer_schema',
+                schema => $schema,
+                strict => JSON->true,
+            },
+        },
+    );
+    my $body = $json->decode(
+        $engine->chat_request([{ role => 'user', content => 'Hi' }])->content
+    );
+
+    ok( !exists $body->{response_format},
+        'no response_format key on the Responses wire' );
+    ok( $body->{text}{format}, 'text.format present' );
+    is( $body->{text}{format}{type}, 'json_schema', 'text.format.type is json_schema' );
+    is( $body->{text}{format}{name}, 'answer_schema', 'json_schema name lifted flat' );
+    ok( $body->{text}{format}{strict}, 'strict lifted flat and true' );
+    ok( !exists $body->{text}{format}{json_schema},
+        'no nested json_schema wrapper on the Responses wire' );
+    is( $json->encode( $body->{text}{format}{schema} ), $json->encode($schema),
+        'schema lifted flat (not nested), byte-identical to the input schema' );
+};
+
+# JSON-mode: text.format carries a bare type, still no response_format key.
+subtest 'chat_request - response_format json_object -> text.format' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+        response_format => { type => 'json_object' },
+    );
+    my $body = $json->decode(
+        $engine->chat_request([{ role => 'user', content => 'Hi' }])->content
+    );
+    ok( !exists $body->{response_format}, 'no response_format key' );
+    is( $body->{text}{format}{type}, 'json_object', 'text.format.type is json_object' );
+};
+
+# Per-request control beats the engine attribute (same precedence as before),
+# and with no response_format at all there is no text field on the wire.
+subtest 'chat_request - response_format via controls, and absent' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+    );
+
+    my $body = $json->decode(
+        $engine->chat_request(
+            [{ role => 'user', content => 'Hi' }],
+            controls => { response_format => { type => 'json_object' } },
+        )->content
+    );
+    is( $body->{text}{format}{type}, 'json_object',
+        'per-request control response_format lands under text.format' );
+    ok( !exists $body->{response_format}, 'no response_format key from the control path' );
+
+    my $plain = $json->decode(
+        $engine->chat_request([{ role => 'user', content => 'Hi' }])->content
+    );
+    ok( !exists $plain->{text}, 'no text field when no response_format is set' );
+    ok( !exists $plain->{response_format}, 'no response_format field either' );
+};
+
+# karr #141 part 2: stream_format returns undef, so the engine must not
+# advertise streaming even though it inherits Role::Streaming via Engine::OpenAI.
+subtest 'streaming capability is off (stream_format undef)' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+    );
+    ok( !$engine->supports('streaming'), 'streaming capability off' );
+    ok( !$engine->engine_capabilities->{streaming}, 'no streaming flag in registry' );
+    # The json_schema structured-output capability is genuinely native here and
+    # must remain advertised (it was only emitted under the wrong wire key).
+    ok( $engine->supports('response_format_json_schema'),
+        'response_format_json_schema stays advertised' );
+    ok( $engine->supports('chat'), 'chat capability intact' );
+};
+
 subtest 'chat_response - text response' => sub {
     my $engine = Langertha::Engine::OpenAIResponses->new(
         api_key => 'test-key',

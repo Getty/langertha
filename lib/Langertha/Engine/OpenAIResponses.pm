@@ -127,6 +127,15 @@ sub chat_request {
         push @input, $self->_normalize_input_item($msg);
     }
 
+    # Structured output: the Responses API has no response_format param; it
+    # carries the format under text.format (a flat json_schema, not the nested
+    # Chat Completions shape). Per-request control beats the engine attribute.
+    my $response_format =
+        exists $controls->{response_format} ? $controls->{response_format}
+      : ( $self->can('has_response_format') && $self->has_response_format )
+                                            ? $self->response_format
+      :                                       undef;
+
     my @request_args = (
         defined $self->chat_model ? ( model => $self->chat_model ) : (),
         $self->has_system_prompt ? ( instructions => $self->system_prompt ) : (),
@@ -134,11 +143,9 @@ sub chat_request {
         exists $controls->{max_tokens}
             ? ( max_output_tokens => $controls->{max_tokens} )
             : ( $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : () ),
-        exists $controls->{response_format}
-            ? ( response_format => $controls->{response_format} )
-            : ( ($self->can('has_response_format') && $self->has_response_format)
-                ? ( response_format => $self->response_format )
-                : () ),
+        defined $response_format
+            ? ( text => { format => $self->_responses_text_format($response_format) } )
+            : (),
         exists $controls->{temperature}
             ? ( temperature => $controls->{temperature} )
             : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
@@ -159,6 +166,25 @@ sub _normalize_input_item {
     my ( $self, $msg ) = @_;
     # Pass through for now — expand if Responses gains multimodal content blocks
     return $msg;
+}
+
+# Translate an OpenAI Chat-Completions response_format hash into the value the
+# Responses API wants under text.format. On the Chat wire the schema is nested
+# (`{ type => 'json_schema', json_schema => { name, schema, strict } }`); the
+# Responses wire pulls that inner object up one level (flat json_schema). A
+# json_object stays a bare type; anything unrecognized (or already flat) passes
+# through unchanged so we never mangle a shape we do not model.
+sub _responses_text_format {
+    my ( $self, $rf ) = @_;
+    return $rf unless ref $rf eq 'HASH';
+    my $type = $rf->{type} // '';
+    if ( $type eq 'json_schema' && ref $rf->{json_schema} eq 'HASH' ) {
+        return { %{ $rf->{json_schema} }, type => 'json_schema' };
+    }
+    if ( $type eq 'json_object' ) {
+        return { type => 'json_object' };
+    }
+    return $rf;
 }
 
 sub chat_response {
@@ -243,6 +269,16 @@ sub api_key_env { 'LANGERTHA_OPENAI_API_KEY' }
 sub _build_reasoning_wire_format { 'responses' }
 
 sub stream_format { return undef }  # Streaming not supported
+
+# stream_format returns undef, so this engine cannot stream — but it inherits
+# Role::Streaming (via Engine::OpenAI), which would advertise the flag. Clear it
+# so supports('streaming') tells the truth (ADR 0002 escape hatch).
+around engine_capabilities => sub {
+    my ( $orig, $self, @rest ) = @_;
+    my $caps = $self->$orig(@rest);
+    delete $caps->{streaming};
+    return $caps;
+};
 
 __PACKAGE__->meta->make_immutable;
 

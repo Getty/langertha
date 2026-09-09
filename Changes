@@ -2,6 +2,17 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::OpenAIResponses emits structured output under text.format and no
+      longer advertises streaming (karr #141). The Responses API has no
+      response_format parameter — structured output goes under text.format, with
+      the json_schema object flat rather than nested — so the engine was sending
+      a body field the API does not define; it now translates the
+      Chat-Completions response_format into text.format. The engine also
+      inherited Role::Streaming's `streaming` capability while stream_format is
+      undef, so supports('streaming') answered true and a caller routing on it
+      reached an inherited chat-completions stream path; an around
+      engine_capabilities now clears the flag.
+
     - ToolCall::from_gemini decodes a JSON-string args object (karr k131).
       A Gemini functionCall whose `args` arrive as a JSON string — Vertex-style
       proxies, OpenRouter or LM Studio re-encoding one dialect inside another —
