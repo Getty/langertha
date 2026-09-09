@@ -346,10 +346,10 @@ subtest 'Anthropic new parameters' => sub {
   # With inference_geo
   my $engine3 = Langertha::Engine::Anthropic->new(
     api_key => 'test-key',
-    inference_geo => 'eu',
+    inference_geo => 'us',
   );
   ok($engine3->has_inference_geo, 'inference_geo is set');
-  is($engine3->inference_geo, 'eu', 'inference_geo value is correct');
+  is($engine3->inference_geo, 'us', 'inference_geo value is correct');
 };
 
 subtest 'list_models URL correctness for all OpenAICompatible engines' => sub {

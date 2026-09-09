@@ -117,13 +117,26 @@ has inference_geo => (
 
 =attr inference_geo
 
-Controls data residency for inference. Values: C<us>, C<eu>. When set, passed
-as the C<inference_geo> parameter to keep processing in the specified region.
+Controls data residency for inference on the first-party Claude API. The API
+accepts exactly two values: C<global> (the default) and C<us>. There is B<no>
+EU inference-geo on the first-party API; a value such as C<eu> is not part of
+the enum and is rejected. It is only honoured on Claude 4.6+ models; older
+models return a 400 regardless of the value.
 
     my $claude = Langertha::Engine::Anthropic->new(
         api_key       => $ENV{ANTHROPIC_API_KEY},
-        inference_geo => 'eu',
+        inference_geo => 'us',
     );
+
+The response reports where the request actually ran via
+C<usage.inference_geo>, and C<us> residency is billed at 1.1x the base rate.
+
+EU data residency is not available this way. For EU-hosted inference use one of
+the EU engines Langertha already ships — L<Langertha::Engine::AKI>,
+L<Langertha::Engine::Mistral>, L<Langertha::Engine::Scaleway>,
+L<Langertha::Engine::TSystems> or L<Langertha::Engine::Hetzner> — or reach
+Claude through the regional endpoints of Amazon Bedrock or Google Vertex AI,
+where C<inference_geo> does not apply.
 
 =cut
 

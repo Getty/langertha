@@ -2,6 +2,16 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::Anthropic inference_geo documents only the values the first-party
+      API offers (karr #134). The =attr POD and SYNOPSIS promised
+      inference_geo => 'eu' as an EU data-residency guarantee, but Anthropic's
+      first-party API accepts only 'global' (the default) and 'us' — so the 'eu'
+      value was a false compliance assurance copy-pasteable straight out of the
+      docs. The POD now states the real value set, notes the Claude-4.6+
+      requirement and the 1.1x 'us' billing, and points EU users at the
+      EU-hosted engines Langertha already ships. No behaviour change; the
+      attribute is unchanged.
+
     - Engine::OpenAIResponses emits structured output under text.format and no
       longer advertises streaming (karr #141). The Responses API has no
       response_format parameter — structured output goes under text.format, with

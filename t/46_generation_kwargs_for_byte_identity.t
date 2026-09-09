@@ -125,10 +125,10 @@ is( body($ant_all),
   'Anthropic body: temperature + reasoning + cache (all via helper)' );
 
 my $ant_geo = Langertha::Engine::Anthropic->new(
-  api_key => 'k', model => 'claude-3-5-sonnet-20240620', response_size => 2048, inference_geo => 'eu',
+  api_key => 'k', model => 'claude-3-5-sonnet-20240620', response_size => 2048, inference_geo => 'us',
 );
 is( body($ant_geo),
-  q({"inference_geo":"eu","max_tokens":2048,"messages":[{"content":"hi","role":"user"}],"model":"claude-3-5-sonnet-20240620"}),
+  q({"inference_geo":"us","max_tokens":2048,"messages":[{"content":"hi","role":"user"}],"model":"claude-3-5-sonnet-20240620"}),
   'Anthropic body: inference_geo stays inline (not in helper)' );
 
 is( body( $ant_bare, controls => { temperature => 0.7, reasoning_effort => 'medium', prompt_cache => 1 } ),
