@@ -45,7 +45,7 @@ today; native paths are left untouched.
    `response_format => { type => 'json_schema', json_schema => { %{ $tool->to_json_schema }, strict => true } }`,
    loose-parses the returned content (`decode_loose_json`), and attaches a `synthetic`
    `Langertha::ToolCall` carrying the parsed arguments.
-   (Post-k139 Perplexity speaks the Agent API — the Open-Responses envelope, ADR 0019 — but
+   (Post-k139 Perplexity speaks the Agent API — the Open-Responses envelope, ADR 0020 — but
    still advertises `response_format_json_schema` and not `tool_choice_named`, so this direction
    still fires and Perplexity remains its only exemplar in the tree.)
 

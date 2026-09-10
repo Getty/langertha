@@ -1,4 +1,4 @@
-# ADR 0019 — The Open-Responses wire envelope is a composed role; divergent parents meet in overridable hooks
+# ADR 0020 — The Open-Responses wire envelope is a composed role; divergent parents meet in overridable hooks
 
 - Status: accepted
 - Date: 2026-09-10
