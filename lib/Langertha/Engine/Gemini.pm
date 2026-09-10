@@ -317,12 +317,17 @@ sub chat_request {
     $generation_config{temperature} = $self->temperature;
   }
 
-  # Translate response_format -> Gemini's generationConfig.responseSchema /
+  # Translate response_format -> Gemini's generationConfig.responseJsonSchema /
   # responseMimeType. Accepts the OpenAI-shape response_format hash so that
   # callers can hand the same payload to any engine. A per-request
   # response_format (chat_f) beats the engine attribute, and is removed from
   # the extras either way: generateContent has no top-level response_format
   # field and would carry it as dead weight while the schema went missing.
+  # chat_f hands us an OpenAI-shaped json_schema.schema (already JSON Schema),
+  # so it goes into responseJsonSchema — the field that accepts JSON Schema
+  # directly. The older responseSchema is deprecated and wanted Google's own
+  # Schema proto dialect, not raw JSON Schema (ai.google.dev/api/generate-content,
+  # verified 2026-09-01 — karr k140). responseMimeType stays required.
   my $rf = exists $controls->{response_format}
     ? delete $controls->{response_format}
     : exists $extra{response_format}
@@ -336,8 +341,8 @@ sub chat_request {
     elsif ( $type eq 'json_schema'
         && ref( $rf->{json_schema} ) eq 'HASH'
         && ref( $rf->{json_schema}{schema} ) eq 'HASH' ) {
-      $generation_config{responseMimeType} = 'application/json';
-      $generation_config{responseSchema}   = $rf->{json_schema}{schema};
+      $generation_config{responseMimeType}     = 'application/json';
+      $generation_config{responseJsonSchema}   = $rf->{json_schema}{schema};
     }
   }
 
@@ -494,12 +499,14 @@ sub chat_stream_request {
     $generation_config{temperature} = $self->temperature;
   }
 
-  # Translate response_format -> Gemini's generationConfig.responseSchema /
+  # Translate response_format -> Gemini's generationConfig.responseJsonSchema /
   # responseMimeType. Same wire as chat_request: a per-request
   # response_format (chat_stream_realtime_f) beats the engine attribute,
   # and is removed from the extras either way — generateContent has no
   # top-level response_format field and would carry it as dead weight
-  # while the schema went missing.
+  # while the schema went missing. responseJsonSchema is the current field that
+  # accepts raw JSON Schema; the deprecated responseSchema wanted Google's Schema
+  # proto dialect instead (see chat_request — karr k140).
   my $rf = exists $controls->{response_format}
     ? delete $controls->{response_format}
     : exists $extra{response_format}
@@ -513,8 +520,8 @@ sub chat_stream_request {
     elsif ( $type eq 'json_schema'
         && ref( $rf->{json_schema} ) eq 'HASH'
         && ref( $rf->{json_schema}{schema} ) eq 'HASH' ) {
-      $generation_config{responseMimeType} = 'application/json';
-      $generation_config{responseSchema}   = $rf->{json_schema}{schema};
+      $generation_config{responseMimeType}     = 'application/json';
+      $generation_config{responseJsonSchema}   = $rf->{json_schema}{schema};
     }
   }
 

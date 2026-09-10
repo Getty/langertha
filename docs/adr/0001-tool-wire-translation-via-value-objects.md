@@ -73,6 +73,13 @@ seam (`tool_wire_format`, **Tool**, **ToolCall**, **ToolResult**, **Result envel
   any wire that is not Anthropic's it is the wrong dialect, emitted silently, where it used to
   be a loud croak. The tag remains the only outbound door: `Tool->to($fmt)` /
   `->format_list($fmt, \@mcp_tools)`.
+- **A per-format serializer may also key on the schema *shape*, not only on the tag.** k133 gave
+  `Tool->to_anthropic` a top-level `strict: true` — but only for a **closed** `input_schema`
+  (`additionalProperties:false` + a non-empty `required`); it stays silent otherwise, because
+  Anthropic 400s on `strict` over an open schema. The decision is keyed on the schema, not on
+  any engine or `tool_wire_format` value, so it lives inside the value object exactly like the
+  rest of `to_anthropic` — the "value object owns its wire shape" principle of this ADR,
+  extended to a per-schema wire toggle. See the ADR 0005 Update (k133).
 
 ## Future work
 

@@ -9,7 +9,7 @@
 #
 # karr #48: Gemini::chat_request had the identical defect — a per-request
 # response_format landed as a top-level "response_format" on the generateContent
-# body while generationConfig.responseSchema stayed empty.
+# body while generationConfig.responseJsonSchema stayed empty.
 
 use strict;
 use warnings;
@@ -66,7 +66,13 @@ sub wire {
   );
 }
 
-# --- Anthropic: per-request json_schema ---------------------------------
+# --- Anthropic: per-request json_schema (NATIVE output_config.format) ----
+# k133 / ADR 0005 amendment: the first-party Claude Messages API has native
+# structured output. Engine::Anthropic emits it as output_config.format instead
+# of the legacy synthesized-tool + forced tool_choice rewrite — no tools,
+# no tool_choice, no 400 on Fable/Mythos 5.1 (which reject forced tool use).
+# Sabotage check: revert _native_structured_output to 0 and these go red
+# (tools/tool_choice reappear, output_config.format vanishes).
 {
   my $data = wire( anthropic(), response_format => {
     type        => 'json_schema',
@@ -75,26 +81,43 @@ sub wire {
 
   ok( !exists $data->{response_format},
     'Anthropic: per-request response_format is consumed, not passed to the wire' );
-  is_deeply( $data->{tools}, [{
-    name         => 'extract',
-    description  => 'extractor',
-    input_schema => $SCHEMA,
-  }], 'Anthropic: per-request json_schema becomes a synthesized tool' );
-  is_deeply( $data->{tool_choice}, { type => 'tool', name => 'extract' },
-    'Anthropic: tool_choice is forced onto the synthesized tool' );
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
+    'Anthropic: per-request json_schema becomes native output_config.format' );
+  ok( !exists $data->{tools} && !exists $data->{tool_choice},
+    'Anthropic: native structured output injects no synthesized tool / tool_choice' );
 }
 
-# --- Anthropic: per-request json_object ---------------------------------
+# --- Anthropic: per-request json_object (open-object native schema) -------
 {
   my $data = wire( anthropic(), response_format => { type => 'json_object' } );
 
   ok( !exists $data->{response_format},
     'Anthropic: per-request json_object is consumed, not passed to the wire' );
-  is( $data->{tool_choice}{name}, '__langertha_response_format__',
-    'Anthropic: json_object forces the generic synthesized tool' );
-  is_deeply( $data->{tools}[0]{input_schema},
-    { type => 'object', additionalProperties => JSON->true },
-    'Anthropic: json_object synthesizes an open object schema' );
+  is_deeply( $data->{output_config}{format},
+    { type => 'json_schema', schema => { type => 'object', additionalProperties => JSON->true } },
+    'Anthropic: json_object maps onto an open-object native json_schema' );
+  ok( !exists $data->{tools} && !exists $data->{tool_choice},
+    'Anthropic: json_object native output injects no synthesized tool' );
+}
+
+# --- Anthropic: output_config.effort and .format MERGE, never clobber -----
+# k133 point 3: Langertha::Reasoning::to_anthropic already owns output_config
+# for reasoning effort. Native structured output must fold format INTO that
+# hash, not replace it. Sabotage check: make _merge_output_config_format
+# overwrite instead of merge and effort disappears here.
+{
+  my $data = wire(
+    anthropic( reasoning_effort => 'high' ),
+    response_format => {
+      type        => 'json_schema',
+      json_schema => { name => 'extract', schema => $SCHEMA },
+    },
+  );
+
+  is( $data->{output_config}{effort}, 'high',
+    'Anthropic: output_config.effort survives alongside .format (merged, not clobbered)' );
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
+    'Anthropic: output_config.format is present alongside .effort' );
 }
 
 # --- Anthropic: per-request beats the engine attribute ------------------
@@ -108,12 +131,8 @@ sub wire {
     json_schema => { name => 'per_request', schema => $SCHEMA },
   });
 
-  is( $data->{tool_choice}{name}, 'per_request',
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
     'Anthropic: per-request response_format wins over the engine attribute' );
-  is( scalar @{ $data->{tools} }, 1,
-    'Anthropic: only the per-request schema is synthesized, not both' );
-  is_deeply( $data->{tools}[0]{input_schema}, $SCHEMA,
-    'Anthropic: the synthesized tool carries the per-request schema' );
 }
 
 # --- Anthropic: engine attribute alone still works ----------------------
@@ -123,16 +142,15 @@ sub wire {
     json_schema => { name => 'engine_level', schema => $OTHER_SCHEMA },
   }));
 
-  is( $data->{tool_choice}{name}, 'engine_level',
-    'Anthropic: engine-attribute response_format still translates' );
-  is_deeply( $data->{tools}[0]{input_schema}, $OTHER_SCHEMA,
-    'Anthropic: engine-attribute schema reaches the synthesized tool' );
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $OTHER_SCHEMA },
+    'Anthropic: engine-attribute response_format still translates to output_config.format' );
 }
 
-# --- Anthropic: the tool_use answer is lifted back into content ---------
-# The per-request path must land the structured payload the same way the
-# engine-attribute path does (ADR 0005): chat_request tells its response
-# callback that it routed a response_format through a synthesized tool.
+# --- Anthropic: the native structured payload arrives as Response.content -
+# ADR 0005 paragraph 3 asks every structured-output path to land the payload
+# the same way. Native structured output emits the JSON as an ordinary text
+# block, so chat_response's existing text join puts it in Response.content with
+# no tool_use lift needed (like Gemini's responseJsonSchema below).
 {
   my $engine  = anthropic();
   my $request = $engine->chat_request( $engine->chat_messages('testprompt'),
@@ -147,18 +165,16 @@ sub wire {
       id      => 'msg_1',
       model   => 'claude-x',
       content => [ {
-        type  => 'tool_use',
-        id    => 'toolu_1',
-        name  => 'extract',
-        input => { city => 'Wiesbaden' },
+        type => 'text',
+        text => '{"city":"Wiesbaden"}',
       } ],
     })
   );
 
   my $response = $request->response_call->($http);
-  my $lifted = eval { $json->decode( $response->content ) };
-  is_deeply( $lifted, { city => 'Wiesbaden' },
-    'Anthropic: per-request structured output is lifted into Response.content' );
+  my $structured = eval { $json->decode( $response->content ) };
+  is_deeply( $structured, { city => 'Wiesbaden' },
+    'Anthropic: native structured output arrives as Response.content JSON' );
 }
 
 # --- Ollama: per-request json_schema ------------------------------------
@@ -221,8 +237,10 @@ sub wire {
 
   ok( !exists $data->{response_format},
     'Gemini: per-request response_format is consumed, not passed to the wire' );
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
-    'Gemini: per-request json_schema becomes generationConfig.responseSchema' );
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
+    'Gemini: per-request json_schema becomes generationConfig.responseJsonSchema' );
+  ok( !exists $data->{generationConfig}{responseSchema},
+    'Gemini: deprecated responseSchema is not emitted (k140)' );
   is( $data->{generationConfig}{responseMimeType}, 'application/json',
     'Gemini: per-request json_schema sets responseMimeType' );
 }
@@ -235,8 +253,8 @@ sub wire {
     'Gemini: per-request json_object is consumed, not passed to the wire' );
   is( $data->{generationConfig}{responseMimeType}, 'application/json',
     'Gemini: per-request json_object sets responseMimeType' );
-  ok( !exists $data->{generationConfig}{responseSchema},
-    'Gemini: json_object leaves responseSchema unset' );
+  ok( !exists $data->{generationConfig}{responseJsonSchema},
+    'Gemini: json_object leaves responseJsonSchema unset' );
 }
 
 # --- Gemini: per-request beats the engine attribute ---------------------
@@ -250,7 +268,7 @@ sub wire {
     json_schema => { name => 'per_request', schema => $SCHEMA },
   });
 
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
     'Gemini: per-request response_format wins over the engine attribute' );
 }
 
@@ -261,14 +279,14 @@ sub wire {
     json_schema => { name => 'engine_level', schema => $OTHER_SCHEMA },
   }));
 
-  is_deeply( $data->{generationConfig}{responseSchema}, $OTHER_SCHEMA,
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $OTHER_SCHEMA,
     'Gemini: engine-attribute response_format still translates' );
 }
 
 # --- Gemini: the structured payload converges on Response.content -------
 # ADR 0005 paragraph 3 asks every structured-output path to land the payload
 # the same way. Gemini needs no counterpart to the Anthropic tool_use lift:
-# responseSchema makes the model emit the JSON as an ordinary text part, so
+# responseJsonSchema makes the model emit the JSON as an ordinary text part, so
 # chat_response's existing text join already puts it in Response.content.
 {
   my $engine  = gemini();

@@ -129,7 +129,7 @@ around engine_capabilities => sub {
 };
 
 # Per-model tool_choice reality on Kimi's OpenAI-compatible endpoint
-# (ADR 0002 amendment, pending ADR 0019; platform.kimi.ai/docs/guide/use-tool-choice):
+# (ADR 0002 amendment, ADR 0019; platform.kimi.ai/docs/guide/use-tool-choice):
 #   * kimi-k3 (the engine default) always thinks, and forcing a *specific*
 #     tool is incompatible with thinking -> a named tool_choice returns 400.
 #     Clear tool_choice_named there (auto/any/none stay).

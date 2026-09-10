@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use Test2::V0;
-use JSON::MaybeXS qw( encode_json );
+use JSON::MaybeXS qw( encode_json is_bool );
 
 use Langertha::Tool;
 use Langertha::ToolCall;
@@ -19,6 +19,49 @@ use Langertha::ToolChoice;
   is( $t->to_openai->{function}{parameters}{required}[0], 'path', 'openai parameters' );
   is( $t->to_anthropic->{name}, 'list_files', 'anthropic name' );
   is( $t->to_anthropic->{input_schema}{type}, 'object', 'anthropic schema' );
+  # k133: strict tool use is emitted ONLY for a closed schema
+  # (additionalProperties:false + non-empty required). This schema has
+  # required but no additionalProperties, so strict must NOT appear.
+  ok( !exists $t->to_anthropic->{strict},
+    'anthropic: no strict without additionalProperties:false' );
+}
+
+# --- Tool: strict tool use (k133) ---
+{
+  # Closed schema -> strict:true. Sabotage check: drop the _schema_is_strict
+  # guard in Tool->to_anthropic and the open-schema cases below emit strict too.
+  my $closed = Langertha::Tool->new(
+    name        => 'extract',
+    input_schema => {
+      type                 => 'object',
+      properties           => { city => { type => 'string' } },
+      required             => ['city'],
+      additionalProperties => 0,
+    },
+  );
+  my $anth = $closed->to_anthropic;
+  ok( $anth->{strict}, 'anthropic: closed schema (additionalProperties:false + required) emits strict:true' );
+  ok( is_bool($anth->{strict}), 'anthropic: strict is a JSON boolean, not a Perl 1' );
+
+  # additionalProperties:false but NO required -> not strict-eligible.
+  my $no_required = Langertha::Tool->new(
+    name        => 'x',
+    input_schema => { type => 'object', properties => {}, additionalProperties => 0 },
+  );
+  ok( !exists $no_required->to_anthropic->{strict},
+    'anthropic: additionalProperties:false without required is not strict' );
+
+  # additionalProperties:true + required -> open schema, not strict.
+  my $open = Langertha::Tool->new(
+    name        => 'y',
+    input_schema => { type => 'object', required => ['a'], additionalProperties => 1 },
+  );
+  ok( !exists $open->to_anthropic->{strict},
+    'anthropic: additionalProperties:true is not strict even with required' );
+
+  # Default (schemaless) tool -> no strict.
+  ok( !exists Langertha::Tool->new( name => 'z' )->to_anthropic->{strict},
+    'anthropic: schemaless tool is not strict' );
 }
 
 # from_openai roundtrip

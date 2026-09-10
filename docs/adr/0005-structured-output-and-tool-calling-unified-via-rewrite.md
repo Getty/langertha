@@ -93,3 +93,55 @@ structured output and forced tool calling as one schema-constrained-generation m
   `ToolChoice` — perform the per-format serialization each rewrite invokes), ADR 0002
   (`supports()` gates every rewrite), ADR 0003 (the synthetic `ToolCall` is where every path
   lands). `CONTEXT.md` fixes the vocabulary (**ToolCall**, `synthetic`, **tool_wire_format**).
+
+## Update (k133 — first-party Anthropic gained native structured output)
+
+Decision 2 assumed the Anthropic Messages API has **no native `response_format`**, so the only
+way to honor a `response_format` on that wire was to synthesize a tool and force `tool_choice`
+onto it. That is no longer true for the **first-party Claude API**: the Messages API now has
+native structured output via **`output_config.format`** (`{ type => 'json_schema', schema =>
+{...} }`, GA, no beta header). Decision 2's synth-tool rewrite is therefore **superseded for
+`Engine::Anthropic`** and **kept, unchanged, for the legacy `/anthropic` shim engines**
+(MiniMaxAnthropic, MoonshotAnthropic, AKIAnthropic, LMStudioAnthropic), whose shim endpoints do
+not carry the field.
+
+- **The split is a one-method opt-in.** `Role::AnthropicCompatible::_native_structured_output`
+  defaults to `0` (shims keep the rewrite); `Engine::Anthropic` overrides it to `1`. On the
+  native branch `_take_response_format` pulls the `response_format` off the per-request
+  controls / `%extra` / engine attribute (the Messages API 400s if one reaches the wire),
+  `_response_format_to_output_config` turns it into the `output_config.format` value (a bare
+  `json_object` maps onto an open-object `json_schema`), and the content JSON rides back on the
+  wire verbatim — no `chat_response` tool_use lift. On the shim branch
+  `_translate_response_format` is exactly Decision 2, untouched.
+- **Native structured output streams; the shim rewrite still cannot.** The synth-tool rewrite
+  has no streaming counterpart to `chat_response`'s tool_use lift, so `chat_stream_request`
+  croaks loudly on a shim rather than streaming unstructured text or leaking `response_format`
+  onto the wire (karr #52). The native branch streams the JSON as ordinary text deltas.
+- **Decision 1 (Perplexity: forced named tool → `response_format`) is unchanged and still
+  valid.** Only Decision 2's Anthropic direction is nuanced.
+- **The unify-and-rewrite core is reinforced, not overturned.** Decision 4 said *native stays
+  native; the rewrite fires only on a capability gap*. First-party Anthropic simply graduated
+  from the gap branch to the native branch — exactly the case Decision 4 anticipated. The same
+  mechanism now runs the other way too: `claude-fable-5-1` / `claude-mythos-5-1` **reject**
+  forced tool use (`tool_choice` `any` / `tool` → 400), so `Engine::Anthropic`'s
+  `model_capability_corrections` clears their `tool_choice_named` / `tool_choice_any` flags and
+  `chat_f`'s auto-rewrite routes a forced named tool *through the native structured-output path*
+  on those models. Per-model wire truth lives in `model_capability_corrections`, not in `around
+  engine_capabilities` — see **ADR 0019** (the ADR 0002 amendment, k138).
+- **`output_config` is now shared by two request-side concerns.** `Langertha::Reasoning`
+  already places reasoning effort under `output_config.effort` (ADR 0009); structured output
+  now places its schema under `output_config.format`. A naive second `output_config` would
+  silently drop one, so `Role::AnthropicCompatible::_merge_output_config_format` folds `format`
+  into the existing hash — a **merge, not last-writer-wins**. This is a new kind of overlap for
+  the ADR 0009 quartet (each concern used to own a disjoint body key); see the ADR 0009 Update.
+- **`Tool->to_anthropic` now emits top-level `strict: true` for closed schemas**
+  (`additionalProperties:false` + a non-empty `required`), keyed on the schema *shape* and so
+  engine-agnostic — a value-object serialization extension in the spirit of ADR 0001 (the value
+  object owns its wire shape). See the ADR 0001 strict-tool-use note.
+
+This is an amendment in place, not a superseding ADR: the mechanism ADR 0005 records —
+structured output and forced tool calling are one schema-constrained-generation mechanism, and
+the engine layer rewrites between forms on a capability gap — stands entirely. One wire grew a
+native capability, moving one engine from the rewrite branch to the native branch, which is the
+behavior Decision 4 already specified. Contrast ADR 0006 → ADR 0013, where the thing itself
+moved axes and a new number was right.

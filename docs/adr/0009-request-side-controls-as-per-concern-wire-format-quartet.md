@@ -156,3 +156,21 @@ position by hand anymore.
   `thinking:{type:adaptive}`) by moving placement into the value object.
 - ADR 0006 — engine inheritance encodes the wire dialect; this ADR extends that from one
   dialect tag to one tag *per concern*.
+
+## Update (k133 — `output_config` is now shared by two concerns)
+
+This ADR's quartet places each concern's field into a **disjoint** body key: reasoning effort
+lands under `output_config.effort` (+ `thinking`), prompt cache under `cache_control` /
+`prompt_cache_key`. k133 broke the disjointness. Native Anthropic structured output (the ADR
+0005 Update) places its schema under `output_config.format` — the **same** `output_config`
+object `Langertha::Reasoning::to_anthropic` writes `effort` into. Structured output is not
+itself a quartet member (its `response_format` rides the dialect role's generation-parameter
+block per `CONTEXT.md`, not a `*_wire_format` value object), but it now writes the same body
+region as one.
+
+Two concerns sharing one body key cannot be composed by assignment — a second `output_config`
+would silently drop the first. The resolution is a merge seam:
+`Role::AnthropicCompatible::_merge_output_config_format` folds `format` into whatever
+`output_config` the generation kwargs already hold. This is the quartet's first shared body
+key; any later concern that also writes `output_config` must merge through the same seam rather
+than assign.

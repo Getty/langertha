@@ -7,7 +7,7 @@
 # (chat_stream_realtime_f with %opts) opened the pass-through path.
 #
 # Gemini and Ollama now translate response_format to their native wire form
-# (generationConfig.responseSchema / format) exactly like chat_request, with
+# (generationConfig.responseJsonSchema / format) exactly like chat_request, with
 # per-request beating the engine attribute and the key deleted from the extras.
 #
 # Anthropic-family engines have no native response_format and no streaming
@@ -22,6 +22,7 @@ use Test2::Bundle::More;
 use JSON::MaybeXS;
 
 use Langertha::Engine::Anthropic;
+use Langertha::Engine::LMStudioAnthropic;
 use Langertha::Engine::Ollama;
 use Langertha::Engine::Gemini;
 
@@ -69,50 +70,75 @@ sub stream_wire {
   );
 }
 
-# --- Anthropic: streaming response_format is refused, not leaked ----------
+# --- Anthropic (native): streaming structured output goes native, streams -
+# k133: with native structured output (output_config.format) there is no
+# synthesized tool_use to lift, so the JSON streams as ordinary text deltas.
+# Engine::Anthropic therefore emits output_config.format on the stream instead
+# of croaking. Sabotage check: revert _native_structured_output to 0 and this
+# reverts to the shim croak below.
 {
-  my $engine = anthropic();
-  my $ok = eval { stream_wire( $engine, response_format => {
+  my $data = stream_wire( anthropic(), response_format => {
     type        => 'json_schema',
     json_schema => { name => 'extract', description => 'extractor', schema => $SCHEMA },
-  }); 1 };
-  ok( !$ok, 'Anthropic: streaming json_schema croaks' );
-  like( $@, qr/cannot stream response_format/,
-    'Anthropic: croak names the streaming limitation' );
-  like( $@, qr/chat_f\/chat_request/,
-    'Anthropic: croak points at the non-streaming structured-output path' );
+  });
+
+  ok( !exists $data->{response_format},
+    'Anthropic: streaming response_format is consumed, not passed to the wire' );
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
+    'Anthropic: streaming json_schema becomes native output_config.format' );
+  is( $data->{stream}, JSON->true, 'Anthropic: structured stream still streams' );
+  ok( !exists $data->{tools} && !exists $data->{tool_choice},
+    'Anthropic: native structured stream injects no synthesized tool' );
 }
 
 {
-  my $engine = anthropic();
-  my $ok = eval { stream_wire( $engine, response_format => { type => 'json_object' } ); 1 };
-  ok( !$ok, 'Anthropic: streaming json_object croaks' );
-  like( $@, qr/cannot stream response_format/,
-    'Anthropic: json_object croak names the streaming limitation' );
+  my $data = stream_wire( anthropic(), response_format => { type => 'json_object' } );
+
+  is_deeply( $data->{output_config}{format},
+    { type => 'json_schema', schema => { type => 'object', additionalProperties => JSON->true } },
+    'Anthropic: streaming json_object maps onto an open-object native json_schema' );
+  is( $data->{stream}, JSON->true, 'Anthropic: json_object stream still streams' );
 }
 
-# --- Anthropic: engine-attribute response_format is refused too ----------
-# karr #52 Folge 1: an engine constructed with response_format and then
-# streamed must not silently produce unstructured text.
+# --- Anthropic (native): engine-attribute response_format streams too -----
 {
   my $engine = anthropic( response_format => {
     type        => 'json_schema',
     json_schema => { name => 'engine_level', schema => $OTHER_SCHEMA },
   });
-  my $ok = eval { stream_wire($engine); 1 };
-  ok( !$ok, 'Anthropic: engine-attribute response_format croaks on streaming' );
+  my $data = stream_wire($engine);
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $OTHER_SCHEMA },
+    'Anthropic: engine-attribute response_format streams as native output_config.format' );
+}
+
+# --- Anthropic (shim): streaming structured output is still refused -------
+# The legacy /anthropic shim engines have no native form and no streaming lift
+# for the synthesized-tool rewrite, so they consume the key and croak rather
+# than leak it (HTTP 400) or stream unstructured text (karr #52).
+{
+  my $shim = Langertha::Engine::LMStudioAnthropic->new(
+    url => 'http://test.url:12345', model => 'model', response_size => 256,
+  );
+  my $ok = eval { $shim->chat_stream_request( $shim->chat_messages('p'), response_format => {
+    type        => 'json_schema',
+    json_schema => { name => 'extract', schema => $SCHEMA },
+  }); 1 };
+  ok( !$ok, 'Anthropic shim: streaming json_schema croaks' );
   like( $@, qr/cannot stream response_format/,
-    'Anthropic: engine-attribute croak names the streaming limitation' );
+    'Anthropic shim: croak names the streaming limitation' );
+  like( $@, qr/chat_f\/chat_request/,
+    'Anthropic shim: croak points at the non-streaming structured-output path' );
 }
 
 # --- Anthropic: a response_format the engine would ignore stays a no-op ---
-# The croak fires only when the non-streaming path would actually honor the
-# response_format; an unknown type is consumed and dropped on both paths.
+# An unknown type has no native form either, so it is consumed and dropped.
 {
   my $data = stream_wire( anthropic(), response_format => { type => 'text' } );
 
   ok( !exists $data->{response_format},
     'Anthropic: non-honored response_format is consumed, not passed to the wire' );
+  ok( !exists $data->{output_config},
+    'Anthropic: non-honored response_format sets no output_config.format' );
   is( $data->{stream}, JSON->true, 'Anthropic: stream request still streams' );
   ok( !exists $data->{tools} && !exists $data->{tool_choice},
     'Anthropic: no synthesized tool is injected for a non-honored response_format' );
@@ -188,8 +214,10 @@ sub stream_wire {
 
   ok( !exists $data->{response_format},
     'Gemini: per-request response_format is consumed, not passed to the wire' );
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
-    'Gemini: per-request json_schema becomes generationConfig.responseSchema' );
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
+    'Gemini: per-request json_schema becomes generationConfig.responseJsonSchema' );
+  ok( !exists $data->{generationConfig}{responseSchema},
+    'Gemini: deprecated responseSchema is not emitted (k140)' );
   is( $data->{generationConfig}{responseMimeType}, 'application/json',
     'Gemini: per-request json_schema sets responseMimeType' );
 }
@@ -202,8 +230,8 @@ sub stream_wire {
     'Gemini: per-request json_object is consumed, not passed to the wire' );
   is( $data->{generationConfig}{responseMimeType}, 'application/json',
     'Gemini: per-request json_object sets responseMimeType' );
-  ok( !exists $data->{generationConfig}{responseSchema},
-    'Gemini: json_object leaves responseSchema unset' );
+  ok( !exists $data->{generationConfig}{responseJsonSchema},
+    'Gemini: json_object leaves responseJsonSchema unset' );
 }
 
 # --- Gemini: per-request beats the engine attribute ----------------------
@@ -217,7 +245,7 @@ sub stream_wire {
     json_schema => { name => 'per_request', schema => $SCHEMA },
   });
 
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
     'Gemini: per-request response_format wins over the engine attribute on streaming' );
 }
 
@@ -228,7 +256,7 @@ sub stream_wire {
     json_schema => { name => 'engine_level', schema => $OTHER_SCHEMA },
   }));
 
-  is_deeply( $data->{generationConfig}{responseSchema}, $OTHER_SCHEMA,
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $OTHER_SCHEMA,
     'Gemini: engine-attribute response_format still translates on streaming' );
 }
 

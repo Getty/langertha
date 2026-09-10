@@ -43,6 +43,26 @@ deliberately not modeled: it 400s on current Claude families.)
 
 =cut
 
+has thinking_display => (
+  is        => 'ro',
+  isa       => 'Str',
+  predicate => 'has_thinking_display',
+);
+
+=attr thinking_display
+
+Optional Anthropic thinking-visibility control (C<summarized> | C<omitted> |
+C<updates>), serialized by L<Langertha::Reasoning/to_anthropic> to
+C<thinking.display>. On every current Claude model the wire default is
+C<omitted>, which returns an empty C<< $response->thinking >>; set
+C<thinking_display =E<gt> 'summarized'> to get a readable reasoning summary back
+(it costs summary tokens, so it is opt-in rather than the Langertha default).
+Ignored on non-Anthropic wires and on Fable-class models (which never carry a
+C<thinking> block). Like L</reasoning_effort>, a per-request control (chat_f)
+beats this attribute.
+
+=cut
+
 has reasoning_wire_format => (
   is      => 'ro',
   isa     => 'Str',
@@ -79,14 +99,17 @@ sub reasoning_kwargs_for {
   my %merged = (
     ( $self->has_reasoning_effort ? ( effort => $self->reasoning_effort ) : () ),
     ( $self->has_thinking_budget  ? ( thinking_budget => $self->thinking_budget ) : () ),
+    ( $self->has_thinking_display ? ( thinking_display => $self->thinking_display ) : () ),
     ( exists $args{effort} ? ( effort => $args{effort} ) : () ),
     ( exists $args{reasoning_effort} ? ( effort => $args{reasoning_effort} ) : () ),
     ( exists $args{thinking_budget} ? ( thinking_budget => $args{thinking_budget} ) : () ),
+    ( exists $args{thinking_display} ? ( thinking_display => $args{thinking_display} ) : () ),
   );
   return () unless %merged;
   return Langertha::Reasoning->new(
     ( exists $merged{effort} ? ( effort => $merged{effort} ) : () ),
     ( exists $merged{thinking_budget} ? ( thinking_budget => $merged{thinking_budget} ) : () ),
+    ( exists $merged{thinking_display} ? ( thinking_display => $merged{thinking_display} ) : () ),
     ( $self->can('chat_model') ? ( model => $self->chat_model ) : () ),
   )->to( $self->reasoning_wire_format );
 }

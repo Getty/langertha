@@ -221,7 +221,9 @@ sub wire {
     'Anthropic: parallel_tool_use=0 control -> disable_parallel_tool_use=true' );
 }
 
-# --- Anthropic: response_format control routes through the synth tool -----
+# --- Anthropic: response_format control routes through native output_config
+# k133: Engine::Anthropic has native structured output, so a response_format
+# control lands as output_config.format, not a synthesized forced tool.
 {
   my $data = wire( anthropic(), controls => {
     response_format => {
@@ -232,10 +234,10 @@ sub wire {
 
   ok( !exists $data->{response_format},
     'Anthropic: response_format control is consumed, not passed to the wire' );
-  is( $data->{tool_choice}{name}, 'extract',
-    'Anthropic: response_format control forces the synthesized tool' );
-  is_deeply( $data->{tools}[0]{input_schema}, $SCHEMA,
-    'Anthropic: response_format control schema reaches the synthesized tool' );
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
+    'Anthropic: response_format control lands as native output_config.format' );
+  ok( !exists $data->{tools} && !exists $data->{tool_choice},
+    'Anthropic: native structured output injects no synthesized tool' );
 }
 
 # --- Anthropic: unknown keys still pass through ----------------------------
@@ -321,7 +323,7 @@ sub wire {
   ok( !exists $data->{controls}, 'Gemini: controls hash is consumed, not leaked' );
 }
 
-# --- Gemini: response_format control -> generationConfig.responseSchema ----
+# --- Gemini: response_format control -> generationConfig.responseJsonSchema -
 {
   my $data = wire( gemini(), controls => {
     response_format => {
@@ -332,8 +334,10 @@ sub wire {
 
   ok( !exists $data->{response_format},
     'Gemini: response_format control is consumed, not passed to the wire' );
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
-    'Gemini: response_format control becomes generationConfig.responseSchema' );
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
+    'Gemini: response_format control becomes generationConfig.responseJsonSchema' );
+  ok( !exists $data->{generationConfig}{responseSchema},
+    'Gemini: deprecated responseSchema is not emitted (k140)' );
 }
 
 # --- Gemini: unknown keys still pass through -------------------------------

@@ -77,14 +77,16 @@ L<Langertha::Engine::MiniMaxAnthropic>,
 L<Langertha::Engine::MoonshotAnthropic>, and
 L<Langertha::Engine::LMStudioAnthropic>.
 
-Structured output (C<response_format>) is a non-streaming feature on this
-family: the rewrite in L<Langertha::Role::AnthropicCompatible/_translate_response_format>
-synthesizes a tool and forces C<tool_choice>, and C<chat_response> lifts the
-resulting C<tool_use> input back into C<Response.content>. The streaming path
-has no Response to lift from, so C<chat_stream_request> consumes a
-C<response_format> (per request or engine attribute) and croaks instead of
-silently streaming unstructured text. Use
-L<Langertha::Role::Chat/chat_f> or C<chat_request> for structured output.
+Structured output (C<response_format>) takes one of two wire paths depending on
+the engine. The first-party L<Langertha::Engine::Anthropic> emits it natively as
+C<output_config.format> (GA on the Claude Messages API), which streams as
+ordinary text and needs no post-processing. The legacy C</anthropic> shim
+engines have no native form and keep the ADR 0005 rewrite: a synthesized tool
+plus a forced C<tool_choice>, whose C<tool_use> input C<chat_response> lifts
+back into C<Response.content>. That lift has no streaming counterpart, so on a
+shim engine C<chat_stream_request> consumes a C<response_format> and croaks
+instead of silently streaming unstructured text — use
+L<Langertha::Role::Chat/chat_f> or C<chat_request> there. See ADR 0005.
 
 B<THIS API IS WORK IN PROGRESS>
 

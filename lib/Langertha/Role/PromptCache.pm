@@ -16,6 +16,18 @@ Enable an Anthropic C<cache_control> breakpoint on the request (the top-level
 auto-place form). Defaults off. No effect on the OpenAI wire, where caching is
 automatic — see L</prompt_cache_key> for the only OpenAI-side lever.
 
+The top-level C<cache_control> Langertha emits is Anthropic's documented
+"automatic caching" form: the system applies the cache breakpoint to the last
+cacheable block and it consumes one of the four available breakpoints. This is
+the intended shape — do not "fix" it into per-block breakpoints.
+
+B<Turning C<prompt_cache> on does not prove a cache write happened.> The minimum
+cacheable prefix is model-dependent (roughly 512–4096 tokens depending on the
+model), and Anthropic silently processes a shorter prompt B<without> caching —
+no error is returned. A 200 response therefore says nothing; only
+C<< $response->usage->{cache_creation_input_tokens} >> /
+C<cache_read_input_tokens> confirm the cache was actually used.
+
 =cut
 
 has prompt_cache_ttl => (

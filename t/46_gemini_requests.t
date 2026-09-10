@@ -11,7 +11,7 @@ use Langertha::Engine::Gemini;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(44);
+plan(51);
 
 my $gemini = Langertha::Engine::Gemini->new(
   api_key => 'test_api_key_123',
@@ -92,6 +92,20 @@ is(_thinking_level_for('gemini-3-flash-preview', 'max'),     'high',    'gemini-
 # gemini-3.5-flash (previous default) is also full-vocabulary: medium passes.
 is(_thinking_level_for('gemini-3.5-flash', 'medium'), 'medium',
   'gemini-3.5-flash: medium -> medium (no more binary collapse on flash)');
+
+# gemini-3.7-flash dropped `minimal` from its level set (low|medium|high;
+# ai.google.dev/gemini-api/docs/thinking, verified 2026-09-01 -- karr k140).
+# minimal/none clamp to low; medium/high pass; xhigh/max still fold to high.
+is(_thinking_level_for('gemini-3.7-flash', 'minimal'), 'low',    'gemini-3.7-flash: minimal clamps to low (no minimal)');
+is(_thinking_level_for('gemini-3.7-flash', 'none'),    'low',    'gemini-3.7-flash: none clamps to low');
+is(_thinking_level_for('gemini-3.7-flash', 'low'),     'low',    'gemini-3.7-flash: low -> low');
+is(_thinking_level_for('gemini-3.7-flash', 'medium'),  'medium', 'gemini-3.7-flash: medium -> medium');
+is(_thinking_level_for('gemini-3.7-flash', 'high'),    'high',   'gemini-3.7-flash: high -> high');
+is(_thinking_level_for('gemini-3.7-flash', 'max'),     'high',   'gemini-3.7-flash: max -> high');
+
+# Boundary: gemini-3.6-flash still HAS minimal (only 3.7 dropped it).
+is(_thinking_level_for('gemini-3.6-flash', 'minimal'), 'minimal',
+  'gemini-3.6-flash: minimal stays minimal (only 3.7-flash dropped it)');
 
 # gemini-3.1-pro family: low|medium|high, NO minimal -> minimal/none clamp to low.
 is(_thinking_level_for('gemini-3.1-pro-preview', 'minimal'), 'low',    'gemini-3.1-pro-preview: minimal clamps to low');
