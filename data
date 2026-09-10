@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-10T03:10:14Z
+claimed_by: worker-a
+class: standard
+completed: 2026-09-10T03:10:14Z
+created: 2026-09-10T02:14:13Z
+id: 143
+priority: low
+started: 2026-09-10T03:10:14Z
+status: done
+tags:
+- capabilities
+- adr
+- docs
+title: Drop 'pending ADR 0019' -> 'ADR 0019' in Capabilities.pm and Moonshot.pm
+updated: 2026-09-10T03:10:14Z
+---
+
+ADR 0019 is now recorded and accepted (docs/adr/0019-model-scoped-capability-corrections.md, branch k138-model-scoped-capabilities, commit deab3f9). Three code comments still say "pending ADR 0019" and should read "ADR 0019":
+- lib/Langertha/Role/Capabilities.pm:87 (layer-3 comment)
+- lib/Langertha/Role/Capabilities.pm:138 (=method engine_capabilities POD)
+- lib/Langertha/Engine/Moonshot.pm:132 (model_capability_corrections comment)
+Trivial prose sweep in behavior-relevant modules; left to langertha-worker (auditor lane does not edit the registry/engines). No behavior change.
+
+2026-09-10 03:10 Released the stale k138-model-scoped-capabilities claim (k138 already committed as deab3f9; ADR 0019 recorded). Done on branch k140-openai-gemini-clamps (commit 00f2a87): the 3 'pending ADR 0019' comments in Role::Capabilities.pm (x2) and Engine::Moonshot.pm now read 'ADR 0019'. Prose-only, no behavior change. prove -lr t/ green. Picked up alongside k140 by worker-a.
