@@ -395,6 +395,12 @@ has probes => (
   predicate => 'has_probes',
 );
 
+has citations => (
+  is        => 'ro',
+  isa       => 'Maybe[ArrayRef]',
+  predicate => 'has_citations',
+);
+
 around BUILDARGS => sub {
   my ( $orig, $class, @args ) = @_;
   my $params = $class->$orig(@args);
@@ -538,6 +544,17 @@ C<thought> parts) or from C<E<lt>thinkE<gt>> tag filtering when
 L<Langertha::Role::ThinkTag/think_tag_filter> is enabled.
 
 =cut
+
+=attr citations
+
+Search-augmented source citations, when the provider reports them. An ArrayRef
+of source HashRefs (each typically carrying C<url>, C<title>, and where
+available C<snippet>/C<date>). Populated by search-augmented engines that lift
+them out of the raw payload — L<Langertha::Engine::Perplexity> extracts the
+Agent API's C<search_results> block here (the classic Sonar top-level
+C<citations[]> is gone). C<undef> for every engine that does not report
+citations. Survives L</clone_with> so it is preserved through C<E<lt>thinkE<gt>>
+tag filtering.
 
 =attr probes
 
