@@ -12,6 +12,13 @@ use Langertha::Engine::AKI;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
+# --- Default model (karr k132) ---
+# The native default is MiniMax M3, replacing the EOL llama3_8b_chat (EOL
+# 2026-09-30). minimax_m3 is the exact id AKI's native /api/endpoints listing
+# carries for "MiniMax M3 428B".
+is(Langertha::Engine::AKI->new(api_key => 'testkey')->default_model,
+  'minimax_m3', 'AKI native default_model is minimax_m3 (M3), not the EOL llama3_8b_chat');
+
 # --- Chat request format ---
 
 my $aki = Langertha::Engine::AKI->new(

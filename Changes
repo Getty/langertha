@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::AKI native default model is now MiniMax M3, replacing the EOL
+      llama3_8b_chat (karr k132). AKI.IO marks llama3_8b_chat end-of-life
+      2026-09-30, so the native engine now defaults to `minimax_m3`
+      (MiniMax M3 428B), AKI's current-generation MiniMax on the native
+      /api/endpoints listing. MiniMax is a per-account gated endpoint — a key
+      without the entitlement is answered with "Client not authorized for
+      endpoint minimax_m3!" instead of a silent fallback, so check
+      $response->model. The OpenAI- and Anthropic-compatible AKI engines still
+      default to llama3-chat-8b: AKI does not expose MiniMax M3 on those shim
+      endpoints yet, and their only MiniMax id (minimax-m2.5-230b) is the older
+      generation.
+
     - Engine::Anthropic inference_geo documents only the values the first-party
       API offers (karr #134). The =attr POD and SYNOPSIS promised
       inference_geo => 'eu' as an EU data-residency guarantee, but Anthropic's

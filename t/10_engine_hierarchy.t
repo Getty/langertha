@@ -276,7 +276,7 @@ ok(!Langertha::Engine::AKI->does('Langertha::Role::OpenAICompatible'), 'AKI does
 {
   my $a = Langertha::Engine::AKI->new(api_key => 'test-key');
   is($a->url, 'https://aki.io', 'AKI url defaults correctly');
-  is($a->default_model, 'llama3_8b_chat', 'AKI default_model');
+  is($a->default_model, 'minimax_m3', 'AKI default_model (MiniMax M3; llama3_8b_chat EOL 2026-09-30, karr k132)');
 }
 
 # ======================================================================

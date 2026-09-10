@@ -81,7 +81,25 @@ has '+url' => (
   default => sub { 'https://aki.io' },
 );
 
-sub default_model { 'llama3_8b_chat' }
+# AKI's native /api/endpoints listing carries `minimax_m3` (endpoint_details
+# reports "MiniMax M3 428B", category chat) — AKI.IO's current-generation
+# MiniMax and the chosen default now that llama3_8b_chat is marked end-of-life
+# 2026-09-30. Verified live against the native endpoint listing on 2026-09-10.
+# MiniMax is a per-account gated endpoint: a key without the entitlement is
+# answered with "Client not authorized for endpoint minimax_m3!" (not a silent
+# fallback), so check $response->model / the error when it matters. -- karr k132
+sub default_model { 'minimax_m3' }
+
+=method default_model
+
+Returns C<minimax_m3>, AKI.IO's current-generation MiniMax M3 (428B) on the
+native endpoint. This replaces C<llama3_8b_chat>, which AKI.IO marks
+end-of-life 2026-09-30. MiniMax is a B<per-account gated> endpoint: a key
+without the entitlement is answered with C<"Client not authorized for endpoint
+minimax_m3!"> rather than a silent model substitution, so check
+C<< $response->model >> if it matters which model replied.
+
+=cut
 
 sub hermes_extract_content {
   my ( $self, $data ) = @_;
