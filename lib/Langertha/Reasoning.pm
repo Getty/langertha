@@ -92,6 +92,26 @@ has thinking_budget => (
   predicate => 'has_thinking_budget',
 );
 
+has thinking_display => (
+  is        => 'ro',
+  isa       => 'Str',
+  predicate => 'has_thinking_display',
+);
+
+=attr thinking_display
+
+Optional Anthropic thinking-visibility control, serialized by L</to_anthropic>
+as C<thinking.display>. Values: C<summarized> (return a readable summary of the
+reasoning), C<omitted> (no summary; the C<thinking> field comes back empty), or
+C<updates> (beta; between-tool-call progress notes). On every current Claude
+model the API default is C<omitted>, so a caller that wants to read
+C<< $response->thinking >> must set C<thinking_display =E<gt> 'summarized'>
+explicitly. Consumed only on the C<anthropic> wire; ignored on every other
+format. Only takes effect together with a thinking block, i.e. on the adaptive
+(non-Fable-class) path — see L</to_anthropic>.
+
+=cut
+
 =attr thinking_budget
 
 Optional integer thinking budget for Gemini 2.5 models. When set on a Gemini
@@ -226,17 +246,42 @@ sub to_responses {
 
 sub to_anthropic {
   my ( $self ) = @_;
-  return () unless $self->has_effort;
-  my $e = $self->effort;
-  return () unless $ANTHROPIC_EFFORT{$e};
+  my $e = $self->has_effort ? $self->effort : undef;
+  my $effort_ok = defined $e && $ANTHROPIC_EFFORT{$e};
+
+  # Adaptive-thinking models need thinking:{type:adaptive} or thinking stays
+  # off; always-on "Fable-class" models 400 on thinking:{type:disabled} and
+  # need no thinking field at all (thinking is always on). thinking.display
+  # controls visibility: the wire default is "omitted" on every current model,
+  # so $response->thinking comes back empty unless the caller asks for
+  # "summarized". We emit the thinking block whenever an effort or a display is
+  # in play so a display-only request still turns summaries on.
+  my @thinking;
+  if ( !$self->_is_fable_class && ( $effort_ok || $self->has_thinking_display ) ) {
+    @thinking = ( thinking => {
+      type => 'adaptive',
+      ( $self->has_thinking_display ? ( display => $self->thinking_display ) : () ),
+    } );
+  }
+
   return (
-    output_config => { effort => $e },
-    # Adaptive-thinking models need thinking:{type:adaptive} or thinking stays
-    # off; always-on "Fable-class" models 400 on thinking:{type:disabled} and
-    # need no thinking field at all (thinking is always on).
-    ( $self->_is_fable_class ? () : ( thinking => { type => 'adaptive' } ) ),
+    ( $effort_ok ? ( output_config => { effort => $e } ) : () ),
+    @thinking,
   );
 }
+
+=method to_anthropic
+
+Serializes to the Messages-API reasoning shape: C<output_config.effort> (when
+L</effort> maps onto Anthropic's C<low|medium|high|xhigh|max> set) plus a
+C<thinking> block. On adaptive (non-Fable-class) models the block is
+C<< { type =E<gt> 'adaptive' } >>, carrying C<display =E<gt> ...> when
+L</thinking_display> is set. Fable-class models (Fable / Mythos) get no
+C<thinking> key — thinking is always on and C<type:disabled> 400s there — and
+therefore cannot carry a C<display> either. Empty list when neither an
+Anthropic-supported effort nor a C<thinking_display> is present.
+
+=cut
 
 sub to_gemini {
   my ( $self ) = @_;

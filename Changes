@@ -31,6 +31,21 @@ Revision history for Langertha
       emits strict:true for a closed schema (additionalProperties:false plus a
       non-empty required list). Amends ADR 0005.
 
+    - Anthropic temperature and thinking.display wire drift (karr k135).
+      temperature / top_p / top_k are deprecated on the Messages API and 400 on
+      a non-default value on Opus 4.7, Opus 4.8 and the whole 5-series (Opus 5,
+      Sonnet 5, Fable 5/5.1, Mythos 5/5.1); Engine::Anthropic clears the
+      temperature capability for those models and AnthropicCompatible keeps the
+      field off the wire whenever the selected model rejects it — Opus 4.6,
+      Sonnet 4.6, Haiku 4.5 and older still send it. thinking.display now
+      defaults to "omitted" on current models, leaving $response->thinking empty;
+      a new thinking_display knob (attribute + chat_f control) emits
+      thinking.display so a caller can ask for "summarized". Prompt-caching POD
+      records that the top-level cache_control form is correct and that a
+      successful request proves nothing about caching — only
+      usage.cache_read_input_tokens does (the minimum cacheable prefix is
+      model-dependent and short prompts silently skip the cache).
+
     - Engine::Anthropic inference_geo documents only the values the first-party
       API offers (karr #134). The =attr POD and SYNOPSIS promised
       inference_geo => 'eu' as an EU data-residency guarantee, but Anthropic's

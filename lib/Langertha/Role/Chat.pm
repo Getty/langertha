@@ -399,6 +399,7 @@ my %CANONICAL_CONTROLS = map { $_ => 1 } qw(
   parallel_tool_use
   reasoning_effort
   thinking_budget
+  thinking_display
   prompt_cache
   prompt_cache_ttl
   prompt_cache_key

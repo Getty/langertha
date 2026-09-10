@@ -207,9 +207,7 @@ sub chat_request {
     exists $controls->{max_tokens}
       ? ( max_tokens => $controls->{max_tokens} )
       : ( max_tokens => $self->get_response_size ), # must be always set
-    exists $controls->{temperature}
-      ? ( temperature => $controls->{temperature} )
-      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    $self->_temperature_kwargs($controls),
     %generation,
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
@@ -292,6 +290,21 @@ sub _merge_output_config_format {
     format => $format,
   };
   return;
+}
+
+# temperature / top_p / top_k are deprecated on the Messages API and 400 with a
+# non-default value on a growing set of models (Opus 4.7+ and the 5-series);
+# Engine::Anthropic clears the `temperature` capability for those via
+# model_capability_corrections (k138), and this gate keeps the field off the
+# wire whenever the selected model rejects it — whether it came from the engine
+# attribute or a per-request control (k135 point 1).
+sub _temperature_kwargs {
+  my ( $self, $controls ) = @_;
+  return () unless $self->supports('temperature');
+  return ( temperature => $controls->{temperature} )
+    if exists $controls->{temperature};
+  return ( temperature => $self->temperature ) if $self->has_temperature;
+  return ();
 }
 
 # Anthropic has no response_format; emulate via a synthetic tool plus
@@ -499,9 +512,7 @@ sub chat_stream_request {
     exists $controls->{max_tokens}
       ? ( max_tokens => $controls->{max_tokens} )
       : ( max_tokens => $self->get_response_size ), # must be always set
-    exists $controls->{temperature}
-      ? ( temperature => $controls->{temperature} )
-      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    $self->_temperature_kwargs($controls),
     %generation,
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
