@@ -9,7 +9,7 @@
 #
 # karr #48: Gemini::chat_request had the identical defect — a per-request
 # response_format landed as a top-level "response_format" on the generateContent
-# body while generationConfig.responseSchema stayed empty.
+# body while generationConfig.responseJsonSchema stayed empty.
 
 use strict;
 use warnings;
@@ -150,7 +150,7 @@ sub wire {
 # ADR 0005 paragraph 3 asks every structured-output path to land the payload
 # the same way. Native structured output emits the JSON as an ordinary text
 # block, so chat_response's existing text join puts it in Response.content with
-# no tool_use lift needed (like Gemini's responseSchema below).
+# no tool_use lift needed (like Gemini's responseJsonSchema below).
 {
   my $engine  = anthropic();
   my $request = $engine->chat_request( $engine->chat_messages('testprompt'),
@@ -237,8 +237,10 @@ sub wire {
 
   ok( !exists $data->{response_format},
     'Gemini: per-request response_format is consumed, not passed to the wire' );
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
-    'Gemini: per-request json_schema becomes generationConfig.responseSchema' );
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
+    'Gemini: per-request json_schema becomes generationConfig.responseJsonSchema' );
+  ok( !exists $data->{generationConfig}{responseSchema},
+    'Gemini: deprecated responseSchema is not emitted (k140)' );
   is( $data->{generationConfig}{responseMimeType}, 'application/json',
     'Gemini: per-request json_schema sets responseMimeType' );
 }
@@ -251,8 +253,8 @@ sub wire {
     'Gemini: per-request json_object is consumed, not passed to the wire' );
   is( $data->{generationConfig}{responseMimeType}, 'application/json',
     'Gemini: per-request json_object sets responseMimeType' );
-  ok( !exists $data->{generationConfig}{responseSchema},
-    'Gemini: json_object leaves responseSchema unset' );
+  ok( !exists $data->{generationConfig}{responseJsonSchema},
+    'Gemini: json_object leaves responseJsonSchema unset' );
 }
 
 # --- Gemini: per-request beats the engine attribute ---------------------
@@ -266,7 +268,7 @@ sub wire {
     json_schema => { name => 'per_request', schema => $SCHEMA },
   });
 
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
     'Gemini: per-request response_format wins over the engine attribute' );
 }
 
@@ -277,14 +279,14 @@ sub wire {
     json_schema => { name => 'engine_level', schema => $OTHER_SCHEMA },
   }));
 
-  is_deeply( $data->{generationConfig}{responseSchema}, $OTHER_SCHEMA,
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $OTHER_SCHEMA,
     'Gemini: engine-attribute response_format still translates' );
 }
 
 # --- Gemini: the structured payload converges on Response.content -------
 # ADR 0005 paragraph 3 asks every structured-output path to land the payload
 # the same way. Gemini needs no counterpart to the Anthropic tool_use lift:
-# responseSchema makes the model emit the JSON as an ordinary text part, so
+# responseJsonSchema makes the model emit the JSON as an ordinary text part, so
 # chat_response's existing text join already puts it in Response.content.
 {
   my $engine  = gemini();

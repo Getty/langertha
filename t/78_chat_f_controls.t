@@ -323,7 +323,7 @@ sub wire {
   ok( !exists $data->{controls}, 'Gemini: controls hash is consumed, not leaked' );
 }
 
-# --- Gemini: response_format control -> generationConfig.responseSchema ----
+# --- Gemini: response_format control -> generationConfig.responseJsonSchema -
 {
   my $data = wire( gemini(), controls => {
     response_format => {
@@ -334,8 +334,10 @@ sub wire {
 
   ok( !exists $data->{response_format},
     'Gemini: response_format control is consumed, not passed to the wire' );
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
-    'Gemini: response_format control becomes generationConfig.responseSchema' );
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
+    'Gemini: response_format control becomes generationConfig.responseJsonSchema' );
+  ok( !exists $data->{generationConfig}{responseSchema},
+    'Gemini: deprecated responseSchema is not emitted (k140)' );
 }
 
 # --- Gemini: unknown keys still pass through -------------------------------

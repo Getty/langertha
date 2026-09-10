@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Gemini structured output uses responseJsonSchema, not the deprecated
+      responseSchema (karr k140). chat_f hands Gemini an OpenAI-shaped JSON
+      Schema, which the current responseJsonSchema field accepts directly; the
+      deprecated responseSchema wanted Google's own Schema proto dialect, so a
+      schema using JSON-Schema keywords could translate wrong. Both chat_request
+      and chat_stream_request now emit responseJsonSchema alongside the
+      still-required responseMimeType.
+
     - Reasoning-effort value clamps are model-gated, not wire-gated (karr k140).
       The OpenAI clamp dropped `max` — a value the current ReasoningEffort schema
       accepts — while passing `minimal` to gpt-5.6 / gpt-5.5 models that reject

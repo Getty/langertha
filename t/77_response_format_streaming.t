@@ -7,7 +7,7 @@
 # (chat_stream_realtime_f with %opts) opened the pass-through path.
 #
 # Gemini and Ollama now translate response_format to their native wire form
-# (generationConfig.responseSchema / format) exactly like chat_request, with
+# (generationConfig.responseJsonSchema / format) exactly like chat_request, with
 # per-request beating the engine attribute and the key deleted from the extras.
 #
 # Anthropic-family engines have no native response_format and no streaming
@@ -214,8 +214,10 @@ sub stream_wire {
 
   ok( !exists $data->{response_format},
     'Gemini: per-request response_format is consumed, not passed to the wire' );
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
-    'Gemini: per-request json_schema becomes generationConfig.responseSchema' );
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
+    'Gemini: per-request json_schema becomes generationConfig.responseJsonSchema' );
+  ok( !exists $data->{generationConfig}{responseSchema},
+    'Gemini: deprecated responseSchema is not emitted (k140)' );
   is( $data->{generationConfig}{responseMimeType}, 'application/json',
     'Gemini: per-request json_schema sets responseMimeType' );
 }
@@ -228,8 +230,8 @@ sub stream_wire {
     'Gemini: per-request json_object is consumed, not passed to the wire' );
   is( $data->{generationConfig}{responseMimeType}, 'application/json',
     'Gemini: per-request json_object sets responseMimeType' );
-  ok( !exists $data->{generationConfig}{responseSchema},
-    'Gemini: json_object leaves responseSchema unset' );
+  ok( !exists $data->{generationConfig}{responseJsonSchema},
+    'Gemini: json_object leaves responseJsonSchema unset' );
 }
 
 # --- Gemini: per-request beats the engine attribute ----------------------
@@ -243,7 +245,7 @@ sub stream_wire {
     json_schema => { name => 'per_request', schema => $SCHEMA },
   });
 
-  is_deeply( $data->{generationConfig}{responseSchema}, $SCHEMA,
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $SCHEMA,
     'Gemini: per-request response_format wins over the engine attribute on streaming' );
 }
 
@@ -254,7 +256,7 @@ sub stream_wire {
     json_schema => { name => 'engine_level', schema => $OTHER_SCHEMA },
   }));
 
-  is_deeply( $data->{generationConfig}{responseSchema}, $OTHER_SCHEMA,
+  is_deeply( $data->{generationConfig}{responseJsonSchema}, $OTHER_SCHEMA,
     'Gemini: engine-attribute response_format still translates on streaming' );
 }
 
