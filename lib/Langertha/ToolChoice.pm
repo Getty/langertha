@@ -115,6 +115,11 @@ sub to_gemini {
   my ($self) = @_;
   # Gemini uses toolConfig.functionCallingConfig:
   #   { mode => AUTO|ANY|NONE, allowed_function_names => [...] }
+  # Gemini also offers a fifth mode, VALIDATED ("model decides, but validates a
+  # function call with constrained decoding") — deliberately NOT modeled here:
+  # the canonical vocabulary is none|auto|required|named, and VALIDATED ("auto,
+  # but a call it makes is schema-valid") has no canonical equivalent. If the
+  # canonical set ever grows a fifth policy, that is where it maps (karr k140).
   return { functionCallingConfig => { mode => 'NONE' } } if $self->type eq 'none';
   return { functionCallingConfig => { mode => 'AUTO' } } if $self->type eq 'auto';
   return { functionCallingConfig => { mode => 'ANY'  } } if $self->type eq 'any';
