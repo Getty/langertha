@@ -8,8 +8,8 @@ extends 'Langertha::Engine::OpenAIBase';
 
 # Native OpenAI tool calling, live-verified 2026-09-01 against
 # /openai/v1/chat/completions: a native `tools` array is accepted and answered
-# with a native `tool_calls` block, arguments intact — on llama3-chat-8b, this
-# engine's default model and one AKI's own table rates only "Basic Support".
+# with a native `tool_calls` block, arguments intact — verified on
+# llama3-chat-8b, one model AKI's own table rates only "Basic Support".
 # So no Role::HermesTools and no tool_wire_format override: the `openai` default
 # of Langertha::Role::Tools is the wire reality. -- karr k102
 with 'Langertha::Role::Tools';
@@ -35,7 +35,7 @@ around 'chat_response' => sub {
     # Direct construction (use /v1 model names, NOT native AKI names)
     my $aki = Langertha::Engine::AKIOpenAI->new(
         api_key => $ENV{AKI_API_KEY},
-        model   => 'llama3-chat-8b',
+        model   => 'gpt-oss-120b',
     );
 
     print $aki->simple_chat('Hello!');
@@ -64,9 +64,9 @@ AKI.IO is a European AI model hub (Germany) — fully GDPR-compliant with all
 inference on EU infrastructure. Supports chat completions (with SSE streaming),
 dynamic model listing, and native OpenAI-standard tool calling: tools go out as
 the C<tools> array and come back as a C<tool_calls> block, the shared default of
-L<Langertha::Role::Tools>. Verified live against C<llama3-chat-8b>, the default
-model here and one AKI's own support table rates only "Basic Support", so the
-weakest documented case works — earlier releases routed this engine through
+L<Langertha::Role::Tools>. Verified live against C<llama3-chat-8b>, one model
+AKI's own support table rates only "Basic Support", so the weakest documented
+case works — earlier releases routed this engine through
 L<Langertha::Role::HermesTools> instead, which is no longer necessary.
 
 Embeddings and transcription are not supported. For native AKI.IO API features
@@ -114,7 +114,23 @@ header. Required.
 
 =cut
 
-sub default_model { 'llama3-chat-8b' }
+# gpt-oss-120b replaces the EOL llama3-chat-8b (AKI.IO end-of-life 2026-09-30)
+# as the default. AKI.IO exposes MiniMax M3 only on its native endpoint, so a
+# current non-MiniMax model AKI's own table rates "Supported" is the shim
+# default. Verified live 2026-09-10: the /openai/v1 shim answers gpt-oss-120b
+# and echoes it back as $response->model (unknown ids are rejected loudly here,
+# not silently substituted). -- karr k132
+sub default_model { 'gpt-oss-120b' }
+
+=method default_model
+
+Returns C<gpt-oss-120b>, a current-generation non-MiniMax model AKI.IO rates
+"Supported", replacing C<llama3-chat-8b>, which AKI.IO marks end-of-life
+2026-09-30. AKI.IO exposes MiniMax M3 only on its native endpoint, not this
+shim; the shim's only MiniMax id (C<minimax-m2.5-230b>) is the older
+generation.
+
+=cut
 
 sub api_key_env { 'LANGERTHA_AKI_API_KEY' }
 

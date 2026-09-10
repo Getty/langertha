@@ -102,13 +102,21 @@ prefix). Required.
 
 =cut
 
-sub default_model { 'llama3-chat-8b' }
+# gpt-oss-120b replaces the EOL llama3-chat-8b (AKI.IO end-of-life 2026-09-30)
+# as the default. AKI.IO exposes MiniMax M3 only on its native endpoint, so a
+# current non-MiniMax model AKI's own table rates "Supported" is the shim
+# default. Verified live 2026-09-10: the /anthropic shim answers gpt-oss-120b
+# and echoes it back as $response->model. -- karr k132
+sub default_model { 'gpt-oss-120b' }
 
 =method default_model
 
-Returns C<llama3-chat-8b>, matching the default of the sibling
-L<Langertha::Engine::AKIOpenAI>. AKI.IO documents no default of its own for
-this endpoint — an unset or unknown model silently resolves to MiniMax M2.5
+Returns C<gpt-oss-120b>, a current-generation non-MiniMax model AKI.IO rates
+"Supported", matching the default of the sibling
+L<Langertha::Engine::AKIOpenAI> and replacing C<llama3-chat-8b>, which AKI.IO
+marks end-of-life 2026-09-30. AKI.IO exposes MiniMax M3 only on its native
+endpoint, not this shim. AKI.IO documents no default of its own for this
+endpoint — an unset or unknown model silently resolves to MiniMax M2.5
 (see L</DESCRIPTION>), so this class always sends an explicit model.
 
 =cut
