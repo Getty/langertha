@@ -18,6 +18,19 @@ Revision history for Langertha
       supports() and chat_f simply tell the truth per model now. An ADR 0002
       amendment.
 
+    - Engine::Anthropic uses native structured output (karr k133). The
+      first-party Claude Messages API now takes structured output as
+      output_config.format, so response_format is emitted there directly instead
+      of through the synthesized-tool + forced-tool_choice rewrite (which the
+      legacy /anthropic shim engines still use). This also makes structured
+      output stream, and merges with output_config.effort rather than clobbering
+      it. Forced tool use (tool_choice `any` / a named `tool`) 400s on Fable 5.1
+      and Mythos 5.1, so those models clear tool_choice_named / tool_choice_any
+      (k138 per-model correction) and chat_f auto-routes a forced named tool
+      through the native path there. Langertha::Tool->to_anthropic now also
+      emits strict:true for a closed schema (additionalProperties:false plus a
+      non-empty required list). Amends ADR 0005.
+
     - Engine::Anthropic inference_geo documents only the values the first-party
       API offers (karr #134). The =attr POD and SYNOPSIS promised
       inference_geo => 'eu' as an EU data-residency guarantee, but Anthropic's

@@ -3,6 +3,7 @@ package Langertha::Tool;
 our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
+use JSON::MaybeXS;
 
 has name => (
   is       => 'ro',
@@ -121,11 +122,29 @@ sub to_openai {
 
 sub to_anthropic {
   my ($self) = @_;
+  my $schema = $self->input_schema;
   return {
     name         => $self->name,
     description  => $self->description,
-    input_schema => $self->input_schema,
+    input_schema => $schema,
+    # Strict tool use (GA, no beta header): guarantees tool_use.input validates
+    # exactly against input_schema. Anthropic requires a closed schema for it —
+    # additionalProperties:false plus a non-empty required list — so we only
+    # emit strict:true where the schema author opted into that shape, and stay
+    # silent (and lenient) otherwise. Emitting strict on an open schema 400s.
+    ( _schema_is_strict($schema) ? ( strict => JSON->true ) : () ),
   };
+}
+
+# True when input_schema is closed enough for Anthropic strict tool use:
+# additionalProperties explicitly false and a non-empty required array.
+sub _schema_is_strict {
+  my ($schema) = @_;
+  return 0 unless ref($schema) eq 'HASH';
+  return 0 unless exists $schema->{additionalProperties};
+  return 0 if $schema->{additionalProperties};   # true / truthy -> open schema
+  return 0 unless ref($schema->{required}) eq 'ARRAY' && @{$schema->{required}};
+  return 1;
 }
 
 sub to_ollama { $_[0]->to_openai }

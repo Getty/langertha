@@ -163,11 +163,21 @@ sub chat_request {
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
 
-  # Anthropic has no native response_format. Translate json_object /
-  # json_schema response_format hashes into a synthesized tool + forced
-  # named tool_choice; the response parser will pull the structured
-  # output out of the resulting tool_use block.
-  my $rf_routed = $self->_translate_response_format(\%extra, $controls);
+  # Structured output. Engines whose wire has native structured output
+  # (Engine::Anthropic, via _native_structured_output) emit it as
+  # output_config.format and leave the content JSON on the wire (chat_response
+  # returns it verbatim). Engines without it (the legacy /anthropic shims)
+  # keep the ADR 0005 synthesized-tool + forced tool_choice rewrite, whose
+  # tool_use input chat_response lifts back into content.
+  my $rf_routed = 0;
+  my $output_config_format;
+  if ( $self->_native_structured_output ) {
+    my $rf = $self->_take_response_format(\%extra, $controls);
+    $output_config_format = $self->_response_format_to_output_config($rf);
+  }
+  else {
+    $rf_routed = $self->_translate_response_format(\%extra, $controls);
+  }
 
   $self->_normalize_tool_params(\%extra, $controls);
   my @msgs;
@@ -187,6 +197,10 @@ sub chat_request {
     };
     $system = undef;
   }
+
+  my %generation = $self->generation_kwargs_for(%$controls);
+  $self->_merge_output_config_format( \%generation, $output_config_format );
+
   return $self->generate_http_request( POST => $self->url.'/v1/messages', sub { $self->chat_response(shift, $rf_routed) },
     model => $self->chat_model,
     messages => \@msgs,
@@ -196,7 +210,7 @@ sub chat_request {
     exists $controls->{temperature}
       ? ( temperature => $controls->{temperature} )
       : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
-    $self->generation_kwargs_for(%$controls),
+    %generation,
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     %extra,
@@ -214,6 +228,72 @@ object.
 
 =cut
 
+# Whether this engine's wire has native structured output (output_config.format,
+# GA on the first-party Claude API — see ADR 0005 amendment). Default no: the
+# legacy /anthropic shim engines (MiniMax, Moonshot, AKI, LM Studio) keep the
+# synthesized-tool rewrite. Engine::Anthropic overrides this to a true value.
+sub _native_structured_output { 0 }
+
+=method _native_structured_output
+
+Internal predicate. True when the engine's wire supports native structured
+output via C<output_config.format> (the first-party Claude Messages API); false
+(the default) for the legacy C</anthropic> shim engines, which fall back to the
+ADR 0005 synthesized-tool rewrite. L<Langertha::Engine::Anthropic> overrides it
+to a true value.
+
+=cut
+
+# Pull a response_format hash out of the per-request controls / %extra / engine
+# attribute (per-request beats engine attribute, chat_f/karr #46) and remove it
+# from both — the Messages API has no top-level response_format field and 400s
+# when one reaches the wire, on every structured-output path.
+sub _take_response_format {
+  my ( $self, $extra, $controls ) = @_;
+  return exists $controls->{response_format}
+    ? delete $controls->{response_format}
+    : exists $extra->{response_format}
+      ? delete $extra->{response_format}
+      : $self->has_response_format ? $self->response_format : undef;
+}
+
+# Turn a response_format hash into the native output_config.format value, or
+# undef when the hash is not an honorable json_schema / json_object. json_object
+# has no schema, so it maps onto an open-object json_schema.
+sub _response_format_to_output_config {
+  my ( $self, $rf ) = @_;
+  return undef unless ref($rf) eq 'HASH';
+  my $type = $rf->{type} // '';
+  if ( $type eq 'json_schema'
+    && ref( $rf->{json_schema} ) eq 'HASH'
+    && ref( $rf->{json_schema}{schema} ) eq 'HASH'
+  ) {
+    return { type => 'json_schema', schema => $rf->{json_schema}{schema} };
+  }
+  if ( $type eq 'json_object' ) {
+    return {
+      type   => 'json_schema',
+      schema => { type => 'object', additionalProperties => JSON->true },
+    };
+  }
+  return undef;
+}
+
+# Fold a native structured-output format into output_config, MERGING rather than
+# replacing: Langertha::Reasoning::to_anthropic already puts effort under the
+# same output_config key, so a naive second output_config would silently drop
+# one of the two (k133 point 3). Mutates the generation-kwargs hash in place.
+sub _merge_output_config_format {
+  my ( $self, $generation, $format ) = @_;
+  return unless $format;
+  my $oc = $generation->{output_config};
+  $generation->{output_config} = {
+    ( ref($oc) eq 'HASH' ? %$oc : () ),
+    format => $format,
+  };
+  return;
+}
+
 # Anthropic has no response_format; emulate via a synthetic tool plus
 # a forced tool_choice. The response_call will detect the synthetic
 # tool_use block and lift its input back into the response content.
@@ -225,11 +305,7 @@ sub _translate_response_format {
   # A per-request response_format (chat_f, karr #46) beats the engine
   # attribute, and is removed from the extras either way: the Messages API
   # has no response_format field and answers 400 when one reaches the wire.
-  my $rf = exists $controls->{response_format}
-    ? delete $controls->{response_format}
-    : exists $extra->{response_format}
-      ? delete $extra->{response_format}
-      : $self->has_response_format ? $self->response_format : undef;
+  my $rf = $self->_take_response_format($extra, $controls);
   return unless ref($rf) eq 'HASH';
   my $type = $rf->{type} // '';
 
@@ -368,27 +444,28 @@ sub chat_stream_request {
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
 
-  # Anthropic has no native response_format, and the streaming path has no
-  # Response to lift a synthesized tool_use back into content from — the
-  # chat_request rewrite (_translate_response_format) depends on
-  # chat_response doing that lift. Rather than silently streaming
-  # unstructured text (karr #52 Folge 1) or leaking response_format onto
-  # the wire (Folge 2), consume the key and refuse loudly: structured
-  # output on Anthropic-family engines is a non-streaming feature.
-  my $rf = exists $controls->{response_format}
-    ? delete $controls->{response_format}
-    : exists $extra{response_format}
-      ? delete $extra{response_format}
-      : $self->has_response_format ? $self->response_format : undef;
-  if ( defined $rf && ref($rf) eq 'HASH' ) {
+  # Structured output on the streaming path. Engines with native structured
+  # output (output_config.format) stream it as ordinary text deltas — the JSON
+  # is the content — so it needs no Response lift and streams fine. The legacy
+  # /anthropic shims have no native form; their synthesized-tool rewrite has no
+  # streaming counterpart to the chat_response tool_use lift (ADR 0005), so
+  # rather than silently streaming unstructured text (karr #52 Folge 1) or
+  # leaking response_format onto the wire (Folge 2) they consume the key and
+  # refuse loudly.
+  my $rf = $self->_take_response_format(\%extra, $controls);
+  my $output_config_format;
+  if ( $self->_native_structured_output ) {
+    $output_config_format = $self->_response_format_to_output_config($rf);
+  }
+  elsif ( ref($rf) eq 'HASH' ) {
     my $type = $rf->{type} // '';
     my $honored = $type eq 'json_object'
       || ( $type eq 'json_schema'
         && ref( $rf->{json_schema} ) eq 'HASH'
         && ref( $rf->{json_schema}{schema} ) eq 'HASH' );
     if ($honored) {
-      croak "".(ref $self)." cannot stream response_format: Anthropic-family engines "
-        . "route structured output through a synthesized tool whose tool_use input "
+      croak "".(ref $self)." cannot stream response_format: this Anthropic-shim engine "
+        . "routes structured output through a synthesized tool whose tool_use input "
         . "is lifted into Response.content by chat_response, and the streaming path "
         . "has no Response to lift from. Use chat_f/chat_request for structured output.";
     }
@@ -412,6 +489,10 @@ sub chat_stream_request {
     };
     $system = undef;
   }
+
+  my %generation = $self->generation_kwargs_for(%$controls);
+  $self->_merge_output_config_format( \%generation, $output_config_format );
+
   return $self->generate_http_request( POST => $self->url.'/v1/messages', sub {},
     model => $self->chat_model,
     messages => \@msgs,
@@ -421,7 +502,7 @@ sub chat_stream_request {
     exists $controls->{temperature}
       ? ( temperature => $controls->{temperature} )
       : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
-    $self->generation_kwargs_for(%$controls),
+    %generation,
     $self->has_inference_geo ? ( inference_geo => $self->inference_geo ) : (),
     $system ? ( system => $system ) : (),
     stream => JSON->true,
