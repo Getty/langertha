@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - The Open-Responses wire envelope is now a role,
+      Langertha::Role::ResponsesCompatible (k139), parallel to
+      Role::OpenAICompatible / Role::AnthropicCompatible. It owns the input builder,
+      the output[] walker, usage normalization and the typed-SSE stream parser;
+      Engine::OpenAIResponses composes it and is unchanged in behaviour (it still
+      opts out of streaming). Engine::OpenAIResponses now also surfaces
+      Response.created from the response created_at stamp.
+
     - Engine::Anthropic inference_geo documents only the values the first-party
       API offers (karr #134). The =attr POD and SYNOPSIS promised
       inference_geo => 'eu' as an EU data-residency guarantee, but Anthropic's

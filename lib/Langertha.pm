@@ -405,6 +405,8 @@ filtering for reasoning models, composed by L<Langertha::Role::Chat>
 
 =item * L<Langertha::Role::AnthropicCompatible> - Anthropic-compatible API behaviour
 
+=item * L<Langertha::Role::ResponsesCompatible> - Open-Responses wire envelope (OpenAI /v1/responses, Perplexity Agent API)
+
 =item * L<Langertha::Role::SystemPrompt> - System prompt attribute
 
 =item * L<Langertha::Role::Temperature> - Temperature parameter

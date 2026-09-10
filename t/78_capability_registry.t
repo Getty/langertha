@@ -26,6 +26,7 @@ my %NOT_A_CAPABILITY = (
   'Langertha::Role::Capabilities'        => 'the registry itself',
   'Langertha::Role::OpenAICompatible'    => 'wire envelope (dialect axis, ADR 0013/0016)',
   'Langertha::Role::AnthropicCompatible' => 'wire envelope (dialect axis, ADR 0013/0016)',
+  'Langertha::Role::ResponsesCompatible' => 'wire envelope (dialect axis, ADR 0013/0016)',
   'Langertha::Role::HTTP'                => 'transport, not a provider feature',
   'Langertha::Role::JSON'                => 'serializer infrastructure',
   'Langertha::Role::OpenAPI'             => 'request generation / spec validation infrastructure',

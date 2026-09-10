@@ -2,12 +2,10 @@ package Langertha::Engine::OpenAIResponses;
 # ABSTRACT: OpenAI Responses API (reasoning models like gpt-5.5-pro)
 our $VERSION = '0.503';
 use Moose;
-use Carp qw( croak );
-use JSON::MaybeXS;
-use Langertha::ToolCall;
-use Langertha::Tool;
 
 extends 'Langertha::Engine::OpenAI';
+
+with 'Langertha::Role::ResponsesCompatible';
 
 =head1 SYNOPSIS
 
@@ -29,250 +27,44 @@ C<-pro> SKUs that are not available on the Chat Completions endpoint
 (C</v1/chat/completions>).
 
 Unlike L<Langertha::Engine::OpenAI> which calls C</v1/chat/completions>, this
-engine calls C</v1/responses> with the Responses API's own request/response
-shape. The Responses API uses:
-
-=over 4
-
-=item * C<input> instead of C<messages>
-
-=item * C<instructions> for system prompt (top-level, not in input array)
-
-=item * Flat tool objects C<{type, name, description, parameters}> instead
-of C<{type, function, function: {...}}>
-
-=item * C<output[]> array with type discriminators (C<message>, C<reasoning>,
-C<function_call>) instead of C<choices[]>
-
-=item * C<input_tokens>/C<output_tokens> instead of
-C<prompt_tokens>/C<completion_tokens>
-
-=item * C<output_tokens_details.reasoning_tokens> instead of
-C<completion_tokens_details.reasoning_tokens>
-
-=back
+engine speaks the Open-Responses wire envelope: C<input> instead of
+C<messages>, top-level C<instructions>, flat tool objects, and an C<output[]>
+array with type discriminators. That envelope lives in
+L<Langertha::Role::ResponsesCompatible> (parallel to
+L<Langertha::Role::OpenAICompatible>); this engine is a thin shell that inherits
+OpenAI's Bearer auth, API key and model list from L<Langertha::Engine::OpenAI>,
+composes the Responses envelope on top, and opts out of streaming.
 
 This engine returns a L<Langertha::Response> that is shape-compatible with
 the chat path, so existing consumers (including Goldmine's C<complete>
 method) work without modification. Reasoning tokens are normalized to
 C<completion_tokens_details.reasoning_tokens> for cost lookup compatibility.
 
+=head2 Structured output
+
+Structured output goes under C<text.format> (a flat json_schema, not the
+Chat-Completions nested shape); the Responses API has no C<response_format>
+param. See L<Langertha::Role::ResponsesCompatible/_responses_format_kwargs>.
+
 =head2 Function call output shape
 
-The Responses API emits C<function_call> in two different positions
-depending on model and request shape:
-
-=over 4
-
-=item * B<Top-level> C<output[]> item:
-C<< { type =E<gt> 'function_call', call_id =E<gt> 'call_abc', name =E<gt> 'foo',
-arguments =E<gt> '{...}' } >>. This is what real reasoning models (e.g.
-C<gpt-5.5-pro>) return for forced C<tool_choice>.
-
-=item * B<Nested> inside a message item:
-C<< output[type='message'].content[type='function_call'] >>. Historically
-seen in streaming / older fixtures.
-
-=back
-
-C<chat_response>, C<response_tool_calls> and L<Langertha::ToolCall/extract>
-walk both shapes. Streaming is not supported.
+The Responses API emits C<function_call> as a top-level C<output[]> item
+(real reasoning models) or nested inside a message item (older fixtures);
+C<chat_response> and L<Langertha::ToolCall/extract> walk both. Streaming is
+not supported — L<Langertha::Role::ResponsesCompatible> can stream the
+envelope, but this engine opts out (see below).
 
 =cut
-
-override 'chat_operation_id' => sub {
-    return 'createResponse';
-};
-
-sub chat_request {
-    my ( $self, $messages, %extra ) = @_;
-
-    # Canonical per-request controls (chat_f, karr #46) beat the engine
-    # attributes on a per-key basis; the rest of %extra passes straight through.
-    my $controls = delete $extra{controls} // {};
-
-    # Normalize tool_choice to Responses format
-    if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
-        if ( my $tc = Langertha::ToolChoice->from_hash( $extra{tool_choice} ) ) {
-            $extra{tool_choice} = $tc->to( $self->tool_wire_format );
-        }
-    }
-
-    # If tools passed in MCP format (inputSchema camelCase), format them
-    # to Responses flat format. If already formatted (has 'type' key), pass through.
-    if ( exists $extra{tools} && ref $extra{tools} eq 'ARRAY' ) {
-        my @tools = @{$extra{tools}};
-        if ( @tools && ref $tools[0] eq 'HASH' && !exists $tools[0]{type} ) {
-            $extra{tools} = $self->format_tools(\@tools);
-        }
-    }
-
-    # parallel_tool_use -> parallel_tool_calls (only when tools present).
-    # A per-request control beats the engine attribute.
-    if ( exists $extra{tools} && !exists $extra{parallel_tool_calls} ) {
-        my $ptu;
-        if ( exists $controls->{parallel_tool_use} ) {
-            $ptu = $controls->{parallel_tool_use};
-        }
-        elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
-            $ptu = $self->parallel_tool_use;
-        }
-        $extra{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
-    }
-
-    # Build input array: strip system messages (go to instructions instead)
-    my @input;
-    for my $msg (@$messages) {
-        next if ( $msg->{role} // '' ) eq 'system';
-        push @input, $self->_normalize_input_item($msg);
-    }
-
-    # Structured output: the Responses API has no response_format param; it
-    # carries the format under text.format (a flat json_schema, not the nested
-    # Chat Completions shape). Per-request control beats the engine attribute.
-    my $response_format =
-        exists $controls->{response_format} ? $controls->{response_format}
-      : ( $self->can('has_response_format') && $self->has_response_format )
-                                            ? $self->response_format
-      :                                       undef;
-
-    my @request_args = (
-        defined $self->chat_model ? ( model => $self->chat_model ) : (),
-        $self->has_system_prompt ? ( instructions => $self->system_prompt ) : (),
-        scalar(@input) ? ( input => \@input ) : (),
-        exists $controls->{max_tokens}
-            ? ( max_output_tokens => $controls->{max_tokens} )
-            : ( $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : () ),
-        defined $response_format
-            ? ( text => { format => $self->_responses_text_format($response_format) } )
-            : (),
-        exists $controls->{temperature}
-            ? ( temperature => $controls->{temperature} )
-            : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
-        exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
-        ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
-        stream => JSON->false,
-        %extra,
-    );
-
-    return $self->generate_request(
-        $self->chat_operation_id,
-        sub { $self->chat_response(shift) },
-        @request_args,
-    );
-}
-
-sub _normalize_input_item {
-    my ( $self, $msg ) = @_;
-    # Pass through for now — expand if Responses gains multimodal content blocks
-    return $msg;
-}
-
-# Translate an OpenAI Chat-Completions response_format hash into the value the
-# Responses API wants under text.format. On the Chat wire the schema is nested
-# (`{ type => 'json_schema', json_schema => { name, schema, strict } }`); the
-# Responses wire pulls that inner object up one level (flat json_schema). A
-# json_object stays a bare type; anything unrecognized (or already flat) passes
-# through unchanged so we never mangle a shape we do not model.
-sub _responses_text_format {
-    my ( $self, $rf ) = @_;
-    return $rf unless ref $rf eq 'HASH';
-    my $type = $rf->{type} // '';
-    if ( $type eq 'json_schema' && ref $rf->{json_schema} eq 'HASH' ) {
-        return { %{ $rf->{json_schema} }, type => 'json_schema' };
-    }
-    if ( $type eq 'json_object' ) {
-        return { type => 'json_object' };
-    }
-    return $rf;
-}
-
-sub chat_response {
-    my ( $self, $response ) = @_;
-    my $data = $self->parse_response($response);
-
-    my ( $text, @tc_data, $finish_reason, $thinking );
-
-    for my $item ( @{ $data->{output} // [] } ) {
-        next unless ref($item) eq 'HASH';
-        my $type = $item->{type} // '';
-
-        if ( $type eq 'reasoning' ) {
-            # Collect reasoning summary if present
-            my $summary = $item->{summary}[0]{text} // '';
-            $thinking //= $summary if length $summary;
-        }
-        elsif ( $type eq 'message' ) {
-            $finish_reason = ( $item->{status} // '' ) eq 'completed' ? 'stop' : ( $item->{status} // '' );
-
-            for my $block ( @{ $item->{content} // [] } ) {
-                my $block_type = $block->{type} // '';
-                if ( $block_type eq 'output_text' ) {
-                    $text .= ( $block->{text} // '' );
-                }
-                elsif ( $block_type eq 'function_call' ) {
-                    push @tc_data, $block;
-                }
-            }
-        }
-        elsif ( $type eq 'function_call' ) {
-            # Real Responses API emits function_call as a top-level output[]
-            # item carrying name/arguments/call_id directly on the item.
-            push @tc_data, $item;
-            $finish_reason //= 'tool_calls';
-        }
-    }
-
-    # Normalize usage to chat-style (Goldmine expects prompt_tokens/completion_tokens)
-    my $usage = $data->{usage} // {};
-    my $normalized_usage = {
-        prompt_tokens     => $usage->{input_tokens},
-        completion_tokens => $usage->{output_tokens},
-        total_tokens      => $usage->{total_tokens},
-    };
-    if ( my $rt = $usage->{output_tokens_details}{reasoning_tokens} ) {
-        $normalized_usage->{completion_tokens_details} = { reasoning_tokens => $rt };
-    }
-
-    my @tcs = map { $self->_parse_function_call($_) } @tc_data;
-
-    return Langertha::Response->new(
-        content       => $text // '',
-        raw           => $data,
-        $data->{id}      ? ( id => $data->{id} )      : (),
-        $data->{model}   ? ( model => $data->{model} ) : (),
-        defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
-        usage         => $normalized_usage,
-        @tcs ? ( tool_calls => \@tcs ) : (),
-        defined $thinking ? ( thinking => $thinking ) : (),
-    );
-}
-
-sub _parse_function_call {
-    my ( $self, $block ) = @_;
-    my $args = $block->{arguments} // '{}';
-    $args = $self->decode_json_text($args) if $args && !ref $args;
-    return Langertha::ToolCall->new(
-        name      => ( $block->{name} // '' ),
-        arguments => ( ref($args) eq 'HASH' ? $args : {} ),
-        id        => ( $block->{call_id} // '' ),
-    );
-}
-
-# Tool calling support (MCP) is the tag-driven default in Langertha::Role::Tools.
-sub _build_tool_wire_format { 'responses' }
 
 # Protocol variant of OpenAI: shares the vendor's API key.
 sub api_key_env { 'LANGERTHA_OPENAI_API_KEY' }
 
-# Reasoning effort is nested: reasoning => { effort => ... }.
-sub _build_reasoning_wire_format { 'responses' }
+# The Responses envelope role can stream (typed SSE), but this engine has never
+# supported it. Opt out: stream_format => undef, and clear the streaming flag
+# that Role::Streaming (inherited via Engine::OpenAI) would otherwise advertise
+# (ADR 0002 escape hatch). Both together keep supports('streaming') honest.
+sub stream_format { return undef }
 
-sub stream_format { return undef }  # Streaming not supported
-
-# stream_format returns undef, so this engine cannot stream — but it inherits
-# Role::Streaming (via Engine::OpenAI), which would advertise the flag. Clear it
-# so supports('streaming') tells the truth (ADR 0002 escape hatch).
 around engine_capabilities => sub {
     my ( $orig, $self, @rest ) = @_;
     my $caps = $self->$orig(@rest);
@@ -286,9 +78,11 @@ __PACKAGE__->meta->make_immutable;
 
 =over
 
+=item * L<Langertha::Role::ResponsesCompatible> - the Open-Responses wire envelope
+
 =item * L<Langertha::Engine::OpenAI> - Chat Completions endpoint (for non-reasoning models)
 
-=item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
+=item * L<Langertha::Engine::Perplexity> - the other Responses-envelope consumer (Agent API)
 
 =item * L<Langertha::ToolCall> - Tool call extraction from Responses format
 
