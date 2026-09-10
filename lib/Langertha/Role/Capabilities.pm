@@ -84,7 +84,7 @@ sub engine_capabilities {
     next unless $self->does($role);
     $caps{$_} = 1 for @{ $ROLE_TO_CAPS{$role} };
   }
-  # Layer 3 (ADR 0002 amendment, pending ADR 0019): per-model refinement.
+  # Layer 3 (ADR 0002 amendment, ADR 0019): per-model refinement.
   # The tool / structured-output wire reality is often per-MODEL, not
   # per-engine (kimi-k3 forbids a forced named tool while its K2.x siblings
   # allow it; deepseek-reasoner clamps differ from deepseek-chat). Engines
@@ -135,7 +135,7 @@ whole-endpoint wire reality via C<around> (remove flags the wire cannot
 deliver at all, or add an ad-hoc flag — the outer gate); (3) it applies the
 engine's C<model_capability_corrections> for the currently selected
 C<chat_model>, refining the base where the wire reality is per-model rather
-than per-engine (ADR 0002 amendment, pending ADR 0019).
+than per-engine (ADR 0002 amendment, ADR 0019).
 
 A capability flag means B<the wire accepts the field>, not that any given
 model will honor it. For example C<reasoning_effort> being true says the
