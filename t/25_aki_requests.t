@@ -223,7 +223,7 @@ is_deeply($min_decoded, [{
   local $SIG{__WARN__} = sub { push @warnings, @_ };
   my $aki_openai = $aki->openai;
   isa_ok($aki_openai, 'Langertha::Engine::AKIOpenAI');
-  is($aki_openai->model, 'llama3-chat-8b', 'openai() uses AKIOpenAI default model');
+  is($aki_openai->model, 'gpt-oss-120b', 'openai() uses AKIOpenAI default model (gpt-oss-120b, karr k132)');
   is($aki_openai->api_key, 'testkey', 'openai() passes api_key');
   ok(scalar @warnings >= 1, 'openai() without explicit model emits warning');
   like($warnings[0] || '', qr/cannot be mapped/, 'warning mentions model mapping');
@@ -245,7 +245,7 @@ is_deeply($min_decoded, [{
   local $SIG{__WARN__} = sub { push @warnings, @_ };
   my $aki_anthropic = $aki->anthropic;
   isa_ok($aki_anthropic, 'Langertha::Engine::AKIAnthropic');
-  is($aki_anthropic->model, 'llama3-chat-8b', 'anthropic() uses AKIAnthropic default model');
+  is($aki_anthropic->model, 'gpt-oss-120b', 'anthropic() uses AKIAnthropic default model (gpt-oss-120b, karr k132)');
   is($aki_anthropic->api_key, 'testkey', 'anthropic() passes api_key');
   is($aki_anthropic->url, 'https://aki.io/anthropic',
     'anthropic() uses AKIAnthropic own url (not the native https://aki.io base)');

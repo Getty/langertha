@@ -135,9 +135,9 @@ subtest 'Engine::AKI native chat (karr k126)' => sub {
 };
 
 # --- 4. AKIOpenAI native tool call ---
-# This capture is the karr k102 probe itself: llama3-chat-8b, the engine's
-# default model and one AKI's own table rates only "Basic Support", answering a
-# native OpenAI tools array with a native tool_calls block. It is the evidence
+# This capture is the karr k102 probe itself: llama3-chat-8b, one model AKI's
+# own table rates only "Basic Support", answering a native OpenAI tools array
+# with a native tool_calls block. It is the evidence
 # behind dropping Role::HermesTools from this engine.
 
 subtest 'AKIOpenAI native tool call (karr k102 probe capture)' => sub {

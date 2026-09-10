@@ -9,10 +9,12 @@ Revision history for Langertha
       /api/endpoints listing. MiniMax is a per-account gated endpoint — a key
       without the entitlement is answered with "Client not authorized for
       endpoint minimax_m3!" instead of a silent fallback, so check
-      $response->model. The OpenAI- and Anthropic-compatible AKI engines still
-      default to llama3-chat-8b: AKI does not expose MiniMax M3 on those shim
-      endpoints yet, and their only MiniMax id (minimax-m2.5-230b) is the older
-      generation.
+      $response->model. The OpenAI- and Anthropic-compatible AKI engines
+      (Engine::AKIOpenAI, Engine::AKIAnthropic) now default to `gpt-oss-120b`, a
+      current-generation non-MiniMax model AKI.IO rates "Supported": AKI exposes
+      MiniMax M3 only on the native endpoint, and the shims' sole MiniMax id
+      (minimax-m2.5-230b) is the older generation. Both shim defaults were
+      verified live to answer gpt-oss-120b and echo it back as $response->model.
 
     - Engine::Anthropic inference_geo documents only the values the first-party
       API offers (karr #134). The =attr POD and SYNOPSIS promised

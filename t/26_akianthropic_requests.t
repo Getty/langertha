@@ -33,7 +33,7 @@ my $aki = Langertha::Engine::AKIAnthropic->new(
 );
 
 is($aki->url, 'https://aki.io/anthropic', 'AKIAnthropic url default stops at /anthropic');
-is($aki->default_model, 'llama3-chat-8b', 'AKIAnthropic default_model matches the AKIOpenAI sibling');
+is($aki->default_model, 'gpt-oss-120b', 'AKIAnthropic default_model matches the AKIOpenAI sibling (gpt-oss-120b; llama3-chat-8b EOL 2026-09-30, karr k132)');
 is(Langertha::Engine::AKIAnthropic->api_key_env, 'LANGERTHA_AKI_API_KEY', 'AKIAnthropic advertises the shared AKI key env');
 
 my $request = $aki->chat('testprompt');
@@ -65,7 +65,7 @@ is_deeply($json->decode($request->content), {
   my $default_size = Langertha::Engine::AKIAnthropic->new(api_key => 'testkey');
   my $data = $json->decode($default_size->chat('testprompt')->content);
   is($data->{max_tokens}, 8192, 'AKIAnthropic defaults max_tokens to AKI-documented 8192');
-  is($data->{model}, 'llama3-chat-8b', 'AKIAnthropic always sends an explicit model (unknown ids silently fall back)');
+  is($data->{model}, 'gpt-oss-120b', 'AKIAnthropic always sends an explicit model (unknown ids silently fall back)');
 }
 
 # --- API key resolution ---
@@ -91,7 +91,7 @@ is_deeply($json->decode($request->content), {
   my %ids = map { $_ => 1 } @$models;
   ok($ids{'gemma4-26b'}, 'model list carries gemma4-26b');
   ok($ids{'minimax-m2.5-230b'}, 'model list carries the silent-fallback model minimax-m2.5-230b');
-  ok($ids{'llama3-chat-8b'}, 'model list carries the default model');
+  ok($ids{'gpt-oss-120b'}, 'model list carries the default model gpt-oss-120b (karr k132)');
   # Claude ids are accepted by the endpoint but silently answered by MiniMax
   # M2.5, so they must never be advertised as available here.
   ok(!(grep { /^claude/ } @$models), 'model list advertises no Claude model names');

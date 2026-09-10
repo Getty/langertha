@@ -587,7 +587,7 @@ test_openai_cloud_engine(
   env_var => 'LANGERTHA_AKI_API_KEY',
   has_tools => 1,
 );
-is(Langertha::Engine::AKIOpenAI->new(api_key => 'k')->default_model, 'llama3-chat-8b', 'AKIOpenAI default_model');
+is(Langertha::Engine::AKIOpenAI->new(api_key => 'k')->default_model, 'gpt-oss-120b', 'AKIOpenAI default_model (gpt-oss-120b; llama3-chat-8b EOL 2026-09-30, karr k132)');
 
 # --- AKIAnthropic (AKI.IO via Anthropic-compatible endpoint) ---
 
@@ -601,7 +601,7 @@ ok(Langertha::Engine::AKIAnthropic->does('Langertha::Role::StaticModels'), 'AKIA
 {
   my $a = Langertha::Engine::AKIAnthropic->new(api_key => 'test-key');
   is($a->url, 'https://aki.io/anthropic', 'AKIAnthropic url default correct (no trailing /v1)');
-  is($a->default_model, 'llama3-chat-8b', 'AKIAnthropic default_model');
+  is($a->default_model, 'gpt-oss-120b', 'AKIAnthropic default_model (gpt-oss-120b; llama3-chat-8b EOL 2026-09-30, karr k132)');
   my $req = $a->chat('test prompt');
   is($req->method, 'POST', 'AKIAnthropic chat request is POST');
   # Same single-/v1 invariant as the MiniMaxAnthropic regression (karr #18).
