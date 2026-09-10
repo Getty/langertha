@@ -13,7 +13,7 @@ use Langertha::Tool;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(28);
+plan(29);
 
 # --- Basic chat request ---
 
@@ -165,9 +165,15 @@ ok((grep { $_ eq 'Qwen/Qwen3.6-35B-A3B-FP8' } @$ids),
 # --- Capability registry ---
 
 ok($hetzner->supports('chat'), 'chat capability advertised');
-ok($hetzner->supports('tools_native'), 'tools_native capability advertised');
-ok($hetzner->supports('response_format_json_schema'),
-  'response_format_json_schema capability advertised');
+# Hetzner Inference documents neither tool calling nor structured output and is
+# explicitly experimental, so the engine clears these flags (k138) even though
+# it composes Role::Tools/Role::ResponseFormat — the wire still SERIALIZES a
+# tools array if a caller forces one (asserted above), the flags just stop
+# chat_f from routing to a path the gateway may silently no-op.
+ok(!$hetzner->supports('tools_native'), 'tools_native NOT advertised (undocumented/experimental)');
+ok(!$hetzner->supports('response_format_json_schema'),
+  'response_format_json_schema NOT advertised (undocumented/experimental)');
+ok(!$hetzner->supports('parallel_tool_use'), 'parallel_tool_use NOT advertised');
 ok(!$hetzner->supports('embedding'), 'embedding NOT advertised');
 ok(!$hetzner->supports('transcription'), 'transcription NOT advertised');
 

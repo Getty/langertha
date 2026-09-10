@@ -84,18 +84,58 @@ sub engine_capabilities {
     next unless $self->does($role);
     $caps{$_} = 1 for @{ $ROLE_TO_CAPS{$role} };
   }
+  # Layer 3 (ADR 0002 amendment, pending ADR 0019): per-model refinement.
+  # The tool / structured-output wire reality is often per-MODEL, not
+  # per-engine (kimi-k3 forbids a forced named tool while its K2.x siblings
+  # allow it; deepseek-reasoner clamps differ from deepseek-chat). Engines
+  # declare a model-id/pattern -> {cap => 0|1} table in
+  # model_capability_corrections; it refines the role-derived base for the
+  # currently selected chat_model. Engine-WIDE corrections stay in
+  # `around engine_capabilities` (the outer endpoint-reality gate, layer 2).
+  $self->_apply_model_capability_corrections(\%caps);
   return \%caps;
+}
+
+# Default: no per-model corrections. Engines override with a declarative,
+# ordered list of ( $matcher => \%overrides ) pairs — see the =method below.
+sub model_capability_corrections { return () }
+
+sub _apply_model_capability_corrections {
+  my ( $self, $caps ) = @_;
+  my @corrections = $self->model_capability_corrections;
+  return unless @corrections;
+  # chat_model is the model that actually carries tools / tool_choice /
+  # response_format on the wire (Role::Chat); guard for the rare consumer
+  # of engine_capabilities that has no model surface at all.
+  my $model = $self->can('chat_model') ? $self->chat_model : undef;
+  return unless defined $model && length $model;
+  while ( @corrections >= 2 ) {
+    my ( $matcher, $overrides ) = splice @corrections, 0, 2;
+    my $hit = ref $matcher eq 'Regexp' ? ( $model =~ $matcher )
+            :                            ( $model eq $matcher );
+    next unless $hit;
+    # Later matching entries win on a shared flag. A true value asserts the
+    # capability, a false value clears it.
+    for my $cap ( keys %$overrides ) {
+      if ( $overrides->{$cap} ) { $caps->{$cap} = 1 }
+      else                      { delete $caps->{$cap} }
+    }
+  }
+  return;
 }
 
 =method engine_capabilities
 
     my $caps = $engine->engine_capabilities;
 
-Returns a HashRef of capability flags. The default scans the composed
-role inventory and sets flags from a static role-to-flags map. Override
-via C<around> on an engine to remove flags for capabilities the wire
-reality cannot deliver, or to add ad-hoc flags an engine wants to
-advertise.
+Returns a HashRef of capability flags. The default derives the flag set in
+three layers: (1) it scans the composed role inventory and sets flags from
+the static role-to-flags map (ADR 0002); (2) an engine may correct the
+whole-endpoint wire reality via C<around> (remove flags the wire cannot
+deliver at all, or add an ad-hoc flag — the outer gate); (3) it applies the
+engine's C<model_capability_corrections> for the currently selected
+C<chat_model>, refining the base where the wire reality is per-model rather
+than per-engine (ADR 0002 amendment, pending ADR 0019).
 
 A capability flag means B<the wire accepts the field>, not that any given
 model will honor it. For example C<reasoning_effort> being true says the
@@ -122,6 +162,32 @@ C<extra_key>) — B<not> that prefix caching is on. Whether the server actually
 caches is launch state the client cannot observe (vLLM C<--enable-prefix-caching>,
 SGLang C<--enable-mixed-prefill> / C<--enable-prefix-caching>, llama.cpp
 C<--cache_prompt>); the flag only says the request body may carry the knobs.
+
+=cut
+
+=method model_capability_corrections
+
+    sub model_capability_corrections {
+      return (
+        'kimi-k3'       => { tool_choice_named => 0 },  # exact model id
+        qr/\Akimi-k2\./ => { tool_choice_any   => 0 },  # a model family
+      );
+    }
+
+The per-model correction layer (layer 3 of C<engine_capabilities>).
+Returns an B<ordered> list of C<< ( $matcher => \%overrides ) >> pairs.
+C<$matcher> is either an exact model-id string (matched with C<eq>) or a
+C<qr//> regex (matched against the engine's C<chat_model>) — model ids come
+in families (C<gpt-5.6-*>, C<kimi-k2.7-*>), so both forms are supported.
+C<\%overrides> maps a capability flag to C<1> (assert) or C<0> (clear);
+later matching entries win on a shared flag.
+
+This is the sanctioned home for a wire reality that differs B<per model>
+rather than per engine — for example a model that forbids a forced named
+tool while its siblings allow it. Engine-B<wide> corrections (the whole
+endpoint never accepts a field) belong in C<around engine_capabilities>
+instead. The default returns an empty list, so engines that need no
+per-model refinement pay nothing.
 
 =cut
 

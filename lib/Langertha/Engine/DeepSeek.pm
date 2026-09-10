@@ -63,6 +63,19 @@ sub _build_api_key {
 
 sub default_model { 'deepseek-v4-flash' }
 
+# DeepSeek's response_format.type enum is [text, json_object] only — there is
+# no json_schema on the standard endpoint (api-docs.deepseek.com, verified
+# 2026-09-01; schema enforcement instead needs a forced tool with strict:true
+# on the /beta base URL). Clear the json_schema flag so chat_f routes a
+# json_schema request through the forced-tool path rather than shipping a
+# response_format the wire rejects; json_object stays.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{response_format_json_schema};
+  return $caps;
+};
+
 # Reasoning effort diverges by DeepSeek model within the shared openai wire
 # format: the current V4 line (deepseek-v4-*) takes a flat reasoning_effort
 # string; the legacy V3.2 line used a thinking:{type:enabled} toggle instead.

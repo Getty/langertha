@@ -63,6 +63,19 @@ sub _build_supported_operations {[qw(
   createEmbedding
 )]}
 
+# llama.cpp's server parses tool_choice as a std::string, so the object (named)
+# form is SILENTLY downgraded to "auto" — the forced tool never binds, and
+# `strict` is ignored (ggml-org/llama.cpp common/chat.cpp, verified
+# 2026-09-01). Clear tool_choice_named so chat_f does not believe it can force a
+# specific tool here; the string forms (auto/any->required/none) are parsed and
+# stay.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{tool_choice_named};
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

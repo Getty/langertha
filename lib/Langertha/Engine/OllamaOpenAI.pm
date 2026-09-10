@@ -87,6 +87,22 @@ header.
 
 sub _build_supported_operations {[qw( createChatCompletion createEmbedding )]}
 
+# Ollama's OpenAI-compatible /v1 endpoint does not support tool_choice at all —
+# its own compatibility checklist marks it unimplemented, and the Go server has
+# no DisallowUnknownFields, so a tool_choice is accepted, IGNORED, and answered
+# HTTP 200 (docs.ollama.com/api/openai-compatibility, verified 2026-09-01). A
+# silently-dropped tool_choice is the dangerous case — the caller believes the
+# tool was forced — so clear every tool_choice flag; tools_native stays (the
+# `tools` array itself works).
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete @{$caps}{ qw(
+    tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
+  ) };
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso
