@@ -128,6 +128,23 @@ around engine_capabilities => sub {
   return $caps;
 };
 
+# Per-model tool_choice reality on Kimi's OpenAI-compatible endpoint
+# (ADR 0002 amendment, pending ADR 0019; platform.kimi.ai/docs/guide/use-tool-choice):
+#   * kimi-k3 (the engine default) always thinks, and forcing a *specific*
+#     tool is incompatible with thinking -> a named tool_choice returns 400.
+#     Clear tool_choice_named there (auto/any/none stay).
+#   * The K2.x line does not support `required` and errors if it is passed.
+#     Canonical `any` serializes to wire `required` (Langertha::ToolChoice),
+#     so clear tool_choice_any there (auto/none/named stay).
+# The rows are deliberately distinct per model — that is the discriminating
+# information the flat role-derived row could not carry.
+sub model_capability_corrections {
+  return (
+    'kimi-k3'       => { tool_choice_named => 0 },
+    qr/\Akimi-k2\./ => { tool_choice_any   => 0 },
+  );
+}
+
 sub reasoning_kwargs_for { my ( $self, %args ) = @_; () }
 
 __PACKAGE__->meta->make_immutable;

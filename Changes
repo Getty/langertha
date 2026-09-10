@@ -2,6 +2,22 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine capabilities are model-scoped on the tool / structured-output axis
+      (karr k138). supports() used to answer from one identical flag row shared
+      across the whole OpenAI-dialect fleet — many of them wrong — so chat_f's
+      auto-rewrite decided on a constant, and several engines silently ignored a
+      tool_choice the caller believed was forced. engine_capabilities now adds a
+      per-model correction layer (Role::Capabilities::model_capability_corrections,
+      an ordered model-id/regex -> {cap => 0|1} table) on top of the engine-wide
+      `around engine_capabilities` escape hatch: Moonshot's kimi-k3 drops
+      tool_choice_named (thinking forbids a forced tool) while its K2.x siblings
+      drop tool_choice_any; DeepSeek drops response_format_json_schema; and
+      MiniMax, Ollama's /v1 endpoint, llama.cpp, SGLang, Scaleway and the
+      experimental Hetzner engine each clear the tool_choice / response_format /
+      parallel_tool_use flags their wire does not honour. No public API change —
+      supports() and chat_f simply tell the truth per model now. An ADR 0002
+      amendment.
+
     - Engine::Anthropic inference_geo documents only the values the first-party
       API offers (karr #134). The =attr POD and SYNOPSIS promised
       inference_geo => 'eu' as an EU data-residency guarantee, but Anthropic's

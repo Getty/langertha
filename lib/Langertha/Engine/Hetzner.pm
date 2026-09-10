@@ -78,11 +78,15 @@ The four models currently listed at C</api/v1/models>:
 
 =back
 
-B<Tool support caveat:> the Hetzner Inference docs do not explicitly confirm
-server-side tool support on the OpenAI-compatible endpoint. The engine advertises
-C<tools_native> via L<Langertha::Role::Tools> because the wire shape is
-OpenAI-compatible, but the live test should verify the gateway actually accepts
-the C<tools> array against the model you intend to use.
+B<Tool support caveat:> the Hetzner Inference docs do not confirm server-side
+tool calling or structured output on the OpenAI-compatible endpoint, and the
+platform is explicitly experimental. The engine composes L<Langertha::Role::Tools>
+(so C<chat_with_tools_f> exists) and L<Langertha::Role::ResponseFormat>, but
+C<engine_capabilities> B<clears> C<tools_native>, every C<tool_choice_*>,
+C<parallel_tool_use> and both C<response_format_*> flags rather than advertise
+capabilities that may silently no-op. If a live test confirms the gateway honors
+them for the model you use, re-add them in the engine's
+C<around engine_capabilities>.
 
 B<No embeddings or transcription:> the Hetzner Inference endpoint exposes chat
 completions + image processing only. L</embedding> and L</transcription> are
@@ -129,6 +133,27 @@ sub _build_static_models {[
   { id => 'Kimi-K2.7-Code' },
 ]}
 
+# Hetzner Inference documents neither tool calling nor structured output on its
+# OpenAI-compatible endpoint, and the platform is explicitly experimental —
+# "you should not use the platform for production environments"
+# (docs.hetzner.com/general/company-and-policy/experiments/inference/, verified
+# 2026-09-01). Only /v1/models, /v1/completions and /v1/chat/completions exist.
+# The wire shape is OpenAI-compatible, so the role inventory grants the tool and
+# response_format flags — but nothing confirms the gateway honors them, so clear
+# them rather than advertise capabilities that may silently no-op. Re-add via
+# this around once a live test confirms them.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete @{$caps}{ qw(
+    tools_native
+    tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
+    response_format_json_object response_format_json_schema
+    parallel_tool_use
+  ) };
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 CAPABILITIES
@@ -141,17 +166,18 @@ Advertised flags (derived from composed roles via L<Langertha::Role::Capabilitie
 
 =item * C<streaming> — L<Langertha::Role::Streaming>
 
-=item * C<tools_native> + C<tool_choice_{auto,any,none,named}> — L<Langertha::Role::Tools>
-(advertised but see tool-support caveat above)
-
-=item * C<response_format_{json_object,json_schema}> — L<Langertha::Role::ResponseFormat>
-
 =item * C<temperature> — L<Langertha::Role::Temperature>
 
-=item * C<response_size>, C<system_prompt>, C<parallel_tool_use>, C<context_size>, C<seed>
+=item * C<response_size>, C<system_prompt>, C<context_size>, C<seed>
 — generation-parameter knobs the engine will honour
 
 =back
+
+C<tools_native>, C<tool_choice_*>, C<parallel_tool_use> and
+C<response_format_*> are B<not> advertised even though L<Langertha::Role::Tools>
+and L<Langertha::Role::ResponseFormat> are composed — the engine clears them in
+its C<around engine_capabilities> (see the tool-support caveat above). If a live
+test confirms them, re-add them there.
 
 Vision input is supported on the two multimodal models (Qwen/Qwen3.6-35B-A3B-FP8
 and Kimi-K2.7-Code) via C<image_url> content parts; this is handled by

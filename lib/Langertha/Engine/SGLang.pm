@@ -100,6 +100,18 @@ sub _build_supported_operations {[qw(
   createCompletion
 )]}
 
+# SGLang documents only the named tool_choice form (via the xgrammar grammar
+# backend) plus the grammar backends; `auto` and `none` are not listed
+# (docs.sglang.io/docs/advanced_features/tool_parser, verified 2026-09-01).
+# Clear tool_choice_auto and tool_choice_none; tool_choice_named (grammar-backed)
+# and tool_choice_any stay.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete @{$caps}{ qw( tool_choice_auto tool_choice_none ) };
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 CAPABILITIES
@@ -112,7 +124,9 @@ Advertised flags (derived from composed roles via L<Langertha::Role::Capabilitie
 
 =item * C<streaming> — L<Langertha::Role::Streaming>
 
-=item * C<tools_native> + C<tool_choice_{auto,any,none,named}> — L<Langertha::Role::Tools>
+=item * C<tools_native> + C<tool_choice_{any,named}> — L<Langertha::Role::Tools>
+(C<tool_choice_auto> and C<tool_choice_none> are cleared: SGLang documents only
+the named/grammar-backed forms — see the C<around engine_capabilities> above)
 
 =item * C<runtime_metrics> — L<Langertha::Role::Runtime::MetricsPoll>
 

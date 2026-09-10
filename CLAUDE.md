@@ -59,6 +59,7 @@ refactors:
 - **0016** — a wire envelope becomes a `Role::<X>Compatible` only when a second consumer needs it from a different parent; capability roles are roles from day one
 - **0017** — `Response.created` is a `Langertha::Moment` value object (`0+` = epoch, `""` = ISO stamp with sub-seconds), reversing karr #92's engine-side epoch conversion
 - **0018** — where a provider's wire *spelling* of a canonical field is normalized: value-object inbound door (universal) / dialect role (family) / engine-scoped `around chat_response` (one provider's quirk, guarded by the canonical predicate)
+- **0019** — model-scoped capability corrections (amends 0002): per-model wire reality lives in a declarative `model_capability_corrections` table (layer 3, keyed on `chat_model`); engine-wide reality stays in `around engine_capabilities` (layer 2, the endpoint gate)
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision

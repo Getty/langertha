@@ -112,12 +112,22 @@ sub _build_static_models {[
   { id => 'MiniMax-M2' },
 ]}
 
-# M2.x ignores reasoning_effort on the OpenAI-compatible endpoint: clear the
-# capability and never emit the field. (Route reasoning via MiniMaxAnthropic.)
+# MiniMax's current /v1/chat/completions schema (platform.minimax.io, verified
+# 2026-09-01) is narrower than the role inventory promises: `reasoning_effort`
+# is ignored by M2.x, and `tool_choice`, `response_format` and
+# `parallel_tool_calls` are absent from the schema entirely. Function calling
+# (the `tools` array) is supported, so tools_native stays; the selection,
+# structured-output and parallel knobs are cleared so chat_f never builds a body
+# around fields the wire drops. (Route reasoning via MiniMaxAnthropic.)
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
-  delete $caps->{reasoning_effort};
+  delete @{$caps}{ qw(
+    reasoning_effort
+    tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
+    response_format_json_object response_format_json_schema
+    parallel_tool_use
+  ) };
   return $caps;
 };
 

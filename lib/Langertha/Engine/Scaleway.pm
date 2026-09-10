@@ -54,6 +54,26 @@ sub _build_api_key {
 
 sub default_model { 'llama-3.1-8b-instruct' }
 
+# Scaleway's Generative APIs narrow two flags the OpenAI role inventory grants
+# (scaleway.com/en/docs/generative-apis, verified 2026-09-01):
+#   * parallel_tool_calls is accepted but INERT — "even if set false this
+#     parameter will be ignored and act as if set to true". A silently-ignored
+#     control is worse than a rejected one, so clear parallel_tool_use.
+#   * response_format json_object is deprecated ("should not be used anymore");
+#     json_schema is the supported structured-output path, so clear json_object
+#     and keep json_schema.
+# NOT cleared: tool_choice_any. Scaleway's tool_choice enum is
+# none|auto|required, and Langertha's canonical `any` serializes to the wire
+# `required` (Langertha::ToolChoice::to_openai), which Scaleway accepts. (The
+# k138 matrix flagged tool_choice_any here by reading OpenAI's non-existent
+# literal "any"; the canonical mapping makes the flag correct as-is.)
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete @{$caps}{ qw( parallel_tool_use response_format_json_object ) };
+  return $caps;
+};
+
 sub _build_supported_operations {[qw(
   createChatCompletion
   createEmbedding
