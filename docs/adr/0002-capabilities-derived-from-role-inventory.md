@@ -53,3 +53,15 @@ flag float.
   mode to guard against — hence the `around` corrections rather than editing the shared map.
 - This registry is the precondition for ADR 0001's tag dispatch to be safe: the loop only
   reaches a value-object branch the engine actually supports.
+
+## Update (ADR 0019)
+
+The `around engine_capabilities` escape hatch (decision 3) resolves **per engine** — it cannot
+say "this field, but only for that model." On the tool / structured-output axis the wire reality
+is frequently per-model (`kimi-k3` forbids a forced named tool while its `kimi-k2.*` siblings
+allow it), so the role-derived base was identical across ~17 OpenAI-dialect engines and wrong on
+~11 of them. ADR 0019 adds a **layer 3**: a declarative, ordered `model_capability_corrections`
+table keyed on `chat_model`, applied *inside* `engine_capabilities` after the role derivation.
+The `around` hatch is unchanged and is now specifically the **engine-wide endpoint gate** (the
+whole endpoint never accepts a field); per-model reality lives in the new table. Layers 1 and 2
+of this decision stand as written. See ADR 0019.

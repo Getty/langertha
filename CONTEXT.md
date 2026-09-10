@@ -210,6 +210,19 @@ not, because `engine_capabilities` derives from `does($role)`. → **ADR 0002**,
 _Avoid_: counting consumers to decide the axis — consumer count is the trigger
 for moving an *envelope*, never for placing a *capability*
 
+**model_capability_corrections** (the per-model correction layer):
+Layer 3 of `engine_capabilities`. A declarative, ordered list of
+`( $matcher => \%overrides )` pairs an engine returns to refine the
+role-derived base for the currently selected `chat_model` — `$matcher` is an
+exact model id (`eq`) or a `qr//` family regex, `\%overrides` maps a capability
+flag to `1` (assert) or `0` (clear), later matching entries win. The home for a
+wire reality that differs **per model** (`kimi-k3` forbids a forced named tool
+while its `kimi-k2.*` siblings allow it). Distinct from the engine-**wide**
+correction — `around engine_capabilities`, layer 2, the endpoint gate — which
+runs outside the base method and so is the last word. → **ADR 0019**, **ADR 0002**.
+_Avoid_: "capability override" (ambiguous — say which layer), "the `around` for
+a model" (the whole point is that per-model reality does *not* go in the `around`)
+
 ## Relationships
 
 - An engine declares exactly one **tool_wire_format**; its default follows the
