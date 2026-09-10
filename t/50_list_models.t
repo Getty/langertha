@@ -508,12 +508,17 @@ subtest 'HuggingFace list_models with search' => sub {
   like($request->uri, qr{inference_provider=all}, 'inference_provider filter in URL');
 };
 
-subtest 'OpenAICompatible list_models guard for unsupported operations' => sub {
-  plan tests => 2;
+subtest 'list_models guard for unsupported operations' => sub {
+  plan tests => 3;
 
+  # Perplexity's Agent engine (k139) composes no OpenAPI at all — StaticModels
+  # only — so it structurally cannot hit a /models endpoint, rather than
+  # composing OpenAPI and then guarding listModels out of supported_operations.
   my $engine = Langertha::Engine::Perplexity->new(api_key => 'test-key');
-  ok(!$engine->can_operation('listModels'), 'Perplexity does not support listModels operation');
+  ok(!$engine->does('Langertha::Role::OpenAPI'), 'Perplexity composes no OpenAPI (Agent engine)');
+  ok($engine->does('Langertha::Role::StaticModels'), 'Perplexity lists models via StaticModels');
 
+  # NousResearch stays OpenAICompatible and restricts supported_operations.
   my $nous = Langertha::Engine::NousResearch->new(api_key => 'test-key');
   ok(!$nous->can_operation('listModels'), 'NousResearch does not support listModels operation');
 };

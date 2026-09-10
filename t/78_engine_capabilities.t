@@ -30,17 +30,22 @@ use JSON::MaybeXS;
   ok !$e->supports('telepathy'),           'supports() returns false for unknown cap';
 }
 
-# Perplexity: inherits ResponseFormat via OpenAIBase, no Tools role.
+# Perplexity Agent API (Responses envelope): composes ResponseFormat +
+# ReasoningEffort, but NOT Tools and NOT PromptCache. So the flags are honest by
+# composition, with one correction: the Agent response_format enum is
+# json_schema-only, so json_object is cleared (k139).
 {
   my $e = Langertha::Engine::Perplexity->new( api_key => 'x' );
   my $caps = $e->engine_capabilities;
-  ok !$caps->{tools_native},               'perplexity has no native tools yet';
-  ok !$caps->{tool_choice_named},          'perplexity has no named tool_choice';
-  ok $caps->{response_format_json_schema}, 'perplexity has json_schema';
-  ok $caps->{response_format_json_object}, 'perplexity has json_object';
-  ok !$caps->{reasoning_effort},           'perplexity wire does not accept reasoning_effort';
-  ok !$caps->{prompt_cache},               'perplexity has no cache enable';
-  ok !$caps->{prompt_cache_key},           'perplexity wire does not accept prompt_cache_key';
+  ok !$caps->{tools_native},                'perplexity has no native tools';
+  # ADR 0005 rewrite direction 1's only exemplar: no named tool_choice, but
+  # json_schema response_format is present, so chat_f reroutes a forced tool.
+  ok !$caps->{tool_choice_named},           'perplexity has no named tool_choice (ADR 0005 dir-1 exemplar)';
+  ok $caps->{response_format_json_schema},  'perplexity has json_schema';
+  ok !$caps->{response_format_json_object}, 'perplexity Agent enum is json_schema-only (no json_object)';
+  ok $caps->{reasoning_effort},             'perplexity Agent accepts reasoning_effort (wire reasoning.effort)';
+  ok !$caps->{prompt_cache},                'perplexity has no cache enable';
+  ok !$caps->{prompt_cache_key},            'perplexity has no prompt_cache_key (caching is automatic)';
 }
 
 # MiniMax (OpenAI endpoint): inherits ReasoningEffort via OpenAIBase but M2.x

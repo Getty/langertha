@@ -65,6 +65,35 @@ Revision history for Langertha
       successful request proves nothing about caching — only
       usage.cache_read_input_tokens does (the minimum cacheable prefix is
       model-dependent and short prompts silently skip the cache).
+    - Engine::Perplexity migrated to the Agent API (k139). Sonar Chat Completions
+      reached end of life 2026-09-27; the engine now speaks the Agent API
+      (POST /v1/agent), the Open-Responses wire envelope (input / instructions /
+      typed output[] / input_tokens usage), not /chat/completions. It is a lean
+      engine on Engine::Remote composing Role::ResponsesCompatible, so it advertises
+      only the capabilities it really has rather than inheriting the OpenAI
+      dialect's. The four model ids (sonar, sonar-pro, sonar-reasoning-pro,
+      sonar-deep-research) stay as the selector and map to Agent presets
+      (fast/low/medium/high), which bundle web search and citations. Responses
+      carry sources on Response.citations, lifted from the Agent search_results
+      block (the classic top-level citations[] is gone). Structured output goes
+      top-level as response_format=json_schema; reasoning_effort is accepted (wire
+      reasoning.effort); json_object mode and prompt_cache_key are gone. Bearer auth
+      and LANGERTHA_PERPLEXITY_API_KEY are unchanged. Perplexity remains the
+      exemplar of the ADR 0005 forced-tool -> response_format rewrite. Several wire
+      details (typed input requirement, response_format slot, exact preset models,
+      citation marker format, streaming SSE framing) are annotated LIVE-CONFIRM in
+      the code pending a live call.
+
+    - Response gains a citations attribute (ArrayRef of source hashrefs) for
+      search-augmented engines; undef where the provider reports none.
+
+    - The Open-Responses wire envelope is now a role,
+      Langertha::Role::ResponsesCompatible (k139), parallel to
+      Role::OpenAICompatible / Role::AnthropicCompatible. It owns the input builder,
+      the output[] walker, usage normalization and the typed-SSE stream parser;
+      Engine::OpenAIResponses composes it and is unchanged in behaviour (it still
+      opts out of streaming). Engine::OpenAIResponses now also surfaces
+      Response.created from the response created_at stamp.
 
     - Engine::Anthropic inference_geo documents only the values the first-party
       API offers (karr #134). The =attr POD and SYNOPSIS promised

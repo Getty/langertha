@@ -404,18 +404,52 @@ test_openai_cloud_engine(
 );
 is(Langertha::Engine::XAI->new(api_key => 'k')->default_model, 'grok-4.3', 'XAI default_model');
 
-# --- Perplexity (NO tools!) ---
+# --- Perplexity (Agent API — Responses envelope, NOT OpenAI, NO tools) ---
+# Lean engine (k139): parent = Remote, composes Role::ResponsesCompatible (the
+# Open-Responses wire envelope, shared with OpenAIResponses) — deliberately NOT
+# OpenAIBase / OpenAICompatible / OpenAPI. Bespoke assertions rather than
+# test_openai_cloud_engine, which is /chat/completions-shaped.
 
 use Langertha::Engine::Perplexity;
 
-test_openai_cloud_engine(
-  class => 'Langertha::Engine::Perplexity',
-  name => 'Perplexity',
-  url => 'https://api.perplexity.ai',
-  model => 'sonar',
-  env_var => 'LANGERTHA_PERPLEXITY_API_KEY',
-  has_tools => 0,
-);
+{
+  my $class = 'Langertha::Engine::Perplexity';
+
+  ok($class->isa('Langertha::Engine::Remote'), 'Perplexity isa Remote');
+  ok(!$class->isa('Langertha::Engine::OpenAIBase'), 'Perplexity is NOT an OpenAIBase');
+  ok($class->does('Langertha::Role::ResponsesCompatible'), 'Perplexity does ResponsesCompatible');
+  ok($class->does('Langertha::Role::Chat'), 'Perplexity does Chat');
+  ok($class->does('Langertha::Role::Streaming'), 'Perplexity does Streaming');
+  ok($class->does('Langertha::Role::StaticModels'), 'Perplexity does StaticModels');
+  ok($class->does('Langertha::Role::ReasoningEffort'), 'Perplexity does ReasoningEffort');
+  ok($class->does('Langertha::Role::ResponseFormat'), 'Perplexity does ResponseFormat');
+  ok(!$class->does('Langertha::Role::Tools'), 'Perplexity does NOT Tools');
+  ok(!$class->does('Langertha::Role::OpenAICompatible'), 'Perplexity does NOT OpenAICompatible');
+  ok(!$class->does('Langertha::Role::OpenAPI'), 'Perplexity does NOT OpenAPI');
+  ok(!$class->does('Langertha::Role::PromptCache'), 'Perplexity does NOT PromptCache');
+
+  my $engine = $class->new(api_key => 'test-key', model => 'sonar-pro');
+  is($engine->url, 'https://api.perplexity.ai', 'Perplexity url default correct');
+
+  {
+    local $ENV{LANGERTHA_PERPLEXITY_API_KEY} = 'env-key-12345';
+    my $e2 = $class->new(model => 'sonar');
+    is($e2->api_key, 'env-key-12345', 'Perplexity reads api_key from LANGERTHA_PERPLEXITY_API_KEY');
+  }
+
+  my $req = $engine->chat_request([{ role => 'user', content => 'test prompt' }]);
+  is($req->method, 'POST', 'Perplexity chat request is POST');
+  like($req->uri, qr{/v1/agent$}, 'Perplexity chat endpoint is /v1/agent (Agent API)');
+  is($req->header('Authorization'), 'Bearer test-key', 'Perplexity sets Bearer Authorization header');
+
+  my $body = $json->decode($req->content);
+  is($body->{preset}, 'low', 'sonar-pro maps to preset "low"');
+  ok(!exists $body->{model}, 'no model key when a preset is chosen');
+  ok(!exists $body->{messages}, 'no /chat/completions messages array');
+  is($body->{input}[0]{type}, 'message', 'input item carries type:message');
+  is($body->{input}[0]{role}, 'user', 'input item has user role');
+  is($body->{input}[0]{content}, 'test prompt', 'input item has correct content');
+}
 is(Langertha::Engine::Perplexity->new(api_key => 'k')->default_model, 'sonar', 'Perplexity default_model');
 
 # --- Mistral ---

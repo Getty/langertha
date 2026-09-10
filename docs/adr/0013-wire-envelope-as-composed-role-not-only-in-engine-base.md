@@ -70,4 +70,7 @@ explicitly wanted handled in a small, revertible step ("kann ich noch den Commit
   derive from composed roles (ADR 0002), unaffected by the move.
 - Cross-links: ADR 0002 (capabilities derive from roles — unchanged), ADR 0006 (this decision
   moves the Anthropic envelope to the role axis), ADR 0001 (`tool_wire_format` still follows
-  the wire reality, now via the role's `_build_tool_wire_format`).
+  the wire reality, now via the role's `_build_tool_wire_format`), ADR 0016 (generalizes this
+  decision into the extraction-trigger rule), ADR 0020 (the third envelope role,
+  `Role::ResponsesCompatible`, and the first extraction to fire that trigger across two
+  *different* parents — so, unlike this pure move, it carries a divergence-hook layer).

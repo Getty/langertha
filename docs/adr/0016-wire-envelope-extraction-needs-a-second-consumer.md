@@ -189,7 +189,11 @@ written.
   supplies the crossing rule for), **ADR 0013** (the Anthropic extraction; this ADR answers the
   question it left open), **ADR 0002** (capability roles are the reason single-consumer
   capability roles are correct), **ADR 0015** (`-excludes` canon, the cost unit counted above,
-  and the per-family `engine_capabilities` correction that must stay on the class).
+  and the per-family `engine_capabilities` correction that must stay on the class), **ADR 0020**
+  (the first live firing of decision 1's trigger — the Open-Responses envelope extracted into
+  `Role::ResponsesCompatible` for Perplexity's Agent API, a second consumer that descends from a
+  *different* parent than `Engine::OpenAIResponses`; the case decision 1 describes and the
+  Anthropic precedent never exercised).
 - **CONTEXT.md** gains the term pair *dialect axis* / *capability axis* under a new "Engine
   composition axes" heading, with the vocabulary only — the rationale stays here.
 
