@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Reasoning-effort value clamps are model-gated, not wire-gated (karr k140).
+      The OpenAI clamp dropped `max` — a value the current ReasoningEffort schema
+      accepts — while passing `minimal` to gpt-5.6 / gpt-5.5 models that reject
+      it, and to_responses clamped nothing, so one engine honoured `max` on the
+      Chat Completions wire but dropped it on the Responses wire. Langertha::Reasoning
+      now gates the accepted effort set per model generation (gpt-5.6-* /
+      gpt-5.5-*: none|low|medium|high|xhigh(|max), no minimal; legacy gpt-5:
+      minimal|low|medium|high) through one gate shared by both OpenAI wires, so
+      they can never diverge; unlisted model ids keep the full enum. On Gemini,
+      gemini-3.7-flash dropped `minimal` from its thinkingLevel set, so
+      none / minimal now clamp to low there.
+
     - Engine capabilities are model-scoped on the tool / structured-output axis
       (karr k138). supports() used to answer from one identical flag row shared
       across the whole OpenAI-dialect fleet — many of them wrong — so chat_f's

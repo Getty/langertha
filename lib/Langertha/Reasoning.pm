@@ -35,6 +35,15 @@ C<none|minimal|low|medium|high|xhigh|max>. Each C<to_*> serializer clamps that
 vocabulary to what the target wire actually accepts and returns the body kwargs
 to merge into the request.
 
+The OpenAI clamp is B<model-gated>, not wire-gated: Chat Completions
+(C<to_openai>) and the Responses API (C<to_responses>) C<$ref> the identical
+C<ReasoningEffort> schema, so both share one per-model gate and can never
+diverge for the same model. The accepted set differs per model generation —
+the gpt-5.6/gpt-5.5 generation accepts C<none>/C<xhigh>/(C<max>) but not
+C<minimal>; the legacy gpt-5 generation accepts C<minimal> but not
+C<none>/C<xhigh>/C<max> — so no single wire-level clamp is correct. Unlisted
+model ids keep the full vocabulary. See L</to_openai>.
+
 Gemini splits its reasoning knob by model generation: Gemini 3 accepts a
 C<thinkingLevel> emitted from C<effort> (vocabulary
 C<minimal>|C<low>|C<medium>|C<high>, clamped to the subset the configured
@@ -124,9 +133,27 @@ form would be ambiguous.
 
 =cut
 
-# OpenAI /chat/completions reasoning_effort accepts this subset of the
-# normalized vocabulary; max is not accepted there and is dropped.
-my %OPENAI_EFFORT = map { $_ => 1 } qw( none minimal low medium high xhigh );
+# OpenAI reasoning effort is gated per MODEL, not per wire. Chat Completions
+# `reasoning_effort` and the Responses API `reasoning.effort` $ref the identical
+# ReasoningEffort schema (enum none|minimal|low|medium|high|xhigh|max, default
+# medium), so a given model accepts the same value set on both wires — to_openai
+# and to_responses therefore share the one clamp below (_openai_effort_ok), which
+# structurally forbids the two wires diverging. The accepted set is per model
+# generation and the generations do NOT overlap: the gpt-5 (legacy) generation
+# has `minimal` but rejects none/xhigh/max, while the gpt-5.5+ generation has
+# none/xhigh/max but rejects `minimal`. Only OpenAI's own gpt-5.x ids are gated;
+# every other id (an unlisted OpenAI model, or another OpenAI-compatible provider
+# sharing this wire) keeps the full normalized vocabulary, which IS the current
+# OpenAI enum, so no value is dropped from it.
+# (developers.openai.com/api/docs/guides/reasoning + the per-model pages,
+# advisor-verified 2026-09-01 — karr k140. gpt-5.1's ladder is not among the
+# verified families and is deliberately left un-gated: it falls through to the
+# full-enum pass-through rather than being clamped on a guess.)
+my %OPENAI_MODEL_EFFORT = (
+  'gpt-5.6' => { map { $_ => 1 } qw(       none low medium high xhigh max ) },
+  'gpt-5.5' => { map { $_ => 1 } qw(       none low medium high xhigh     ) },
+  'gpt-5'   => { map { $_ => 1 } qw( minimal   low medium high            ) },
+);
 
 # Anthropic output_config.effort accepts low|medium|high|xhigh|max; the
 # normalized none/minimal have no Anthropic equivalent and are dropped.
@@ -173,17 +200,22 @@ sub _is_gemini_25 { $_[0] =~ /\Agemini-2\.5/ ? 1 : 0 }
 
 # Gemini 3 generationConfig.thinkingConfig.thinkingLevel vocabulary is
 # minimal|low|medium|high, but which subset a model accepts is model-gated
-# (ai.google.dev/gemini-api/docs/thinking level table, verified 2026-08-10):
+# (ai.google.dev/gemini-api/docs/thinking level table, verified 2026-09-01 —
+# karr k140):
 #
-#   gemini-3-flash-preview / gemini-3.5-flash* / *-flash-lite: minimal low medium high
-#   gemini-3.1-pro-*:                                          low medium high (no minimal)
-#   gemini-3-pro-*:                                            low high (binary)
+#   gemini-3-flash-preview / gemini-3.6-flash / *-flash-lite: minimal low medium high
+#   gemini-3.7-flash:                                         low medium high (no minimal)
+#   gemini-3.1-pro-*:                                         low medium high (no minimal)
+#   gemini-3-pro-*:                                           low high (binary)
 #
 # The API rejects an unsupported level instead of mapping it, so the
 # normalized vocabulary is clamped to the model family's subset here. Models
 # outside the gemini-3 line (or no model given) keep the universally-accepted
 # low|high collapse. (Gemini 2.5 never reaches this serializer with an effort
-# — BUILD gates it onto the thinkingBudget path.)
+# — BUILD gates it onto the thinkingBudget path.) The gemini-3-pro-* branch is
+# defensive: the current catalogue ships only gemini-3-pro-image (not a
+# thinking text model), but the clamp stays so a returning gemini-3-pro text id
+# cannot 400 on minimal/medium.
 my %GEMINI3_LEVEL = (
   none    => 'minimal',
   minimal => 'minimal',
@@ -206,9 +238,13 @@ sub to_gemini_level {
 
   my $level = $GEMINI3_LEVEL{$e} // 'low';
 
-  # gemini-3.1-pro-* has no minimal; gemini-3-pro-* is low|high only. Clamp
-  # down (never up): an unsupported level would be rejected by the API.
-  if ( $model =~ /\Agemini-3\.1-pro/ ) {
+  # gemini-3.7-flash dropped `minimal` (low|medium|high); gemini-3.1-pro-* has
+  # no minimal; gemini-3-pro-* is low|high only. Clamp down (never up): an
+  # unsupported level would be rejected by the API.
+  if ( $model =~ /\Agemini-3\.7-flash/ ) {
+    $level = 'low' if $level eq 'minimal';
+  }
+  elsif ( $model =~ /\Agemini-3\.1-pro/ ) {
     $level = 'low' if $level eq 'minimal';
   }
   elsif ( $model =~ /\Agemini-3-pro/ ) {
@@ -223,26 +259,62 @@ Maps the normalized effort onto Gemini 3's C<thinkingLevel> vocabulary
 (C<minimal>|C<low>|C<medium>|C<high>): C<none>/C<minimal> become C<minimal>,
 C<high>/C<xhigh>/C<max> become C<high>, C<low> and C<medium> pass through.
 The result is then clamped down to the subset the configured L</model> family
-accepts: C<gemini-3.1-pro-*> drops C<minimal> to C<low> (no C<minimal>
-support), C<gemini-3-pro-*> accepts only C<low>|C<high> and drops C<minimal>
-and C<medium> to C<low>. Models outside the Gemini 3 line (or no model) keep
-the universally-accepted binary C<low>|C<high> collapse, splitting at C<high>.
+accepts: C<gemini-3.7-flash> and C<gemini-3.1-pro-*> drop C<minimal> to C<low>
+(no C<minimal> support), C<gemini-3-pro-*> accepts only C<low>|C<high> and drops
+C<minimal> and C<medium> to C<low>. Models outside the Gemini 3 line (or no
+model) keep the universally-accepted binary C<low>|C<high> collapse, splitting
+at C<high>.
 
 =cut
+
+# Shared per-model effort gate for both OpenAI wires (see %OPENAI_MODEL_EFFORT).
+# Returns true when the configured model accepts the current effort. Model ids
+# come in families, so match by anchored prefix, most specific first: gpt-5.6-*
+# (sol/terra/luna) and gpt-5.5* are the new generation, gpt-5 / gpt-5-* the
+# legacy one. gpt-5.1 (and every other unrecognized id) returns true — its
+# vocabulary is unverified, so it keeps the full enum rather than a guessed clamp.
+sub _openai_effort_ok {
+  my ( $self ) = @_;
+  my $e     = $self->effort;
+  my $model = $self->has_model ? $self->model : '';
+  my $set = $model =~ /\Agpt-5\.6/        ? $OPENAI_MODEL_EFFORT{'gpt-5.6'}
+          : $model =~ /\Agpt-5\.5/        ? $OPENAI_MODEL_EFFORT{'gpt-5.5'}
+          : $model =~ /\Agpt-5(?![.\d])/  ? $OPENAI_MODEL_EFFORT{'gpt-5'}
+          :                                 undef;
+  return 1 unless defined $set;
+  return $set->{$e} ? 1 : 0;
+}
 
 sub to_openai {
   my ( $self ) = @_;
   return () unless $self->has_effort;
-  my $e = $self->effort;
-  return () unless $OPENAI_EFFORT{$e};
-  return ( reasoning_effort => $e );
+  return () unless $self->_openai_effort_ok;
+  return ( reasoning_effort => $self->effort );
 }
 
 sub to_responses {
   my ( $self ) = @_;
   return () unless $self->has_effort;
+  return () unless $self->_openai_effort_ok;
   return ( reasoning => { effort => $self->effort } );
 }
+
+=method to_openai
+
+=method to_responses
+
+Serialize L</effort> to the two OpenAI wires — Chat Completions
+(C<reasoning_effort =E<gt> $effort>) and the Responses API
+(C<reasoning =E<gt> { effort =E<gt> $effort }>). Both surfaces C<$ref> the
+identical C<ReasoningEffort> schema, so both clamp through the same model-gated
+gate: the accepted value set is per model generation
+(gpt-5.6-* / gpt-5.5-*: C<none|low|medium|high|xhigh(|max)>, no C<minimal>;
+gpt-5 legacy: C<minimal|low|medium|high>, no C<none|xhigh|max>), and an
+unrecognized model id keeps the full normalized vocabulary. An effort the
+configured L</model> does not accept yields an empty list on B<both> wires —
+they can never diverge. Empty list when no L</effort> is set.
+
+=cut
 
 sub to_anthropic {
   my ( $self ) = @_;
