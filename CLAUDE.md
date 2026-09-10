@@ -59,6 +59,7 @@ refactors:
 - **0016** — a wire envelope becomes a `Role::<X>Compatible` only when a second consumer needs it from a different parent; capability roles are roles from day one
 - **0017** — `Response.created` is a `Langertha::Moment` value object (`0+` = epoch, `""` = ISO stamp with sub-seconds), reversing karr #92's engine-side epoch conversion
 - **0018** — where a provider's wire *spelling* of a canonical field is normalized: value-object inbound door (universal) / dialect role (family) / engine-scoped `around chat_response` (one provider's quirk, guarded by the canonical predicate)
+- **0019** — the Open-Responses wire envelope becomes the third composed role (`Role::ResponsesCompatible`); the first extraction whose second consumer (Perplexity Agent API) descends from a *different* parent, so it meets the envelope through five overridable divergence hooks (fires ADR 0016's trigger, extends the 0013 shape)
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision

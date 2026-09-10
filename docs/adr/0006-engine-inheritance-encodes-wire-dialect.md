@@ -96,3 +96,8 @@ symmetrically: `Role::OpenAICompatible` (already) and `Role::AnthropicCompatible
 from `AnthropicBase`). Inheritance still encodes the transport *root* (`Remote`); the dialect
 envelope moved to the role axis for OpenAI and Anthropic. NB: the envelope roles are **not**
 self-contained — they assume `url`/`HTTP`/`JSON` come from `extends Remote`. See ADR 0013.
+
+A third envelope role followed — `Role::ResponsesCompatible` for the Open-Responses envelope
+(OpenAI's `/v1/responses` and Perplexity's Agent `/v1/agent`). It is the first extraction where
+the two consumers descend from *different* parents, so it adds a divergence-hook layer to the
+0013 shape. See ADR 0019 (and ADR 0016 for the trigger rule).
