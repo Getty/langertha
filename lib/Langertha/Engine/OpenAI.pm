@@ -48,10 +48,12 @@ Provides access to OpenAI's APIs, including GPT models, embeddings, and
 Whisper transcription. Composes L<Langertha::Role::OpenAICompatible> for the
 standard OpenAI API format.
 
-Popular models: C<gpt-5.6-terra> (default, balances intelligence and cost —
-the GPT-5.6 successor of the former mini tier), C<gpt-5.6> (Sol, frontier),
-C<gpt-5.6-luna> (cost-sensitive, successor of the former nano tier),
-C<text-embedding-3-large> (embeddings), C<whisper-1> (transcription).
+Popular models: C<gpt-6-astra> (GPT-6 flagship — 1.05M-token context, 128K max
+output, text+image input, knowledge cutoff 2026-04-30), C<gpt-5.6-terra>
+(default, balances intelligence and cost — the GPT-5.6 successor of the former
+mini tier), C<gpt-5.6> (Sol, frontier), C<gpt-5.6-luna> (cost-sensitive,
+successor of the former nano tier), C<text-embedding-3-large> (embeddings),
+C<whisper-1> (transcription).
 
 Dynamic model listing is supported via L<Langertha::Role::Models/list_models>.
 Results are cached for C<models_cache_ttl> seconds (default: 3600).

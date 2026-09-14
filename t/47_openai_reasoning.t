@@ -28,11 +28,16 @@ sub emit_responses {
 
 my @EFFORTS = qw( none minimal low medium high xhigh max );
 
-# Advisor-verified per-model ladders (karr k140, 2026-09-01). 1 = accepted, 0 =
-# clamped away. The two generations do NOT overlap: gpt-5.6/gpt-5.5 have
-# none/xhigh(/max) but no minimal; legacy gpt-5 has minimal but no none/xhigh/max.
-# Unlisted ids (gpt-5.1, gpt-4o-mini) keep the whole normalized enum.
+# Advisor-verified per-model ladders (karr k140, 2026-09-01; gpt-6-astra k151,
+# 2026-09-14). 1 = accepted, 0 = clamped away. The generations do NOT overlap on
+# the extremes: gpt-6-astra rejects BOTH none (HTTP 400) and minimal (unsupported)
+# while keeping low..max; gpt-5.6/gpt-5.5 have none/xhigh(/max) but no minimal;
+# legacy gpt-5 has minimal but no none/xhigh/max. Unlisted ids (gpt-5.1,
+# gpt-4o-mini) keep the whole normalized enum. gpt-6-astra's ladder is IDENTICAL
+# on both wires (Chat Completions == Responses) — the symmetry check below is
+# what proves max is not a Responses-only value for astra.
 my %EXPECT = (
+  'gpt-6-astra'   => { none => 0, minimal => 0, low => 1, medium => 1, high => 1, xhigh => 1, max => 1 },
   'gpt-5.6-terra' => { none => 1, minimal => 0, low => 1, medium => 1, high => 1, xhigh => 1, max => 1 },
   'gpt-5.6'       => { none => 1, minimal => 0, low => 1, medium => 1, high => 1, xhigh => 1, max => 1 },
   'gpt-5.6-luna'  => { none => 1, minimal => 0, low => 1, medium => 1, high => 1, xhigh => 1, max => 1 },
