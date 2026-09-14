@@ -9,6 +9,13 @@ Revision history for Langertha
       flagship, 1M context" description described a model that is no longer the
       default.
 
+    - gemini-3.8-flash now clamps thinkingLevel=minimal (and none) down to low
+      like gemini-3.7-flash — the 3.8 Flash level set is low|medium|high with no
+      minimal, so an unclamped minimal would 400 (karr k153). The Gemini engine
+      POD gains the stable gemini-3.8-flash / gemini-3.7-flash Flash line;
+      gemini-3-flash-preview stays the default (still the Gemini 3 model that
+      accepts minimal).
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its

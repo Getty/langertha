@@ -201,10 +201,10 @@ sub _is_gemini_25 { $_[0] =~ /\Agemini-2\.5/ ? 1 : 0 }
 # Gemini 3 generationConfig.thinkingConfig.thinkingLevel vocabulary is
 # minimal|low|medium|high, but which subset a model accepts is model-gated
 # (ai.google.dev/gemini-api/docs/thinking level table, verified 2026-09-01 —
-# karr k140):
+# karr k140; re-verified 2026-09-14 for gemini-3.8-flash — karr k153):
 #
 #   gemini-3-flash-preview / gemini-3.6-flash / *-flash-lite: minimal low medium high
-#   gemini-3.7-flash:                                         low medium high (no minimal)
+#   gemini-3.7-flash / gemini-3.8-flash:                      low medium high (no minimal)
 #   gemini-3.1-pro-*:                                         low medium high (no minimal)
 #   gemini-3-pro-*:                                           low high (binary)
 #
@@ -238,10 +238,10 @@ sub to_gemini_level {
 
   my $level = $GEMINI3_LEVEL{$e} // 'low';
 
-  # gemini-3.7-flash dropped `minimal` (low|medium|high); gemini-3.1-pro-* has
-  # no minimal; gemini-3-pro-* is low|high only. Clamp down (never up): an
-  # unsupported level would be rejected by the API.
-  if ( $model =~ /\Agemini-3\.7-flash/ ) {
+  # gemini-3.7-flash and gemini-3.8-flash dropped `minimal` (low|medium|high);
+  # gemini-3.1-pro-* has no minimal; gemini-3-pro-* is low|high only. Clamp down
+  # (never up): an unsupported level would be rejected by the API.
+  if ( $model =~ /\Agemini-3\.[78]-flash/ ) {
     $level = 'low' if $level eq 'minimal';
   }
   elsif ( $model =~ /\Agemini-3\.1-pro/ ) {
@@ -259,9 +259,9 @@ Maps the normalized effort onto Gemini 3's C<thinkingLevel> vocabulary
 (C<minimal>|C<low>|C<medium>|C<high>): C<none>/C<minimal> become C<minimal>,
 C<high>/C<xhigh>/C<max> become C<high>, C<low> and C<medium> pass through.
 The result is then clamped down to the subset the configured L</model> family
-accepts: C<gemini-3.7-flash> and C<gemini-3.1-pro-*> drop C<minimal> to C<low>
-(no C<minimal> support), C<gemini-3-pro-*> accepts only C<low>|C<high> and drops
-C<minimal> and C<medium> to C<low>. Models outside the Gemini 3 line (or no
+accepts: C<gemini-3.7-flash>, C<gemini-3.8-flash> and C<gemini-3.1-pro-*> drop
+C<minimal> to C<low> (no C<minimal> support), C<gemini-3-pro-*> accepts only
+C<low>|C<high> and drops C<minimal> and C<medium> to C<low>. Models outside the Gemini 3 line (or no
 model) keep the universally-accepted binary C<low>|C<high> collapse, splitting
 at C<high>.
 
