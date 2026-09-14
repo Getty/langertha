@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-09-14T18:31:13Z
+id: 154
+priority: low
+status: backlog
+tags:
+- hetzner
+- model
+- catalog
+title: 'Hetzner-Katalog: ist DeepSeek-V4-Flash-0731 noch aktuell? (aus k150)'
+updated: 2026-09-14T18:31:13Z
+---
+
+Beim k150-DeepSeek-Audit zeigte sich: die Modell-ID DeepSeek-V4-Flash-0731 (im k150-Ticket faelschlich Engine::DeepSeek zugeschrieben) liegt tatsaechlich in lib/Langertha/Engine/Hetzner.pm (Z.73, 131) — Hetzners self-hosted open-weight-Checkpoint-Katalog, ein anderer Provider. DeepSeek selbst hat V4-Flash am 2026-09-10 retired. OFFEN: serviert Hetzner Inference diesen Checkpoint noch? Gegen Hetzners aktuellen Modell-Katalog verifizieren; falls veraltet, ersetzen/droppen. Niedrig, kein Live-Call noetig (Doc/Katalog-Check). Quelle: k150-Worker-Handoff 2026-09-14.
