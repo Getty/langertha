@@ -15,6 +15,7 @@ use warnings;
 use Test2::Bundle::More;
 use JSON::MaybeXS;
 use HTTP::Response;
+use Path::Tiny;
 
 use lib 't/lib';
 use Test::MockAsyncHTTP;
@@ -275,6 +276,58 @@ subtest 'chat_f direction-1 rewrite: forced tool -> response_format (ADR 0005 ex
     ok( $tc, 'synthetic ToolCall present under the forced name' );
     ok( $tc->synthetic, 'flagged synthetic' );
     is_deeply( $tc->arguments, { city => 'Berlin' }, 'loose-parsed structured args' );
+};
+
+# --- Real captured wire (k147) --------------------------------------------
+# The fixtures below are trimmed but otherwise verbatim Agent-API responses
+# captured from live calls on 2026-09-14 (karr #147, de-risking #139). They pin
+# the parser against the wire reality the eight LIVE-CONFIRM points resolved to,
+# so a future refactor of Role::ResponsesCompatible cannot silently drift from
+# what Perplexity actually returns.
+
+subtest 'real captured Agent response (fixture, k147)' => sub {
+    my $data = $json->decode( path('t/data/perplexity_agent_search.json')->slurp_raw );
+    my $resp = ppx()->chat_response( _http( $data ) );
+
+    is( "$resp", 'Paris is the capital of France.[1]',
+        'content from output_text; the inline citation marker is [1] (not [web:1])' );
+    is( $resp->model, 'openai/gpt-5.6-luna',
+        'preset "fast" resolved to openai/gpt-5.6-luna on the wire' );
+    is( $resp->finish_reason, 'stop', 'completed message -> finish_reason stop' );
+    is( $resp->prompt_tokens, 4071, 'input_tokens -> prompt_tokens' );
+    is( $resp->completion_tokens, 13, 'output_tokens -> completion_tokens' );
+    is( 0 + $resp->created, 1789422365, 'created_at epoch -> Moment (numeric)' );
+
+    ok( $resp->has_citations, 'search_results block lifted to citations' );
+    is( scalar @{ $resp->citations }, 2, 'both search results present' );
+    my $cite = $resp->citations->[0];
+    is( $cite->{url}, 'https://en.wikipedia.org/wiki/Paris', 'first citation url' );
+    ok( ( exists $cite->{snippet} && exists $cite->{date}
+          && exists $cite->{source} && exists $cite->{last_updated} ),
+        'real citation carries snippet/date/source/last_updated verbatim' );
+
+    # The message output_text part carries an (empty) annotations[] on the wire;
+    # the authoritative source list is the search_results block, not annotations.
+    my ($msg) = grep { ( $_->{type} // '' ) eq 'message' } @{ $resp->raw->{output} };
+    is_deeply( $msg->{content}[0]{annotations}, [],
+        'output_text annotations[] present but empty' );
+};
+
+subtest 'real captured typed-SSE stream (fixture, k147)' => sub {
+    my $engine = ppx();
+    my $sse    = path('t/data/perplexity_agent_stream.sse')->slurp_raw;
+    my $chunks = $engine->process_stream_data($sse);
+
+    my $text = join( '', map { $_->content } @$chunks );
+    is( $text, '7', 'response.output_text.delta increments concatenate to the answer' );
+
+    my ($final) = grep { $_->is_final } @$chunks;
+    ok( $final, 'response.completed produced a final chunk' );
+    is( $final->model, 'openai/gpt-5.6-luna',
+        'final chunk model is the resolved model, not the "medium" preset label' );
+    ok( $final->has_usage, 'usage rides on response.completed (no trailing frame)' );
+    is( $final->usage->{prompt_tokens}, 1353, 'input_tokens from response.completed' );
+    is( $final->usage->{completion_tokens}, 5, 'output_tokens from response.completed' );
 };
 
 sub _http {

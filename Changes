@@ -2,6 +2,17 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::Perplexity (Agent API) is confirmed working end-to-end against the
+      live wire and is no longer marked "work in progress" (karr k147, de-risking
+      k139): search-augmented chat returns content plus citations, a top-level
+      response_format=json_schema is honored with strict enforced, and the
+      typed-SSE stream parses. A preset is a routing label, not a fixed model —
+      read the actual model off $response->model (fast/low/medium all resolved to
+      openai/gpt-5.6-luna). json_object is rejected (the response_format type enum
+      is json_schema/text) and reasoning_effort is accepted on every preset.
+      Adds a gated live test (t/85_live_perplexity.t) and offline regression
+      fixtures captured from the real wire.
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its

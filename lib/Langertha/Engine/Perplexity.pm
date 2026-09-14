@@ -75,23 +75,28 @@ what preserves Perplexity's search+citations identity.
     sonar-reasoning-pro   -> preset "medium"
     sonar-deep-research   -> preset "high"
 
-C<$response-E<gt>model> reports the real model the chosen preset ran.
+C<$response-E<gt>model> reports the real model the chosen preset ran — a preset
+is a routing label, not a fixed model (as of 2026-09 C<fast>, C<low> and
+C<medium> all resolved to C<openai/gpt-5.6-luna> on the wire), so read the model
+off the response rather than inferring it from the preset.
 
 =head2 Capabilities
 
-No tool calling and no C<json_object> mode: the Agent API's C<response_format>
-enum is C<json_schema>-only. Structured output still works — C<chat_f> rewrites
-a forced named tool into a top-level C<response_format=json_schema> plus a
-synthetic L<Langertha::ToolCall> (ADR 0005 rewrite direction 1; Perplexity
-remains its exemplar). C<reasoning_effort> B<is> accepted (wire
-C<reasoning.effort>). Prompt caching is automatic (no request-side key).
+No tool calling and no C<json_object> mode: the only structured
+C<response_format> the Agent API accepts is C<json_schema> (the C<type> enum is
+C<json_schema>/C<text>; a C<json_object> body is rejected with HTTP 400).
+Structured output still works — C<chat_f> rewrites a forced named tool into a
+top-level C<response_format=json_schema> plus a synthetic L<Langertha::ToolCall>
+(ADR 0005 rewrite direction 1; Perplexity remains its exemplar), and C<strict>
+is enforced on the returned JSON. C<reasoning_effort> B<is> accepted (wire
+C<reasoning.effort>), though the non-reasoning presets (C<fast>/C<low>) echo it
+back without spending reasoning tokens. Prompt caching is automatic (no
+request-side key).
 
 Limitations: embeddings and transcription are not supported.
 
 Get your API key at L<https://www.perplexity.ai/settings/api> and set
 C<LANGERTHA_PERPLEXITY_API_KEY>.
-
-B<THIS API IS WORK IN PROGRESS>
 
 =cut
 
@@ -141,9 +146,15 @@ sub _build_static_models {[
   { id => 'sonar-deep-research' },
 ]}
 
-# Doc-recommended model -> preset mapping (verified from the migrate-from-sonar
-# guide, 2026-09-10). LIVE-CONFIRM (k139): which real model each preset runs,
-# and whether reasoning.effort on the fast/low presets is honored or ignored.
+# Doc-recommended model -> preset mapping (migrate-from-sonar guide 2026-09-10;
+# live-confirmed k147, 2026-09-14). A preset is a routing label, not a model id:
+# fast, low and medium all resolved to openai/gpt-5.6-luna on the wire, so the
+# base model behind a preset is Perplexity's to change -- which is why the engine
+# reports whatever $response->model returns rather than mapping it back. high
+# (sonar-deep-research) was not exercised (cost). reasoning.effort on the
+# fast/low presets is ACCEPTED (HTTP 200, echoed as reasoning:{effort}) but
+# spends no reasoning tokens there -- honored-as-accepted, a no-op on the
+# non-reasoning presets, never a 400.
 my %MODEL_TO_PRESET = (
   'sonar'               => 'fast',
   'sonar-pro'           => 'low',
@@ -167,16 +178,20 @@ sub _responses_model_kwargs {
 # Structured output stays in the Chat-Completions shape at the TOP level of the
 # body ({type:json_schema,json_schema:{name,schema,strict?}}) — NOT under
 # text.format the way OpenAI's Responses engine wants it.
-# LIVE-CONFIRM (k139): the response_format wire slot and whether `strict` is
-# honored / structured JSON is actually returned.
+# Live-confirmed (k147): the top-level response_format=json_schema slot is
+# honored, `strict` is enforced (the reply is exactly the schema, no extra
+# keys), structured JSON is returned, and search still runs alongside it. The
+# response_format.type enum is {json_schema,text} (see the json_object
+# correction below).
 sub _responses_format_kwargs {
   my ( $self, $rf ) = @_;
   return ( response_format => $rf );
 }
 
-# Agent API input items are typed. LIVE-CONFIRM (k139): the schema requires
-# {type:"message",role,content}; whether a bare {role,content} is also accepted
-# (as on /chat/completions) is unverified — stamp type:message, the safe path.
+# Agent API input items are typed {type:"message",role,content}. Live-confirmed
+# (k147): a bare {role,content} item (no type) is ALSO accepted (HTTP 200), so
+# type:message is a safe superset rather than a hard requirement — stamp it
+# anyway, the explicit form the docs show.
 sub _normalize_input_item {
   my ( $self, $msg ) = @_;
   return { type => 'message', %$msg };
@@ -185,8 +200,11 @@ sub _normalize_input_item {
 # The Agent API is not an OpenAPI-spec engine here: POST the built body straight
 # to /v1/agent (Remote's generate_http_request), rather than resolving an
 # operation id against a spec the way OpenAIResponses does.
-# LIVE-CONFIRM (k139): the retrieve/background path is /v1/agent/{id} per the
-# OpenAPI (some prose says /v1/responses/{id}); not exercised here.
+# Live-confirmed (k147): creation is POST /v1/agent (HTTP 200). The reply is an
+# object:"response" with a resp_ id, store:true and background:false — the
+# Open-Responses store shape — so retrieval would follow /v1/responses/{id},
+# not /v1/agent/{id}. Retrieve/background is not implemented here and was not
+# exercised (stateful; no cheap probe).
 sub _responses_dispatch {
   my ( $self, $response_call, @request_args ) = @_;
   return $self->generate_http_request(
@@ -198,10 +216,12 @@ sub _responses_dispatch {
 
 # Citations. The classic Sonar top-level citations[] is gone; the Agent API
 # carries sources in an output[] item of type search_results, each result a
-# {id,url,title,snippet,date,...} hash. Lift them onto Response.citations.
-# LIVE-CONFIRM (k139): the inline citation marker format ([1] vs [web:1]) and
-# whether message content parts additionally carry annotations[] (url_citation)
-# — the search_results block is the authoritative source list regardless.
+# {id,url,title,snippet,date,last_updated,source} hash. Lift them onto
+# Response.citations.
+# Live-confirmed (k147): inline markers are [1] (NOT [web:1]); the message
+# output_text part carries an annotations[] that came back empty, so the
+# search_results block is the authoritative source list, exactly as assumed
+# here. A structured (json_schema) reply still emits the search_results block.
 sub _responses_extra_fields {
   my ( $self, $data ) = @_;
   my @citations;
@@ -213,8 +233,10 @@ sub _responses_extra_fields {
   return @citations ? ( citations => \@citations ) : ();
 }
 
-# The Agent API's response_format enum is json_schema-only (no json_object), so
-# clear the flag Role::ResponseFormat advertises by default. Everything else is
+# The Agent API's response_format enum is {json_schema,text} — no json_object
+# (live-confirmed k147: a json_object body -> HTTP 400 "validation failed:
+# response_format.type must be one of json_schema, text"), so clear the flag
+# Role::ResponseFormat advertises by default. Everything else is
 # honest by composition: no Role::Tools (tools_native / tool_choice_* stay off,
 # keeping Perplexity the ADR 0005 direction-1 exemplar), no Role::PromptCache
 # (prompt_cache / prompt_cache_key stay off — caching is automatic),
