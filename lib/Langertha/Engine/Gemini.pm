@@ -97,13 +97,15 @@ Provides access to Google's Gemini models via the Generative Language API.
 Gemini models support multimodal input (text, code, images) and long context
 windows.
 
-Available models include C<gemini-3-flash-preview> (fast with thinking,
-default), C<gemini-3.1-pro-preview> (most capable), C<gemini-3.1-flash-lite>
-(cost-efficient workhorse), and the image-generation models
-C<gemini-3.1-flash-image-preview> and C<gemini-3-pro-image-preview>. All
-Gemini 3 models are currently served as preview. The C<gemini-2.5-*>
-generation is still served but now classed as previous-generation. The
-default API endpoint is C<https://generativelanguage.googleapis.com>.
+Available models include the current stable Flash line C<gemini-3.8-flash>
+and C<gemini-3.7-flash> (C<thinkingLevel> low|medium|high, no C<minimal>),
+the C<gemini-3-flash-preview> default (fast with thinking, and still accepts
+C<thinkingLevel=minimal>), C<gemini-3.1-pro-preview> (most capable),
+C<gemini-3.1-flash-lite> (cost-efficient workhorse), and the image-generation
+models C<gemini-3.1-flash-image-preview> and C<gemini-3-pro-image-preview>.
+The C<gemini-2.5-*> generation is still served but now classed as
+previous-generation. The default API endpoint is
+C<https://generativelanguage.googleapis.com>.
 
 B<THIS API IS WORK IN PROGRESS>
 
