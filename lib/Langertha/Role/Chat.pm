@@ -432,6 +432,27 @@ C<%opts> and pass straight through as before.
 
 =cut
 
+# karr #142: a couple of OpenAI-compatible providers reject a request that
+# combines tools and a structured-output response_format (Cerebras, Groq) with
+# an opaque HTTP 400 and no body. No boolean capability flag can express a
+# mutual exclusion between two capabilities, so chat_f/chat_stream_realtime_f
+# consult this per-engine hook and let the engine convert the known provider
+# 400 into a clear local croak that names the two conflicting fields. The base
+# is a deliberate no-op; only Langertha::Engine::Cerebras and
+# Langertha::Engine::Groq override it. This is intentionally narrow — the
+# model-scoped generalization is deferred to the maintainer (karr #142).
+sub _check_capability_exclusions { return }
+
+# True when the request asks for tools — either a tools array or a
+# forced named tool_choice. Used to feed the capability-exclusion hook.
+sub _chat_tools_requested {
+  my ( $self, $opts ) = @_;
+  return 1 if exists $opts->{tools};
+  return 0 unless exists $opts->{tool_choice};
+  my $tc = Langertha::ToolChoice->from_hash( $opts->{tool_choice} );
+  return ( $tc && $tc->type eq 'tool' ) ? 1 : 0;
+}
+
 async sub chat_f {
   my ( $self, %opts ) = @_;
 
@@ -471,6 +492,16 @@ async sub chat_f {
       }
     }
   }
+
+  # Provider mutual-exclusion guard (karr #142). Consulted after the
+  # forced-tool fallback (which may have set response_format) so it sees the
+  # effective request. Default no-op; Cerebras/Groq croak on the combinations
+  # their APIs reject with an opaque 400.
+  $self->_check_capability_exclusions(
+    has_tools       => $self->_chat_tools_requested(\%opts),
+    response_format => $opts{response_format},
+    streaming       => 0,
+  );
 
   # Extract the canonical controls (after the forced-tool fallback, which may
   # have set response_format) and hand them to chat_request under `controls`.
@@ -615,6 +646,16 @@ async sub chat_stream_realtime_f {
 
   croak "".(ref $self)." does not support streaming"
     unless $self->can('chat_stream_request');
+
+  # Provider mutual-exclusion guard (karr #142) — streaming path. Same hook as
+  # chat_f; the streaming flag lets an engine refuse a combination that is
+  # rejected only when streaming (e.g. Groq structured outputs, which do not
+  # support streaming at all).
+  $self->_check_capability_exclusions(
+    has_tools       => $self->_chat_tools_requested(\%opts),
+    response_format => $opts{response_format},
+    streaming       => 1,
+  );
 
   # Same canonical-control extraction as chat_f (karr #46).
   my $controls = $self->_extract_controls(\%opts);

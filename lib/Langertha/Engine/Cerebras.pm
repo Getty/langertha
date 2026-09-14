@@ -56,6 +56,24 @@ sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
 
+# karr #142: the Cerebras API rejects a request that carries both tools and a
+# structured-output response_format (json_object or json_schema) with an opaque
+# HTTP 400. Its docs make this per-model, but every model this engine currently
+# serves (gpt-oss-120b, zai-glm-4.7) rejects the combination, so guard it
+# engine-wide and convert the known 400 into a clear local croak. Consulted by
+# Langertha::Role::Chat from chat_f and chat_stream_realtime_f.
+sub _check_capability_exclusions {
+  my ( $self, %args ) = @_;
+  my $rf   = $args{response_format};
+  my $type = ( ref $rf eq 'HASH' ) ? ( $rf->{type} // '' ) : '';
+  return unless $args{has_tools}
+    && ( $type eq 'json_object' || $type eq 'json_schema' );
+  croak "".(ref $self)." cannot combine tools and response_format in one "
+    ."request: the Cerebras API rejects this combination with HTTP 400. Send "
+    ."tools or response_format, not both (run the tools first, then a second "
+    ."structured-output turn).";
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso
