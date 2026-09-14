@@ -1,0 +1,39 @@
+---
+class: standard
+completed: 2026-09-14T18:32:27Z
+created: 2026-09-14T17:59:22Z
+id: 150
+priority: high
+started: 2026-09-14T18:32:27Z
+status: done
+tags:
+- llm
+- model
+- eol
+title: DeepSeek V4.1-Flash shipped; deepseek-v4-pro reroutes to it TODAY, V4-Flash-0731
+  retired — Engine::DeepSeek catalog + pro reasoning clamp stale
+updated: 2026-09-14T18:32:27Z
+---
+
+BREAKING / EOL (advisor audit 2026-09-14, langertha-llm-advisor).
+
+Engine::DeepSeek currently: default_model deepseek-v4-flash; static/POD ids deepseek-v4-flash, deepseek-v4-pro, DeepSeek-V4-Flash-0731; DeepSeek.pm carries a pro-specific reasoning clamp ("deepseek-v4-pro accepts only high and max; low -> high").
+
+Provider reality:
+- DeepSeek-V4.1-Flash released 2026-09-10 (552B MoE, native vision, 1M context, MIT). 
+- V4-Flash and V4-Flash-Vision are RETIRED; their model names TEMPORARILY route to V4.1-Flash.
+- From 12:00 Beijing / 04:00 UTC on 2026-09-14 (TODAY) every request to deepseek-v4-pro is served by V4.1-Flash at Flash prices, "until a V4.1 Pro is released."
+
+Impact:
+1. DeepSeek-V4-Flash-0731 (pinned in catalog) is retired -> silently answers as a different model. Drop/replace it; watch $response->model.
+2. deepseek-v4-pro no longer its own model -> the pro-only reasoning clamp (only high/max) is now moot/possibly wrong while it routes to Flash. Re-verify against V4.1-Flash effort set before trusting it.
+3. Add deepseek-v4.1-flash to the catalog; confirm default deepseek-v4-flash is acceptable (routes to V4.1-Flash today).
+
+Verify against DeepSeek first-party API/model docs (api-docs.deepseek.com) before implementing; blog corroboration below is dated but secondary.
+
+Sources (read 2026-09-14):
+- https://coursiv.io/blog/deepseek-v4-1-flash (V4-Pro reroute 04:00 UTC 2026-09-14; V4-Flash/Vision retired)
+- https://venturebeat.com/technology/deepseek-v4-1-flash-debuts-... (launch 2026-09-10)
+- https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash (model card, 1M ctx, MoE)
+
+WORKER-ERGEBNIS + MERGE (main agent, 2026-09-14): Verify-First hat den Advisor-Brief teils WIDERLEGT. Gemergt nach main (60452ea), Suite 3603 gruen. Fakten gegen api-docs.deepseek.com (2026-09-14): (a) V4.1-Flash existiert, API-ID = deepseek-flash (NICHT deepseek-v4.1-flash) -> default_model auf deepseek-flash gepinnt; (b) deepseek-v4-flash/-vision-exp retired, temporaer geroutet; (c) WIDERLEGT: das v4-pro->Flash-Reroute fand NICHT statt — DeepSeek fuehrt V4 Pro nach 2026-09-14 unveraendert weiter (eigener Preis + Enum-Wert) -> v4-pro bleibt first-class; (d) reasoning_effort-Set = none|low|high|max, KEIN per-Modell-Unterschied -> alter v4-pro-only-Clamp entfernt, none schaltet thinking ab. NEBENBEFUND: DeepSeek-V4-Flash-0731 liegt in Hetzner.pm, nicht Engine::DeepSeek -> als k154 ausgegliedert. -> done.
