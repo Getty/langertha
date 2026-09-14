@@ -1,0 +1,22 @@
+---
+class: standard
+completed: 2026-09-14T04:29:15Z
+created: 2026-09-10T08:07:50Z
+id: 145
+priority: low
+started: 2026-09-14T04:29:15Z
+status: done
+tags:
+- aki
+- docs
+- drift
+title: 'CLAUDE.md ''AKI family'' + AKIAnthropic DESCRIPTION: stale silent-fallback
+  claim (MiniMax M2.5 -> real: gemma4-26b / loud error)'
+updated: 2026-09-14T04:29:21Z
+---
+
+Waehrend k132 bestaetigt: die CLAUDE.md-'AKI family'-Bullet und AKIAnthropic DESCRIPTION/=method sagen weiterhin, unbekannte Modell-IDs 'silently fall back to Minimax M2.5'. Live-Realitaet (2026-09-10): AKIAnthropic-Shim faellt still auf gemma4-26b (NICHT MiniMax M2.5); AKIOpenAI-Shim erroert bei unbekannten IDs LAUT (kein stiller Fallback mehr). Doku angleichen. Aufgetaucht in k132 (advisor + Worker), bewusst dort out-of-scope gelassen. Nur Prosa/Doku, kein Verhalten.
+
+TEILWEISE ERLEDIGT (main agent, 2026-09-14). CLAUDE.md 'AKI family'-Bullet gefixt auf Branch k144-146-docs (8818556): die pauschale 'silently fall back to Minimax M2.5'-Behauptung ersetzt durch die per-face-Realitaet (AKIOpenAI lehnt unbekannte IDs laut ab; AKI native erroert auf gated/unknown endpoint 'Client not authorized for endpoint minimax_m3!' statt zu substituieren; nur AKIAnthropic-Shim substituiert still). OFFEN + KONFLIKT (House Rule 5, deine Klaerung): AKIAnthropic.pm POD (:40-46 zitiert AKI-Doku 'fall back onto the Minimax M2.5 model', :119 'silently resolves to MiniMax M2.5') widerspricht der Ticket-Behauptung 'Live-Realitaet = gemma4-26b'. Ich habe das strittige Substitut-Modell in der Doku NICHT assertiert (kein Raten ueber Code-Doku hinweg). Zum Aufloesen: ein Live-AKIAnthropic-Call mit unbekannter Model-ID + $response->model (AKI-Live ist laut deiner stehenden Ausnahme vorab-freigegeben; fuer dieses Low-Prio-Doc-Detail nachts nicht ausgegeben). Danach .pm-POD einmalig angleichen. Ticket bleibt offen fuer diesen .pm-Teil.
+
+ERLEDIGT (main agent, 2026-09-14): Die stale 'silently fall back to Minimax M2.5'-Ueber-Behauptung ist jetzt in BEIDEN Docs behoben — CLAUDE.md (8818556, per-face-Realitaet) und AKIAnthropic.pm POD DESCRIPTION + default_model (3f9d39d, als 'unconfirmed' markiert statt als Fakt). Beide auf main, gepusht nach origin. LIVE-CONFIRM VERSUCHT + GEBLOCKT: mehrere AKIAnthropic-Calls (unbekannte + dokumentierte Modelle wie gemma4-26b) gaben ALLE HTTP 529, AKIOpenAI gab 500 -> AKI.IO-Service war 2026-09-14 gestoert, exaktes Substitut (Ticket sagt gemma4-26b, AKI-Doku sagt M2.5) NICHT verifizierbar. Der POD behauptet daher kein spezifisches Modell mehr. OPTIONALER FOLLOW-UP wenn AKI wieder oben ist: einen AKIAnthropic-Call mit unbekannter Model-ID + $response->model, dann das exakte Substitut im POD nennen. Kein Blocker; Drift ist weg.
