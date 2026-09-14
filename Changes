@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Usage exposes the prompt-cache write count as
+      `$response->usage->cache_write_tokens` (karr k130), parsed from OpenAI's
+      `prompt_tokens_details.cache_write_tokens` or Anthropic's
+      `cache_creation_input_tokens`. The cache-read count moved to the same home
+      (`Usage->cached_tokens`, parsed from both wire spellings); the public
+      `$response->cached_tokens` is unchanged, now a back-compat alias lifted
+      from the Usage object rather than hand-parsed in Response.
+
     - Cerebras and Groq raise a clear local error instead of an opaque provider
       HTTP 400 when a single request combines tools with a structured-output
       response_format (karr k142). No boolean capability flag can express a
