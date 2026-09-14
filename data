@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-09-14T17:58:40Z
+id: 149
+priority: low
+status: backlog
+tags:
+- anthropic
+- structured-output
+- live-confirm
+- k133
+title: 'Anthropic json_object: live-confirm der open-object json_schema-Shape (k133)'
+updated: 2026-09-14T17:58:40Z
+---
+
+Ausgegliedert aus k133 (Getty 2026-09-14: native structured output abgenommen). Bei der k133-Implementierung wurde nur response_format type=json_schema live-verifiziert. json_object-Mode wird auf Anthropic als open-object json_schema {type:object, additionalProperties:true} nach output_config.format uebersetzt -- das ist EXTRAPOLIERT, nicht live bestaetigt. Ein einziger freigegebener Anthropic-Call mit response_format={type:json_object} + tools/schema loest das: bestaetige, dass die open-object-Uebersetzung akzeptiert wird und valides JSON zurueckkommt. Niedrig, nicht blockierend (Risiko nur falls jemand json_object-Mode gegen Anthropic nutzt). Braucht LANGERTHA_ANTHROPIC_API_KEY (Live-Call = Freigabe-gated, MEMORY.md).
