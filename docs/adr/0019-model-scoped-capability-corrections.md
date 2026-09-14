@@ -143,7 +143,11 @@ several places, none migrated in k138 (out of scope), all consolidation candidat
   `tools` + `response_format` in one request; the boolean table (even model-scoped) cannot
   express "these two capabilities are mutually exclusive per call." This also dents the ADR 0005
   premise that structured output and forced tools are freely interchangeable. Out of scope here;
-  do not stretch the boolean table to fake it.
+  do not stretch the boolean table to fake it. **Update (2026-09-14):** the interim guard shipped
+  as **ADR 0021** — a per-engine `_check_capability_exclusions` croak at the `chat_f`/streaming
+  layer, above this table, that turns the known provider 400 into a clear local error. The
+  model-scoped generalization this bullet describes (a new per-model seam beside the boolean
+  table) remains parked for the maintainer; karr k142 stays open for it.
 - **Gemini consolidation** — migrate `Engine::Gemini`'s ad-hoc model-regex `around` into
   `model_capability_corrections`. It is the pattern this ADR names; folding it in would remove
   the last open-coded per-model capability branch. Deliberately not done in k138 (Gemini is not
