@@ -164,9 +164,11 @@ sub wire {
   is( $data->{max_tokens}, 77, 'OpenAI: per-request max_tokens beats response_size' );
 }
 
-# --- OpenAI gpt-5.x: completion length uses max_completion_tokens ---------
-# gpt-5.x dropped max_tokens (HTTP 400); the only accepted completion-length
-# key is max_completion_tokens. Older models keep max_tokens (karr #55).
+# --- OpenAI gpt-5.x / gpt-6: completion length uses max_completion_tokens --
+# The gpt-5.x and gpt-6 lines are reasoning models: they dropped max_tokens
+# (HTTP 400, deprecated and not compatible with reasoning models), so the only
+# accepted completion-length key is max_completion_tokens. Non-reasoning models
+# (gpt-4.x / gpt-4o) keep max_tokens (karr #55, #157).
 {
   my $gpt5_control = wire( openai( model => 'gpt-5.1' ), controls => { max_tokens => 100 } );
   is( $gpt5_control->{max_completion_tokens}, 100,
@@ -177,6 +179,18 @@ sub wire {
   my $gpt5_attr = wire( openai( model => 'gpt-5.6-terra', response_size => 500 ) );
   is( $gpt5_attr->{max_completion_tokens}, 500,
     'OpenAI gpt-5.x: response_size lands as max_completion_tokens' );
+
+  # gpt-6-astra is a reasoning model like gpt-5.x; the anchored prefix must
+  # cover gpt-6 too or the request 400s on max_tokens (karr #157).
+  my $gpt6_control = wire( openai( model => 'gpt-6-astra' ), controls => { max_tokens => 100 } );
+  is( $gpt6_control->{max_completion_tokens}, 100,
+    'OpenAI gpt-6-astra: max_tokens control lands as max_completion_tokens' );
+  ok( !exists $gpt6_control->{max_tokens},
+    'OpenAI gpt-6-astra: no max_tokens key on the wire' );
+
+  my $gpt6_attr = wire( openai( model => 'gpt-6-astra', response_size => 500 ) );
+  is( $gpt6_attr->{max_completion_tokens}, 500,
+    'OpenAI gpt-6-astra: response_size lands as max_completion_tokens' );
 
   my $gpt4 = wire( openai( model => 'gpt-4o', response_size => 500 ) );
   is( $gpt4->{max_tokens}, 500, 'OpenAI gpt-4o: response_size still lands as max_tokens' );

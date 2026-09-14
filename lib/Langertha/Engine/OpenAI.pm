@@ -92,16 +92,20 @@ sub _build_api_key {
 sub default_model { 'gpt-5.6-terra' }
 
 # The completion-length body key diverges by OpenAI model within the shared
-# openai wire format: the gpt-5.x line dropped max_tokens entirely — verified
-# live 2026-08-13 (gpt-5.1 / gpt-5.6-terra reject it with HTTP 400 "Use
-# 'max_completion_tokens' instead") — while gpt-4.x / gpt-4o still accept it.
-# Match the gpt-5 family by anchored prefix, so gpt-5, gpt-5.1, gpt-5.6-* etc.
-# all hit the new key; unknown future ids keep the old key (the safe default
-# for every other engine in the OpenAI-compatible family).
+# openai wire format: the gpt-5.x and gpt-6 reasoning lines dropped max_tokens
+# entirely — gpt-5.x verified live 2026-08-13 (gpt-5.1 / gpt-5.6-terra reject it
+# with HTTP 400 "Use 'max_completion_tokens' instead"); gpt-6 confirmed against
+# the Chat Completions API reference (max_tokens "is now deprecated in favor of
+# max_completion_tokens, and is not compatible with o-series models", extended
+# to the gpt-5 / gpt-6 reasoning family — developers.openai.com, 2026-09-14) —
+# while gpt-4.x / gpt-4o still accept it. Match the gpt-5 and gpt-6 families by
+# anchored prefix, so gpt-5, gpt-5.1, gpt-5.6-*, gpt-6-astra etc. all hit the
+# new key; unknown future ids keep the old key (the safe default for every
+# other engine in the OpenAI-compatible family).
 sub _max_tokens_key {
   my ( $self ) = @_;
   my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
-  return $model =~ /\Agpt-5/ ? 'max_completion_tokens' : 'max_tokens';
+  return $model =~ /\Agpt-[56]/ ? 'max_completion_tokens' : 'max_tokens';
 }
 
 has whisper => (
