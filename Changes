@@ -11,15 +11,17 @@ Revision history for Langertha
       streaming, alongside json_schema output only (json_object stays allowed
       with tools). Every other engine keeps the no-op default and is unaffected.
 
-    - Model reasoning is surfaced on three response-parse paths that silently
-      dropped it (karr k129). The shared OpenAI-compatible chat_response reads
-      the bare `reasoning` key (vLLM, Groq, Cerebras, OpenRouter, AKI) as well as
-      `reasoning_content`, so $response->thinking is no longer empty on those
-      engines; Gemini's stream parser walks every content part, so a leading
-      thought part no longer hides the answer that follows it; and Ollama's
-      native chat_response surfaces message.thinking. Reasoning is still read
-      only on the non-streaming path — aggregating streamed thinking deltas is
-      not yet done.
+    - Model reasoning is surfaced on both the non-streaming and streaming paths
+      (karr k129). Non-streaming: the shared OpenAI-compatible chat_response
+      reads the bare `reasoning` key (vLLM, Groq, Cerebras, OpenRouter, AKI) as
+      well as `reasoning_content`, so $response->thinking is no longer empty on
+      those engines; Gemini's stream parser walks every content part, so a
+      leading thought no longer hides the answer; Ollama's native chat_response
+      reads message.thinking. Streaming: each Stream::Chunk carries a `thinking`
+      delta (filled per dialect and delivered to the real-time callback),
+      chat_stream_realtime_f returns the aggregated thinking as an additive
+      trailing element, and simple_chat_stream returns it in list context —
+      matching $response->thinking on the non-streaming path.
 
     - Gemini structured output uses responseJsonSchema, not the deprecated
       responseSchema (karr k140). chat_f hands Gemini an OpenAI-shaped JSON
