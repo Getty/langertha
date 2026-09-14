@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-09-14T19:32:20Z
+id: 156
+priority: low
+status: backlog
+tags:
+- gemini
+- eol
+- catalog
+- docs
+title: Gemini 2.5 Deprecation-Datum bestaetigen (aus k153)
+updated: 2026-09-14T19:32:20Z
+---
+
+Aus k153 (2026-09-14): der Worker konnte das gemini-2.5-flash-Deprecation-Datum 2026-10-16 NICHT gegen ai.google.dev bestaetigen — Models-Seite listet gemini-2.5-flash als current stable ohne Datum; Changelog sagt nur "will be shut down soon" / "2-week notice via email". Datum stammt aus Sekundaerquelle (cloudzero.com). OFFEN: sobald ai.google.dev ein konkretes Datum publiziert, in Gemini.pm-POD notieren und den gemini-2.5 thinkingBudget-Pfad (_is_gemini_25 in Reasoning.pm) neu bewerten. Niedrig, Doc-Check, kein Live-Call. Quelle: k153-Handoff.
