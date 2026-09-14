@@ -37,12 +37,16 @@ The key is sent as a raw C<x-api-key> header (B<no> C<Bearer> prefix). The
 C<anthropic-version> header is accepted but not required by AKI.IO; the base
 class sends it anyway.
 
-B<Silent model fallback:> AKI.IO does B<not> error on unknown model IDs —
-"Requests to unknown model names will fall back onto the Minimax M2.5 model."
-Claude model names and HuggingFace repository IDs are therefore B<not> a
-usable shortcut: they are accepted and silently answered by a different model
-than you asked for. Always pass an exact AKI.IO model ID (C<list_models>
-returns the documented set) and check C<< $response->model >> if it matters
+B<Model fallback for unknown IDs (substitute unconfirmed):> AKI.IO's own
+documentation states it does B<not> error on unknown model IDs — "Requests to
+unknown model names will fall back onto the Minimax M2.5 model." The exact
+substitute is version-dependent and Langertha could not re-confirm it live
+(2026-09-14 the C</anthropic> shim answered every request, documented models
+included, with HTTP 529), so treat the specific fallback model as
+B<unconfirmed>. Either way, Claude model names and HuggingFace repository IDs
+are B<not> a usable shortcut — an unknown ID is not the model you asked for.
+Always pass an exact AKI.IO model ID (C<list_models> returns the documented
+set), and check C<< $response->model >> (and watch for errors) if it matters
 which model replied.
 
 Models documented for this endpoint: C<apertus-chat-70b>, C<gpt-oss-120b>,
@@ -116,8 +120,9 @@ Returns C<gpt-oss-120b>, a current-generation non-MiniMax model AKI.IO rates
 L<Langertha::Engine::AKIOpenAI> and replacing C<llama3-chat-8b>, which AKI.IO
 marks end-of-life 2026-09-30. AKI.IO exposes MiniMax M3 only on its native
 endpoint, not this shim. AKI.IO documents no default of its own for this
-endpoint — an unset or unknown model silently resolves to MiniMax M2.5
-(see L</DESCRIPTION>), so this class always sends an explicit model.
+endpoint — an unset or unknown model resolves to a fallback AKI does not
+guarantee (its docs name Minimax M2.5; the live substitute is unconfirmed —
+see L</DESCRIPTION>), so this class always sends an explicit model.
 
 =cut
 
