@@ -113,21 +113,33 @@ around 'chat_response' => sub {
   );
 };
 
+# Both streaming entry points carry an aggregated thinking string alongside
+# content (Role::Chat::aggregate_thinking, filled from the native reasoning
+# deltas). Two thinking sources can appear and must not both win: a tag-based
+# model inlines its chain-of-thought in <think> tags in the content, while a
+# native-reasoning model surfaces it out-of-band as the aggregated string. The
+# non-stream `around chat_response` resolves this the same way — tag-extracted
+# thinking overrides the native one only when tags were actually present.
 around 'simple_chat_stream' => sub {
   my ( $orig, $self, @args ) = @_;
-  my $content = $self->$orig(@args);
-  return $content unless $self->think_tag_filter;
-  my ($filtered, $thinking) = $self->filter_think_content($content);
-  return $filtered;
+  my ( $content, $thinking ) = $self->$orig(@args);
+  if ( $self->think_tag_filter ) {
+    my ( $filtered, $tag_thinking ) = $self->filter_think_content($content);
+    $content  = $filtered;
+    $thinking = $tag_thinking if defined $tag_thinking;
+  }
+  return wantarray ? ( $content, $thinking ) : $content;
 };
 
 around 'chat_stream_realtime_f' => sub {
   my ( $orig, $self, @args ) = @_;
   return $self->$orig(@args)->then(sub {
-    my ( $content, $chunks, $timing ) = @_;
-    return Future->done($content, $chunks, $timing) unless $self->think_tag_filter;
-    my ($filtered, $thinking) = $self->filter_think_content($content);
-    return Future->done($filtered, $chunks, $timing);
+    my ( $content, $chunks, $timing, $thinking ) = @_;
+    return Future->done($content, $chunks, $timing, $thinking)
+      unless $self->think_tag_filter;
+    my ($filtered, $tag_thinking) = $self->filter_think_content($content);
+    $thinking = $tag_thinking if defined $tag_thinking;
+    return Future->done($filtered, $chunks, $timing, $thinking);
   });
 };
 

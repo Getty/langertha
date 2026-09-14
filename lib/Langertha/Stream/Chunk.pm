@@ -120,6 +120,26 @@ chunks have no tool calls — use C<has_tool_calls> to check.
 
 =cut
 
+has thinking => (
+  is        => 'ro',
+  isa       => 'Maybe[Str]',
+  predicate => 'has_thinking',
+);
+
+=attr thinking
+
+Optional incremental chain-of-thought / reasoning text delivered in this
+chunk, parallel to L</content> and L</tool_calls>. Populated by the dialect
+stream parsers from their verified per-provider delta spelling — the
+OpenAI-compatible C<delta.reasoning_content> / bare C<delta.reasoning>,
+Anthropic's C<thinking_delta>, Gemini's C<thought> parts, and Ollama native
+C<message.thinking>. Most chunks carry no thinking — use C<has_thinking> to
+check. The full streamed thinking is reassembled by
+L<Langertha::Role::Chat/aggregate_thinking>, the streaming counterpart of
+L<Langertha::Response/thinking> on the non-streaming path.
+
+=cut
+
 =attr usage
 
 Token usage counts as a HashRef, if provided by the engine on the final

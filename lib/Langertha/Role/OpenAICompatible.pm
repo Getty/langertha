@@ -492,6 +492,19 @@ sub parse_stream_chunk {
   my $content = $choice->{delta}{content} // '';
   my $finish_reason = $choice->{finish_reason};
 
+  # Streamed chain-of-thought reaches the delta under the same two spellings the
+  # non-streaming chat_response reads: the DeepSeek/SGLang/Moonshot/xAI
+  # `reasoning_content`, and the bare `reasoning` that vLLM (renamed from
+  # reasoning_content), Cerebras and AKI.IO send. Read the canonical spelling
+  # first, then fall back to `reasoning` -- guarded !ref so a non-string shape
+  # (e.g. OpenRouter's `reasoning_details` ARRAY, which the docs put on the
+  # delta) never lands in the Str thinking attribute. -- karr k129
+  my $delta = $choice->{delta} || {};
+  my $thinking =
+      defined $delta->{reasoning_content} ? $delta->{reasoning_content}
+    : ( defined $delta->{reasoning} && !ref $delta->{reasoning} ) ? $delta->{reasoning}
+    : undef;
+
   require Langertha::Stream::Chunk;
   return Langertha::Stream::Chunk->new(
     content => $content,
@@ -503,6 +516,7 @@ sub parse_stream_chunk {
     ( $data->{usage} && $data->{usage}{prompt_tokens_details}
       && defined $data->{usage}{prompt_tokens_details}{cached_tokens}
       ? ( cached_tokens => $data->{usage}{prompt_tokens_details}{cached_tokens} ) : () ),
+    defined $thinking ? ( thinking => $thinking ) : (),
   );
 }
 
@@ -512,9 +526,10 @@ sub parse_stream_chunk {
 
 Parses a single SSE data payload from an OpenAI-format stream. Returns
 a L<Langertha::Stream::Chunk> with C<content>, C<is_final>, C<finish_reason>,
-C<model>, C<usage>, and C<cached_tokens> (lifted from
-C<usage.prompt_tokens_details.cached_tokens> when present), or C<undef> if
-the chunk has no content.
+C<model>, C<usage>, C<cached_tokens> (lifted from
+C<usage.prompt_tokens_details.cached_tokens> when present), and C<thinking>
+(the streamed C<delta.reasoning_content> / bare C<delta.reasoning>, guarded
+C<!ref>). Returns C<undef> only when the payload carries no C<choices>.
 
 =cut
 

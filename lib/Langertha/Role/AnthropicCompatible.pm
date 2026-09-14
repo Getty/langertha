@@ -540,10 +540,17 @@ sub parse_stream_chunk {
 
   if ($type eq 'content_block_delta') {
     my $delta = $data->{delta} || {};
+    # A content_block_delta is discriminated by delta.type: text_delta carries
+    # `text`, thinking_delta carries `thinking` (extended-thinking models), then
+    # exactly one signature_delta precedes content_block_stop. Surface the
+    # streamed thinking onto the chunk; content stays the text delta. -- karr k129
+    my $dtype = $delta->{type} // '';
     return Langertha::Stream::Chunk->new(
       content => $delta->{text} // '',
       raw => $data,
       is_final => 0,
+      ( $dtype eq 'thinking_delta' && defined $delta->{thinking}
+        ? ( thinking => $delta->{thinking} ) : () ),
     );
   }
 
@@ -575,8 +582,9 @@ sub parse_stream_chunk {
     my $chunk = $engine->parse_stream_chunk($data, $event);
 
 Parses a single SSE data payload from an Anthropic-format stream by event
-type. Returns a L<Langertha::Stream::Chunk>, or C<undef> for event types that
-carry no content.
+type. A C<content_block_delta> of type C<thinking_delta> surfaces its
+C<thinking> text onto the chunk's C<thinking> attribute. Returns a
+L<Langertha::Stream::Chunk>, or C<undef> for event types that carry no content.
 
 =cut
 

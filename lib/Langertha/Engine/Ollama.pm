@@ -518,6 +518,12 @@ sub parse_stream_chunk {
   my $content = $data->{message}{content} // '';
   my $is_done = $data->{done} ? 1 : 0;
 
+  # Native /api/chat with think=true streams the chain-of-thought incrementally
+  # under message.thinking, parallel to message.content -- surface it onto the
+  # chunk so aggregate_thinking reconstructs the same text chat_response lifts on
+  # the non-streaming path. -- karr k129
+  my $thinking = $data->{message}{thinking};
+
   require Langertha::Stream::Chunk;
   return Langertha::Stream::Chunk->new(
     content => $content,
@@ -529,6 +535,7 @@ sub parse_stream_chunk {
       $data->{eval_count} ? (completion_tokens => $data->{eval_count}) : (),
       $data->{prompt_eval_count} ? (prompt_tokens => $data->{prompt_eval_count}) : (),
     }) : (),
+    defined $thinking ? ( thinking => $thinking ) : (),
   );
 }
 

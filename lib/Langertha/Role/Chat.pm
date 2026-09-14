@@ -312,7 +312,9 @@ sub simple_chat_stream {
   my ( $chunks, $timing ) = $self->execute_streaming_request($request, $callback);
   $log->debugf("[%s] Stream completed: %d chunks (%.3fs)",
     ref $self, scalar @$chunks, $timing->{total_seconds} // 0);
-  return join('', map { $_->content } @$chunks);
+  my $content  = join('', map { $_->content } @$chunks);
+  my $thinking = $self->aggregate_thinking($chunks);
+  return wantarray ? ( $content, $thinking ) : $content;
 }
 
 =method simple_chat_stream
@@ -325,9 +327,13 @@ sub simple_chat_stream {
     }, 'Tell me a story');
 
 Sends a synchronous streaming chat request. Calls C<$callback> with each
-L<Langertha::Stream::Chunk> as it arrives. Returns the complete concatenated
-content string when done. Blocks until the stream completes. C<total_seconds>
-is logged; for a full breakdown read L</execute_streaming_request>.
+L<Langertha::Stream::Chunk> as it arrives (each chunk may carry incremental
+C<thinking>, see L<Langertha::Stream::Chunk/thinking>). In scalar context
+returns the complete concatenated content string; in list context returns
+C<($content, $thinking)> where C<$thinking> is the aggregated chain-of-thought
+(C<undef> when the engine surfaced none), as L</aggregate_thinking> assembles
+it. Blocks until the stream completes. C<total_seconds> is logged; for a full
+breakdown read L</execute_streaming_request>.
 
 =cut
 
@@ -624,7 +630,8 @@ sub simple_chat_stream_f {
 
 Async streaming without a real-time callback. Convenience wrapper around
 L</simple_chat_stream_realtime_f> with C<undef> as the callback. Returns a
-L<Future> that resolves to C<($content, \@chunks)>.
+L<Future> that resolves to C<($content, \@chunks, \%timing, $thinking)> — the
+same tuple as L</chat_stream_realtime_f>; the trailing elements are additive.
 
 =cut
 
@@ -707,11 +714,12 @@ async sub chat_stream_realtime_f {
   }
 
   my $content      = join('', map { $_->content } @all_chunks);
+  my $thinking     = $self->aggregate_thinking(\@all_chunks);
   my $total_seconds = tv_interval($t0);
   return ($content, \@all_chunks, {
     ttft_seconds  => $ttft_seconds,
     total_seconds => $total_seconds,
-  });
+  }, $thinking);
 }
 
 sub aggregate_tool_calls {
@@ -743,6 +751,38 @@ helper just collects them.
 
 =cut
 
+sub aggregate_thinking {
+  my ( $self, $chunks ) = @_;
+  return undef unless ref($chunks) eq 'ARRAY';
+  my $thinking = '';
+  my $seen = 0;
+  for my $c (@$chunks) {
+    my $t = eval { $c->has_thinking ? $c->thinking : undef };
+    next unless defined $t;
+    $thinking .= $t;
+    $seen = 1;
+  }
+  return $seen ? $thinking : undef;
+}
+
+=method aggregate_thinking
+
+    my $thinking = $engine->aggregate_thinking( $chunks );
+
+Walks an ArrayRef of L<Langertha::Stream::Chunk> objects and concatenates the
+C<thinking> text of every chunk that carries one, in stream order — the way
+L</chat_stream_realtime_f> concatenates C<content>. Returns C<undef> when no
+chunk carried thinking, so the streamed result mirrors
+L<Langertha::Response/thinking> (also C<undef> when the engine surfaced none).
+
+This is the streaming counterpart to the native C<thinking> that
+L<Langertha::Response> exposes on the non-streaming path. Each dialect stream
+parser fills C<Stream::Chunk-E<gt>thinking> from its own delta spelling (see
+L<Langertha::Stream::Chunk/thinking>); this helper just reassembles the
+fragments.
+
+=cut
+
 =method simple_chat_stream_realtime_f
 
     # With async/await (recommended)
@@ -760,9 +800,11 @@ helper just collects them.
     my ($content, $chunks) = $future->get;
 
 Async streaming with real-time callback. C<$callback> is called with each
-L<Langertha::Stream::Chunk> as it arrives from the server. Returns a L<Future>
-that resolves to C<($content, \@chunks)> where C<$content> is the full
-concatenated text.
+L<Langertha::Stream::Chunk> as it arrives from the server (each chunk may carry
+incremental C<thinking>). Returns a L<Future> that resolves to
+C<($content, \@chunks, \%timing, $thinking)>, the same tuple as
+L</chat_stream_realtime_f>; the trailing elements are additive, so callers
+destructuring only C<($content, \@chunks)> keep working.
 
 This is the recommended method for real-time streaming in async applications.
 Pass C<undef> as the callback (or use L</simple_chat_stream_f>) if you only
@@ -795,10 +837,15 @@ are extracted and handed to L</chat_stream_request> under C<controls>, exactly
 as in L</chat_f>. All other options (tools, tool_choice, and any engine-specific
 extras) pass straight through.
 
-Returns a L<Future> that resolves to C<($content, \@chunks, \%timing)> where
-C<$content> is the full concatenated text, C<\@chunks> the collected
-L<Langertha::Stream::Chunk> objects, and C<\%timing> carries C<ttft_seconds>
-and C<total_seconds>.
+Returns a L<Future> that resolves to C<($content, \@chunks, \%timing,
+$thinking)> where C<$content> is the full concatenated text, C<\@chunks> the
+collected L<Langertha::Stream::Chunk> objects, C<\%timing> carries
+C<ttft_seconds> and C<total_seconds>, and C<$thinking> is the aggregated
+chain-of-thought (C<undef> when the engine surfaced none), assembled from the
+per-chunk C<thinking> deltas by L</aggregate_thinking> so it matches the native
+L<Langertha::Response/thinking> of the non-streaming L</chat_f> on the same
+engine and prompt. The trailing element is additive: callers destructuring only
+the first three keep working.
 
 This is the streaming counterpart to L</chat_f>. Unlike L</chat_f> it does
 not apply the forced-tool fallback (rewriting a named C<tool_choice> into a
