@@ -3,7 +3,7 @@ package Langertha::Role::Chat;
 our $VERSION = '0.503';
 use Moose::Role;
 use Future::AsyncAwait;
-use Carp qw( croak );
+use Carp qw( carp croak );
 use JSON::MaybeXS;
 use Log::Any qw( $log );
 use Scalar::Util qw( blessed );
@@ -197,6 +197,7 @@ system prompt from L<Langertha::Role::SystemPrompt> is prepended automatically.
 
 sub chat_messages {
   my ( $self, @messages ) = @_;
+  $self->_warn_control_message_args(@messages);
   my @out;
   push @out, { role => 'system', content => $self->system_prompt }
     if $self->has_system_prompt;
@@ -437,6 +438,37 @@ C<controls> key and places each control on its wire; unknown keys stay in
 C<%opts> and pass straight through as before.
 
 =cut
+
+# karr #122: simple_chat / simple_chat_f / chat funnel their positional
+# @messages through chat_messages, which turns every non-ref scalar into a
+# { role => 'user' } turn. A caller who mistakes those methods for chat_f and
+# appends a control as a kwarg tail -- simple_chat($prompt, reasoning_effort =>
+# 'high') -- silently sends the control name and its value as extra user
+# messages, with no error and no effect (the project hit this twice in its own
+# docs). This is a diagnostic only: warn once (never die) when a plain-scalar
+# message exactly matches a canonical control name; behaviour is otherwise
+# unchanged (the strings still become messages as before). A control name has
+# no legitimate use as a whole user turn, so this has no false positives in
+# practice. The broader unknown-constructor-arg finding (karr #101) is out of
+# scope here.
+sub _warn_control_message_args {
+  my ( $self, @messages ) = @_;
+  my %seen;
+  my @hits =
+    grep { !$seen{$_}++ }
+    grep { defined $_ && !ref $_ && $CANONICAL_CONTROLS{$_} } @messages;
+  return unless @hits;
+  carp sprintf(
+    "%s: message argument(s) %s match a chat_f control name and are being "
+      . "sent as plain user message text. Per-request controls such as "
+      . "reasoning_effort, temperature and response_format are named "
+      . "arguments to chat_f (or engine constructor attributes), not "
+      . "simple_chat/chat message arguments.",
+    ref $self,
+    join( ', ', map { "'$_'" } @hits ),
+  );
+  return;
+}
 
 # karr #142: a couple of OpenAI-compatible providers reject a request that
 # combines tools and a structured-output response_format (Cerebras, Groq) with
