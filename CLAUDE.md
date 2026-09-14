@@ -115,11 +115,11 @@ Engine::Remote              url required, JSON + HTTP
   │
   ├── Engine::OpenAIBase    /chat/completions format, Bearer auth, SSE streaming
   │     │  Cloud providers (url has default, api_key from env)
-  │     ├── OpenAI          gpt-5.6 family, embeddings, whisper transcription, structured output
+  │     ├── OpenAI          gpt-5.6 family + gpt-6-astra flagship, embeddings, whisper transcription, structured output
   │     │     └── OpenAIResponses  /v1/responses API (reasoning models like gpt-5.5-pro); composes `Role::ResponsesCompatible` (`responses` tool/reasoning wire format — shared with Perplexity's Agent API); no streaming
-  │     ├── DeepSeek        deepseek-v4-flash/pro, structured output
+  │     ├── DeepSeek        deepseek-flash (V4.1) / v4-pro, structured output
   │     ├── Groq            ultra-fast inference, whisper transcription, structured output
-  │     ├── XAI             xAI Grok (grok-4.3), 1M context, agentic tool calling
+  │     ├── XAI             xAI Grok (grok-4.6), 500K context, agentic tool calling
   │     ├── Mistral         EU-hosted, embeddings, structured output
   │     ├── MiniMax         Shanghai (default), ~200K context, M3
   │     ├── Moonshot        Moonshot Kimi (kimi-k3), multimodal, 1M context
