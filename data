@@ -1,0 +1,34 @@
+---
+class: standard
+completed: 2026-09-14T19:31:53Z
+created: 2026-09-14T17:59:57Z
+id: 152
+priority: medium
+started: 2026-09-14T18:34:54Z
+status: done
+tags:
+- llm
+- model
+title: 'xAI default grok-4.3 is stale: Grok 4.6 is the current flagship (Aug 2026);
+  Grok 4.5 also missing'
+updated: 2026-09-14T19:31:53Z
+---
+
+MISSING FLAGSHIP (advisor audit 2026-09-14, langertha-llm-advisor).
+
+Engine::XAI default_model is grok-4.3 (POD calls it "the flagship, 1M context"). That is now outdated:
+- Grok 4.5 released 2026-07-16.
+- Grok 4.6 released ~2026-08-12 and is "the current flagship since August 2026" ($2/1M in, $6/1M out). grok-4.3 is now a cheaper mid-tier ($1.25/$2.50).
+- Context window claim needs re-check: sources put Grok 4.6 at 200K-500K, not 1M; the 1M was a grok-4.3 figure. Verify on docs.x.ai/developers/models before updating POD.
+
+Action: bump/curate xAI catalog (add grok-4.5, grok-4.6), decide whether default should move to grok-4.6, fix the context-window POD. XAI has no static model list (dynamic /models) so this is mostly default_model + POD, but confirm /models returns the new ids.
+
+Sources (read 2026-09-14):
+- https://x.ai/news (Grok 4.5, Jul 16 2026)
+- https://www.cloudzero.com/blog/grok-pricing/ (Grok 4.6 current flagship, pricing)
+- https://www.gradually.ai/en/grok-statistics/ (Grok 4.6 flagship since Aug 2026, 200K ctx)
+- https://docs.x.ai/developers/models (authoritative model+ctx list — verify here)
+
+IN ARBEIT (main agent -> langertha-worker, isoliert, mit k153, 2026-09-14): verify-first docs.x.ai, Default grok-4.3 -> aktuelles Flaggschiff, Katalog + POD-Context. Hand-back zum Review.
+
+MERGE (main agent, 2026-09-14): gemergt nach main (f19c21c), Suite 3609 gruen. Verify-first gegen docs.x.ai: grok-4.6 = aktuelles Flaggschiff (500K), grok-4.5 (500K) + grok-4.3 (1M, mid-tier) selectable. default_model -> grok-4.6, POD korrigiert. ZURUECKGEHALTEN: grok-4.6-vision nicht doc-bestaetigt -> Claim gedroppt statt geraten. -> done.
