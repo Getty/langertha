@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - simple_chat / chat now carp when a message argument exactly matches a
+      chat_f control name (karr k122) — e.g. `simple_chat($prompt,
+      reasoning_effort => 'high')`, which silently sent the control name and its
+      value as extra user turns. Diagnostic only: the strings are still sent as
+      messages, and a control word used as real message text (a substring, or a
+      hashref's content) does not warn.
+
     - RateLimit reset is now typed per bucket (karr k121): requests_reset_at /
       tokens_reset_at (Langertha::Moment, "when") and requests_reset_after /
       tokens_reset_after (seconds, "in how long"), reconciled against a new
