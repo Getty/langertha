@@ -1,0 +1,119 @@
+---
+class: standard
+completed: 2026-09-14T22:03:17Z
+created: 2026-09-01T19:40:36Z
+id: 139
+priority: high
+started: 2026-09-10T01:17:27Z
+status: done
+tags:
+- advisor
+- perplexity
+- engines
+- adr
+- llm
+title: Perplexity Sonar is EOL 2026-09-27 - Engine::Perplexity breaks, and ADR 0005
+  rewrite direction 1 loses its only exemplar
+updated: 2026-09-14T22:03:17Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01. Docs read 2026-09-01, no live calls.
+
+## Deadline: 26 days
+
+Every Perplexity Sonar doc page now carries the banner, verbatim:
+
+  "Sonar Chat Completions is now Agent API. Sonar will be supported until **September 27, 2026**."
+
+`Engine::Perplexity::default_model` is `sonar`. The engine's model list
+(`sonar`, `sonar-pro`, `sonar-deep-research`, `sonar-reasoning-pro`) still matches the docs enum
+exactly -- the engine is accurate TODAY and stops working in under four weeks.
+
+Sources (read 2026-09-01): docs.perplexity.ai/api-reference/sonar-post ,
+docs.perplexity.ai/docs/sonar/models.md , /docs/sonar/features.md
+
+## What replaces it, and why neither successor is a drop-in
+
+Perplexity has split the surface in two, and BOTH invalidate a Langertha assumption:
+
+1. **Agent API** -- the named successor to Sonar Chat Completions. Non-OpenAI request shape.
+   `Engine::Perplexity` extends `OpenAIBase`; if the Agent API is where search-augmented chat
+   lives after 2026-09-27, that is a wire-envelope change (ADR 0006 dialect axis), not a URL swap.
+2. **Router API** -- `POST /router/v1/chat/completions`, full OpenAI shape INCLUDING named
+   `tool_choice`, `allowed_tools`, `parallel_tool_calls` (default true), and
+   `response_format.json_schema` which "always runs in strict mode". **Private preview,
+   email-gated.** Catalog is six open-weight models (`perplexity/kimi-k3`,
+   `deepseek-v4-flash-0731`, `glm-5.2`, `glm-5.3`, two nemotron), i.e. it is a routing product,
+   not Sonar.
+   Source: docs.perplexity.ai/api-reference/gateway-chat-completions-post , /docs/router/models.md
+
+**This matters beyond one engine.** Perplexity is the single load-bearing example behind ADR 0005
+rewrite direction 1 -- "forced named tool -> response_format" fires on
+`!supports('tool_choice_named') && supports('response_format_json_schema')`, and Perplexity is
+the only engine in the distribution that hits it (`t/78_engine_capabilities.t:38` asserts exactly
+that). If Perplexity's successor surface gains named tool_choice (the Router API has it), the
+rewrite direction loses its only real-world consumer and ADR 0005 needs a note saying so.
+
+Also confirmed still true and NOT to be "fixed": Sonar genuinely has no tool calling. `tools` and
+`tool_choice` appear nowhere in the Sonar API reference or guides, and the repo's own live 400
+("Tool calling is not supported for this model") stands.
+
+## Second, smaller drift on the same engine
+
+`Engine::Perplexity` does `delete $caps->{reasoning_effort}` in its `around engine_capabilities`
+(Perplexity.pm:92-96). The current Sonar API reference documents `reasoning_effort` as an accepted
+body parameter with values `minimal|low|medium|high`. So that correction is now itself stale --
+the flag should come back (it is also the kind of thing `sonar-reasoning-pro` exists for).
+`delete $caps->{prompt_cache_key}` in the same block was not re-checked and may or may not still
+hold.
+
+## Suggested action
+
+1. Decide before 2026-09-27 whether Langertha follows Perplexity to the Agent API (new wire
+   envelope), to the Router API (needs preview access), or deprecates `Engine::Perplexity`.
+   Doing nothing means the engine breaks on that date.
+2. Independently and cheaply: restore `reasoning_effort` on Perplexity, and re-verify
+   `prompt_cache_key`.
+3. Note in ADR 0005 that rewrite direction 1's exemplar is time-limited, whichever way (1) goes.
+
+2026-09-10 01:21 RE-VERIFIED LIVE 2026-09-10 (langertha-llm-advisor, docs read today via WebFetch on official docs.perplexity.ai; comment only, claim left with worker-a): CLAIM CONFIRMED. Perplexity Sonar Chat Completions EOL = 2026-09-27 (17 days out). Verbatim banner still on the models page today: 'Sonar Chat Completions is now Agent API. Sonar will be supported until September 27, 2026.' Official migration guide confirms the same date and names the Agent API as successor with a NON-OpenAI shape (input param + typed output array; presets fast/low/medium/high/xhigh instead of model IDs) -> a wire-envelope change, not a URL swap, exactly as this ticket states.
+
+AFFECTED MODEL IDs (all four the engine ships in _build_static_models, default_model='sonar'): sonar, sonar-pro, sonar-reasoning-pro, sonar-deep-research. The entire Sonar Chat Completions surface retires on that date, so every one is affected. (Plain sonar-reasoning was already removed 2025-12-15 per the changelog; the engine already dropped it -> still accurate.)
+
+BELASTBARE QUELLE (verified reachable and contains the point today, 2026-09-10):
+- PRIMARY: https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview
+- Banner source: https://docs.perplexity.ai/docs/sonar/models
+- Changelog (sonar-reasoning removal 2025-12-15): https://docs.perplexity.ai/docs/resources/changelog
+- Corroboration (Perplexity community, 2026-08-13): https://community.perplexity.ai/t/sonar-is-moving-to-the-agent-api/5802
+
+VERDICT: EOL claim stands, unchanged from the 2026-09-01 filing. Per Getty's instruction ('solange da nichts passiert aendern wir nichts'): no code change, ticket stays as-is; this is the requested fresh live re-check + a reachable source URL. NO code/ADR touched (advisory-only).
+
+RECHERCHE FERTIG (worker-a, 2026-09-10, via langertha-llm-advisor): Perplexity Sonar Chat Completions API EOL BESTAETIGT zum 2026-09-27. Quellen: Banner verbatim docs.perplexity.ai/docs/sonar/models ; Migration Guide docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview . Betroffen: alle 4 Engine::Perplexity-Modelle (sonar, sonar-pro, sonar-reasoning-pro, sonar-deep-research). Nachfolger Agent API mit NICHT-OpenAI-Wire-Shape (input/typed output, Presets statt Modell-IDs) = Envelope-Wechsel, kein URL-Swap. ENTSCHEIDUNG (User): NICHTS aendern solange nichts real passiert. Zurueck in Backlog, dokumentiert; vor 2026-09-27 neu bewerten.
+
+2026-09-10 08:02 SPEC for k139 Agent-API migration (langertha-llm-advisor, docs+OpenAPI read 2026-09-10, NO live calls). Source of truth: docs.perplexity.ai/openapi.json (POST /v1/agent -> ResponsesRequest/ResponsesResponse), migrate-from-sonar/how-to, output-control.
+
+ENVELOPE = Open-Responses / OpenAI-Responses shape (input/instructions/typed output[]/usage input_tokens). NOT chat/completions. => Engine::Perplexity extends OpenAIBase is WRONG post-migration. Reuse Langertha Responses machinery (OpenAIResponses already has tool_wire_format=responses, reasoning_wire_format=responses, output[] walking, input_tokens usage-normalize, Tool/ToolChoice/Reasoning ->to_responses).
+
+REQUEST: POST https://api.perplexity.ai/v1/agent ; auth UNCHANGED Authorization: Bearer <LANGERTHA_PERPLEXITY_API_KEY> ; url stays https://api.perplexity.ai. Body: input (REQUIRED; string OR array of {type:"message",role,content}) ; ONE of model=perplexity/sonar | models[] | preset REQUIRED ; instructions=system prompt (top-level, strip system msgs from input) ; response_format (top-level, CHAT-COMPLETIONS shape {type:json_schema,json_schema:{name(1-64),schema,strict}} -- do NOT translate to text.format like OpenAIResponses does) ; reasoning:{effort:minimal|low|medium|high|xhigh|max} (to_responses already emits this) ; max_output_tokens (was max_tokens) ; temperature/top_p (ignored on gpt-5/o-family) ; stream:bool. NO tool_choice field exists at all.
+
+MODEL->PRESET (doc-recommended, verified today): sonar->fast, sonar-pro->low, sonar-reasoning-pro->medium, sonar-deep-research->high (+xhigh bonus). Presets bundle web_search + inline citations. CRITICAL BEHAVIOR CHANGE: web search is now OPT-IN (a web_search tool); a bare model call does NOT search. To preserve Perplexity search+citations identity the engine MUST use a preset OR always attach tools:[{type:web_search}] + citation instructions. Recommend preset path (keeps 4 user-facing model IDs). $response->model reveals the real model per preset.
+
+RESPONSE: object=response; id, created_at(epoch->Moment), model, status, output[] (discriminated by type), usage{input_tokens,output_tokens,total_tokens,input_tokens_details.cache_read_input_tokens,cost}. Answer text = output[type=message].content[type=output_text].text (SDK output_text convenience). CITATIONS: output[type=search_results].results[] each {id,url,title,snippet,date,last_updated,source}; inline [n]/[web:n] markers map to result whose numeric id=n; message content parts also carry annotations[] (url_citation {url,title,start_index,end_index}). Sonar top-level citations[] is GONE -> extract from search_results.
+
+STREAMING: SUPPORTED (unlike OpenAIResponses which dropped it). Typed SSE, text via response.output_text.delta (.delta field), terminated data:[DONE]; reasoning/search/tool arrive as own event types. Current SSE delta.content parser will NOT work -> needs typed-event parser or drop streaming cap for v1 (regression, current Sonar has streaming).
+
+ADR 0005 VERDICT: direction-1 exemplar SURVIVES. Agent API has response_format_json_schema (TRUE) and NO tool_choice (tool_choice_named FALSE) -> chat_f direction-1 rewrite (forced named tool -> response_format json_schema + synthetic ToolCall) still fires, and is now the ONLY way to force schema extraction on Perplexity. ADR 0005 needs only a confirming note, no logic change.
+
+CAP CORRECTIONS for the Agent engine: KEEP tool_choice_named=false; KEEP response_format_json_schema=true; FLIP response_format_json_object -> FALSE (ResponseFormat.type enum is json_schema-ONLY now; t/78:40 currently asserts true); RESTORE reasoning_effort=true (remove the delete; wire=reasoning.effort via responses format) -- reverses the now-stale correction; KEEP prompt_cache_key=false (no such field in ResponsesRequest; caching is automatic via input_tokens_details). Function tools EXIST (FunctionTool flat {type:function,name,description,parameters,strict}=responses tool shape) but no forcing -> composing Role::Tools is optional future scope, not required for k139.
+
+ENVELOPE RECOMMENDATION: Option B (ADR-0016 clean) = extract Responses envelope into Role::ResponsesCompatible, composed by BOTH OpenAIResponses and a new lean Perplexity Agent engine (parent=Remote/OpenAIBase for auth+HTTP, NOT OpenAI -- avoids inheriting embeddings/whisper/OpenAI url+key/model-list baggage). Perplexity is exactly ADR 0016s trigger: a second consumer of the envelope from a different parent. Option A (fast interim, 17 days to EOL): extend OpenAIResponses and suppress the OpenAI baggage. Either way this is ADR 0006/0013/0016 territory -> loop adr-auditor.
+
+MUST LIVE-CONFIRM (worker: annotate in code, do NOT guess; live Perplexity calls NOT pre-approved): (1) input items REQUIRE type:"message"? (schema says yes; is bare {role,content} accepted like OpenAI?); (2) response_format wire slot -- send top-level response_format (documented) and confirm strict honored & structured JSON returned; (3) can a preset be combined with response_format/reasoning/instructions/web_search-filter overrides, and disable-search hack (max_tool_calls:0, tools:[] does NOT clear preset tools); (4) which real model each sonar-preset returns + citation marker format ([1] vs [web:1]) for the citation parser; (5) sonar preset call WITHOUT max_output_tokens succeeds (required only for anthropic/* models); (6) reasoning.effort on fast/low presets accepted vs ignored/400; (7) streaming SSE framing/[DONE] + interleaved search/tool events if streaming implemented; (8) retrieve path is /v1/agent/{id} per OpenAPI (background-mode prose says /v1/responses/{id} -- treat as doc typo).
+
+2026-09-10 08:32 Implemented on branch k139-perplexity-agent-api (worktree .claude/worktrees/k139), 2 topical commits, NOT merged. Role::ResponsesCompatible extracted from OpenAIResponses (regression t/60 green); Engine::Perplexity rebuilt as lean Agent-API engine on Engine::Remote (/v1/agent, model->preset, top-level response_format, citations from search_results, typed-SSE, reasoning.effort). Caps: json_object OFF, reasoning_effort ON, prompt_cache_key OFF, tool_choice_named OFF (ADR 0005 dir-1 exemplar intact). Response.citations added. Full suite green (3206 tests, live skipped honestly), perlcritic clean. 8 LIVE-CONFIRM points annotated in code (no live Perplexity calls made). Left in review: needs live-call confirmation of the annotated wire points + ADR (0016/0005 raw material in worker report). Doc drift filed as k146.
+
+ORCHESTRATOR-REVIEW (worker-a, 2026-09-10): freigegeben (Option B, Koordinator bestaetigt). Role::ResponsesCompatible aus OpenAIResponses extrahiert (input/instructions-Builder, output[]-Walker, usage-Norm, +5 Divergenz-Hooks, typed-SSE); OpenAIResponses re-homed, Streaming-Opt-out erhalten, t/60 byte-identisch gruen (Regressions-Guard). Neue Perplexity-Engine auf Engine::Remote (NICHT OpenAIBase -> umgeht k138-Falle), %MODEL_TO_PRESET (sonar->fast/-pro->low/-reasoning-pro->medium/-deep-research->high, unknown->model passthrough), /v1/agent-Dispatch, top-level response_format, type:message-Stamping, Citations aus output[search_results]. Response.citations neu. Caps: json_object->false, reasoning_effort restored; ADR 0005 direction 1 INTAKT (Rewrite end-to-end mocked getestet). Streaming implementiert (kein Regress). 8 Live-Punkte im Code als '# LIVE-CONFIRM (k139):' annotiert (Getty bestaetigt spaeter live; KEINE Live-Calls gemacht). t/68 (sabotage-checked), prove -lr t/ = 3206 gruen, perlcritic clean. Branch k139-perplexity-agent-api (338b1de+c863fda), basiert auf main, nicht gemergt. BLEIBT review. INTEGRATIONS-HINWEIS: Reasoning::to_responses clampt effort nicht (out-of-range erreicht Wire) -> von k140 (_openai_effort_ok auf to_responses) behoben, aber k139 basiert auf main ohne k140; beim Integrieren beider geloest. Folge-Ticket k146 (CLAUDE.md-Engine-Map veraltet).
+
+INDEPENDENT ORCHESTRATOR REVIEW (main agent, 2026-09-14): Engine::Perplexity + Role::ResponsesCompatible (338b1de/c863fda) selbst gegengelesen, durchdacht und solide. Engine::Remote-Parent (umgeht k138-Baggage), 5 Divergenz-Hooks (ADR 0020), model->preset (%MODEL_TO_PRESET), top-level response_format=json_schema, Citations aus output[search_results], caps: json_object off / reasoning_effort on / tool_choice_named off (ADR-0005-dir-1-Exemplar intakt). ResponsesCompatible-Extraktion durch t/60 (OpenAIResponses, regressions-guard) + t/68 (Agent) gruen abgedeckt; Baseline 3432 gruen. Die 8 offenen Wire-Punkte sind sauber als '# LIVE-CONFIRM (k139):' im Code annotiert. BLEIBT review. DEINE ENTSCHEIDUNG/BLOCKER: die 8 LIVE-CONFIRM-Punkte (= karr #147) brauchen echte Perplexity-Agent-Calls (input-item type:message, response_format-slot+strict, preset+overrides, echtes Modell je preset + Citation-Marker, reasoning.effort auf fast/low, SSE-framing, retrieve-Pfad) — nicht freigegeben ohne dich. Engine laeuft bis dahin auf doc-verifizierten Annahmen (POD sagt 'WORK IN PROGRESS').
+
+POSITIV-VERDIKT + ABSCHLUSS (main agent, 2026-09-15): k147-Live-Confirm hat die Agent-API-Migration end-to-end bestaetigt — search-augmented chat liefert Content + 10 Citations, json_schema-structured-output funktioniert, typed-SSE parst. WIP entfernt. ADR 0020 (5 Divergenz-Hooks) + ADR 0005 (direction-1 Exemplar) VALIDIERT, nicht geaendert. Sonar-EOL (2026-09-27) ist abgedeckt: die Engine faehrt die Agent-API live. Nebenbefunde k158 (Streaming droppt Citations) + k159 (Usage droppt cache/cost) gefiled (betreffen auch OpenAIResponses). -> done.
