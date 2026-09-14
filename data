@@ -1,0 +1,52 @@
+---
+class: standard
+completed: 2026-09-14T19:46:50Z
+created: 2026-09-14T17:59:51Z
+id: 151
+priority: high
+started: 2026-09-14T18:34:48Z
+status: done
+tags:
+- llm
+- model
+- reasoning
+title: GPT-6 Astra (flagship) not carried; Reasoning.pm has no gpt-6-astra effort
+  gate -> would send rejected none/minimal and mis-place max
+updated: 2026-09-14T19:46:50Z
+---
+
+MISSING FLAGSHIP + REASONING CLAMP GAP (advisor audit 2026-09-14, langertha-llm-advisor).
+
+OpenAI shipped GPT-6 Astra (model id gpt-6-astra), first GPT-6-line model. Not in Engine::OpenAI catalog and, more importantly, absent from Langertha::Reasoning %OPENAI_MODEL_EFFORT.
+
+Because _openai_effort_ok returns 1 (full enum none|minimal|low|medium|high|xhigh|max) for any unrecognised id, gpt-6-astra falls through to the full-enum pass-through. But Astra rejects several of those:
+- reasoning_effort on Chat Completions: low|medium|high|xhigh ONLY. none and minimal -> HTTP 400.
+- max is accepted ONLY on the Responses API, not Chat Completions.
+- Confirmed via OpenAI reasoning guide: "GPT-6 Astra does not support none reasoning effort ... returns HTTP 400."
+So a caller passing none/minimal/max to gpt-6-astra via Langertha would 400. Add a gpt-6-astra gate (CC: low|medium|high|xhigh; Responses adds max) analogous to the gpt-5.6/5.5/5 rows. Note the CC-vs-Responses split for max means to_openai and to_responses would legitimately DIVERGE for astra — the current design ($ref shared clamp) assumes they never do; call this out.
+
+Related wire gotcha to verify while here: Astra (like gpt-5.6/5.5) rejects temperature while reasoning is on ("no temperature while reasoning is on"). Check whether Engine::OpenAI sends a default temperature with reasoning models and would 400 — Anthropic side already handled this (k135/k138), OpenAI side may be an untracked gap.
+
+Specs (secondary, verify on OpenAI model page): 1,050,000 ctx, 128K max output, cutoff 2026-04-30, text+image, max_completion_tokens, long-context pricing >272K.
+
+Sources (read 2026-09-14):
+- https://developers.openai.com/api/docs/guides/reasoning (Astra rejects none; per-model enums)
+- https://docs.litellm.ai/blog/gpt_6_astra (CC low/medium/high/xhigh + max on Responses; none/minimal rejected; no temperature)
+
+IN ARBEIT (main agent -> langertha-worker, isoliert, 2026-09-14): Getty = Per-Wire-Divergenz + ADR. Worker verifiziert gegen OpenAI-Primaerdocs, baut wire-aware Effort-Gate (Astra CC low/medium/high/xhigh, Responses +max; none/minimal raus) + Katalog + temperature-Check. Hand-back zum Review; ADR danach via adr-auditor.
+
+WORKER-VERIFY-FIRST (langertha-worker, 2026-09-14): STOPP an STEP 1, nichts gebaut (Worktree clean). Premise (c) durch OpenAI-Primaerdocs WIDERLEGT. gpt-6-astra-Modellseite (developers.openai.com/api/docs/models/gpt-6-astra): reasoning.effort = {low,medium,high,xhigh,max} auf BEIDEN Endpoints (Chat Completions UND Responses), KEIN per-Wire-Split. Einzige CC-vs-Responses-Divergenz fuer Astra ist function calling, NICHT effort. BESTAETIGT: id gpt-6-astra exakt (1.05M ctx / 128K out / cutoff 2026-04-30); none auf beiden Wires 400 (verbatim); minimal unsupported. => Per-Wire-Divergenz + ADR MOOT, k140-shared-clamp bleibt. Korrigierter Fix = EINE non-divergente Zeile in %OPENAI_MODEL_EFFORT: gpt-6-astra {low,medium,high,xhigh,max}, none/minimal raus, anchored \\Agpt-6 vor gpt-5-Zweigen; + Katalog/POD + t/47_openai_reasoning.t. Kein ADR. temperature: kein Default-Gap (Langertha sendet keine Default-temperature) -> Rest-Kante als k155 ausgegliedert. WARTET auf Getty-Re-Entscheidung (kehrt die Divergenz-Wahl um).
+
+2026-09-14 19:41 DONE (corrected non-divergent fix, isolated worktree agent-a2caef3978979a299, commit ca4533d — NOT merged, awaiting Getty review/merge).
+
+Reasoning.pm: gpt-6 row in %OPENAI_MODEL_EFFORT = {low,medium,high,xhigh,max} (no none, no minimal); anchored \Agpt-6 branch placed BEFORE gpt-5 branches in _openai_effort_ok. Same gate on both wires (to_openai == to_responses) — NON-divergent. k140 rows for gpt-5.6/5.5/legacy untouched. Comments+POD (hash / branch / to_openai / DESCRIPTION) refreshed to enumerate gpt-6.
+Engine::OpenAI: gpt-6-astra listed as GPT-6 flagship in model POD (1.05M ctx / 128K out / text+image / cutoff 2026-04-30). default_model unchanged (gpt-5.6-terra).
+t/47: gpt-6-astra %EXPECT row (none/minimal DROP, low..max pass); symmetry loop checks both wires + resp==chat. Comment encodes intent.
+
+VERIFY: prove -lr t/ green (105 files, 3616 tests, live skipped w/o keys); t/47 = 146 tests PASS; perlcritic --profile .perlcriticrc on both lib files = source OK. No ADR (moot — no divergence). No temperature-gate (k155).
+
+OPEN POINT filed as k157: _max_tokens_key gates only /\Agpt-5/, so gpt-6-astra falls through to max_tokens and would HTTP 400 IF response_size/max_tokens is set (conditional). Out of k151 scope, not fixed here.
+
+2026-09-14 19:41 Non-divergent minimal fix complete on worktree agent-a2caef3978979a299 (commit ca4533d, unmerged). Ready for Getty review + merge. Follow-up k157 filed for the _max_tokens_key gpt-6 gap.
+
+MERGE (main agent, 2026-09-14): korrigierter non-divergenter Fix gemergt nach main (2c436d8), Suite 3623 gruen. EINE %OPENAI_MODEL_EFFORT-Zeile gpt-6 {low,medium,high,xhigh,max}, \Agpt-6-Branch vor gpt-5.6 (most-specific-first), geteilter Gate -> to_openai == to_responses (non-divergent), k140-Invariante intakt. gpt-6-astra in OpenAI-Katalog/POD, default unveraendert. t/47 %EXPECT-Zeile + Symmetrie-Check. KEIN ADR (Divergenz-Premise war widerlegt). Nebenbefund k157 (high, _max_tokens_key deckt gpt-6 nicht) -> in Arbeit. -> done.
