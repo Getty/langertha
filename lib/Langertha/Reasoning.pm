@@ -39,7 +39,8 @@ The OpenAI clamp is B<model-gated>, not wire-gated: Chat Completions
 (C<to_openai>) and the Responses API (C<to_responses>) C<$ref> the identical
 C<ReasoningEffort> schema, so both share one per-model gate and can never
 diverge for the same model. The accepted set differs per model generation —
-the gpt-5.6/gpt-5.5 generation accepts C<none>/C<xhigh>/(C<max>) but not
+gpt-6 (astra) accepts neither C<none> nor C<minimal> (C<low>..C<max>); the
+gpt-5.6/gpt-5.5 generation accepts C<none>/C<xhigh>/(C<max>) but not
 C<minimal>; the legacy gpt-5 generation accepts C<minimal> but not
 C<none>/C<xhigh>/C<max> — so no single wire-level clamp is correct. Unlisted
 model ids keep the full vocabulary. See L</to_openai>.
@@ -139,17 +140,23 @@ form would be ambiguous.
 # medium), so a given model accepts the same value set on both wires — to_openai
 # and to_responses therefore share the one clamp below (_openai_effort_ok), which
 # structurally forbids the two wires diverging. The accepted set is per model
-# generation and the generations do NOT overlap: the gpt-5 (legacy) generation
-# has `minimal` but rejects none/xhigh/max, while the gpt-5.5+ generation has
-# none/xhigh/max but rejects `minimal`. Only OpenAI's own gpt-5.x ids are gated;
-# every other id (an unlisted OpenAI model, or another OpenAI-compatible provider
-# sharing this wire) keeps the full normalized vocabulary, which IS the current
-# OpenAI enum, so no value is dropped from it.
+# generation and the generations do NOT overlap on the extremes: the gpt-5
+# (legacy) generation has `minimal` but rejects none/xhigh/max, the gpt-5.5+
+# generation has none/xhigh/max but rejects `minimal`, and gpt-6 (astra) rejects
+# BOTH none and minimal while keeping low/medium/high/xhigh/max. Only OpenAI's
+# own gpt-5.x and gpt-6 ids are gated; every other id (an unlisted OpenAI model,
+# or another OpenAI-compatible provider sharing this wire) keeps the full
+# normalized vocabulary, which IS the current OpenAI enum, so no value is dropped
+# from it.
 # (developers.openai.com/api/docs/guides/reasoning + the per-model pages,
-# advisor-verified 2026-09-01 — karr k140. gpt-5.1's ladder is not among the
-# verified families and is deliberately left un-gated: it falls through to the
-# full-enum pass-through rather than being clamped on a guess.)
+# advisor-verified 2026-09-01 — karr k140; gpt-6-astra verified against
+# developers.openai.com/api/docs/models/gpt-6-astra 2026-09-14 — karr k151, where
+# `none` returns HTTP 400 on both wires and `minimal` is unsupported, identically
+# on Chat Completions and Responses. gpt-5.1's ladder is not among the verified
+# families and is deliberately left un-gated: it falls through to the full-enum
+# pass-through rather than being clamped on a guess.)
 my %OPENAI_MODEL_EFFORT = (
+  'gpt-6'   => { map { $_ => 1 } qw(            low medium high xhigh max ) },
   'gpt-5.6' => { map { $_ => 1 } qw(       none low medium high xhigh max ) },
   'gpt-5.5' => { map { $_ => 1 } qw(       none low medium high xhigh     ) },
   'gpt-5'   => { map { $_ => 1 } qw( minimal   low medium high            ) },
@@ -269,15 +276,17 @@ at C<high>.
 
 # Shared per-model effort gate for both OpenAI wires (see %OPENAI_MODEL_EFFORT).
 # Returns true when the configured model accepts the current effort. Model ids
-# come in families, so match by anchored prefix, most specific first: gpt-5.6-*
-# (sol/terra/luna) and gpt-5.5* are the new generation, gpt-5 / gpt-5-* the
-# legacy one. gpt-5.1 (and every other unrecognized id) returns true — its
-# vocabulary is unverified, so it keeps the full enum rather than a guessed clamp.
+# come in families, so match by anchored prefix, most specific first: gpt-6-*
+# (astra) is the GPT-6 generation; gpt-5.6-* (sol/terra/luna) and gpt-5.5* are
+# the gpt-5.5+ generation, gpt-5 / gpt-5-* the legacy one. gpt-5.1 (and every
+# other unrecognized id) returns true — its vocabulary is unverified, so it keeps
+# the full enum rather than a guessed clamp.
 sub _openai_effort_ok {
   my ( $self ) = @_;
   my $e     = $self->effort;
   my $model = $self->has_model ? $self->model : '';
-  my $set = $model =~ /\Agpt-5\.6/        ? $OPENAI_MODEL_EFFORT{'gpt-5.6'}
+  my $set = $model =~ /\Agpt-6/           ? $OPENAI_MODEL_EFFORT{'gpt-6'}
+          : $model =~ /\Agpt-5\.6/        ? $OPENAI_MODEL_EFFORT{'gpt-5.6'}
           : $model =~ /\Agpt-5\.5/        ? $OPENAI_MODEL_EFFORT{'gpt-5.5'}
           : $model =~ /\Agpt-5(?![.\d])/  ? $OPENAI_MODEL_EFFORT{'gpt-5'}
           :                                 undef;
@@ -308,7 +317,8 @@ Serialize L</effort> to the two OpenAI wires — Chat Completions
 (C<reasoning =E<gt> { effort =E<gt> $effort }>). Both surfaces C<$ref> the
 identical C<ReasoningEffort> schema, so both clamp through the same model-gated
 gate: the accepted value set is per model generation
-(gpt-5.6-* / gpt-5.5-*: C<none|low|medium|high|xhigh(|max)>, no C<minimal>;
+(gpt-6 astra: C<low|medium|high|xhigh|max>, no C<none|minimal>;
+gpt-5.6-* / gpt-5.5-*: C<none|low|medium|high|xhigh(|max)>, no C<minimal>;
 gpt-5 legacy: C<minimal|low|medium|high>, no C<none|xhigh|max>), and an
 unrecognized model id keeps the full normalized vocabulary. An effort the
 configured L</model> does not accept yields an empty list on B<both> wires —

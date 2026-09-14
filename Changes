@@ -79,17 +79,20 @@ Revision history for Langertha
       and chat_stream_request now emit responseJsonSchema alongside the
       still-required responseMimeType.
 
-    - Reasoning-effort value clamps are model-gated, not wire-gated (karr k140).
-      The OpenAI clamp dropped `max` — a value the current ReasoningEffort schema
-      accepts — while passing `minimal` to gpt-5.6 / gpt-5.5 models that reject
-      it, and to_responses clamped nothing, so one engine honoured `max` on the
-      Chat Completions wire but dropped it on the Responses wire. Langertha::Reasoning
-      now gates the accepted effort set per model generation (gpt-5.6-* /
+    - Reasoning-effort value clamps are model-gated, not wire-gated (karr k140,
+      k151). The OpenAI clamp dropped `max` — a value the current ReasoningEffort
+      schema accepts — while passing `minimal` to gpt-5.6 / gpt-5.5 models that
+      reject it, and to_responses clamped nothing, so one engine honoured `max`
+      on the Chat Completions wire but dropped it on the Responses wire.
+      Langertha::Reasoning now gates the accepted effort set per model generation
+      (gpt-6 astra: low|medium|high|xhigh|max, no none/minimal; gpt-5.6-* /
       gpt-5.5-*: none|low|medium|high|xhigh(|max), no minimal; legacy gpt-5:
       minimal|low|medium|high) through one gate shared by both OpenAI wires, so
-      they can never diverge; unlisted model ids keep the full enum. On Gemini,
-      gemini-3.7-flash dropped `minimal` from its thinkingLevel set, so
-      none / minimal now clamp to low there.
+      they can never diverge; unlisted model ids keep the full enum. gpt-6-astra
+      also joins the Engine::OpenAI model list (1.05M context, 128K max output,
+      text+image, cutoff 2026-04-30). On Gemini, gemini-3.7-flash dropped
+      `minimal` from its thinkingLevel set, so none / minimal now clamp to low
+      there.
 
     - Engine capabilities are model-scoped on the tool / structured-output axis
       (karr k138). supports() used to answer from one identical flag row shared
