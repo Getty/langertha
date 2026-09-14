@@ -1,0 +1,49 @@
+---
+class: standard
+completed: 2026-09-14T22:02:59Z
+created: 2026-09-10T08:40:00Z
+id: 147
+priority: medium
+started: 2026-09-14T21:41:16Z
+status: done
+tags:
+- perplexity
+- engines
+- responses
+- live-confirm
+- k139
+title: 'Perplexity Agent API: resolve the eight LIVE-CONFIRM wire points with a live
+  call'
+updated: 2026-09-14T22:02:59Z
+---
+
+k139 migrated Engine::Perplexity to the Agent API (POST /v1/agent, Open-Responses envelope via Role::ResponsesCompatible) built to the DOCUMENTED wire shape only — no live call was made (live calls are approval-gated, MEMORY.md).
+
+Eight wire points are annotated LIVE-CONFIRM (k139) in lib/Langertha/Engine/Perplexity.pm and lib/Langertha/Role/ResponsesCompatible.pm and must be confirmed against a real Agent-API response:
+
+1. Typed input requirement — whether {type:message,role,content} is required or a bare {role,content} is also accepted.
+2. response_format slot — top-level response_format=json_schema (not text.format) and whether strict is honored / structured JSON is actually returned.
+3. model -> preset mapping (sonar->fast, sonar-pro->low, sonar-reasoning-pro->medium, sonar-deep-research->high) and which real model each preset runs (check $response->model).
+4. Whether reasoning.effort on the fast/low presets is honored or ignored.
+5. Citation block shape — the output[] search_results item and its {id,url,title,snippet,date} results; and the inline marker format ([1] vs [web:1]) / annotations[].
+6. Retrieve/background path — /v1/agent/{id} vs /v1/responses/{id}.
+7. Typed-SSE streaming framing — event names (response.output_text.delta / response.completed), the .delta field, whether usage rides on response.completed vs a trailing frame, and reasoning/search/tool event interleaving.
+8. json_object absence — confirm the response_format enum is json_schema-only.
+
+Recorded as ADR 0019 Future work. Do not block on this; a single approved live call resolves the set. Needs LANGERTHA_PERPLEXITY_API_KEY.
+
+2026-09-14 21:58 DONE via commit b25f680 (worktree branch worktree-agent-a712dc1082b0e3a3a; NOT merged to main). 6 live probe calls + 1 live-test run (2 calls) = 8 tiny calls ~$0.025; high/deep-research NOT called. All 8 points confirmed:
+1. Typed input NOT required: bare {role,content} accepted (200). type:message kept as safe superset.
+2. response_format=json_schema TOP-LEVEL honored, strict enforced, structured JSON returned; search runs alongside.
+3. presets = routing labels: fast/low/medium ALL -> openai/gpt-5.6-luna; $response->model reports it. high not exercised.
+4. reasoning.effort on fast/low: ACCEPTED (200, echoed), 0 reasoning tokens -> no-op, never 400.
+5. markers [1] (NOT [web:1]); results {id,url,title,snippet,date,last_updated,source}; annotations[] present-but-empty; search_results authoritative. citations lift correctly.
+6. reply object:response + resp_ id + store:true -> Open-Responses /v1/responses/{id} retrieval shape; documented only.
+7. typed-SSE: created->in_progress->output_item.added->output_text.delta->output_text.done->output_item.done->completed; usage+resolved model on response.completed (mid-stream frames carry preset label). Parser correct.
+8. json_object -> 400; enum json_schema/text. Correction confirmed.
+#139 VERDICT: works end-to-end (content + 10 citations + structured JSON live). WIP removed.
+Follow-ups filed: k158 (streaming drops citations), k159 (Responses usage drops cache tokens+cost). ADRs 0020/0005 VALIDATED not changed -> no adr-auditor needed.
+
+2026-09-14 21:58 8/8 LIVE-CONFIRM points resolved; engine confirmed working end-to-end (#139 verdict positive). Commit b25f680 on worktree branch, NOT merged. All offline tests green (prove -lr, 3604 tests), perlcritic clean, live test run once. Ready for review + merge decision.
+
+MERGE (main agent, 2026-09-15): gemergt nach main (a0570cd), Suite 3628 gruen. Alle 8 LIVE-CONFIRM-Punkte gegen echte Agent-API bestaetigt (8 winzige Calls ~$0.025, deep-research nicht angefasst). KEINE funktionale Aenderung noetig — jede Annahme hielt: (1) bare {role,content} auch akzeptiert (type:message=sichere Obermenge); (2) response_format=json_schema top-level, strict enforced; (3) Preset=Routing-Label, fast/low/medium alle -> openai/gpt-5.6-luna; (4) reasoning.effort auf fast/low akzeptiert aber no-op, nie 400; (5) Marker [1] nicht [web:1], search_results autoritativ; (6) Retrieve waere /v1/responses/{id}, nicht implementiert; (7) typed-SSE-Framing bestaetigt, usage auf response.completed; (8) json_object -> 400 (enum json_schema/text). 6 Annotationen geflippt, WIP entfernt, t/85 gated Live-Test (einmal echt gruen) + t/68 Offline-Fixtures. -> done.
