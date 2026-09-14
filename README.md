@@ -422,8 +422,8 @@ flowchart TD
     F -->|tool_choice_named| FA[Native forced-name<br>on the wire]
     F -->|only<br>response_format_json_schema<br>e.g. Perplexity| FB[AUTO-REWRITE<br>clear tools/choice,<br>set response_format=json_schema,<br>loose-parse content,<br>attach synthetic ToolCall]
 
-    R -->|response_format_json_*| RA[Native<br>OpenAI: native block<br>Gemini: responseSchema<br>Ollama: format param]
-    R -->|only tool_choice_named<br>Anthropic| RB[ENGINE-INTERNAL<br>synth tool + forced choice,<br>tool_use input lifted<br>into Response.content as JSON]
+    R -->|response_format_json_*<br>native wire| RA[Native<br>OpenAI: native block<br>Gemini: responseJsonSchema<br>Ollama: format param<br>Anthropic: output_config.format]
+    R -->|response_format_json_*<br>/anthropic shims| RB[ENGINE-INTERNAL<br>synth tool + forced choice,<br>tool_use input lifted<br>into Response.content as JSON]
 
     TA --> End([Response.tool_calls<br>ArrayRef of<br>Langertha::ToolCall])
     TB --> End
@@ -444,10 +444,10 @@ flowchart TD
 | Provider family | Tools wire | tool_choice forms | response_format mechanism | Tool calls in response |
 |---|---|---|---|---|
 | OpenAIBase (OpenAI, DeepSeek, Groq, Mistral, Cerebras, MiniMax, OpenRouter, Replicate, HuggingFace, vLLM, SGLang, LlamaCpp, Ollama-OpenAI, LMStudioOpenAI, AKIOpenAI, TSystems, Scaleway) | `tools=[{type=>'function',function=>{...}}]` | string `auto`/`required`/`none` + `{type=>'function',function=>{name=>X}}` | native `response_format` block (json_object / json_schema) | `choices[0].message.tool_calls` |
-| AnthropicBase (Anthropic, MiniMaxAnthropic, MoonshotAnthropic, LMStudioAnthropic, AKIAnthropic) | `tools=[{name=>...,input_schema=>...}]` | `{type=>'auto'/'any'/'none'/'tool',name=>X}` | engine-internal: synthesizes tool + forces it; lifts tool_use input into Response.content as JSON | `content[*]` blocks with `type=>'tool_use'` |
-| Gemini | `tools=[{functionDeclarations=>[...]}]` | `toolConfig.functionCallingConfig` (`mode` + `allowedFunctionNames` for named) | `generationConfig.responseSchema` + `responseMimeType='application/json'` | `candidates[0].content.parts[*].functionCall` |
+| AnthropicBase (Anthropic, MiniMaxAnthropic, MoonshotAnthropic, LMStudioAnthropic, AKIAnthropic) | `tools=[{name=>...,input_schema=>...}]` (first-party adds `strict=>true` on a closed schema) | `{type=>'auto'/'any'/'none'/'tool',name=>X}` | first-party **Anthropic**: native `output_config.format` (JSON on the wire, streams); the `/anthropic` shims: engine-internal synth tool + forced choice, tool_use input lifted into Response.content as JSON | `content[*]` blocks with `type=>'tool_use'` |
+| Gemini | `tools=[{functionDeclarations=>[...]}]` | `toolConfig.functionCallingConfig` (`mode` + `allowedFunctionNames` for named) | `generationConfig.responseJsonSchema` + `responseMimeType='application/json'` | `candidates[0].content.parts[*].functionCall` |
 | Ollama (native) | OpenAI-shape tools natively | OpenAI-shape `tool_choice` | `format='json'` (json_object) or schema HashRef (json_schema) | `message.tool_calls` |
-| Perplexity | NO tool calling on the wire | string `auto`/`required`/`none` only (named coerced to `required`) | native `response_format=json_schema` | (synthetic, via `chat_f` auto-rewrite) |
+| Perplexity (Agent API) | no tools on the wire | no `tool_choice` field (the Agent API has none) | top-level `response_format=json_schema` (json_schema-only, no json_object) | (synthetic, via `chat_f` auto-rewrite) |
 | Hermes engines (NousResearch, AKI) | tools injected into system prompt as XML | (model decides via prompt) | (use response_format on NousResearch where applicable) | `<tool_call>...</tool_call>` parsed from text |
 
 #### Reading tool calls back
