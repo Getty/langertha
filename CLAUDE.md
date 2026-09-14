@@ -114,7 +114,7 @@ Engine::Remote              url required, JSON + HTTP
   ├── Engine::OpenAIBase    /chat/completions format, Bearer auth, SSE streaming
   │     │  Cloud providers (url has default, api_key from env)
   │     ├── OpenAI          gpt-5.6 family, embeddings, whisper transcription, structured output
-  │     │     └── OpenAIResponses  /v1/responses API (reasoning models like gpt-5.5-pro); sole carrier of the `responses` tool/reasoning wire format; no streaming
+  │     │     └── OpenAIResponses  /v1/responses API (reasoning models like gpt-5.5-pro); composes `Role::ResponsesCompatible` (`responses` tool/reasoning wire format — shared with Perplexity's Agent API); no streaming
   │     ├── DeepSeek        deepseek-v4-flash/pro, structured output
   │     ├── Groq            ultra-fast inference, whisper transcription, structured output
   │     ├── XAI             xAI Grok (grok-4.3), 1M context, agentic tool calling
@@ -126,7 +126,6 @@ Engine::Remote              url required, JSON + HTTP
   │     ├── OpenRouter      meta-provider, 300+ models, provider/model format
   │     ├── Replicate       thousands of open-source models, owner/model format
   │     ├── HuggingFace     Inference Providers, org/model format
-  │     ├── Perplexity      search-augmented, citations — NO tool calling
   │     ├── AKIOpenAI       EU/Germany, GDPR-compliant
   │     ├── TSystems        T-Systems AIFS / LLM Hub, T-Cloud Germany + EU hyperscaler models
   │     ├── Scaleway        EU-hosted Generative APIs, drop-in OpenAI replacement
@@ -143,6 +142,7 @@ Engine::Remote              url required, JSON + HTTP
   │     └── Whisper         self-hosted faster-whisper-server etc.
   │
   │  Non-OpenAI formats (own request/response handling)
+  ├── Perplexity            Agent API (/v1/agent), Open-Responses envelope via Role::ResponsesCompatible; search-augmented, citations — NO tool calling
   ├── Gemini                ?key= auth, functionDeclarations, thought parts
   ├── Ollama                native /api/chat, NDJSON streaming, OpenAPI spec
   ├── AKI                   key-in-body auth, EU/Germany, /api/call/{model}
@@ -154,8 +154,11 @@ Engine::Remote              url required, JSON + HTTP
 - **AKI family** — three faces of the same service, all on `LANGERTHA_AKI_API_KEY`:
   `AKI` (official native API, changes often), `AKIOpenAI` (more stable OpenAI-compatible,
   sometimes lacks features), `AKIAnthropic` (`/anthropic` shim, `x-api-key`). All provided;
-  no endorsement. Unknown model IDs silently fall back to Minimax M2.5 — check
-  `$response->model` if it matters which model replied.
+  no endorsement. Unknown-model handling differs per face: `AKIOpenAI` rejects an unknown ID
+  loudly; `AKI` (native) errors on a gated/unknown endpoint (e.g. `Client not authorized for
+  endpoint minimax_m3!`) rather than substituting; only the `AKIAnthropic` shim silently answers
+  with a different model. Check `$response->model` / watch for errors when it matters which model
+  replied.
 - **Whisper / `->whisper`** — `Whisper` extends `TranscriptionBase` (transcription only, no
   chat/tools/embeddings). The `whisper` attribute on `OpenAI` returns a `TranscriptionBase`
   pre-configured with the parent's `api_key`/`url`.
@@ -183,6 +186,8 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **Streaming** — SSE / NDJSON streaming. **Embedding**, **Transcription**, **ImageGeneration**.
 - **HTTP** (sync + async via IO::Async) · **JSON** (`$self->json`) · **OpenAICompatible** ·
   **AnthropicCompatible** (`/v1/messages` envelope, parallel to `OpenAICompatible`) ·
+  **ResponsesCompatible** (Open-Responses `/v1/responses` + `/v1/agent` envelope, shared by
+  `OpenAIResponses` + `Perplexity` via five divergence hooks — ADR 0020) ·
   **OpenAPI** (spec validation) · **ThinkTag** (`<think>` filtering) · **Langfuse** (observability).
 - **Runtime::MetricsPoll** — async Prometheus `/metrics` scrape for self-hosted engines
   (vLLM, SGLang, llama.cpp). URL derived by stripping the trailing `/v1` from the engine's
@@ -229,8 +234,9 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 `tool_wire_format` (`openai` | `anthropic` | `gemini` | `ollama` | `responses` | `hermes`) keys
 all tool wire-translation through the value objects; `chat_f` auto-rewrites between
 tools / `tool_choice` / `response_format` when the wire reality demands it (e.g. Perplexity →
-`response_format=json_schema` + synthetic ToolCall; Anthropic structured output → synth tool +
-forced choice). Every case lands as a `Langertha::ToolCall` on `Response.tool_calls`. The full
+`response_format=json_schema` + synthetic ToolCall; first-party Anthropic → native
+`output_config.format`; the `/anthropic` shims → synth tool + forced choice). Every case lands as
+a `Langertha::ToolCall` on `Response.tool_calls`. The full
 decision matrix, the per-provider wire payloads, and the resolved vocabulary (Result envelope,
 Assistant echo) live in **`CONTEXT.md`** and **ADRs 0001–0003, 0005** — read those before changing
 the seam, and reconcile any drift (open karr tickets #1, #2).
