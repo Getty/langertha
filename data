@@ -1,0 +1,21 @@
+---
+class: standard
+created: 2026-09-14T17:58:34Z
+id: 148
+priority: low
+status: backlog
+tags:
+- capabilities
+- tools
+- chat_f
+- k142
+title: 'capability-exclusion: model-scoped statt engine-scoped + Aggregator-Transitivitaet
+  (k142 deferred)'
+updated: 2026-09-14T17:58:34Z
+---
+
+Ausgegliedert aus k142 (Getty 2026-09-14: minimaler engine-scoped Croak abgenommen, Generalisierung zurueckgestellt). Drei Punkte, alle vom llm-advisor als Architektur-Entscheidung markiert:
+1. MODEL-SCOPED statt engine-scoped: der Constraint (tools+response_format-Reject) ist fundamental eine MODELL-Eigenschaft (gpt-oss-120b + wenige constrained-decoding-Stacks), nicht eine Engine-Eigenschaft. Ein per-Modell-Seam neben model_capability_corrections (ADR 0019) wuerde den Constraint mit dem Modell reisen lassen, TSystems/AKIOpenAI mitfangen und self-korrigieren, wenn Cerebras es per-Modell lockert. ADR 0019 hat genau diesen boolean-vs-pairwise-Seam bewusst geparkt.
+2. AGGREGATOR-TRANSITIVITAET: OpenRouter/HuggingFace/Replicate/TSystems/AKIOpenAI reichen an ein Backend durch und koennen denselben 400 treffen, wenn nach gpt-oss-120b/Groq-Stack geroutet wird (TSystems + AKIOpenAI DEFAULTEN auf gpt-oss-120b). per-Route/per-Modell, nicht per-Engine.
+3. Deklaratives capability_exclusions-Layer / Mini-Constraint-Sprache (advisor Option c): muss Mode-Spezifik (Groq json_schema != json_object), Nicht-Capability-Achse (streaming) und per-Modell-Scoping ausdruecken -> wird zur DSL. Advisor: fuer heute over-built.
+Basis in main: ADR 0021, Role::Chat::_check_capability_exclusions, Cerebras/Groq-Overrides. Quelle: k142-Advisor-Note 2026-09-14.
