@@ -1,0 +1,202 @@
+---
+class: standard
+completed: 2026-09-14T17:58:28Z
+created: 2026-09-10T02:01:47Z
+id: 142
+priority: high
+started: 2026-09-14T03:49:49Z
+status: done
+tags:
+- capabilities
+- tools
+- chat_f
+- advisor
+title: 'chat_f cannot express pairwise capability exclusions: Cerebras/Groq reject
+  tools+response_format in one request'
+updated: 2026-09-14T17:58:28Z
+---
+
+Split out of k138 (model-scoped capability registry). The boolean capability
+registry — even now that it is model-scoped — cannot express a MUTUAL-EXCLUSION
+between two capabilities in one request. Two providers (verified 2026-09-01 in
+the k138 matrix) reject a body that combines tools and response_format:
+
+  * Cerebras: "tools and response_format cannot be used in the same request"
+    (gpt-oss-120b hard-rejects). inference-docs.cerebras.ai/capabilities/structured-outputs
+  * Groq: "Streaming and tool use are not currently supported with Structured
+    Outputs." console.groq.com/docs/structured-outputs , /docs/tool-use
+
+This directly contradicts ADR 0005 premise (structured output and forced tool
+calling are two faces of one mechanism, freely rewritten into each other): on
+these two providers they are mutually exclusive in a single request. A caller
+passing both tools and response_format to chat_f builds a body the provider
+400s, and no single flag can express "these two are exclusive here" (k138
+ticket, option 5).
+
+Scope: this is a NEW shape (a constraint between two flags), deliberately kept
+OUT of k138 (which only fixed single-flag honesty). Decide the shape: at
+minimum a per-engine croak when tools and response_format are combined on
+Cerebras / Groq, rather than shipping a body that 400s. Groq additionally
+excludes streaming+tools with structured outputs — a three-way constraint.
+
+Foundation to build on: k138 landed the per-model correction layer
+(Role::Capabilities::model_capability_corrections) + the engine-wide `around
+engine_capabilities` gate. This ticket needs a constraint expression that sits
+above the booleans (chat_f-level), not another boolean.
+
+2026-09-14 03:33 ADVISOR NOTE (llm-advisor, 2026-09-14) — decision-ready
+
+== 1. RE-VERIFICATION (live docs, fetched 2026-09-14) ==
+
+CEREBRAS — the constraint HAS SHIFTED since the 2026-09-01 matrix.
+  inference-docs.cerebras.ai/capabilities/structured-outputs and /resources/openai now say:
+  "Support for combining tools and response_format is model-dependent. Do not combine them
+  unless the selected model's documentation explicitly supports and validates the combination."
+  AND explicitly: "gpt-oss-120b rejects requests containing both fields."
+  => No longer framed as an engine-wide hard-XOR; it is now PER-MODEL. BUT both models this
+  engine serves reject it: gpt-oss-120b (our default) and zai-glm-4.7. No Cerebras model is
+  currently documented as allowing the combination. So today the reject holds for 100% of
+  Cerebras models; the docs merely reserve the right to lift it per-model later.
+  The reject covers response_format of EITHER type (json_object AND json_schema) + tools.
+
+GROQ — still true, with two nuances the ticket did not capture.
+  console.groq.com/docs/structured-outputs: "Streaming and tool use are not currently
+  supported with Structured Outputs." Confirmed 2026-09-14.
+  Nuance A: "Structured Outputs" == response_format type json_schema (strict OR best-effort).
+  json_object mode is a SEPARATE feature and is NOT restricted — json_object + tools is fine.
+  A naive "tools + response_format" croak therefore OVER-fires on Groq json_object.
+  Nuance B: it is genuinely THREE-way: json_schema XOR tools, and json_schema XOR streaming.
+  The streaming leg bites chat_stream_realtime_f, not just chat_f.
+  Also per-model: only gpt-oss-20b/120b, qwen-3.8-27b (strict) + safety-gpt-oss-20b
+  (best-effort) do json_schema at all; other Groq models can only do json_object.
+
+== 2. SCOPE — is it 2 or 5? Answer: CONFIRMED 2 (Cerebras + Groq). Do NOT build for 5. ==
+
+Precondition for chat_f to build a conflicting body = engine advertises BOTH tools_native AND
+response_format_json_schema. Walked the whole OpenAI-family Tools fleet:
+
+  CONFIRMED reject (build for these):   Cerebras, Groq
+  Provider SUPPORTS the combo:          OpenAI ("you can use both ... at the same time - on
+                                        Chat Completions", verified). NOT affected.
+  Pair ALREADY neutralised by k138:     DeepSeek (clears json_schema; json_object+tools is
+                                        provider-allowed), MiniMax (clears both response_format),
+                                        Hetzner (clears tools_native + both response_format).
+                                        chat_f cannot form the pair -> no bug.
+  No documented API-level exclusion:    Mistral, XAI/Grok, Moonshot/Kimi, Scaleway
+                                        (searched 2026-09-14; treat as not-affected until a
+                                        live 400 says otherwise — verify-don't-assert).
+  Meta-aggregators (transitive risk):   OpenRouter, HuggingFace, Replicate, TSystems, AKIOpenAI.
+                                        These pass through to a backend and CAN hit the reject
+                                        when routed to gpt-oss-120b / a Cerebras or Groq-style
+                                        stack (TSystems AND AKIOpenAI both DEFAULT to
+                                        gpt-oss-120b). But that is a per-ROUTE / per-MODEL
+                                        property, not an engine property, and cannot be honestly
+                                        encoded as an engine-wide rule. Record as a known limit.
+
+LOAD-BEARING INSIGHT: the exclusion is fundamentally a MODEL property (gpt-oss-120b + a few
+constrained-decoding stacks), not an engine one — which is exactly why Cerebras made it
+model-dependent and why the same model rejects on Cerebras, TSystems and AKIOpenAI. This is the
+same per-model axis k138 (ADR 0019) opened. The catch: ADR 0019 explicitly said the boolean
+model_capability_corrections table must NOT be stretched to fake a pairwise constraint (that is
+literally k142's Future-work entry).
+
+== 3. SHAPE RANKING ==
+
+(a) PER-ENGINE CROAK on the unsupported combination  —  RECOMMENDED interim minimum.
+  ADR 0002: does NOT touch the boolean registry (correct; this is not a boolean). Sits above it,
+    at chat_f/chat_request level — exactly where the ticket said the constraint belongs.
+  ADR 0005: does NOT contradict it. ADR 0005's two rewrites each produce a SINGLE-path body
+    (tools->response_format, or response_format->tool); they never emit both. The bug is only
+    the orthogonal case ADR 0005 never addressed: a caller passing BOTH at once. A croak refuses
+    that locally instead of via an opaque provider 400 (today: `die "...request failed: 400"`,
+    no body). Strictly better, non-lossy, fully reversible.
+  Least-surprising: yes — fail-loud house rule, names the two legal alternatives.
+  COST: the two guards are NOT identical. Cerebras = tools + response_format(any). Groq =
+    tools + response_format(json_schema only) AND streaming + response_format(json_schema).
+    Must read response_format.type and must fire in BOTH chat_f and chat_stream_realtime_f.
+    Engine-scoped, so it is honest-but-imprecise for the future (a Cerebras model that lifts the
+    limit -> false croak) and under-covers gpt-oss-120b reached via TSystems/AKIOpenAI. Neither
+    is a TODAY bug: every currently-served Cerebras/Groq model rejects, so the guard is correct
+    for 100% of today's models.
+
+(b) AUTO-REWRITE (ADR 0005 direction-1 style)  —  REJECT.
+  This is NOT like ADR 0005. ADR 0005 rewrites fire on a capability GAP (caller sent ONE form
+  the engine can't do -> swap to the lossless equivalent). Here the caller sent TWO forms and
+  the engine can do neither-together; there is NO lossless single path. Rewriting to
+  "response_format only" silently drops the tools; "tools only" drops the structured final
+  answer. Either way you SILENTLY DISCARD half the caller's intent — precisely the "wrong
+  answer, not an error" failure ADR 0019 warns against. The correct resolution ("run tools,
+  then a second structured turn" — Cerebras's own recommendation) is a TWO-turn flow that
+  single-turn chat_f structurally cannot perform. So auto-rewrite is lossy and surprising here.
+
+(c) DECLARATIVE capability_exclusions LAYER  —  REJECT for now (over- and under-powered).
+  Over-built for two providers (House Rule 2). AND a flat list of exclusive flag-pairs cannot
+  express the actual shapes: Groq needs mode-specificity (json_schema not json_object), a
+  non-capability axis (streaming), and per-model scoping; Cerebras needs any-response_format +
+  per-model. To be correct it becomes a mini constraint language. That is a genuine architecture
+  decision (and directly the ADR 0019 "do not fake it in the boolean table" boundary) — Getty's
+  call, not a worker's.
+
+== 4. VERDICT — is a croak safe WITHOUT Getty's taste-call? ==
+
+DIRECTION is safe and lands cleanly: turning the known 400 into a local croak is non-lossy,
+reversible, correct for 100% of today's Cerebras/Groq models, and touches no ADR-governed seam.
+(b) and (c) ARE taste-dependent — do NOT build them without Getty.
+
+BUT even the croak embeds ONE precedent-setting choice that is Getty's to make:
+  * ENGINE-scoped guard (simplest; honest "these two engines today") — a worker CAN land this
+    safely as two small verified guards + a karr note deferring the rest; OR
+  * MODEL-scoped guard (constraint travels with gpt-oss-120b, so it also catches TSystems/
+    AKIOpenAI and self-corrects when Cerebras lifts it) — this is the market-truer design but
+    needs a NEW per-model seam next to model_capability_corrections, which is exactly the k142
+    architecture question ADR 0019 parked for Getty.
+
+RECOMMENDATION for the sleeping-maintainer path: a worker may implement (a) ONLY in its
+narrowest form — two engine-scoped guards, mode-aware (Groq json_schema-only) and
+streaming-aware, wired into chat_f AND chat_stream_realtime_f, guarded by the canonical
+predicates, worded to name the two legal alternatives — framed strictly as "convert the known
+provider 400 into a local error." Everything beyond that (the model-scoped generalization, the
+aggregator transitivity, any capability_exclusions framework) is deferred to Getty. If the team
+would rather not bake the engine-vs-model precedent at all before he wakes, hold — the guard is
+an improvement, not a fix for a live wrong-answer, so waiting costs nothing but a clearer error.
+
+Sources (all fetched 2026-09-14): inference-docs.cerebras.ai/capabilities/structured-outputs;
+inference-docs.cerebras.ai/resources/openai; console.groq.com/docs/structured-outputs;
+developers.openai.com/api/docs/guides/structured-outputs (+ community.openai.com confirmation
+of tools+response_format on Chat Completions); openrouter.ai/docs/guides/features/structured-outputs.
+
+2026-09-14 03:49 IMPLEMENTED (branch k142-capability-exclusion-croak, off main; NOT merged — for orchestrator review).
+Advisor-cleared "safe minimum" only — two engine-scoped guards, no ADR touched, no framework.
+
+Mechanism: per-engine hook Langertha::Role::Chat::_check_capability_exclusions (default no-op) +
+helper _chat_tools_requested. chat_f consults it (streaming=>0) after the forced-tool rewrite;
+chat_stream_realtime_f consults it (streaming=>1). Cerebras/Groq override the hook and croak,
+naming the engine + the two conflicting fields + that the provider 400s the combination.
+  * Cerebras: tools + response_format (json_object OR json_schema) -> croak (both paths).
+  * Groq: mode-aware — tools + json_schema -> croak; json_schema + streaming -> croak (any tools);
+    json_object + tools is provider-allowed and passes through untouched.
+Files: lib/Langertha/Role/Chat.pm, lib/Langertha/Engine/Cerebras.pm, lib/Langertha/Engine/Groq.pm,
+t/78_capability_exclusions.t (31 mocked assertions, no live calls). Full suite prove -lr t/ green
+(3463 tests, live skipped); perlcritic lib/ clean. Sabotage-check: removing each of the 5 guards
+(Cerebras method, Groq method, Groq json_schema-only mode gate, chat_f wiring, streaming wiring)
+turns the matching assertions red; json_object+tools over-fire is caught by the mode-gate check.
+
+DEFERRED TO GETTY (advisor flagged all three as the maintainer's architecture call — the
+engine-vs-model precedent that ADR 0019 parked):
+  1. Model-scoped generalization: make the constraint travel with the MODEL (gpt-oss-120b + a few
+     constrained-decoding stacks) rather than the engine. That would also catch gpt-oss-120b reached
+     via TSystems/AKIOpenAI (both default to it) and self-correct if Cerebras lifts the limit per-model.
+     Needs a NEW per-model seam beside model_capability_corrections — the k142 architecture question.
+  2. Aggregator transitivity: OpenRouter / HuggingFace / Replicate / TSystems / AKIOpenAI pass through
+     to a backend and can hit the same 400 when routed to gpt-oss-120b or a Groq-style stack. This is a
+     per-route/per-model property, not an engine one, so it is intentionally NOT encoded here.
+  3. Any declarative capability_exclusions layer / mini constraint language (advisor option c) — over-
+     built for two providers and cannot express mode + streaming + per-model without becoming a DSL.
+
+2026-09-14 03:49 k142 safe-minimum landed on branch k142-capability-exclusion-croak; tests+sabotage+perlcritic green; deferred items recorded above.
+
+ORCHESTRATOR-REVIEW + GEMERGT (main agent, 2026-09-14): diff f896d45 gegengelesen, advisor-konform und sauber. Mechanismus: _check_capability_exclusions-Hook auf Role::Chat (default no-op), konsultiert von chat_f (streaming=>0, NACH forced-tool-Rewrite) + chat_stream_realtime_f (streaming=>1); _chat_tools_requested wertet tools-Array ODER forced named tool_choice. Cerebras croakt bei tools+response_format (beide Typen); Groq mode-aware (json_object+tools passiert durch, json_schema+tools und json_schema+streaming croaken). ADR-0002-Boolean-Registry NICHT beruehrt. 31 Assertions inkl. Groq-over-fire-Guard, sabotage-verifiziert. Gemergt nach main (34b4e3a); integriert prove -lr t/ = 3498 gruen, perlcritic clean. Minimal-Umfang (opaquer 400 -> klarer lokaler Croak) ERLEDIGT. Claim freigegeben; BLEIBT review fuer DEINE ENTSCHEIDUNG zur zurueckgestellten Generalisierung: (1) model-scoped statt engine-scoped (Constraint reist mit gpt-oss-120b, faengt TSystems/AKIOpenAI-Aggregatoren, self-korrigiert wenn Cerebras lockert); (2) Aggregator-Transitivitaet; (3) deklaratives capability_exclusions-DSL. Alle drei vom advisor als Architektur-Entscheidung fuer dich markiert.
+
+ABNAHME-VORSCHLAG (main agent, 2026-09-14 -> Getty): Minimaler Croak (opaquer 400 -> klarer lokaler Fehler) fertig + in main (34b4e3a), ADR 0021 aufgenommen, Suite gruen. EMPFEHLUNG: Minimum abnehmen und die zurueckgestellte Generalisierung als EIGENES Backlog-Ticket ausgliedern statt hier offen zu halten: (1) model-scoped statt engine-scoped, (2) Aggregator-Transitivitaet TSystems/AKIOpenAI, (3) deklaratives capability_exclusions-DSL. Advisor: Warten kostet nichts. Alternative: model-scoped-Design jetzt bauen. Wahl per AskUserQuestion gestellt.
+
+GETTY-ENTSCHEIDUNG (2026-09-14): Minimaler Croak ABGENOMMEN. Zurueckgestellte Generalisierung (model-scoped, Aggregator-Transitivitaet, capability_exclusions-DSL) als eigenes Backlog-Ticket ausgegliedert. -> done.
