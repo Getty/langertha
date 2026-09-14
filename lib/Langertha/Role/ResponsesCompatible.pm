@@ -452,11 +452,14 @@ sub parse_stream_chunk {
     # terminal response.completed carries usage. `data: [DONE]` is consumed by
     # Role::Streaming before this is called.
     #
-    # LIVE-CONFIRM (k139): exact typed-SSE framing (event names, the `.delta`
-    # field, whether usage rides on response.completed vs a trailing frame, and
-    # the interleaving of reasoning / search / tool events) is documented but
-    # not yet verified against a live Agent-API stream. Built to the documented
-    # OpenAI-Responses streaming shape.
+    # Live-confirmed against Perplexity's Agent stream (k147): the frame sequence
+    # is response.created -> response.in_progress -> response.output_item.added
+    # -> response.output_text.delta (text in `delta`) -> response.output_text.done
+    # -> response.output_item.done -> response.completed. Usage rides on
+    # response.completed under response.usage (no separate trailing frame), and
+    # the resolved model is under response.model there too -- the earlier frames
+    # may carry the preset label (e.g. "medium") instead, which is why model is
+    # read from response.completed and not response.created.
     my $type = ref($data) eq 'HASH' ? ( $data->{type} // ( $event // '' ) ) : '';
 
     if ( $type eq 'response.output_text.delta' ) {
