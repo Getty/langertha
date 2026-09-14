@@ -1,0 +1,17 @@
+---
+class: standard
+created: 2026-09-14T18:38:30Z
+id: 155
+priority: low
+status: backlog
+tags:
+- openai
+- reasoning
+- temperature
+- llm
+title: OpenAI-seitiges reasoning-model temperature-Gate (symmetrisch zu Anthropic
+  k135/k138)
+updated: 2026-09-14T18:38:30Z
+---
+
+Aus k151-Worker-Finding (2026-09-14). Anthropic-Seite gated temperature bei aktivem Reasoning via supports(temperature) + Engine::Anthropic-Clearing (k135/k138). OpenAI-Seite hat KEIN symmetrisches Gate. Langertha sendet zwar KEINE Default-temperature (Role::Temperature ohne Default; OpenAICompatible + ResponsesCompatible emittieren nur bei has_temperature) -> kein unbedingter 400. ABER: ein explizit vom Caller gesetztes temperature auf einem Reasoning-Modell (gpt-6-astra / gpt-5.6 / gpt-5.5) koennte 400en. OpenAI-Reasoning-Guide sagt remove temperature/top_p/top_logprobs fuer Astra auf CC — advisory, nicht 400-vs-silently-ignored gepinnt. ENTSCHEIDUNG offen: drop-vs-carp bei temperature auf Reasoning-Modell; 400-vs-ignored vorher live verifizieren. Niedrig, caller-getrieben, kein Default-Bug. Quelle: k151-Handoff.
