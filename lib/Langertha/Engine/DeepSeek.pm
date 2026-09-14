@@ -14,7 +14,7 @@ with 'Langertha::Role::Tools';
 
     my $deepseek = Langertha::Engine::DeepSeek->new(
         api_key      => $ENV{DEEPSEEK_API_KEY},
-        model        => 'deepseek-v4-flash',
+        model        => 'deepseek-flash',
         system_prompt => 'You are a helpful assistant',
         temperature  => 0.5,
     );
@@ -27,17 +27,19 @@ Provides access to DeepSeek's models via their API. Composes
 L<Langertha::Role::OpenAICompatible> with DeepSeek's endpoint
 (C<https://api.deepseek.com>) and API key handling.
 
-Available models: C<deepseek-v4-flash> (default, hybrid thinking /
-non-thinking, 1M context) and C<deepseek-v4-pro>. The legacy compatibility
-aliases C<deepseek-chat> and C<deepseek-reasoner> were retired on 2026-07-24 —
-pin the explicit V4 ids instead; these are also what the C</models> endpoint
-returns. Embeddings and transcription are not supported. Dynamic model
-listing via C<list_models()>.
+Available models: C<deepseek-flash> (default; DeepSeek-V4.1-Flash, native
+multimodal vision, 1M context) and C<deepseek-v4-pro>. The previous-generation
+C<deepseek-v4-flash> and C<deepseek-v4-flash-vision-exp> were retired on
+2026-09-10 and their ids are temporarily routed to V4.1-Flash — pin
+C<deepseek-flash> instead. The older aliases C<deepseek-chat> and
+C<deepseek-reasoner> were retired on 2026-07-24. Embeddings and transcription
+are not supported. Dynamic model listing via C<list_models()>.
 
-B<Reasoning effort:> C<deepseek-v4-flash> accepts C<low>, C<high> (server
-default) and C<max>; C<deepseek-v4-pro> currently accepts only C<high> and
-C<max> (C<low> is treated as C<high> server-side, so this engine drops it
-rather than emitting a misleading value).
+B<Reasoning effort:> the chat-completion endpoint — serving both
+C<deepseek-flash> and C<deepseek-v4-pro> — accepts C<none>, C<low>, C<high>
+(server default) and C<max>, with B<no per-model difference>; C<none> disables
+thinking. Set it via the C<reasoning_effort> attribute or the per-request
+C<chat_f> control.
 
 Get your API key at L<https://platform.deepseek.com/> and set
 C<LANGERTHA_DEEPSEEK_API_KEY> in your environment.
@@ -61,7 +63,7 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_DEEPSEEK_API_KEY or api_key set";
 }
 
-sub default_model { 'deepseek-v4-flash' }
+sub default_model { 'deepseek-flash' }
 
 # DeepSeek's response_format.type enum is [text, json_object] only — there is
 # no json_schema on the standard endpoint (api-docs.deepseek.com, verified
@@ -77,7 +79,8 @@ around engine_capabilities => sub {
 };
 
 # Reasoning effort diverges by DeepSeek model within the shared openai wire
-# format: the current V4 line (deepseek-v4-*) takes a flat reasoning_effort
+# format: the current V4 generation (deepseek-flash, deepseek-v4-pro, and the
+# temporarily-routed deepseek-v4-* aliases) takes a flat reasoning_effort
 # string; the legacy V3.2 line used a thinking:{type:enabled} toggle instead.
 # Match the V3.2 family by explicit prefix — anchored, so `deepseek-v3`,
 # `deepseek-v3.2`, `deepseek-v3.2-exp` (etc.) hit the legacy toggle, and
@@ -93,12 +96,13 @@ sub _is_deepseek_v3 {
   return 0;
 }
 
-# Effort ladder per api-docs.deepseek.com/api/create-chat-completion
-# (verified 2026-08-10): deepseek-v4-flash accepts low|high|max (server
-# default high); deepseek-v4-pro — and, conservatively, unknown future V4
-# ids — accepts only high|max, with low treated as high server-side. The
-# engine drops low for non-flash models instead of emitting a value the
-# server would silently remap.
+# Effort set per api-docs.deepseek.com/api/create-chat-completion (verified
+# 2026-09-14): the chat-completion endpoint serving deepseek-flash and
+# deepseek-v4-pro accepts reasoning_effort none|low|high|max (server default
+# high) with NO per-model difference; none disables thinking. The former
+# deepseek-v4-pro-only high|max clamp (drop low) was reversed by DeepSeek —
+# V4 Pro service continues unchanged after 2026-09-14 — and is gone. Unknown
+# future V4 ids get the same flat set.
 sub reasoning_kwargs_for {
   my ( $self, %args ) = @_;
   # A per-request reasoning_effort control (chat_f, karr #46) beats the
@@ -112,8 +116,7 @@ sub reasoning_kwargs_for {
   if ( _is_deepseek_v3($model) ) {
     return ( thinking => { type => 'enabled' } );
   }
-  return () if $e eq 'low' && $model ne 'deepseek-v4-flash';
-  return () unless $e eq 'low' || $e eq 'high' || $e eq 'max';
+  return () unless $e eq 'none' || $e eq 'low' || $e eq 'high' || $e eq 'max';
   return ( reasoning_effort => $e );
 }
 

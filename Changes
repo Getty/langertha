@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - DeepSeek: the default model is now deepseek-flash (DeepSeek-V4.1-Flash,
+      native multimodal vision, 1M context), the stable id that supersedes the
+      retired deepseek-v4-flash — which DeepSeek only temporarily routes to
+      V4.1-Flash (karr k150). reasoning_effort on the V4 generation now accepts
+      none|low|high|max with no per-model difference: deepseek-v4-pro (which
+      continues as its own model with unchanged billing) and unknown V4 ids pass
+      low through instead of dropping it, and none disables thinking.
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its

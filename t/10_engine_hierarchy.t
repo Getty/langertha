@@ -367,12 +367,12 @@ test_openai_cloud_engine(
   class => 'Langertha::Engine::DeepSeek',
   name => 'DeepSeek',
   url => 'https://api.deepseek.com',
-  model => 'deepseek-v4-flash',
+  model => 'deepseek-flash',
   env_var => 'LANGERTHA_DEEPSEEK_API_KEY',
   has_tools => 1,
   has_response_format => 1,
 );
-is(Langertha::Engine::DeepSeek->new(api_key => 'k')->default_model, 'deepseek-v4-flash', 'DeepSeek default_model');
+is(Langertha::Engine::DeepSeek->new(api_key => 'k')->default_model, 'deepseek-flash', 'DeepSeek default_model');
 
 # --- Groq ---
 
