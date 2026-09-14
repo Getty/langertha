@@ -1,0 +1,36 @@
+---
+class: standard
+completed: 2026-09-14T19:32:14Z
+created: 2026-09-14T18:00:17Z
+id: 153
+priority: low
+started: 2026-09-14T18:35:01Z
+status: done
+tags:
+- llm
+- model
+title: 'Gemini catalog drift: 3.7/3.8 Flash + 3.1 Pro missing, default gemini-3-flash-preview
+  aging, Gemini 2.5 deprecates 2026-10-16'
+updated: 2026-09-14T19:32:14Z
+---
+
+CATALOG REFRESH / upcoming EOL (advisor audit 2026-09-14, langertha-llm-advisor). Nice-to-have, but has a dated EOL edge.
+
+Engine::Gemini default_model is gemini-3-flash-preview. Still valid, but now an "older stable" preview id; newer flash/pro generations are not represented:
+- gemini-3.7-flash and gemini-3.8-flash: current flash line, thinkingLevel low|medium|high (NO minimal). Reasoning.pm already gates gemini-3.7-flash correctly; gemini-3.8-flash has the SAME clamp and should be added to to_gemini_level (its /\Agemini-3\.8-flash/ branch, drop minimal -> low).
+- gemini-3.1-pro-*: low|medium|high (already gated in Reasoning.pm) — but not offered as a catalog/POD default anywhere.
+- Note: gemini-3-flash-preview is the ONLY current model that still accepts thinkingLevel=minimal; if Google retires it the default would need to move.
+
+Upcoming EOL to track (dated): Gemini 2.5 Flash is scheduled for deprecation 2026-10-16. Reasoning.pm still has a full Gemini-2.5 thinkingBudget path (_is_gemini_25). Valid until then; revisit after.
+
+Already covered by k140 (in review): generationConfig.responseSchema is officially DEPRECATED (ai.google.dev/api/generate-content: "responseSchema (deprecated) ... This item is deprecated!") in favour of responseJsonSchema — confirm the k140 fix actually swaps the Gemini structured-output field, not just the reasoning clamps.
+
+Sources (read 2026-09-14):
+- https://firebase.google.com/docs/ai-logic/models (gemini-3-flash-preview = older/Preview; 3.7 Flash listed)
+- https://docs.databricks.com/.../supported-models (3.8 Flash & 3.7 Flash: low/medium/high, no minimal)
+- https://www.cloudzero.com/blog/gemini-pricing/ (Gemini 2.5 Flash deprecation 2026-10-16)
+- https://ai.google.dev/api/generate-content (responseSchema deprecated)
+
+IN ARBEIT (main agent -> langertha-worker, isoliert, mit k152, 2026-09-14): verify-first ai.google.dev, 3.7/3.8-flash + 3.1-pro in Katalog, 3.8-flash minimal-drop, 2.5-Deprecation-POD. Hand-back zum Review.
+
+MERGE (main agent, 2026-09-14): gemergt nach main (f19c21c), Suite 3609 gruen. Verify-first gegen ai.google.dev: gemini-3.8-flash minimal-drop-Clamp + Katalog-POD (3.8/3.7-flash stabil). gemini-3-flash-preview bleibt Default. ZURUECKGEHALTEN: gemini-2.5-Deprecation-DATUM 2026-10-16 NICHT von ai.google.dev bestaetigt (nur Sekundaerquelle) -> nicht eingetragen, als k156 vertagt. Advisor-Aussage "nur 3-flash-preview akzeptiert minimal" korrigiert (3.6-flash auch). -> done.
