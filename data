@@ -1,0 +1,34 @@
+---
+class: standard
+completed: 2026-09-14T19:56:37Z
+created: 2026-09-14T19:40:31Z
+id: 157
+priority: high
+started: 2026-09-14T19:46:57Z
+status: done
+tags:
+- llm
+- model
+- openai
+title: 'gpt-6-astra sends max_tokens (HTTP 400): _max_tokens_key gates only gpt-5
+  prefix, not gpt-6'
+updated: 2026-09-14T19:56:37Z
+---
+
+DRIFT found while implementing k151 (gpt-6-astra effort gate).
+
+Langertha::Engine::OpenAI::_max_tokens_key (lib/Langertha/Engine/OpenAI.pm ~line 99-103) returns max_completion_tokens only for models matching /\Agpt-5/, else max_tokens. gpt-6-astra matches \Agpt-6, so it falls through to max_tokens.
+
+gpt-6-astra is a reasoning model (like the gpt-5.x line) and rejects max_tokens with HTTP 400 ("Use max_completion_tokens instead") - same failure that motivated karr #55 for gpt-5.x.
+
+Impact: CONDITIONAL. _max_tokens_key only fires when a max_tokens control is passed to chat_f OR get_response_size is truthy (OpenAICompatible chat_request/chat_stream_request lines ~323-325 / ~458-460). A plain chat with no response_size set does NOT hit it. But any gpt-6-astra call that sets response_size / max_tokens would 400.
+
+Fix (surgical): widen the anchored prefix in _max_tokens_key from /\Agpt-5/ to /\Agpt-[56]/, extend its comment + the k55 pinning test. Verify gpt-6 uses max_completion_tokens on the OpenAI model page while here.
+
+NOT fixed in k151 per scope (effort block + catalog only; temperature-gate deferred to k155). Completion-length sibling of the same "gpt-6 not covered by gpt-5 prefix gates" family.
+
+2026-09-14 19:52 Fixed on worktree branch worktree-agent-ab2724f82c726a5b5, commit c864d7c (NOT merged to main). _max_tokens_key anchor widened from /\Agpt-5/ to /\Agpt-[56]/ so gpt-6-astra gets max_completion_tokens. Verified against OpenAI Chat Completions API reference: max_tokens is deprecated in favor of max_completion_tokens and not compatible with o-series/gpt-5/gpt-6 reasoning models (developers.openai.com, 2026-09-14); gpt-6-astra model page confirms reasoning model. OpenAIResponses unaffected (own max_output_tokens via ResponsesCompatible, never calls _max_tokens_key). t/78 +5 gpt-6-astra assertions; prove -lr t/ PASS (105 files/3605 tests, live skipped); perlcritic lib/ clean. Changes folded into the k55 entry.
+
+2026-09-14 19:52 Implemented + tested on worktree branch worktree-agent-ab2724f82c726a5b5, commit c864d7c. Worktree NOT merged to main per task scope — needs orchestrator to integrate.
+
+MERGE (main agent, 2026-09-14): gemergt nach main (b84ba11), Suite 3626 gruen. _max_tokens_key /\Agpt-5/ -> /\Agpt-[56]/, gpt-6-astra bekommt max_completion_tokens (bedingt: nur bei gesetztem response_size/max_tokens). Verify gegen OpenAI Chat-Completions-API-Ref + Modellseite (2026-09-14). Responses-Wire unberuehrt (max_output_tokens). t/78 +3 Astra-Assertions, gpt-4o unveraendert. Scope-Guard: nur Engine::OpenAI ueberschreibt _max_tokens_key. -> done.
