@@ -79,6 +79,9 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
   $http->header('x-ratelimit-limit-tokens' => '30000');
   $http->header('x-ratelimit-remaining-tokens' => '29990');
   $http->header('x-ratelimit-reset-tokens' => '6s');
+  # A header OUTSIDE the old fixed six-name list: the OpenAI "project tokens"
+  # bucket. The old reader discarded it; the prefix-match superset keeps it.
+  $http->header('x-ratelimit-limit-project-tokens' => '60000');
 
   my $resp = $openai->chat_response($http);
   isa_ok($resp, 'Langertha::Response');
@@ -89,11 +92,24 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
   isa_ok($rl, 'Langertha::RateLimit');
   is($rl->requests_limit, 500, 'OpenAI requests_limit parsed');
   is($rl->requests_remaining, 499, 'OpenAI requests_remaining parsed');
-  is($rl->requests_reset, '12s', 'OpenAI requests_reset parsed');
+  is($rl->requests_reset, '12s', 'OpenAI requests_reset kept verbatim (non-breaking)');
   is($rl->tokens_limit, 30000, 'OpenAI tokens_limit parsed');
   is($rl->tokens_remaining, 29990, 'OpenAI tokens_remaining parsed');
-  is($rl->tokens_reset, '6s', 'OpenAI tokens_reset parsed');
+  is($rl->tokens_reset, '6s', 'OpenAI tokens_reset kept verbatim (non-breaking)');
   is($rl->raw->{'x-ratelimit-limit-requests'}, '500', 'OpenAI raw headers preserved');
+
+  # Go-duration reset -> *_reset_after (seconds), *_reset_at derived lazily.
+  is($rl->requests_reset_after, 12, 'OpenAI requests_reset_after parsed from Go duration');
+  is($rl->tokens_reset_after, 6, 'OpenAI tokens_reset_after parsed from Go duration');
+  isa_ok($rl->requests_reset_at, 'Langertha::Moment');
+  is($rl->requests_reset_at->epoch, $rl->received->epoch + 12,
+    'OpenAI requests_reset_at derived from received + duration');
+  is($rl->tokens_reset_at->epoch, $rl->received->epoch + 6,
+    'OpenAI tokens_reset_at derived from received + duration');
+
+  # raw superset: a header outside the old fixed list now reaches raw.
+  is($rl->raw->{'x-ratelimit-limit-project-tokens'}, '60000',
+    'OpenAI raw superset: x-ratelimit-limit-project-tokens survives (old reader dropped it)');
 }
 
 # ======================================================================
@@ -117,12 +133,15 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
   $http->header('Content-Type' => 'application/json');
   $http->header('anthropic-ratelimit-requests-limit' => '1000');
   $http->header('anthropic-ratelimit-requests-remaining' => '999');
-  $http->header('anthropic-ratelimit-requests-reset' => '2026-02-27T12:00:00Z');
+  $http->header('anthropic-ratelimit-requests-reset' => '2027-02-27T12:00:00Z');
   $http->header('anthropic-ratelimit-tokens-limit' => '80000');
   $http->header('anthropic-ratelimit-tokens-remaining' => '79500');
-  $http->header('anthropic-ratelimit-tokens-reset' => '2026-02-27T12:00:00Z');
+  $http->header('anthropic-ratelimit-tokens-reset' => '2027-02-27T12:00:00Z');
   $http->header('anthropic-ratelimit-input-tokens-limit' => '50000');
   $http->header('anthropic-ratelimit-output-tokens-limit' => '30000');
+  # A header outside the old twelve-name list: Priority-Tier bucket. The old
+  # reader discarded it; the prefix-match superset keeps it.
+  $http->header('anthropic-priority-input-tokens-limit' => '12345');
 
   my $resp = $anthropic->chat_response($http);
   isa_ok($resp, 'Langertha::Response');
@@ -132,12 +151,27 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
   isa_ok($rl, 'Langertha::RateLimit');
   is($rl->requests_limit, 1000, 'Anthropic requests_limit parsed');
   is($rl->requests_remaining, 999, 'Anthropic requests_remaining parsed');
-  is($rl->requests_reset, '2026-02-27T12:00:00Z', 'Anthropic requests_reset parsed');
+  is($rl->requests_reset, '2027-02-27T12:00:00Z', 'Anthropic requests_reset kept verbatim (non-breaking)');
   is($rl->tokens_limit, 80000, 'Anthropic tokens_limit parsed');
   is($rl->tokens_remaining, 79500, 'Anthropic tokens_remaining parsed');
   # Check raw includes provider-specific extras
   is($rl->raw->{'anthropic-ratelimit-input-tokens-limit'}, '50000', 'Anthropic raw includes input-tokens-limit');
   is($rl->raw->{'anthropic-ratelimit-output-tokens-limit'}, '30000', 'Anthropic raw includes output-tokens-limit');
+
+  # RFC 3339 reset -> *_reset_at (instant), *_reset_after derived lazily.
+  isa_ok($rl->requests_reset_at, 'Langertha::Moment');
+  my $req_at = $rl->requests_reset_at;
+  is("$req_at", '2027-02-27T12:00:00Z', 'Anthropic requests_reset_at round-trips the RFC 3339 instant');
+  ok(defined $rl->requests_reset_after, 'Anthropic requests_reset_after derived from instant - received');
+  my $expected_after = $rl->requests_reset_at->epoch - $rl->received->epoch;
+  ok(abs($rl->requests_reset_after - $expected_after) < 1,
+    'Anthropic requests_reset_after ~= reset_at - received (sub-second of received aside)');
+  isa_ok($rl->tokens_reset_at, 'Langertha::Moment');
+  ok(defined $rl->tokens_reset_after, 'Anthropic tokens_reset_after derived');
+
+  # raw superset: anthropic-priority-* header (outside old list) now in raw.
+  is($rl->raw->{'anthropic-priority-input-tokens-limit'}, '12345',
+    'Anthropic raw superset: anthropic-priority-* survives (old reader dropped it)');
 }
 
 # ======================================================================
@@ -288,6 +322,137 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
   ok(!$resp->has_rate_limit, 'plain Response has no rate_limit');
   is($resp->requests_remaining, undef, 'requests_remaining undef without rate_limit');
   is($resp->tokens_remaining, undef, 'tokens_remaining undef without rate_limit');
+}
+
+# ======================================================================
+# Part 9: Typed reset split — duration only, *_reset_at derived
+# ======================================================================
+
+{
+  # A whole-second `received` makes the derivation exact and clock-independent.
+  my $received = Langertha::Moment->from_wire('2026-01-01T00:00:00Z');
+  my $rl = Langertha::RateLimit->new(
+    received             => $received,
+    requests_reset_after => 12,
+    tokens_reset_after   => 179.56,
+  );
+
+  is($rl->requests_reset_after, 12, 'duration-only: requests_reset_after kept as sent');
+  isa_ok($rl->requests_reset_at, 'Langertha::Moment');
+  is($rl->requests_reset_at->epoch, $received->epoch + 12,
+    'duration-only: requests_reset_at = received + 12s');
+  # 179.56s = 2m59.56s -> sub-second preserved in the derived instant.
+  is($rl->tokens_reset_at->epoch, $received->epoch + 179,
+    'duration-only: tokens_reset_at whole-second part = received + 179s');
+  is($rl->tokens_reset_at->nanosecond, 560_000_000,
+    'duration-only: fractional second preserved in derived tokens_reset_at');
+
+  # to_hash serializes the typed halves; reset_at as a plain epoch number
+  # (matching Response.created), received stays out of the serialized view.
+  my $hash = $rl->to_hash;
+  is($hash->{requests_reset_after}, 12, 'to_hash: requests_reset_after in seconds');
+  is($hash->{requests_reset_at}, $received->epoch + 12, 'to_hash: requests_reset_at as epoch number');
+  ok(!exists $hash->{received}, 'to_hash omits the received derivation anchor');
+}
+
+# ======================================================================
+# Part 10: Typed reset split — instant only, *_reset_after derived
+# ======================================================================
+
+{
+  my $received = Langertha::Moment->from_wire('2026-01-01T00:00:00Z');
+  my $rl = Langertha::RateLimit->new(
+    received          => $received,
+    requests_reset_at => Langertha::Moment->from_wire('2026-01-01T00:05:00Z'),
+  );
+
+  isa_ok($rl->requests_reset_at, 'Langertha::Moment');
+  is($rl->requests_reset_after, 300, 'instant-only: requests_reset_after = reset_at - received (300s)');
+  is($rl->tokens_reset_at, undef, 'instant-only: untouched token bucket reset_at stays undef');
+  is($rl->tokens_reset_after, undef, 'instant-only: untouched token bucket reset_after stays undef');
+}
+
+# ======================================================================
+# Part 11: No reset header — both halves stay undef, no invented default
+# ======================================================================
+
+{
+  my $rl = Langertha::RateLimit->new(
+    received           => Langertha::Moment->from_wire('2026-01-01T00:00:00Z'),
+    requests_remaining => 5,
+  );
+  is($rl->requests_reset_at, undef, 'no-reset: requests_reset_at undef (no default invented)');
+  is($rl->requests_reset_after, undef, 'no-reset: requests_reset_after undef');
+  is($rl->tokens_reset_at, undef, 'no-reset: tokens_reset_at undef');
+  is($rl->tokens_reset_after, undef, 'no-reset: tokens_reset_after undef');
+  is($rl->requests_reset, undef, 'no-reset: verbatim requests_reset undef');
+
+  my $hash = $rl->to_hash;
+  ok(!exists $hash->{requests_reset_at}, 'no-reset: to_hash omits undef requests_reset_at');
+  ok(!exists $hash->{requests_reset_after}, 'no-reset: to_hash omits undef requests_reset_after');
+}
+
+# ======================================================================
+# Part 12: Go time.Duration parser edge cases
+# ======================================================================
+
+{
+  my %ok = (
+    '1s'        => 1,
+    '3s'        => 3,
+    '6m0s'      => 360,     # compound, trailing zero-second unit
+    '2m59.56s'  => 179.56,  # compound + fractional seconds
+    '7.66s'     => 7.66,    # fractional
+    '250ms'     => 0.25,    # sub-second milliseconds
+    '35ms'      => 0.035,
+    '20ms'      => 0.02,
+    '1h2m3s'    => 3723,    # hours+minutes+seconds
+  );
+  for my $str (sort keys %ok) {
+    my $got = Langertha::RateLimit::_parse_go_duration($str);
+    ok(defined $got && abs($got - $ok{$str}) < 1e-9,
+      "Go-duration '$str' -> $ok{$str}");
+  }
+
+  # Not a Go duration -> undef (never guess).
+  is(Langertha::RateLimit::_parse_go_duration('60'), undef,
+    'Go-duration parser rejects a bare number (no guessing seconds)');
+  is(Langertha::RateLimit::_parse_go_duration('2026-02-27T12:00:00Z'), undef,
+    'Go-duration parser rejects an RFC 3339 instant');
+  is(Langertha::RateLimit::_parse_go_duration('garbage'), undef,
+    'Go-duration parser rejects junk');
+  is(Langertha::RateLimit::_parse_go_duration(''), undef,
+    'Go-duration parser rejects empty string');
+  is(Langertha::RateLimit::_parse_go_duration(undef), undef,
+    'Go-duration parser rejects undef');
+}
+
+# ======================================================================
+# Part 13: OpenAI response with limit/remaining but NO reset header
+# ======================================================================
+
+{
+  my $openai = Langertha::Engine::OpenAI->new(
+    api_key => 'testkey',
+    model   => 'gpt-4o-mini',
+  );
+
+  my $http = HTTP::Response->new(200, 'OK');
+  $http->content($json->encode({
+    id => 'noreset', model => 'gpt-4o-mini',
+    choices => [{ message => { content => 'x' }, finish_reason => 'stop' }],
+  }));
+  $http->header('Content-Type' => 'application/json');
+  $http->header('x-ratelimit-limit-requests' => '500');
+  $http->header('x-ratelimit-remaining-requests' => '499');
+  # No x-ratelimit-reset-* headers at all.
+
+  $openai->chat_response($http);
+  ok($openai->has_rate_limit, 'OpenAI has rate_limit from limit/remaining alone');
+  my $rl = $openai->rate_limit;
+  is($rl->requests_reset, undef, 'no reset header: verbatim requests_reset undef');
+  is($rl->requests_reset_after, undef, 'no reset header: requests_reset_after undef');
+  is($rl->requests_reset_at, undef, 'no reset header: requests_reset_at undef (nothing invented)');
 }
 
 done_testing;

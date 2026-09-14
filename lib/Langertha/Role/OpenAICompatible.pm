@@ -594,27 +594,28 @@ the request completes. Returns an ArrayRef of image objects.
 
 sub _parse_rate_limit_headers {
   my ( $self, $http_response ) = @_;
-  my %raw;
-  for my $name (qw(
-    x-ratelimit-limit-requests
-    x-ratelimit-remaining-requests
-    x-ratelimit-reset-requests
-    x-ratelimit-limit-tokens
-    x-ratelimit-remaining-tokens
-    x-ratelimit-reset-tokens
-  )) {
-    my $val = $http_response->header($name);
-    $raw{$name} = $val if defined $val;
-  }
-  return undef unless %raw;
   require Langertha::RateLimit;
+  require Langertha::Moment;
+  my %raw = Langertha::RateLimit::_collect_headers($http_response);
+  return undef unless %raw;
+  my $req_reset = $raw{'x-ratelimit-reset-requests'};
+  my $tok_reset = $raw{'x-ratelimit-reset-tokens'};
+  # OpenAI-family reset headers are Go time.Duration strings ("6m0s",
+  # "2m59.56s", "250ms") — a duration, so they populate *_reset_after; the
+  # matching *_reset_at is derived lazily against `received`. A value that is
+  # not a Go duration parses to undef and neither half is set (raw keeps it).
+  my $req_after = defined $req_reset ? Langertha::RateLimit::_parse_go_duration($req_reset) : undef;
+  my $tok_after = defined $tok_reset ? Langertha::RateLimit::_parse_go_duration($tok_reset) : undef;
   return Langertha::RateLimit->new(
-    ( defined $raw{'x-ratelimit-limit-requests'}     ? ( requests_limit     => $raw{'x-ratelimit-limit-requests'} + 0 )     : () ),
-    ( defined $raw{'x-ratelimit-remaining-requests'} ? ( requests_remaining => $raw{'x-ratelimit-remaining-requests'} + 0 ) : () ),
-    ( defined $raw{'x-ratelimit-reset-requests'}     ? ( requests_reset     => $raw{'x-ratelimit-reset-requests'} )         : () ),
-    ( defined $raw{'x-ratelimit-limit-tokens'}       ? ( tokens_limit       => $raw{'x-ratelimit-limit-tokens'} + 0 )       : () ),
-    ( defined $raw{'x-ratelimit-remaining-tokens'}   ? ( tokens_remaining   => $raw{'x-ratelimit-remaining-tokens'} + 0 )   : () ),
-    ( defined $raw{'x-ratelimit-reset-tokens'}       ? ( tokens_reset       => $raw{'x-ratelimit-reset-tokens'} )           : () ),
+    received => Langertha::Moment->now_utc,
+    ( defined $raw{'x-ratelimit-limit-requests'}     ? ( requests_limit       => $raw{'x-ratelimit-limit-requests'} + 0 )     : () ),
+    ( defined $raw{'x-ratelimit-remaining-requests'} ? ( requests_remaining   => $raw{'x-ratelimit-remaining-requests'} + 0 ) : () ),
+    ( defined $req_reset                             ? ( requests_reset       => $req_reset )                                 : () ),
+    ( defined $req_after                             ? ( requests_reset_after => $req_after )                                 : () ),
+    ( defined $raw{'x-ratelimit-limit-tokens'}       ? ( tokens_limit         => $raw{'x-ratelimit-limit-tokens'} + 0 )       : () ),
+    ( defined $raw{'x-ratelimit-remaining-tokens'}   ? ( tokens_remaining     => $raw{'x-ratelimit-remaining-tokens'} + 0 )   : () ),
+    ( defined $tok_reset                             ? ( tokens_reset         => $tok_reset )                                 : () ),
+    ( defined $tok_after                             ? ( tokens_reset_after   => $tok_after )                                 : () ),
     raw => \%raw,
   );
 }
@@ -623,7 +624,11 @@ sub _parse_rate_limit_headers {
 
 Parses C<x-ratelimit-*> headers from the HTTP response into a
 L<Langertha::RateLimit> object. Covers OpenAI, Groq, Cerebras, OpenRouter,
-Replicate, and all other OpenAI-compatible engines.
+Replicate, and all other OpenAI-compatible engines. Collects the full C<raw>
+superset via L<Langertha::RateLimit/_collect_headers>, then normalizes the
+Go C<time.Duration> reset strings into L<Langertha::RateLimit/requests_reset_after>
+/ L<Langertha::RateLimit/tokens_reset_after> (seconds); the C<*_reset_at>
+instants are derived lazily against L<Langertha::RateLimit/received>.
 
 =cut
 

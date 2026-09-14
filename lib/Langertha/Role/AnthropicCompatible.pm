@@ -694,33 +694,28 @@ sub _build_tool_wire_format { 'anthropic' }
 
 sub _parse_rate_limit_headers {
   my ( $self, $http_response ) = @_;
-  my %raw;
-  for my $name (qw(
-    anthropic-ratelimit-requests-limit
-    anthropic-ratelimit-requests-remaining
-    anthropic-ratelimit-requests-reset
-    anthropic-ratelimit-tokens-limit
-    anthropic-ratelimit-tokens-remaining
-    anthropic-ratelimit-tokens-reset
-    anthropic-ratelimit-input-tokens-limit
-    anthropic-ratelimit-input-tokens-remaining
-    anthropic-ratelimit-input-tokens-reset
-    anthropic-ratelimit-output-tokens-limit
-    anthropic-ratelimit-output-tokens-remaining
-    anthropic-ratelimit-output-tokens-reset
-  )) {
-    my $val = $http_response->header($name);
-    $raw{$name} = $val if defined $val;
-  }
-  return undef unless %raw;
   require Langertha::RateLimit;
+  require Langertha::Moment;
+  my %raw = Langertha::RateLimit::_collect_headers($http_response);
+  return undef unless %raw;
+  my $req_reset = $raw{'anthropic-ratelimit-requests-reset'};
+  my $tok_reset = $raw{'anthropic-ratelimit-tokens-reset'};
+  # Anthropic reset headers are RFC 3339 instants — a "when", so they populate
+  # *_reset_at via the lenient inbound door (ADR 0017); the matching
+  # *_reset_after is derived lazily against `received`. from_wire returns undef
+  # for anything it cannot read, and then neither half is set (raw keeps it).
+  my $req_at = defined $req_reset ? Langertha::Moment->from_wire($req_reset) : undef;
+  my $tok_at = defined $tok_reset ? Langertha::Moment->from_wire($tok_reset) : undef;
   return Langertha::RateLimit->new(
+    received => Langertha::Moment->now_utc,
     ( defined $raw{'anthropic-ratelimit-requests-limit'}     ? ( requests_limit     => $raw{'anthropic-ratelimit-requests-limit'} + 0 )     : () ),
     ( defined $raw{'anthropic-ratelimit-requests-remaining'} ? ( requests_remaining => $raw{'anthropic-ratelimit-requests-remaining'} + 0 ) : () ),
-    ( defined $raw{'anthropic-ratelimit-requests-reset'}     ? ( requests_reset     => $raw{'anthropic-ratelimit-requests-reset'} )         : () ),
+    ( defined $req_reset                                     ? ( requests_reset     => $req_reset )                                        : () ),
+    ( defined $req_at                                        ? ( requests_reset_at  => $req_at )                                           : () ),
     ( defined $raw{'anthropic-ratelimit-tokens-limit'}       ? ( tokens_limit       => $raw{'anthropic-ratelimit-tokens-limit'} + 0 )       : () ),
     ( defined $raw{'anthropic-ratelimit-tokens-remaining'}   ? ( tokens_remaining   => $raw{'anthropic-ratelimit-tokens-remaining'} + 0 )   : () ),
-    ( defined $raw{'anthropic-ratelimit-tokens-reset'}       ? ( tokens_reset       => $raw{'anthropic-ratelimit-tokens-reset'} )           : () ),
+    ( defined $tok_reset                                     ? ( tokens_reset       => $tok_reset )                                        : () ),
+    ( defined $tok_at                                        ? ( tokens_reset_at    => $tok_at )                                           : () ),
     raw => \%raw,
   );
 }
@@ -728,8 +723,13 @@ sub _parse_rate_limit_headers {
 =method _parse_rate_limit_headers
 
 Parses C<anthropic-ratelimit-*> headers from the HTTP response into a
-L<Langertha::RateLimit> object. The C<raw> hash captures extras like
-C<input-tokens-limit> and C<output-tokens-limit>.
+L<Langertha::RateLimit> object. Collects the full C<raw> superset via
+L<Langertha::RateLimit/_collect_headers> — capturing extras like
+C<input-tokens-limit>, C<output-tokens-limit> and the C<anthropic-priority-*>
+/ C<anthropic-fast-*> families — then normalizes the RFC 3339 reset instants
+into L<Langertha::RateLimit/requests_reset_at> / L<Langertha::RateLimit/tokens_reset_at>;
+the C<*_reset_after> durations are derived lazily against
+L<Langertha::RateLimit/received>.
 
 =cut
 
