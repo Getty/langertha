@@ -71,6 +71,30 @@ Bugs found on the way become cards, not silent fixes. A new card is unclaimed
 unless `--status` puts it into a `require_claim` column (you are starting it)
 or `--claim` says who holds it.
 
+## Create a card on another repository's board
+
+The board is the *target* repository's `refs/karr/*`, so a card is filed by
+running `create` inside a checkout of that repository — there is no way to
+name a remote and post to it directly:
+
+```bash
+karr --dir ../other-board create "Title" --body '...'   # a sibling checkout you already have
+git clone URL ../other-board && cd ../other-board       # or clone one first, as a sibling
+karr create "Title" --body '...'                        # create; it pulls, then pushes
+```
+
+Check the clone out as a **sibling of your current checkout — never inside its
+working tree** — named for the board, where your fleet keeps its repositories.
+Inside the tree it would be mixed into this repo and could be committed by
+accident; a sibling stays separate, and a `needs:BOARD#ID` reference resolves
+the board name to a directory by that basename (from `--board NAME=PATH` or the
+fleet config) — a clone parked anywhere else is a card no one can trace back.
+A fresh `git clone` carries no `refs/karr/*`, but `create` pulls the board
+first (it is a mutating command), so the new id continues the remote's count —
+no separate `karr sync --pull`. To record the new card as
+something work *here* waits on, escalate it —
+[references/cross-board.md](references/cross-board.md).
+
 ## Output flags
 
 `--json` is taken by every board command, not by `backup`, `restore`,
