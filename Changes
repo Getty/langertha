@@ -2,6 +2,17 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - RateLimit reset is now typed per bucket (karr k121): requests_reset_at /
+      tokens_reset_at (Langertha::Moment, "when") and requests_reset_after /
+      tokens_reset_after (seconds, "in how long"), reconciled against a new
+      `received` stamp. The parser fills whichever half the wire spoke — OpenAI's
+      Go-duration reset headers become *_reset_after, Anthropic's RFC 3339 become
+      *_reset_at — and derives the other lazily; both stay undef when a provider
+      sends no reset header. The untyped requests_reset / tokens_reset strings
+      are kept verbatim for back-compatibility. `raw` now collects the full
+      rate-limit header superset (anthropic-priority-*, per-window buckets,
+      Mistral's -minute names) instead of only the normalized subset.
+
     - Usage exposes the prompt-cache write count as
       `$response->usage->cache_write_tokens` (karr k130), parsed from OpenAI's
       `prompt_tokens_details.cache_write_tokens` or Anthropic's
