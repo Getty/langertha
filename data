@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-10T08:32:09Z
+claimed_by: worker-a
+class: standard
+completed: 2026-09-14T03:54:53Z
+created: 2026-09-10T08:32:09Z
+id: 146
+priority: low
+started: 2026-09-14T03:54:53Z
+status: done
+tags:
+- docs
+- perplexity
+- engines
+title: CLAUDE.md engine map drift after k139 Perplexity Agent migration
+updated: 2026-09-14T03:54:59Z
+---
+
+k139 moved Engine::Perplexity off OpenAIBase onto Engine::Remote + Role::ResponsesCompatible (Agent API). CLAUDE.md is now stale in three spots:
+1. Engine hierarchy diagram lists Perplexity under OpenAIBase (/chat/completions) — it is now a Remote descendant composing Role::ResponsesCompatible (/v1/agent, Open-Responses envelope).
+2. The diagram note "OpenAIResponses ... sole carrier of the responses tool/reasoning wire format" is no longer true — Perplexity Agent is a second carrier.
+3. The Roles section should mention Role::ResponsesCompatible (parallel to OpenAICompatible/AnthropicCompatible). Non-behavioral doc only; code + tests already correct.
+
+ERLEDIGT (main agent, 2026-09-14): CLAUDE.md Engine-Hierarchie verschiebt Perplexity von OpenAIBase zu einem Engine::Remote-Nachfahren mit Role::ResponsesCompatible (/v1/agent); OpenAIResponses nicht mehr 'sole carrier' des responses-Envelopes; ResponsesCompatible in die Roles-Sektion aufgenommen (parallel zu OpenAICompatible/AnthropicCompatible, ADR 0020). Committet 8818556, gemergt nach main (2befde6).
