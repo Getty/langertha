@@ -551,8 +551,19 @@ sub parse_stream_chunk {
   my $content = $candidate->{content} || {};
   my $parts = $content->{parts} || [];
 
-  my $text = '';
-  $text = $parts->[0]->{text} if @$parts && $parts->[0]->{text};
+  # Same shape as chat_response: walk every part, not just parts[0]. A chunk can
+  # carry a thought part ahead of (or interleaved with) the answer part; reading
+  # only parts[0] leaked a thought summary into content and dropped the real
+  # answer that followed it. Thought parts are excluded from content here --
+  # Stream::Chunk has no thinking field yet (that half of karr k129 is
+  # design-gated and out of scope), so streamed thinking is simply not surfaced.
+  my @text_parts;
+  for my $part (@$parts) {
+    next unless exists $part->{text};
+    next if $part->{thought};
+    push @text_parts, $part->{text};
+  }
+  my $text = join('', @text_parts);
 
   my $finish_reason = $candidate->{finishReason};
   my $is_final = defined $finish_reason && $finish_reason ne '';

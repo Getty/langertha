@@ -357,6 +357,17 @@ sub chat_response {
   # text, parsed elsewhere) or that compose no Tools role at all (Perplexity).
   # Pin the structured extractor to 'openai' rather than $self->tool_wire_format.
   my @tcs = Langertha::ToolCall->extract( 'openai', $data );
+  # Chain-of-thought reaches the OpenAI-compatible message under two spellings:
+  # the DeepSeek/SGLang/Moonshot/xAI `reasoning_content`, and the bare
+  # `reasoning` that vLLM (renamed from reasoning_content), Groq, Cerebras,
+  # OpenRouter and AKI.IO send. Read the canonical spelling first, then fall
+  # back to `reasoning` -- guarded !ref so OpenRouter's structured
+  # `reasoning_details` ARRAY (or any non-string shape) never lands in the Str
+  # thinking attribute. -- karr k127, k129
+  my $thinking =
+      defined $msg->{reasoning_content} ? $msg->{reasoning_content}
+    : ( defined $msg->{reasoning} && !ref $msg->{reasoning} ) ? $msg->{reasoning}
+    : undef;
   return Langertha::Response->new(
     content       => $msg->{content} // '',
     raw           => $data,
@@ -368,7 +379,7 @@ sub chat_response {
       && defined $data->{usage}{prompt_tokens_details}{cached_tokens}
       ? ( cached_tokens => $data->{usage}{prompt_tokens_details}{cached_tokens} ) : () ),
     $data->{created} ? ( created => $data->{created} ) : (),
-    defined $msg->{reasoning_content} ? ( thinking => $msg->{reasoning_content} ) : (),
+    defined $thinking ? ( thinking => $thinking ) : (),
     @tcs ? ( tool_calls => [ @tcs ] ) : (),
   );
 }

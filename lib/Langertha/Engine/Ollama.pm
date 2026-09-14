@@ -319,6 +319,10 @@ sub chat_response {
     $usage ? ( usage => $usage ) : (),
     $timing ? ( timing => $timing ) : (),
     defined $data->{created_at} ? ( created => $data->{created_at} ) : (),
+    # Ollama's native /api/chat returns the model's chain-of-thought under
+    # message.thinking (think=true). Surface it onto Response.thinking so the
+    # non-streamed native route matches the OpenAI-compatible path. -- karr k129
+    defined $msg->{thinking} ? ( thinking => $msg->{thinking} ) : (),
     @tcs ? ( tool_calls => [ @tcs ] ) : (),
   );
 }
