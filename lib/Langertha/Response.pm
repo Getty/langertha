@@ -363,11 +363,19 @@ has cached_tokens => (
 
 =attr cached_tokens
 
-Number of prompt tokens served from the prefix cache, when the provider
-reports it. Populated from C<usage.prompt_tokens_details.cached_tokens> on
-the OpenAI-compatible wire (SGLang with C<return_cached_tokens_details>
-enabled, and other servers that emit the detail block). C<undef> when the
-provider does not report it.
+Number of prompt tokens served from the prefix cache (the cache B<read>
+count), when the provider reports it. This is the engine-agnostic back-compat
+accessor: C<BUILDARGS> lifts it off the L<Langertha::Usage> object's
+L<Langertha::Usage/cached_tokens>, which parses it from either wire spelling —
+C<usage.prompt_tokens_details.cached_tokens> on the OpenAI-compatible wire
+(SGLang with C<return_cached_tokens_details> enabled, and other servers that
+emit the detail block) or C<usage.cache_read_input_tokens> on Anthropic. An
+explicit C<cached_tokens> constructor parameter always wins. C<undef> when the
+provider does not report a cache-read count.
+
+The cache B<write> count has no Response accessor — read it from the usage
+object as C<< $response->usage->cache_write_tokens >>
+(L<Langertha::Usage/cache_write_tokens>).
 
 =cut
 
@@ -405,28 +413,28 @@ around BUILDARGS => sub {
   my ( $orig, $class, @args ) = @_;
   my $params = $class->$orig(@args);
 
-  # Lift cached_tokens from the usage block (karr #61). chat_response used
-  # to be the only lift site; doing it here means ANY Response assembled
-  # from provider usage — including one built from a streamed final chunk's
-  # usage hash — surfaces the prefix-cache read-back. Only when defined
-  # (cached_tokens => 0 is a real count). An explicit cached_tokens
+  # Coerce the usage block to a Langertha::Usage object first (karr #43): the
+  # value object owns inbound wire-spelling parsing (ADR 0001 / 0018 home 1),
+  # including the prompt-cache read/write counts and the two wire spellings each
+  # carries. Response no longer hand-parses any usage spelling itself.
+  if ( defined $params->{usage} ) {
+    $params->{usage} = ( ref( $params->{usage} ) && eval { $params->{usage}->isa('Langertha::Usage') } )
+      ? $params->{usage}
+      : Langertha::Usage->from_hash( $params->{usage} );
+  }
+
+  # Response keeps its public cached_tokens attribute (karr #61) but no longer
+  # carries the provider wire spellings — those moved onto Langertha::Usage
+  # (karr #130). Surface the prefix-cache read-back by lifting the PARSED count
+  # off the Usage object, so ANY Response assembled from provider usage —
+  # including one built from a streamed final chunk's usage — exposes it. Only
+  # when defined (cached_tokens => 0 is a real count). An explicit cached_tokens
   # parameter always wins.
-  #
-  # Two wire spellings carry the read-back count (karr #125): OpenAI nests it
-  # at usage.prompt_tokens_details.cached_tokens, Anthropic reports it flat as
-  # usage.cache_read_input_tokens. Lift either — the OpenAI shape wins if both
-  # are somehow present. The Anthropic write count (cache_creation_input_tokens)
-  # is a different quantity and is deliberately NOT folded in. Values are read
-  # into lexicals first so a missing key never autovivifies the caller's usage.
-  if ( !exists $params->{cached_tokens} && ref( $params->{usage} ) eq 'HASH' ) {
-    my $usage = $params->{usage};
-    my $ptd   = $usage->{prompt_tokens_details};
-    if ( ref($ptd) eq 'HASH' && defined $ptd->{cached_tokens} ) {
-      $params->{cached_tokens} = $ptd->{cached_tokens};
-    }
-    elsif ( defined $usage->{cache_read_input_tokens} ) {
-      $params->{cached_tokens} = $usage->{cache_read_input_tokens};
-    }
+  if ( !exists $params->{cached_tokens}
+       && ref( $params->{usage} )
+       && eval { $params->{usage}->isa('Langertha::Usage') }
+       && defined $params->{usage}->cached_tokens ) {
+    $params->{cached_tokens} = $params->{usage}->cached_tokens;
   }
 
   # Accept legacy ArrayRef[HashRef] input by upgrading to ToolCall objects.
@@ -466,12 +474,6 @@ around BUILDARGS => sub {
     }
   }
 
-  # Accept legacy HashRef usage input by upgrading to a Usage object.
-  if ( defined $params->{usage} ) {
-    $params->{usage} = ( ref( $params->{usage} ) && eval { $params->{usage}->isa('Langertha::Usage') } )
-      ? $params->{usage}
-      : Langertha::Usage->from_hash( $params->{usage} );
-  }
   return $params;
 };
 

@@ -22,6 +22,9 @@ has input_tokens  => ( is => 'ro', isa => 'Int', default => 0 );
 has output_tokens => ( is => 'ro', isa => 'Int', default => 0 );
 has total_tokens  => ( is => 'ro', isa => 'Int', lazy => 1, builder => '_build_total_tokens' );
 
+has cached_tokens      => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
+has cache_write_tokens => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
+
 has raw => (
   is => 'ro',
   isa => 'Maybe[HashRef]',
@@ -38,6 +41,8 @@ around total_tokens  => sub {
   return $d->{total_tokens} if defined $d->{total_tokens};
   return ( $d->{input_tokens} // 0 ) + ( $d->{output_tokens} // 0 );
 };
+around cached_tokens      => sub { my ( $orig, $self ) = @_; $DATA{$self}{cached_tokens} };
+around cache_write_tokens => sub { my ( $orig, $self ) = @_; $DATA{$self}{cache_write_tokens} };
 around raw => sub { my ( $orig, $self ) = @_; $DATA{$self}{raw} };
 
 # The constructor's writes to $self->{attr} go through the overload and are
@@ -45,10 +50,12 @@ around raw => sub { my ( $orig, $self ) = @_; $DATA{$self}{raw} };
 sub BUILD {
   my ( $self, $args ) = @_;
   $DATA{$self} = {
-    input_tokens  => $args->{input_tokens} // 0,
-    output_tokens => $args->{output_tokens} // 0,
-    total_tokens  => $args->{total_tokens},
-    raw           => $args->{raw},
+    input_tokens       => $args->{input_tokens} // 0,
+    output_tokens      => $args->{output_tokens} // 0,
+    total_tokens       => $args->{total_tokens},
+    cached_tokens      => $args->{cached_tokens},
+    cache_write_tokens => $args->{cache_write_tokens},
+    raw                => $args->{raw},
   };
 }
 
@@ -75,8 +82,29 @@ sub from_hash {
   $input  = 0 + ($input  // 0);
   $output = 0 + ($output // 0);
 
+  # Prompt-cache read/write counts each carry two wire spellings. OpenAI nests
+  # both under prompt_tokens_details (cached_tokens / cache_write_tokens);
+  # Anthropic reports them flat (cache_read_input_tokens /
+  # cache_creation_input_tokens). The OpenAI nesting wins when both spellings
+  # are somehow present (karr #125 / #130). The read count and the write count
+  # are distinct quantities — the write count is deliberately NOT folded into
+  # cached_tokens. Values are read into lexicals first so a missing key never
+  # autovivifies the caller's hash.
+  my $ptd = $hash->{prompt_tokens_details};
+  $ptd = undef unless ref($ptd) eq 'HASH';
+
+  my $cached;
+  if    ( $ptd && defined $ptd->{cached_tokens} )      { $cached = $ptd->{cached_tokens} }
+  elsif ( defined $hash->{cache_read_input_tokens} )   { $cached = $hash->{cache_read_input_tokens} }
+
+  my $cache_write;
+  if    ( $ptd && defined $ptd->{cache_write_tokens} )     { $cache_write = $ptd->{cache_write_tokens} }
+  elsif ( defined $hash->{cache_creation_input_tokens} )   { $cache_write = $hash->{cache_creation_input_tokens} }
+
   my %args = ( input_tokens => $input, output_tokens => $output );
-  $args{total_tokens} = 0 + $total if defined $total;
+  $args{total_tokens}       = 0 + $total       if defined $total;
+  $args{cached_tokens}      = 0 + $cached       if defined $cached;
+  $args{cache_write_tokens} = 0 + $cache_write  if defined $cache_write;
   $args{raw} = $hash;
   return $class->new(%args);
 }
@@ -198,6 +226,32 @@ solution is to keep the attribute values in a C<Hash::Util::FieldHash> keyed
 by object identity and route B<both> the accessors (via C<around> modifiers)
 and the overload through it. The object's own hash is then never read, so the
 overload only ever serves caller hash derefs.
+
+=attr cached_tokens
+
+Number of prompt tokens served from the provider's prefix cache (the cache
+B<read> count), when the provider reports it. L</from_hash> parses it from
+either wire spelling: OpenAI nests it at
+C<usage.prompt_tokens_details.cached_tokens> (also Mistral, and any
+OpenAI-compatible server such as SGLang with C<return_cached_tokens_details>),
+and Anthropic reports it flat as C<usage.cache_read_input_tokens>. The OpenAI
+nesting wins when both are present. C<undef> when the provider does not report
+a cache-read count.
+
+Note: on OpenAI (GPT-5.6 and later) this count excludes hidden tokens and
+rounds down to a multiple of 128, so cost arithmetic built on it is
+approximate by construction.
+
+=attr cache_write_tokens
+
+Number of prompt tokens written to the provider's prefix cache (the cache
+B<creation> count), a distinct quantity from L</cached_tokens> and deliberately
+not folded into it. L</from_hash> parses it from either wire spelling: OpenAI
+nests it at C<usage.prompt_tokens_details.cache_write_tokens> and Anthropic
+reports it flat as C<usage.cache_creation_input_tokens> (Anthropic further
+splits that count across TTL tiers under C<usage.cache_creation>, which stays
+verbatim in L</raw>). The OpenAI nesting wins when both are present. C<undef>
+when the provider does not report a cache-write count.
 
 =attr raw
 

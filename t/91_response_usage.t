@@ -288,6 +288,14 @@ subtest 'cache tokens: Anthropic survives verbatim' => sub {
     is($resp->cached_tokens, 8192,
         'Anthropic cache_read_input_tokens lifts onto cached_tokens (karr k125)');
 
+    # karr k130: the wire spellings now live on the Langertha::Usage value
+    # object (ADR 0018 home 1). Response.cached_tokens is lifted off the parsed
+    # Usage object, not hand-parsed from the raw usage hash in BUILDARGS.
+    is($resp->usage->cached_tokens, 8192,
+        'cache_read_input_tokens parsed onto Usage.cached_tokens (karr k130)');
+    is($resp->usage->cache_write_tokens, 2048,
+        'cache_creation_input_tokens parsed onto Usage.cache_write_tokens (karr k130)');
+
     # `prompt_tokens` is the uncached input count and deliberately excludes the
     # cache tokens — they are a separate quantity, reachable via cached_tokens
     # (above) and verbatim under usage.cache_*. Do not fold them in here
@@ -442,6 +450,128 @@ subtest 'karr #43: usage coerced to Langertha::Usage' => sub {
     my $resp2 = Langertha::Response->new(content => 'y', usage => $u);
     isa_ok($resp2->usage, ['Langertha::Usage'], 'pre-built Usage object kept');
     is($resp2->usage, $u, 'same object identity (no re-coercion)');
+};
+
+# =========================================================================
+# 7. karr #130: the prompt-cache read/write wire spellings live on
+#    Langertha::Usage (ADR 0018 home 1), not in Response::BUILDARGS
+# =========================================================================
+#
+# The value object owns inbound wire-spelling parsing. Usage->from_hash now
+# parses the cache READ count (cached_tokens) and the cache WRITE count
+# (cache_write_tokens), each from two provider spellings, keeping the k125
+# precedence: OpenAI's prompt_tokens_details nesting wins over the Anthropic
+# flat key, and read vs. write stay distinct quantities.
+
+subtest 'Usage: cache read/write counts, both wire spellings + precedence' => sub {
+    # OpenAI nesting: both counts under prompt_tokens_details.
+    my $oa = Langertha::Usage->from_hash({
+        prompt_tokens         => 100,
+        completion_tokens     => 40,
+        prompt_tokens_details => { cached_tokens => 64, cache_write_tokens => 32 },
+    });
+    is($oa->cached_tokens,      64, 'OpenAI prompt_tokens_details.cached_tokens → cached_tokens');
+    is($oa->cache_write_tokens, 32, 'OpenAI prompt_tokens_details.cache_write_tokens → cache_write_tokens');
+
+    # Anthropic flat: cache_read_input_tokens / cache_creation_input_tokens.
+    my $an = Langertha::Usage->from_hash({
+        input_tokens                => 200,
+        output_tokens               => 80,
+        cache_read_input_tokens     => 4096,
+        cache_creation_input_tokens => 1024,
+    });
+    is($an->cached_tokens,      4096, 'Anthropic cache_read_input_tokens → cached_tokens');
+    is($an->cache_write_tokens, 1024, 'Anthropic cache_creation_input_tokens → cache_write_tokens');
+
+    # Read and write are distinct quantities — the write count is deliberately
+    # NOT folded into cached_tokens (the k125 semantics the ticket preserves).
+    isnt($an->cached_tokens, $an->cache_write_tokens,
+        'read count and write count are distinct on the same Usage');
+
+    # Precedence: OpenAI nesting wins over the Anthropic flat keys when both
+    # spellings are somehow present, for read AND write.
+    my $both = Langertha::Usage->from_hash({
+        prompt_tokens_details       => { cached_tokens => 7, cache_write_tokens => 3 },
+        cache_read_input_tokens     => 999,
+        cache_creation_input_tokens => 888,
+    });
+    is($both->cached_tokens,      7, 'OpenAI cached_tokens wins over Anthropic cache_read_input_tokens');
+    is($both->cache_write_tokens, 3, 'OpenAI cache_write_tokens wins over Anthropic cache_creation_input_tokens');
+
+    # cached_tokens => 0 is a real count: defined-check, not truthy.
+    my $zero = Langertha::Usage->from_hash({ prompt_tokens_details => { cached_tokens => 0 } });
+    is($zero->cached_tokens, 0, 'cached_tokens => 0 is preserved (defined check, not truthy)');
+
+    # Absent → undef, and from_hash must not autovivify the caller's hash.
+    my $hash = { prompt_tokens => 5, completion_tokens => 5 };
+    my $none = Langertha::Usage->from_hash($hash);
+    is($none->cached_tokens,      undef, 'no cache-read spelling → cached_tokens undef');
+    is($none->cache_write_tokens, undef, 'no cache-write spelling → cache_write_tokens undef');
+    ok(!exists $hash->{prompt_tokens_details},
+        'from_hash does not autovivify prompt_tokens_details into the caller hash');
+
+    # Directly constructed Usage carries the counts through the field hash.
+    my $direct = Langertha::Usage->new(
+        input_tokens => 10, output_tokens => 5,
+        cached_tokens => 3, cache_write_tokens => 2,
+    );
+    is($direct->cached_tokens,      3, 'directly constructed cached_tokens survives field-hash routing');
+    is($direct->cache_write_tokens, 2, 'directly constructed cache_write_tokens survives field-hash routing');
+};
+
+# =========================================================================
+# 8. karr #130: Response.cached_tokens is lifted off the parsed Usage
+#    object (public accessor preserved), not hand-parsed from the raw hash
+# =========================================================================
+
+subtest 'Response: cached_tokens derives from the Usage value object (karr #130)' => sub {
+    # OpenAI nesting, via the full Response coercion path.
+    my $oa = Langertha::Response->new(content => 'x', usage => {
+        prompt_tokens => 100, completion_tokens => 40,
+        prompt_tokens_details => { cached_tokens => 64 },
+    });
+    is($oa->cached_tokens,        64, 'Response.cached_tokens lifted from Usage (OpenAI nesting)');
+    is($oa->usage->cached_tokens, 64, 'same count reachable on the Usage object');
+
+    # Anthropic flat, via the full Response coercion path.
+    my $an = Langertha::Response->new(content => 'x', usage => {
+        input_tokens => 200, output_tokens => 80,
+        cache_read_input_tokens     => 4096,
+        cache_creation_input_tokens => 1024,
+    });
+    is($an->cached_tokens, 4096, 'Response.cached_tokens lifted from Usage (Anthropic flat)');
+
+    # The write count has NO Response accessor by design (karr #130 point 5):
+    # it lives on the Usage value object only.
+    is($an->usage->cache_write_tokens, 1024,
+        'cache write count reachable via $response->usage->cache_write_tokens');
+    ok(!Langertha::Response->can('cache_write_tokens'),
+        'Response has no cache_write_tokens accessor (write count lives on Usage)');
+
+    # An explicit cached_tokens constructor param still wins over the
+    # Usage-derived value (the k125 precedence the ticket preserves).
+    my $explicit = Langertha::Response->new(
+        content       => 'x',
+        cached_tokens => 9,
+        usage         => { prompt_tokens => 100, prompt_tokens_details => { cached_tokens => 64 } },
+    );
+    is($explicit->cached_tokens,        9,  'explicit cached_tokens param wins over Usage-derived value');
+    is($explicit->usage->cached_tokens, 64, 'Usage still carries the parsed count independently');
+
+    # No cache spelling → no cached_tokens, and the derive must not autovivify
+    # the caller's usage hash.
+    my $usage_hash = { prompt_tokens => 5, completion_tokens => 5 };
+    my $plain = Langertha::Response->new(content => 'x', usage => $usage_hash);
+    ok(!$plain->has_cached_tokens, 'no cache spelling → has_cached_tokens false');
+    ok(!exists $usage_hash->{prompt_tokens_details},
+        'derive does not autovivify prompt_tokens_details into the caller usage hash');
+
+    # cached_tokens => 0 surfaces through the full Response path (defined check).
+    my $zero = Langertha::Response->new(content => 'x', usage => {
+        prompt_tokens => 5, prompt_tokens_details => { cached_tokens => 0 },
+    });
+    ok($zero->has_cached_tokens, 'cached_tokens => 0 surfaces on Response (defined check)');
+    is($zero->cached_tokens, 0, 'Response.cached_tokens value 0');
 };
 
 done_testing;
