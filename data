@@ -1,0 +1,166 @@
+---
+claimed_at: 2026-09-10T03:12:51Z
+claimed_by: worker-a
+class: standard
+completed: 2026-09-14T18:05:19Z
+created: 2026-09-01T19:41:22Z
+id: 140
+priority: medium
+started: 2026-09-10T02:48:18Z
+status: done
+tags:
+- advisor
+- reasoning
+- gemini
+- openai
+- value-objects
+- llm
+title: 'Reasoning/structured-output clamps are stale: OpenAI drops ''max'' it should
+  keep, gemini-3.7-flash 400s on ''minimal'', Gemini responseSchema deprecated'
+updated: 2026-09-14T18:05:19Z
+---
+
+Filed by langertha-llm-advisor, 2026-09-01. Docs read 2026-09-01, no live calls. Two providers,
+four concrete drifts, all inside `Langertha::Reasoning` / `Engine::Gemini`.
+
+## 1. OpenAI: the `max` clamp is wrong, and `minimal` is passed to models that reject it
+
+`Langertha::Reasoning` (Reasoning.pm:107-109):
+
+    # OpenAI /chat/completions reasoning_effort accepts this subset of the
+    # normalized vocabulary; max is not accepted there and is dropped.
+    my %OPENAI_EFFORT = map { $_ => 1 } qw( none minimal low medium high xhigh );
+
+The current OpenAPI spec (raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml,
+`components.schemas.ReasoningEffort`) is:
+
+    enum: [none, minimal, low, medium, high, xhigh, max]
+    default: medium
+
+and Chat Completions `reasoning_effort` and Responses `reasoning.effort` **`$ref` the identical
+schema**. So `max` is NOT rejected by the Chat Completions surface; the clamp silently drops a
+value the user asked for. `to_responses` (Reasoning.pm:221-225) does not clamp at all, so the same
+engine honours `max` on one wire and drops it on the other -- an asymmetry with no wire basis.
+
+The real constraint is per MODEL, not per wire (guide:
+"Supported values are **model-dependent**... Some models support only a subset"):
+
+    gpt-5.6-sol / -terra / -luna : none, low, medium (default), high, xhigh, max   <- NO minimal
+    gpt-5.5                     : none, low, medium (default), high, xhigh
+    gpt-5                       : minimal, low, medium, high                       <- NO none/xhigh/max
+
+`Engine::OpenAI::default_model` is `gpt-5.6-terra`. Langertha passes `minimal` straight through to
+it, and `minimal` is not on that model's list. `none`/`xhigh`/`max` sent to `gpt-5` are the
+mirror problem. `minimal` is the legacy-generation spelling and `none`/`xhigh`/`max` the
+new-generation one; **they do not overlap on any single model**, so no wire-level clamp can be
+correct -- this needs model gating (see k138).
+Sources: developers.openai.com/api/docs/guides/reasoning.md and the per-model pages.
+(NOTE: platform.openai.com/docs now redirects to developers.openai.com/api/docs.)
+
+## 2. Gemini: `to_gemini_level`'s model table is stale, and gemini-3.7-flash will 400
+
+`Langertha::Reasoning` carries a comment block "verified 2026-08-10" and clamps accordingly
+(Reasoning.pm:~163-198):
+
+    gemini-3-flash-preview / gemini-3.5-flash* / *-flash-lite : minimal low medium high
+    gemini-3.1-pro-*                                          : low medium high
+    gemini-3-pro-*                                            : low high
+
+Only `/\Agemini-3\.1-pro/` and `/\Agemini-3-pro/` are special-cased; every other `gemini-3*` model
+keeps the full `%GEMINI3_LEVEL` map including `minimal`. The current per-model table
+(ai.google.dev/gemini-api/docs/thinking, read 2026-09-01) is:
+
+    gemini-3.7-flash       default medium   levels: low, medium, high      <- NO minimal
+    gemini-3.6-flash       default medium   levels: minimal, low, medium, high
+    gemini-3.5-flash-lite  default minimal  levels: minimal, low, medium, high
+    gemini-3.1-pro-preview default high     levels: low, medium, high
+    gemini-2.5-pro/-flash                   levels: low, medium, high (via thinkingBudget)
+
+So `reasoning_effort => 'none'` or `'minimal'` on **`gemini-3.7-flash`** emits
+`thinkingConfig.thinkingLevel = "minimal"`, which that model does not accept. The API reference is
+explicit that an unsupported level is an error, not a clamp. There is also no `gemini-3-pro-*`
+TEXT model in the current catalogue at all (only `gemini-3-pro-image`), so that branch guards
+nothing.
+
+`Engine::Gemini::default_model` is `gemini-3-flash-preview`, which IS still listed (Preview tier)
+-- no action needed there, but it is a preview id and worth revisiting.
+
+## 3. Gemini: `responseSchema` is DEPRECATED; the current field is `responseJsonSchema`
+
+`Engine::Gemini::chat_request:340` and `chat_stream_request:517` both emit
+
+    $generation_config{responseMimeType} = 'application/json';
+    $generation_config{responseSchema}   = $rf->{json_schema}{schema};
+
+The v1beta discovery document and the REST reference both now mark it deprecated:
+
+    responseMimeType    : string                 -- current
+    responseSchema      : Schema   [DEPRECATED]  -- "This item is deprecated!"
+    responseJsonSchema  : any                    -- current
+    responseFormat      : ResponseFormatConfig   -- NEW
+
+Reference verbatim on the replacement: "Optional. Output schema of the generated response. This is
+an alternative to `responseSchema` that accepts JSON Schema. If set, `responseSchema` must be
+omitted, but `responseMimeType` is required."
+
+`responseJsonSchema` is the better fit for Langertha anyway: `chat_f` receives an OpenAI-shaped
+`response_format.json_schema.schema`, i.e. already JSON Schema, while `responseSchema` wants
+Google's own `Schema` proto dialect. The supported keyword subset is enumerated in the reference
+(`$id $defs $ref $anchor type format title description enum items prefixItems minItems maxItems
+minimum maximum anyOf oneOf properties additionalProperties required` + non-standard
+`propertyOrdering`). No removal date is announced -- migration is not urgent, but it is the
+direction of travel.
+Sources: ai.google.dev/api/generate-content ,
+https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta
+
+## 4. Gemini: `functionCallingConfig` gained a `VALIDATED` mode
+
+Discovery doc: `FunctionCallingConfig.mode enum = [MODE_UNSPECIFIED, AUTO, ANY, NONE, VALIDATED]`.
+Reference verbatim: "**VALIDATED** -- Model decides to predict either a function call or a natural
+language response, but will validate function calls with constrained decoding." And
+`allowedFunctionNames` widened: "This should only be set when the Mode is **ANY or VALIDATED**."
+
+`Langertha::ToolChoice` maps `auto`/`any`/`none` only. `VALIDATED` has no equivalent in the
+canonical vocabulary (`none|auto|required|named`) -- it is "auto, but if it calls, the call is
+schema-valid", which is genuinely a fifth policy. Not a bug; a deliberate decision about whether
+the canonical vocabulary grows. Worth an explicit "we are not modelling this" note if the answer
+is no, so the next reader does not re-derive the question.
+
+## Context note for whoever picks this up
+
+Google has shipped a new **Interactions API** (`POST /v1beta/interactions`, OpenAI-Responses-shaped)
+and has REWRITTEN the prose guides around it -- the function-calling, structured-output, thinking
+and caching guides now document only Interactions. `generateContent` is NOT deprecated (verified
+against the v1beta discovery document: `models.generateContent` and `models.streamGenerateContent`
+carry no `deprecated` flag, unlike `generateText`/`embedText`/`generateAnswer` which do), but the
+REST reference at ai.google.dev/api/generate-content is now its ONLY prose source. Expect the
+generateContent docs to keep thinning. Not an action item today; a heads-up for
+`Engine::Gemini`'s medium-term future.
+
+2026-09-10 03:09 Implemented on branch k140-openai-gemini-clamps (off k133-k135-anthropic; commits 4b0fb2d, b2b605b, 86af25f). Full suite green (prove -lr t/: 97 files, 3405 tests), perlcritic clean, live t/80-89* skip honestly (no keys). Sabotage-verified: reverting each fix turns the new/updated tests red (OpenAI: 27 fails; gemini-3.7-flash: 2; responseJsonSchema: 4).
+
+DESIGN (model-gated VALUE clamp, not a capability flag):
+- OpenAI effort clamp moved into Langertha::Reasoning as a shared per-model gate _openai_effort_ok, called by BOTH to_openai and to_responses. Since Chat Completions reasoning_effort and Responses reasoning.effort $ref the identical schema, one shared gate makes the Chat-vs-Responses asymmetry structurally impossible. Follows the to_gemini_level precedent (per-model taxonomy lives in the value object), not the DeepSeek engine-override precedent, precisely because the asymmetry fix demands a single shared clamp.
+- Value sets: gpt-5.6-* {none,low,medium,high,xhigh,max}; gpt-5.5* {none,low,medium,high,xhigh}; legacy gpt-5/gpt-5-* {minimal,low,medium,high}. Matched by anchored prefix, most-specific-first.
+
+INTERPRETATION DECISIONS (flagged, not guessed):
+1. gpt-5.1 left UN-gated (full-enum pass-through). The advisor table does not give its ladder, and the codebase already references gpt-5.1 (t/20, _max_tokens_key). Clamping it would be a guess; pass-through keeps its existing test green. Regex `\Agpt-5(?![.\d])` deliberately excludes gpt-5.1/5.5/5.6 from the legacy gpt-5 branch.
+2. Kept the gemini-3-pro-* branch the advisor flagged as "guards nothing". It is documented defensive dead code (only gemini-3-pro-image ships, not a thinking text model) AND t/46 has existing coverage for it. Removing it would cut test coverage for zero functional gain. Only ADDED the gemini-3.7-flash minimal-drop.
+3. responseSchema -> responseJsonSchema done despite advisor's "not urgent": it is also a correctness fix (responseSchema wanted Google's Schema proto dialect, we feed raw JSON Schema).
+4. VALIDATED mode (drift #4): documented in ToolChoice::to_gemini as a deliberate non-decision (no canonical equivalent), per the advisor's request.
+
+RED-TEAM (House Rule 5): gpt-5.6/gpt-5.5/gemini-3.7 are future ids beyond my Jan-2026 cutoff -- I CANNOT independently verify their per-model vocabularies against a live spec (they are not in any real doc). I verified (a) internal consistency of the advisor tables, (b) the one datapoint I do know: real gpt-5 = {minimal,low,medium,high} matches the advisor's gpt-5 ladder exactly, (c) every pre-existing test (gpt-5.1, gpt-4o-mini, gpt-5.5-pro) stays green -- a strong check the surgical clamp does not regress other engines on the shared openai wire. The none/xhigh/max additions for later generations are plausible + internally consistent but unverifiable by me; encoded per advisor with source comment. No advisor-matrix error found this round.
+
+NOTE: ADR 0019's file is on the sibling k138 branch (commit deab3f9), not on this base -- expected for the stacked-branch workflow; the k143 comment references resolve once branches integrate.
+
+Left in review (interpretation decisions above want a human eye) rather than done.
+
+k140 implemented + tested; see timestamped note for design, interpretation flags, red-team, sabotage proof. Branch k140-openai-gemini-clamps, local only.
+
+ORCHESTRATOR-REVIEW (worker-a, 2026-09-10): freigegeben. OpenAI: _openai_effort_ok (geteilter per-Modell-Gate in Reasoning, von to_openai UND to_responses genutzt) behebt Chat-vs-Responses-Asymmetrie strukturell; falscher pauschaler max-Drop entfernt; %OPENAI_MODEL_EFFORT: gpt-5.6-* {none,low,medium,high,xhigh,max} kein minimal; gpt-5.5* ohne minimal/max; legacy gpt-5 {minimal,low,medium,high}; alles andere (inkl gpt-5.1) full-enum pass-through (kein Raten). Gemini: gemini-3.7-flash-Branch in to_gemini_level (minimal->low); responseSchema->responseJsonSchema in chat_request+chat_stream_request (auch Korrektheits-Fix). k143 mit-erledigt (done). Sabotage-verifiziert (27+2+4 Fails). prove -lr t/ = 3405 gruen, perlcritic clean. Branch k140-openai-gemini-clamps (gestackt auf k133-k135-anthropic). BLEIBT review. FLAGS: (1) gpt-5.1 bewusst un-gated (Ladder nicht in advisor-Tabelle); (2) gemini-3-pro-Branch behalten (defensive dead code mit Coverage); (3) responseJsonSchema-Migration trotz 'nicht dringend' gemacht (Korrektheit). RED-TEAM-LIMIT ehrlich benannt: gpt-5.6/5.5/gemini-3.7 liegen hinter dem Jan-2026-Cutoff -> nicht live verifizierbar; interne Konsistenz + bekannter gpt-5-Datenpunkt + keine Regression geprueft, none/xhigh/max fuer spaetere Generationen per advisor encodiert mit Source-Kommentar.
+
+INDEPENDENT ORCHESTRATOR REVIEW (main agent, 2026-09-14): diffs 4b0fb2d/b2b605b gegengelesen, solide. _openai_effort_ok als geteiltes per-Modell-Gate (anchored prefix, most-specific-first: gpt-5.6/5.5/legacy-gpt-5), von to_openai UND to_responses genutzt -> Chat-vs-Responses-Asymmetrie strukturell unmoeglich; gpt-5.1 bewusst un-gated (full-enum). gemini-3.7-flash minimal->low; responseJsonSchema statt deprecated responseSchema. Baseline gruen. BLEIBT review. DEINE ENTSCHEIDUNG/RED-TEAM-LIMIT: die Effort-Wertemengen fuer gpt-5.6/5.5/gemini-3.7 liegen hinter dem Modell-Cutoff und sind NICHT live verifizierbar (per advisor kodiert, interne Konsistenz + bekannter gpt-5-Datenpunkt geprueft); gegen aktuelle Provider-Docs gegenchecken, wenn moeglich. gpt-5.1-Ladder + gemini-3-pro-defensive-branch als Interpretationsflags.
+
+ABNAHME-VORSCHLAG (main agent, 2026-09-14 -> Getty): Code in main, Suite gruen, keine Regression auf bekannten Modellen. OFFENER PUNKT wird JETZT adressiert: reasoning_effort-Wertemengen fuer gpt-5.6-*/gpt-5.5/gemini-3.7-flash liegen hinter dem Modell-Cutoff -> langertha-llm-advisor auf Live-Doc-Gegencheck angesetzt (Engine/Modell-Update-Audit). Ergebnis kommt hier rein, dann Abnahme oder Korrektur. Interpretationsflags bleiben: gpt-5.1 un-gated, gemini-3-pro defensive dead code behalten.
+
+ADVISOR-GEGENCHECK (langertha-llm-advisor, 2026-09-14): alle vier reasoning_effort-Wertemengen gegen aktuelle Provider-Docs BESTAETIGT — gpt-5.6-* {none,low,medium,high,xhigh,max} ohne minimal; gpt-5.5 {none,low,medium,high,xhigh}; legacy gpt-5 {minimal,low,medium,high}; gemini-3.7-flash {low,medium,high} ohne minimal (Google-Doc: MINIMAL returns an API validation error). responseJsonSchema statt deprecated responseSchema in Gemini.pm Z.345/524 verifiziert. Kein Code-Fehler, keine Korrektur noetig -> ABGENOMMEN. Neue, NICHT-#140-Drift aus demselben Audit als k150-k153 gefiled.
