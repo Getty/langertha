@@ -1,0 +1,26 @@
+---
+class: standard
+completed: 2026-09-14T03:54:42Z
+created: 2026-09-10T03:18:47Z
+id: 144
+priority: low
+started: 2026-09-14T03:54:42Z
+status: done
+tags:
+- docs
+- structured-output
+- anthropic
+- adr-0005
+title: 'Doc drift: CLAUDE.md + README structured-output matrix still say Anthropic
+  = synth-tool only (k133)'
+updated: 2026-09-14T03:54:47Z
+---
+
+k133 gave the first-party Claude Messages API native structured output (output_config.format), recorded as the ADR 0005 Update (commit d75c6a8 on branch k140-openai-gemini-clamps). Two narrative docs were not updated and now overstate the synth-tool rewrite as the ONLY Anthropic path:
+
+- CLAUDE.md line ~230 ("Tool & structured-output flow"): "Anthropic structured output -> synth tool + forced choice" is now only true for the /anthropic shim engines (MiniMaxAnthropic/MoonshotAnthropic/AKIAnthropic/LMStudioAnthropic). Engine::Anthropic emits output_config.format natively.
+- README.md line ~426 (chat_f decision-matrix mermaid): node RB "ENGINE-INTERNAL synth tool + forced choice, tool_use input lifted into Response.content" is the same stale claim for first-party Anthropic.
+
+Fix: reconcile both to distinguish first-party Anthropic (native output_config.format, streams) from the shims (synth-tool rewrite, no streaming). Cross-ref ADR 0005 Update. Decision 1 (Perplexity) and the ADR 0005 core are unchanged. Behavior-adjacent narrative — worker lane. Ground truth: Role::AnthropicCompatible::_native_structured_output / _response_format_to_output_config / _merge_output_config_format; Engine::Anthropic::_native_structured_output.
+
+ERLEDIGT (main agent, 2026-09-14): README structured-output-Matrix (Mermaid RA/RB + per-provider-Tabelle) + CLAUDE.md Tool-Flow trennen jetzt first-party Anthropic (native output_config.format, streamt, strict bei geschlossenem Schema) von den /anthropic-Shims (synth-tool). Nebenbei die im selben Table stale Gemini-responseSchema->responseJsonSchema (k140) mitkorrigiert. Committet 8818556, gemergt nach main (2befde6).
