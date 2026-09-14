@@ -2,6 +2,25 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Cerebras and Groq raise a clear local error instead of an opaque provider
+      HTTP 400 when a single request combines tools with a structured-output
+      response_format (karr k142). No boolean capability flag can express a
+      mutual exclusion between two capabilities, so chat_f and
+      chat_stream_realtime_f consult a per-engine hook: Cerebras refuses tools
+      alongside response_format of either type; Groq refuses tools, or
+      streaming, alongside json_schema output only (json_object stays allowed
+      with tools). Every other engine keeps the no-op default and is unaffected.
+
+    - Model reasoning is surfaced on three response-parse paths that silently
+      dropped it (karr k129). The shared OpenAI-compatible chat_response reads
+      the bare `reasoning` key (vLLM, Groq, Cerebras, OpenRouter, AKI) as well as
+      `reasoning_content`, so $response->thinking is no longer empty on those
+      engines; Gemini's stream parser walks every content part, so a leading
+      thought part no longer hides the answer that follows it; and Ollama's
+      native chat_response surfaces message.thinking. Reasoning is still read
+      only on the non-streaming path — aggregating streamed thinking deltas is
+      not yet done.
+
     - Gemini structured output uses responseJsonSchema, not the deprecated
       responseSchema (karr k140). chat_f hands Gemini an OpenAI-shaped JSON
       Schema, which the current responseJsonSchema field accepts directly; the
