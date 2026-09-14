@@ -202,11 +202,18 @@ auto-clone). The cost is small; the regression is no longer possible.
   sync one. The same shape has since turned up on a neighbouring field:
   `Response.thinking` is filled on the non-streaming route (by the dialect
   role's `chat_response`, by `Role::ThinkTag`, or by an engine-scoped lift —
-  ADR 0018) while `Langertha::Stream::Chunk` has no `thinking` attribute at
-  all, so a streamed call on the very same engine and prompt reads `undef`.
-  Tracked as karr k129. The policy this ADR set for timing holds for the
-  class: document the gap on the accessor and gate it behind a predicate —
-  never let one route silently answer for the other.
+  ADR 0018) while `Langertha::Stream::Chunk` used to carry no `thinking` at
+  all, so a streamed call on the very same engine and prompt read `undef`.
+  Tracked as karr k129, and **resolved there (commit `74ccc6d`) by exactly the
+  policy this ADR set for the class**: `Stream::Chunk` gained a `thinking`
+  field with a `has_thinking` predicate, the dialect parsers fill it, and
+  `Role::Chat::aggregate_thinking` reassembles it — the same shape as the
+  `tool_calls` chunk field and `aggregate_tool_calls`, returned as an additive
+  trailing element from `chat_stream_realtime_f`. The gap is documented on the
+  accessor and gated behind a predicate; one route no longer silently answers
+  for the other. Being an application of the `aggregate_tool_calls` precedent
+  and this ADR's stream-path reality (there is no `Response` on the stream
+  path), it needed no ADR of its own.
 - **Cross-links.** **ADR 0001 / 0003 / 0010** — the tool wire-translation
   seam, which the response-side timing surface parallels (one attribute, two
   key classes, no per-engine specialization at the accessor layer). **ADR 0009**
