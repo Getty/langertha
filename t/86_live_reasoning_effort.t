@@ -75,14 +75,14 @@ SKIP: {
     or diag("Gemini live error: $@");
 }
 
-# DeepSeek — V4 flat reasoning_effort (low|high|max on v4-flash).
+# DeepSeek — V4 flat reasoning_effort (none|low|high|max on deepseek-flash).
 SKIP: {
   skip 'no TEST_LANGERTHA_DEEPSEEK_API_KEY', 1
     unless $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY};
   require Langertha::Engine::DeepSeek;
   my $e = Langertha::Engine::DeepSeek->new(
     api_key          => $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY},
-    model            => 'deepseek-v4-flash',
+    model            => 'deepseek-flash',
     reasoning_effort => 'high',
     response_size    => 64,
   );

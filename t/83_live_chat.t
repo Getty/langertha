@@ -120,7 +120,7 @@ if ($ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY}) {
   require Langertha::Engine::DeepSeek;
   test_chat('DeepSeek', Langertha::Engine::DeepSeek->new(
     api_key => $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY},
-    model => 'deepseek-v4-flash',
+    model => 'deepseek-flash',
   ));
 }
 

@@ -184,7 +184,7 @@ async sub run_tests {
     eval {
       await test_engine('DeepSeek', Langertha::Engine::DeepSeek->new(
         api_key => $ENV{TEST_LANGERTHA_DEEPSEEK_API_KEY},
-        model => 'deepseek-v4-flash', mcp_servers => [$mcp],
+        model => 'deepseek-flash', mcp_servers => [$mcp],
       ));
     };
     engine_fail('DeepSeek');
