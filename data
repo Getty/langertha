@@ -1,0 +1,26 @@
+---
+class: standard
+completed: 2026-09-15T03:08:42Z
+created: 2026-09-15T00:26:56Z
+id: 160
+priority: low
+started: 2026-09-15T02:40:44Z
+status: done
+tags:
+- responses
+- streaming
+- usage
+- prompt-cache
+- k159
+title: Streaming Stream::Chunk.usage laeuft nicht durch Usage->from_hash (Sibling
+  von k159)
+updated: 2026-09-15T03:08:42Z
+---
+
+Aus k158/k159 (2026-09-15). k159 hat den NON-streaming-Pfad (chat_response -> Response-Accessors) auf Usage->from_hash gebracht, sodass cached_tokens/cache_write_tokens fuer Responses-Envelope-Engines befuellen. Der STREAMING-Pfad (Role::ResponsesCompatible::parse_stream_chunk, response.completed) baut Stream::Chunk.usage aber weiter als plain hashref von Hand (prompt/completion/total) und traegt input_tokens_details NICHT -> gestreamte cache-tokens/cost bleiben unsichtbar. FIX: die finale response.completed-usage ebenfalls durch Langertha::Usage->from_hash leiten (bzw. input_tokens_details/cost auf den finalen Chunk durchreichen), symmetrisch zu k159. Niedrig, offline testbar. Quelle: k158/k159-Handoff.
+
+2026-09-15 03:03 Fixed on commit 9718bc4 (base main 99af00e). Streamed response.completed now surfaces cached_tokens via Langertha::Usage->from_hash (symmetric to k159 non-streaming) + input_tokens_details/cost verbatim in chunk usage. NOTE: fixture is t/data/perplexity_agent_stream.sse (not the path in the body); its terminal frame carries input_tokens_details.cached_tokens=0 + cost, asserted in t/68. Full suite green, perlcritic clean, t/60 green.
+
+Done on 9718bc4. Ready for review.
+
+MERGE (main agent, 2026-09-15): gemergt, Suite gruen, t/60 gruen. Streaming response.completed hebt cached_tokens via Usage->from_hash (konsistent mit k159) auf Stream::Chunk.cached_tokens + input_tokens_details/cost durchgereicht; schliesst die Streaming/Non-Streaming-Asymmetrie. -> done.
