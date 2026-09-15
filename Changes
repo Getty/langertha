@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Documented that Raider computes session-history embeddings synchronously
+      (karr k165): the per-message embedding is a blocking LWP request run inline
+      in the async raid loop, so it stalls the IO::Async reactor and deadlocks
+      when the engine URL points back at a proxy served by that same reactor —
+      which is why no_session_embeddings exists. Set no_session_embeddings to
+      opt out; moving the embedding off the loop-critical path is tracked
+      separately (karr k172).
+
     - Raider respond_f no longer mishandles a paused parallel tool batch (karr
       k162). When one iteration emitted several tool calls and an interactive
       self-tool (raider_ask_user / raider_pause) paused mid-batch, resuming

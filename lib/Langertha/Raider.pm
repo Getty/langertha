@@ -1412,11 +1412,18 @@ sub _push_session_history {
   my ( $self, @msgs ) = @_;
   push @{$self->session_history}, @msgs;
 
-  # Fire-and-forget embedding computation. _query_session_history looks the
-  # vector of history element $i up as _session_embeddings->[$i], so this must
-  # push EXACTLY one slot per message — a message with no embeddable text gets
-  # undef, never nothing. Skipping a slot shifts every later vector onto the
-  # wrong message and the similarity search silently answers with that one.
+  # This computes the embeddings SYNCHRONOUSLY: simple_embedding is a blocking
+  # LWP request (Role::Embedding), run once per message inline in the async raid
+  # loop. It stalls the IO::Async reactor and deadlocks outright when the engine
+  # URL points back at a proxy served by that same reactor — the reason
+  # no_session_embeddings exists. Moving it off the loop-critical path is k172
+  # (it is not the fire-and-forget the old comment here claimed).
+  #
+  # _query_session_history looks the vector of history element $i up as
+  # _session_embeddings->[$i], so this must push EXACTLY one slot per message — a
+  # message with no embeddable text gets undef, never nothing. Skipping a slot
+  # shifts every later vector onto the wrong message and the similarity search
+  # silently answers with that one.
   my $engine = $self->_get_embedding_engine;
   unless ($engine) {
     push @{$self->_session_embeddings}, (undef) x scalar @msgs;
