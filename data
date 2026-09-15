@@ -1,0 +1,24 @@
+---
+class: standard
+completed: 2026-09-15T03:08:54Z
+created: 2026-09-15T02:10:52Z
+id: 168
+priority: low
+started: 2026-09-15T02:41:02Z
+status: done
+tags:
+- responses
+- usage
+- bug
+- hunt
+title: ResponsesCompatible autoviv raw.usage (output_tokens_details)
+updated: 2026-09-15T03:08:54Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT (C). ResponsesCompatible.pm:341: $usage=$data->{usage} (dieselbe Ref wie raw=>$data); $usage->{output_tokens_details}{reasoning_tokens} autovivifiziert output_tokens_details=>{} in raw.usage wenn Provider keinen Block schickt. Token-Zaehlung bleibt korrekt (Usage.raw ist separates normalized_usage), nur Trace-Verschmutzung. Fix: ref-Check vor Deref.
+
+2026-09-15 03:03 Fixed on commit 9718bc4 (base main 99af00e). chat_response reads output_tokens_details into a lexical + ref-check before deref, so a payload without the block no longer autovivifies output_tokens_details=>{} into raw.usage. t/60 subtest asserts !exists raw.usage.output_tokens_details. Full suite green, perlcritic clean.
+
+Done on 9718bc4. Ready for review.
+
+MERGE: output_tokens_details lexical+ref-check vor Deref -> kein Autoviv in raw.usage mehr. -> done.
