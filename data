@@ -1,0 +1,23 @@
+---
+class: standard
+completed: 2026-09-15T02:56:25Z
+created: 2026-09-15T02:10:47Z
+id: 167
+priority: medium
+started: 2026-09-15T02:40:56Z
+status: done
+tags:
+- streaming
+- anthropic
+- bug
+- hunt
+title: 'AnthropicCompatible Streaming: finish_reason/usage und is_final auf verschiedenen
+  Chunks'
+updated: 2026-09-15T02:56:25Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT. AnthropicCompatible.pm:557-574: message_delta traegt finish_reason+usage aber is_final=0; message_stop hat is_final=1 aber kein finish_reason/usage. Die dokumentierte Stream::Chunk-SYNOPSIS if($chunk->is_final){...$chunk->finish_reason...} kriegt bei Anthropic nie finish_reason/usage; bei OpenAI/Gemini/Ollama fallen beide auf denselben Chunk. Cross-Dialekt-Inkonsistenz. Fix: finish_reason/usage auf den is_final-Chunk (message_stop) durchreichen.
+
+2026-09-15 02:52 Fixed on branch worktree-agent-a4f040e6b80ed317c (commit 897e08f). message_delta finish_reason+usage now replayed onto the is_final message_stop chunk via per-stream _stream_final_meta carry (reset on message_start); the is_final chunk carries the terminal metadata like OpenAI/Gemini/Ollama. Chose the carry-over variant (not dropping message_stop) to keep t/43_streaming_parser.t green (message_delta stays at [2], message_stop stays the is_final [3]). t/43 extended (23 tests) to assert finish_reason+usage on [3]. prove -lr t/ green (3615 tests, live skipped); perlcritic clean. NOT merged.
+
+MERGE (main agent, 2026-09-15): gemergt nach main, Suite gruen. Carry-over: _stream_final_meta (per-Stream, reset auf message_start, cleared auf message_stop) repliziert message_delta-finish_reason/usage auf den is_final message_stop-Chunk; t/43 gruen. Cross-Dialekt-Kontrakt bestaetigt (OpenAI/Gemini/Ollama). Concurrency-Kante (zwei gleichzeitige Streams auf demselben Engine-Objekt) geflaggt = uncommon/unsupported. -> done.
