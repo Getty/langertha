@@ -1412,11 +1412,18 @@ sub _push_session_history {
   my ( $self, @msgs ) = @_;
   push @{$self->session_history}, @msgs;
 
-  # Fire-and-forget embedding computation. _query_session_history looks the
-  # vector of history element $i up as _session_embeddings->[$i], so this must
-  # push EXACTLY one slot per message — a message with no embeddable text gets
-  # undef, never nothing. Skipping a slot shifts every later vector onto the
-  # wrong message and the similarity search silently answers with that one.
+  # This computes the embeddings SYNCHRONOUSLY: simple_embedding is a blocking
+  # LWP request (Role::Embedding), run once per message inline in the async raid
+  # loop. It stalls the IO::Async reactor and deadlocks outright when the engine
+  # URL points back at a proxy served by that same reactor — the reason
+  # no_session_embeddings exists. Moving it off the loop-critical path is k172
+  # (it is not the fire-and-forget the old comment here claimed).
+  #
+  # _query_session_history looks the vector of history element $i up as
+  # _session_embeddings->[$i], so this must push EXACTLY one slot per message — a
+  # message with no embeddable text gets undef, never nothing. Skipping a slot
+  # shifts every later vector onto the wrong message and the similarity search
+  # silently answers with that one.
   my $engine = $self->_get_embedding_engine;
   unless ($engine) {
     push @{$self->_session_embeddings}, (undef) x scalar @msgs;
@@ -1832,7 +1839,8 @@ async sub _run_raid_loop {
 
     # Execute each tool call
     my @results;
-    for my $tc (@$tool_calls) {
+    for my $tc_idx (0 .. $#$tool_calls) {
+      my $tc = $tool_calls->[$tc_idx];
       my ( $name, $input ) = $engine->extract_tool_call($tc);
 
       # Plugin hook: inspect/transform before tool execution
@@ -1862,7 +1870,12 @@ async sub _run_raid_loop {
             iteration      => $iteration,
             data           => $data,
             pending_tc     => $tc,
-            remaining_tcs  => [grep { $_ != $tc } @$tool_calls],
+            # Only the calls AFTER this pausing self-tool are still pending.
+            # The ones before it already ran and sit in results_so_far; carrying
+            # them here (as a plain "everything but $tc" filter did) re-runs their
+            # side effects and emits a second tool_result for the same tool_use id
+            # on resume — a 400 on strict providers like Anthropic.
+            remaining_tcs  => [ @$tool_calls[$tc_idx+1 .. $#$tool_calls] ],
             results_so_far => \@results,
             iter_span_id   => $iter_span_id,
           });
@@ -2025,20 +2038,69 @@ async sub respond_f {
   push @results, { tool_call => $pending_tc, result => $answer_result };
   ${$state->{raid_tool_calls}}++;
 
-  # Execute remaining tool calls from the same batch
-  for my $tc (@{$cont->{remaining_tcs}}) {
+  # Execute remaining tool calls from the same batch. Every call handled here
+  # MUST leave a tool_result behind (or end the raid): a trailing tool_use with
+  # no matching tool_result is a 400 on strict providers. Index-based so a second
+  # interactive self-tool can re-pause and carry the calls still queued after it.
+  my $remaining = $cont->{remaining_tcs};
+  for my $rem_idx (0 .. $#$remaining) {
+    my $tc = $remaining->[$rem_idx];
     my ( $name, $input ) = $engine->extract_tool_call($tc);
 
     if ($name =~ /^raider_/ && $self->has_raider_mcp) {
       my $self_result = $self->_execute_self_tool($name, $input);
-      if ($self_result->{type} eq 'result') {
-        for my $plugin (@{$self->_plugin_instances}) {
-          $self_result = await $plugin->plugin_after_tool_call($name, $input, $self_result);
+
+      # Another interactive self-tool in the batch: pause the raid again, saving
+      # the results gathered so far plus the calls still queued after this one.
+      if ($self_result->{type} eq 'question' || $self_result->{type} eq 'pause') {
+        $self->_continuation({
+          state          => $state,
+          iteration      => $cont->{iteration},
+          data           => $data,
+          pending_tc     => $tc,
+          remaining_tcs  => [ @$remaining[$rem_idx+1 .. $#$remaining] ],
+          results_so_far => \@results,
+          iter_span_id   => $cont->{iter_span_id},
+        });
+
+        if ($self_result->{type} eq 'question') {
+          return Langertha::Raider::Result->new(
+            type    => 'question',
+            content => $self_result->{question},
+            $self_result->{options} ? (options => $self_result->{options}) : (),
+          );
         }
-        push @results, { tool_call => $tc, result => $self_result };
-        ${$state->{raid_tool_calls}}++;
+        return Langertha::Raider::Result->new(
+          type    => 'pause',
+          content => $self_result->{reason},
+        );
       }
-      # For simplicity, skip interactive self-tools in remaining batch
+
+      if ($self_result->{type} eq 'abort') {
+        return Langertha::Raider::Result->new(
+          type    => 'abort',
+          content => $self_result->{reason},
+        );
+      }
+
+      if ($self_result->{type} eq 'wait') {
+        my $loop = $engine->_async_http->loop;
+        await $loop->delay_future(after => $self_result->{seconds});
+        push @results, {
+          tool_call => $tc,
+          result    => { content => [{ type => 'text',
+            text => "Waited $self_result->{seconds} seconds." }] },
+        };
+        ${$state->{raid_tool_calls}}++;
+        next;
+      }
+
+      # type eq 'result' — normal self-tool result
+      for my $plugin (@{$self->_plugin_instances}) {
+        $self_result = await $plugin->plugin_after_tool_call($name, $input, $self_result);
+      }
+      push @results, { tool_call => $tc, result => $self_result };
+      ${$state->{raid_tool_calls}}++;
       next;
     }
 

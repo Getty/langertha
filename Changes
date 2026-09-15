@@ -2,6 +2,20 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Raider: a raid paused by an interactive self-tool (raider_ask_user etc.)
+      in a parallel-tool batch no longer re-runs the tool calls that already
+      completed before it, and no longer drops the self-tools queued after it
+      (karr k162). The continuation now carries only the calls after the pausing
+      one and respond_f's resume loop mirrors the main loop, so side effects fire
+      once and every tool_use ends with exactly one tool_result — the earlier
+      behaviour produced duplicate side effects and a duplicate tool_result per
+      id, which strict providers (Anthropic) reject with a 400.
+
+    - Raider: corrected the misleading "fire-and-forget" comment on the
+      per-message session-history embedding — it is a blocking, synchronous
+      LWP call run inline in the async raid loop (karr k165; moving it off the
+      loop-critical path is tracked as k172).
+
     - decode_loose_json is now UTF-8-safe and can no longer hang (karr k161): it
       encode_utf8's each candidate before the utf8 decode_json, so a structured
       result containing any non-ASCII character (e.g. a Perplexity search answer
