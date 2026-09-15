@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - decode_loose_json is now UTF-8-safe and can no longer hang (karr k161): it
+      encode_utf8's each candidate before the utf8 decode_json, so a structured
+      result containing any non-ASCII character (e.g. a Perplexity search answer
+      with an umlaut or emoji) parses instead of dying with "Wide character in
+      subroutine entry" and being silently dropped; and its brace-trim loop now
+      bails when the candidate stops shrinking, so unbalanced JSON such as
+      `{{"a":1}` returns undef instead of spinning forever and wedging the async
+      event loop.
+
     - Runtime metrics: the synchronous poll_metrics / export_otlp now return the
       records ArrayRef / HTTP::Response they document, not the underlying Future
       (karr k164). IO::Async::Loop->await returns the future itself, so the
