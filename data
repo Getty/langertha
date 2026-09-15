@@ -1,0 +1,25 @@
+---
+class: standard
+completed: 2026-09-15T02:25:53Z
+created: 2026-09-15T02:10:29Z
+id: 164
+priority: high
+started: 2026-09-15T02:12:42Z
+status: done
+tags:
+- metrics
+- async
+- bug
+- hunt
+title: poll_metrics/export_otlp (sync) geben Future statt Nutzdaten zurueck (fehlt
+  ->get)
+updated: 2026-09-15T02:25:53Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT. Role::Runtime::MetricsPoll.pm:160-173 (poll_metrics) + 259-269 (export_otlp): my $records=$loop->await(Future->wrap($self->poll_metrics_f(...))); return $records. $loop->await($f) gibt das Future zurueck (nicht ->get), Future->wrap($f)==$f. Dokumentierte Sync-API my $records=$vllm->poll_metrics; for(@$records) stirbt an Not an ARRAY reference; export_otlp liefert Future statt HTTP::Response. t/89 nutzt dasselbe kaputte Idiom -> skippt ohne Server unentdeckt. Fix: return $f->get (analog export_otlp); t/89 auf denselben Pfad ziehen.
+
+2026-09-15 02:20 Fixed in worktree-agent-a0cffc666b98c9df7 commit 6f90591. Both sync wrappers now: my $f=...(); $loop->await($f); return $f->get; (dropped Future->wrap, which is a no-op on a Future, and stopped returning $loop->await's value, which is the Future itself). Verified repo-wide: grep 'loop->await|Future->wrap' over lib/ shows ONLY the two now-correct sites; no other await-without-get anywhere in lib/ or t/. Offline regression guard added to t/50 (mock-HTTP driven sync poll_metrics -> ArrayRef, sync export_otlp -> HTTP::Response); confirmed it fails with the documented 'Not an ARRAY reference' when the bug is reintroduced. t/89 rewritten to drive the sync public API so a real server run confirms the repair. prove -lr t/: 105 files, 3604 tests PASS (live tests skip w/o keys). perlcritic clean. Changes noted (k164). NOT merged.
+
+2026-09-15 02:20 Sync MetricsPoll wrappers fixed + offline regression guard + live-path corrected; commit 6f90591 on worktree branch, not merged.
+
+MERGE (main agent, 2026-09-15): gemergt nach main, Suite gruen. Beide Sync-Wrapper poll_metrics/export_otlp: my $f=...; $loop->await($f); return $f->get. Verify: keine weiteren await-ohne-get-Stellen in lib/. t/89 auf Sync-Public-API umgeschrieben + t/50-Offline-Subtests. -> done.
