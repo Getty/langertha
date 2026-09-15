@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - The synchronous poll_metrics / export_otlp on Runtime::MetricsPoll now
+      return their resolved payload — the parsed ArrayRef of records and the
+      HTTP::Response respectively — instead of the Future itself (karr k164).
+      The documented sync usage `my $records = $vllm->poll_metrics; for
+      (@$records) {...}` no longer dies on "Not an ARRAY reference".
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its

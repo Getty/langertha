@@ -164,12 +164,9 @@ sub poll_metrics {
   # the response is parsed. LWP would be simpler but introduces a
   # second transport just for this method.
   my $loop = $self->_async_loop;
-  my $records = $loop->await(
-    Future->wrap(
-      $self->poll_metrics_f(@prefixes)
-    )
-  );
-  return $records;
+  my $f = $self->poll_metrics_f(@prefixes);
+  $loop->await($f);
+  return $f->get;
 }
 
 =method poll_metrics
@@ -260,12 +257,9 @@ sub export_otlp {
   my ( $self, $records, %opts ) = @_;
   # Synchronous variant, same private-loop pattern as poll_metrics.
   my $loop = $self->_async_loop;
-  my $response = $loop->await(
-    Future->wrap(
-      $self->export_otlp_f($records, %opts)
-    )
-  );
-  return $response;
+  my $f = $self->export_otlp_f($records, %opts);
+  $loop->await($f);
+  return $f->get;
 }
 
 =method export_otlp

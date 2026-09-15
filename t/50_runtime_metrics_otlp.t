@@ -236,6 +236,74 @@ subtest 'export_otlp_f passes extra headers' => sub {
   is($request->header('Authorization'), 'Basic Zm9vOmJhcg==', 'extra header sent');
 };
 
+# --- sync wrappers unwrap the Future (karr k164) --------------------------
+# poll_metrics / export_otlp drive their _f async form on the private loop and
+# MUST return the resolved payload, not the Future itself. Regression guard for
+# the missing ->get: before the fix these returned a Future object, so the
+# documented sync usage ($vllm->poll_metrics; for (@$records) {...}) died on
+# "Not an ARRAY reference".
+
+subtest 'poll_metrics (sync) returns the parsed ArrayRef, not a Future' => sub {
+  require Test::MockAsyncHTTP;
+  require Langertha::Engine::vLLM;
+
+  my $body = <<'PROM';
+# HELP vllm:num_requests_running Number of running requests
+# TYPE vllm:num_requests_running gauge
+vllm:num_requests_running{model_name="Qwen/Qwen2.5-7B-Instruct"} 3
+# HELP vllm:prompt_tokens_total Prompt tokens processed
+# TYPE vllm:prompt_tokens_total counter
+vllm:prompt_tokens_total{model_name="Qwen/Qwen2.5-7B-Instruct"} 18234
+PROM
+
+  my $mock_http = Test::MockAsyncHTTP->new(
+    responses => [ { status => 200, content => $body, content_type => 'text/plain' } ],
+  );
+  my $engine = Langertha::Engine::vLLM->new(
+    url         => 'http://localhost:8000/v1',
+    _async_http => $mock_http,
+  );
+
+  my $records = eval { $engine->poll_metrics('vllm:') };
+  if ($@) { fail "poll_metrics (sync): $@"; return; }
+
+  is(ref($records), 'ARRAY',
+    'sync poll_metrics returns an ArrayRef (not the Future)');
+  my %by_name = map { $_->{name} => $_ } @$records;
+  is($by_name{'vllm:num_requests_running'}{value}, 3, 'scraped gauge value');
+  is($by_name{'vllm:prompt_tokens_total'}{value}, 18234, 'scraped counter value');
+  is($mock_http->request_count, 1, 'one /metrics request sent through the sync wrapper');
+  my $request = ($mock_http->requests)[0];
+  is($request->uri, 'http://localhost:8000/metrics', 'sync scrape hits the /metrics URL');
+};
+
+subtest 'export_otlp (sync) returns the HTTP::Response, not a Future' => sub {
+  require Test::MockAsyncHTTP;
+  require Langertha::Engine::vLLM;
+
+  my $mock_http = Test::MockAsyncHTTP->new(
+    responses => [ HTTP::Response->new(200, 'OK') ],
+  );
+  my $engine = Langertha::Engine::vLLM->new(
+    url         => 'http://localhost:8000/v1',
+    _async_http => $mock_http,
+  );
+
+  my $response = eval {
+    $engine->export_otlp(
+      [ { name => 'vllm:num_requests_running', type => 'gauge', value => 3, labels => {} } ],
+      endpoint     => 'http://localhost:4318/v1/metrics',
+      service_name => 'vllm',
+    );
+  };
+  if ($@) { fail "export_otlp (sync): $@"; return; }
+
+  ok(ref($response) && $response->isa('HTTP::Response'),
+    'sync export_otlp returns an HTTP::Response (not the Future)');
+  ok($response->is_success, 'response is the mocked 200');
+  is($mock_http->request_count, 1, 'one HTTP request sent through the sync wrapper');
+};
+
 subtest 'export_otlp_f croaks without endpoint' => sub {
   require Langertha::Engine::vLLM;
   my $engine = Langertha::Engine::vLLM->new(url => 'http://localhost:8000/v1');
