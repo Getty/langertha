@@ -1,0 +1,23 @@
+---
+class: standard
+completed: 2026-09-15T02:30:40Z
+created: 2026-09-15T02:10:11Z
+id: 161
+priority: high
+started: 2026-09-15T02:12:25Z
+status: done
+tags:
+- response-format
+- structured-output
+- bug
+- hunt
+title: 'decode_loose_json: stirbt an Nicht-ASCII (utf8) + Endlosschleife bei unbalanciertem
+  JSON'
+updated: 2026-09-15T02:30:40Z
+---
+
+Bug-Hunt 2026-09-15, 2 BESTAETIGTE Bugs in Role::ResponseFormat.pm::decode_loose_json (Call-Site Chat.pm:569, forced-tool-Fallback). (A1) Z.42: ruft utf8-decode_json auf bereits dekodierten Unicode-String -> Wide character in subroutine entry -> alle 3 Strategien scheitern -> undef. Folge: Perplexity structured output mit Umlaut/Emoji/CJK verliert still den synthetischen ToolCall. Fix: encode_utf8 bzw. decode_json_text vor decode. (A2) Z.59-64: Trim-Schleife s/\}[^}]*$/\}/ ist No-op sobald Kandidat auf } endet (ersetzt } durch } -> wahr -> or last feuert nie) -> ENDLOSSCHLEIFE bei {{"a":1} etc. Blockiert Async-Event-Loop dauerhaft. Fix: strikt kuerzen oder auf Laengen-Stillstand abbrechen. Test-Luecke: t/77 testet nur ASCII + nie die Trim-Schleife.
+
+2026-09-15 02:27 Fixed on worktree branch worktree-agent-a7479b6439d66a0ee, commit b36f1c3 (NOT merged). A1: encode_utf8 before decode_json in the shared try closure (matches ToolCall::_decode_args). A2: trim loop bails when candidate length stops shrinking. t/77 gains non-ASCII (Umlaut/emoji/CJK) parse cases + unbalanced-termination cases, each fork+SIGKILL-bounded (alarm is swallowed by the methods inner eval, so only an OS-level bound catches a regressed hang). Verified: full prove -lr t/ green (105 files/3616 tests, live skipped); perlcritic clean; test proven to FAIL loudly 11-of-22 with HANG diagnostics and no suite hang against HEADs pre-fix source.
+
+MERGE (main agent, 2026-09-15): gemergt nach main, Suite gruen. A1 utf8: encode_utf8 in der geteilten decode-Closure (alle 3 Strategien). A2 Endlosschleife: Laengen-Guard last unless length < $before in der Trim-Schleife. No-Hang-Test via geforktes Kind + SIGKILL-Deadline (alarm wuerde vom inneren eval geschluckt), $Config{d_fork}-gated; Repro-Beweis pre-fix-hang mitgeliefert. -> done.
