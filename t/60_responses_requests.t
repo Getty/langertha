@@ -318,6 +318,12 @@ subtest 'chat_response - tool call extraction' => sub {
         'arguments parsed from JSON string' );
     is( $tc->id, 'call_abc123', 'call_id from function_call block' );
     ok( !$tc->synthetic, 'not synthetic (native tool call)' );
+
+    # k171: this fixture wraps the function_call in a status:completed message
+    # item. The completed message would set finish_reason 'stop', but a response
+    # carrying a tool call must report 'tool_calls' (OpenAI convention).
+    is( $resp->finish_reason, 'tool_calls',
+        'tool call in a completed message reports finish_reason tool_calls, not stop' );
 };
 
 subtest 'response_tool_calls method' => sub {
@@ -511,6 +517,96 @@ subtest 'no tools in request when not provided' => sub {
     my $body = $json->decode( $request->content );
     ok( !$body->{tools}, 'no tools when not provided' );
     ok( !$body->{tool_choice}, 'no tool_choice when not provided' );
+};
+
+# k171: a text preamble message coexisting with a tool call. The real Responses
+# API emits an assistant text message and then a function_call in the same
+# output[] (the model narrates before calling). The completed message sets
+# finish_reason 'stop', but the tool call must win -> 'tool_calls', independent
+# of output[] ordering. Regression: the message branch used to overwrite the
+# tool-call finish_reason unconditionally.
+subtest 'chat_response - message preamble + function_call -> tool_calls (k171)' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+    );
+
+    # message BEFORE the call (the common ordering: narrate, then call).
+    my $before = {
+        id => 'resp_mix1', model => 'gpt-5.5-pro', status => 'completed',
+        output => [
+            { type => 'message', status => 'completed', role => 'assistant',
+              content => [ { type => 'output_text', text => 'Let me check the weather.' } ] },
+            { type => 'function_call', id => 'fc1', call_id => 'call_mix1',
+              name => 'get_weather', arguments => '{"location":"Paris"}', status => 'completed' },
+        ],
+        usage => { input_tokens => 5, output_tokens => 5, total_tokens => 10 },
+    };
+    my $resp = $engine->chat_response( _build_mock_response( $json->encode($before) ) );
+    is( $resp->content, 'Let me check the weather.', 'preamble text preserved' );
+    ok( $resp->has_tool_calls, 'tool call present alongside the message' );
+    is( $resp->finish_reason, 'tool_calls',
+        'message-then-call reports tool_calls, not the message stop' );
+
+    # message AFTER the call (ordering-independence: the fix must not depend on
+    # the call coming first).
+    my $after = {
+        id => 'resp_mix2', model => 'gpt-5.5-pro', status => 'completed',
+        output => [
+            { type => 'function_call', id => 'fc2', call_id => 'call_mix2',
+              name => 'get_weather', arguments => '{"location":"Berlin"}', status => 'completed' },
+            { type => 'message', status => 'completed', role => 'assistant',
+              content => [ { type => 'output_text', text => 'Done.' } ] },
+        ],
+        usage => { input_tokens => 5, output_tokens => 5, total_tokens => 10 },
+    };
+    my $resp2 = $engine->chat_response( _build_mock_response( $json->encode($after) ) );
+    is( $resp2->finish_reason, 'tool_calls',
+        'call-then-message also reports tool_calls (no output[] ordering dependence)' );
+
+    # No tool call: a plain completed message still reports stop.
+    my $plain = {
+        id => 'resp_plain', model => 'gpt-5.5-pro', status => 'completed',
+        output => [
+            { type => 'message', status => 'completed', role => 'assistant',
+              content => [ { type => 'output_text', text => 'Hi.' } ] },
+        ],
+        usage => { input_tokens => 1, output_tokens => 1, total_tokens => 2 },
+    };
+    my $resp3 = $engine->chat_response( _build_mock_response( $json->encode($plain) ) );
+    is( $resp3->finish_reason, 'stop', 'plain message without a tool call stays stop' );
+};
+
+# k168: a Responses payload without output_tokens_details must not autovivify an
+# empty output_tokens_details block into raw.usage (the trace hash). chat_response
+# read $usage->{output_tokens_details}{reasoning_tokens} directly, autovivifying
+# the missing intermediate into $data->{usage} (the same ref as Response.raw).
+subtest 'chat_response - no output_tokens_details, no raw.usage autoviv (k168)' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+    );
+
+    my $payload = {
+        id => 'resp_noreason', model => 'gpt-5.5-pro', status => 'completed',
+        output => [
+            { type => 'message', status => 'completed', role => 'assistant',
+              content => [ { type => 'output_text', text => 'plain' } ] },
+        ],
+        usage => { input_tokens => 3, output_tokens => 4, total_tokens => 7 },
+    };
+    my $resp = $engine->chat_response( _build_mock_response( $json->encode($payload) ) );
+
+    ok( $resp->has_raw, 'raw present' );
+    ok( !exists $resp->raw->{usage}{output_tokens_details},
+        'output_tokens_details NOT autovivified into raw.usage when absent' );
+    ok( !exists $resp->usage->{completion_tokens_details},
+        'no phantom completion_tokens_details when no reasoning_tokens' );
+
+    # The reasoning-carrying fixture still normalizes reasoning_tokens.
+    my $with = $engine->chat_response( _build_mock_response($text_bytes) );
+    is( $with->usage->{completion_tokens_details}{reasoning_tokens}, 18,
+        'reasoning_tokens still normalized when output_tokens_details IS present' );
 };
 
 # Helper to build a mock HTTP::Response from the fixture bytes verbatim.

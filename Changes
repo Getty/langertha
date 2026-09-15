@@ -2,6 +2,19 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Open-Responses streaming now surfaces the prefix-cache read count and cost
+      on the final chunk (karr k160): a streamed response.completed lifts
+      cached_tokens (via Langertha::Usage->from_hash, the same value object the
+      non-streaming k159 path uses) onto Stream::Chunk->cached_tokens, and carries
+      input_tokens_details and the Perplexity usage.cost block through the chunk
+      usage — closing the streaming/non-streaming asymmetry.
+
+    - Responses finish_reason is now tool_calls whenever the response carries
+      tool calls, regardless of a coexisting completed assistant message or the
+      output[] ordering (karr k171) — previously a completed message alongside a
+      tool call reported stop. And a usage payload without output_tokens_details
+      no longer autovivifies an empty block into $response->raw->usage (karr k168).
+
     - Streaming (async path): the final unterminated SSE/NDJSON event is no
       longer dropped (karr k166) — a provider that sends its last chunk (with
       finish_reason / usage) and closes without a trailing blank line now has
