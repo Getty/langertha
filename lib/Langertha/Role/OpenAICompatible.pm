@@ -264,6 +264,17 @@ sub embedding_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
   # tracing
+  # A malformed/error payload that still parses as a 200 JSON body can lack the
+  # `data` array; croak with a readable message instead of a raw deref crash on
+  # @{undef} ("Can't use an undefined value as an ARRAY reference"). Embeddings
+  # must return a vector, so there is no graceful-empty fallback here. -- karr k171
+  unless ( ref $data->{data} eq 'ARRAY' ) {
+    my $err = ref $data eq 'HASH' && $data->{error}
+      ? ( ref $data->{error} eq 'HASH' ? $data->{error}{message} : $data->{error} )
+      : undef;
+    croak "".(ref $self)." embedding response missing 'data' array"
+      . ( defined $err ? " (error: $err)" : "" );
+  }
   my @objects = @{$data->{data}};
   return $objects[0]->{embedding};
 }

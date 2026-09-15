@@ -2,6 +2,19 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Anthropic streaming now delivers finish_reason and usage on the is_final
+      chunk (karr k167): Anthropic splits them across message_delta (metadata,
+      not final) and message_stop (final, empty), so the documented
+      `if ($chunk->is_final) { ...$chunk->finish_reason... }` consumer previously
+      got nothing on Anthropic; the message_delta metadata is now replayed onto
+      the is_final message_stop chunk, matching every other dialect.
+
+    - Response parsers fail gracefully on a malformed 200 body (karr k171):
+      AnthropicCompatible chat_response defaults a missing content array to empty
+      instead of dereferencing @{undef}, and OpenAICompatible embedding_response
+      croaks a readable "missing 'data' array" message (with any payload error)
+      instead of a raw deref crash.
+
     - Raider: a raid paused by an interactive self-tool (raider_ask_user etc.)
       in a parallel-tool batch no longer re-runs the tool calls that already
       completed before it, and no longer drops the self-tools queued after it
