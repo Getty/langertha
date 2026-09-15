@@ -21,6 +21,7 @@ use lib 't/lib';
 use Test::MockAsyncHTTP;
 
 use Langertha::Engine::Perplexity;
+use Langertha::Stream;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
@@ -313,6 +314,35 @@ subtest 'real captured Agent response (fixture, k147)' => sub {
         'output_text annotations[] present but empty' );
 };
 
+subtest 'usage carries prompt-cache tokens + cost (fixture, k159)' => sub {
+    my $data = $json->decode( path('t/data/perplexity_agent_search.json')->slurp_raw );
+    my $resp = ppx()->chat_response( _http( $data ) );
+
+    # The Agent wire nests the automatic prompt-cache counts under
+    # usage.input_tokens_details (caching is automatic on every call).
+    # Langertha::Usage->from_hash now parses them onto the value object the same
+    # way it does the chat wire's prompt_tokens_details, so cache read/write
+    # observability reaches Responses-envelope engines too (karr #159).
+    is( $resp->usage->cache_write_tokens, 4068,
+        'input_tokens_details.cache_creation_input_tokens -> Usage.cache_write_tokens' );
+    is( $resp->usage->cached_tokens, 0,
+        'input_tokens_details cache read count -> Usage.cached_tokens (0 preserved)' );
+    ok( $resp->has_cached_tokens, 'cached_tokens surfaces on the Response (defined 0)' );
+    is( $resp->cached_tokens, 0, 'Response.cached_tokens lifted off the Usage object' );
+
+    # The chat-spelled overload keys stay for existing callers (t/60, t/91), and
+    # the raw Responses detail block survives verbatim under the usage overload.
+    is( $resp->usage->{prompt_tokens},     4071, 'chat-spelled prompt_tokens overload kept' );
+    is( $resp->usage->{completion_tokens}, 13,   'chat-spelled completion_tokens overload kept' );
+    is( $resp->usage->{input_tokens_details}{cache_creation_input_tokens}, 4068,
+        'input_tokens_details survives verbatim under the usage overload' );
+
+    # The per-call cost block rides along under usage.cost (passthrough).
+    is( ref $resp->usage->{cost}, 'HASH', 'usage.cost block passed through' );
+    is( $resp->usage->{cost}{currency}, 'USD', 'cost currency preserved' );
+    cmp_ok( $resp->usage->{cost}{total_cost}, '>', 0, 'cost.total_cost is a real number' );
+};
+
 subtest 'real captured typed-SSE stream (fixture, k147)' => sub {
     my $engine = ppx();
     my $sse    = path('t/data/perplexity_agent_stream.sse')->slurp_raw;
@@ -328,6 +358,56 @@ subtest 'real captured typed-SSE stream (fixture, k147)' => sub {
     ok( $final->has_usage, 'usage rides on response.completed (no trailing frame)' );
     is( $final->usage->{prompt_tokens}, 1353, 'input_tokens from response.completed' );
     is( $final->usage->{completion_tokens}, 5, 'output_tokens from response.completed' );
+
+    # k158: the captured stream is a non-search reply (the trimmed fixture holds
+    # no search_results frame), so it must NOT invent citations.
+    ok( !$final->has_citations, 'no search_results -> final chunk carries no citations' );
+    my $stream = Langertha::Stream->new( chunks => $chunks );
+    is( $stream->citations, undef, 'Stream->citations undef when the stream had no sources' );
+};
+
+subtest 'streamed search_results lift to citations (k158)' => sub {
+    my $engine = ppx();
+
+    # The trimmed live stream fixture captured a non-search reply, so it cannot
+    # exercise the search path. This constructs a response.completed frame whose
+    # output[] carries the search_results block VERBATIM from the non-streaming
+    # fixture (t/data/perplexity_agent_search.json) — the same shape the Agent
+    # wire delivers in the terminal frame's output[] — to exercise the parser.
+    my $search = $json->decode( path('t/data/perplexity_agent_search.json')->slurp_raw );
+    my ($search_results) = grep { ( $_->{type} // '' ) eq 'search_results' }
+        @{ $search->{output} };
+    ok( $search_results, 'search_results block sourced 1:1 from the non-streaming fixture' );
+
+    my $frame = {
+        type     => 'response.completed',
+        response => {
+            model  => 'openai/gpt-5.6-luna',
+            output => [
+                { type => 'message', status => 'completed', content => [
+                    { type => 'output_text', text => 'Paris is the capital of France.[1]' },
+                ] },
+                $search_results,
+            ],
+            usage => { input_tokens => 4071, output_tokens => 13, total_tokens => 4084 },
+        },
+    };
+
+    my $final = $engine->parse_stream_chunk($frame);
+    ok( $final->is_final, 'response.completed with search_results is still the final chunk' );
+    ok( $final->has_citations, 'search_results lifted onto the final chunk' );
+    is( scalar @{ $final->citations }, 2, 'both search results present' );
+    is( $final->citations->[0]{url}, 'https://en.wikipedia.org/wiki/Paris',
+        'first citation url matches the non-streaming source list' );
+    is( $final->citations->[1]{title}, 'What is the Capital of France?',
+        'second citation title preserved' );
+
+    # And the ergonomic streaming surface: Stream->citations reassembles them.
+    my $stream = Langertha::Stream->new( chunks => [
+        $engine->parse_stream_chunk( { type => 'response.output_text.delta', delta => 'Paris' } ),
+        $final,
+    ] );
+    is( scalar @{ $stream->citations }, 2, 'Stream->citations surfaces the streamed sources' );
 };
 
 sub _http {

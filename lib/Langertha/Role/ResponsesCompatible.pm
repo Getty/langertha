@@ -320,13 +320,23 @@ sub chat_response {
         }
     }
 
-    # Normalize usage to chat-style (Langertha::Usage / Goldmine expect
-    # prompt_tokens/completion_tokens).
+    # Normalize usage to chat-style keys (Langertha::Usage / Goldmine read
+    # prompt_tokens/completion_tokens off the %{} overload), while carrying the
+    # Responses-native detail blocks through verbatim: input_tokens_details holds
+    # the automatic prompt-cache read/write counts, and Langertha::Usage->from_hash
+    # parses them onto cached_tokens / cache_write_tokens the same way it does the
+    # chat wire (karr #159). The per-call cost block rides along under usage.cost.
+    # The chat-spelled aliases stay so the overload keeps returning
+    # prompt_tokens/completion_tokens for existing callers (t/60, t/91).
     my $usage = $data->{usage} // {};
     my $normalized_usage = {
         prompt_tokens     => $usage->{input_tokens},
         completion_tokens => $usage->{output_tokens},
         total_tokens      => $usage->{total_tokens},
+        ( ref $usage->{input_tokens_details} eq 'HASH'
+            ? ( input_tokens_details => $usage->{input_tokens_details} ) : () ),
+        ( ref $usage->{cost} eq 'HASH'
+            ? ( cost => $usage->{cost} ) : () ),
     };
     if ( my $rt = $usage->{output_tokens_details}{reasoning_tokens} ) {
         $normalized_usage->{completion_tokens_details} = { reasoning_tokens => $rt };
@@ -473,6 +483,12 @@ sub parse_stream_chunk {
     if ( $type eq 'response.completed' || $type eq 'response.incomplete' ) {
         my $resp  = $data->{response} // {};
         my $usage = $resp->{usage};
+        # A search-augmented reply carries its sources as a search_results item
+        # in the terminal response.output[] array — the same block
+        # _responses_extra_fields lifts on the non-streaming path. Reuse that
+        # divergence hook (the base envelope returns none) so a streamed reply
+        # surfaces citations too, on the final chunk (karr #158).
+        my %extra = $self->_responses_extra_fields($resp);
         return Langertha::Stream::Chunk->new(
             content  => '',
             raw      => $data,
@@ -483,6 +499,7 @@ sub parse_stream_chunk {
                 completion_tokens => $usage->{output_tokens},
                 total_tokens      => $usage->{total_tokens},
             } ) : (),
+            $extra{citations} ? ( citations => $extra{citations} ) : (),
         );
     }
 
@@ -497,8 +514,9 @@ sub parse_stream_chunk {
 
 Parses one typed-SSE data payload from a Responses/Agent stream. Returns a
 L<Langertha::Stream::Chunk> for C<response.output_text.delta> (text) and the
-terminal C<response.completed> (final, usage), C<undef> for every other typed
-event.
+terminal C<response.completed> (final chunk: usage, and — via
+L</_responses_extra_fields> — any search-augmented C<citations> lifted from the
+completed C<output[]>), C<undef> for every other typed event.
 
 =cut
 

@@ -82,24 +82,33 @@ sub from_hash {
   $input  = 0 + ($input  // 0);
   $output = 0 + ($output // 0);
 
-  # Prompt-cache read/write counts each carry two wire spellings. OpenAI nests
-  # both under prompt_tokens_details (cached_tokens / cache_write_tokens);
-  # Anthropic reports them flat (cache_read_input_tokens /
-  # cache_creation_input_tokens). The OpenAI nesting wins when both spellings
-  # are somehow present (karr #125 / #130). The read count and the write count
-  # are distinct quantities — the write count is deliberately NOT folded into
-  # cached_tokens. Values are read into lexicals first so a missing key never
-  # autovivifies the caller's hash.
+  # Prompt-cache read/write counts each carry several wire spellings. OpenAI's
+  # Chat wire nests both under prompt_tokens_details (cached_tokens /
+  # cache_write_tokens); the Open-Responses envelope (OpenAI Responses, the
+  # Perplexity Agent API) nests them under input_tokens_details, mixing the
+  # OpenAI read key (cached_tokens) with the Anthropic-named counts
+  # (cache_read_input_tokens / cache_creation_input_tokens); Anthropic reports
+  # them flat. The OpenAI Chat nesting wins, then the Responses nesting, then
+  # the Anthropic flat keys (karr #125 / #130 / #159). The read count and the
+  # write count are distinct quantities — the write count is deliberately NOT
+  # folded into cached_tokens. Values are read into lexicals first so a missing
+  # key never autovivifies the caller's hash.
   my $ptd = $hash->{prompt_tokens_details};
   $ptd = undef unless ref($ptd) eq 'HASH';
+  my $itd = $hash->{input_tokens_details};
+  $itd = undef unless ref($itd) eq 'HASH';
 
   my $cached;
-  if    ( $ptd && defined $ptd->{cached_tokens} )      { $cached = $ptd->{cached_tokens} }
-  elsif ( defined $hash->{cache_read_input_tokens} )   { $cached = $hash->{cache_read_input_tokens} }
+  if    ( $ptd && defined $ptd->{cached_tokens} )           { $cached = $ptd->{cached_tokens} }
+  elsif ( $itd && defined $itd->{cached_tokens} )           { $cached = $itd->{cached_tokens} }
+  elsif ( $itd && defined $itd->{cache_read_input_tokens} ) { $cached = $itd->{cache_read_input_tokens} }
+  elsif ( defined $hash->{cache_read_input_tokens} )        { $cached = $hash->{cache_read_input_tokens} }
 
   my $cache_write;
-  if    ( $ptd && defined $ptd->{cache_write_tokens} )     { $cache_write = $ptd->{cache_write_tokens} }
-  elsif ( defined $hash->{cache_creation_input_tokens} )   { $cache_write = $hash->{cache_creation_input_tokens} }
+  if    ( $ptd && defined $ptd->{cache_write_tokens} )          { $cache_write = $ptd->{cache_write_tokens} }
+  elsif ( $itd && defined $itd->{cache_write_tokens} )          { $cache_write = $itd->{cache_write_tokens} }
+  elsif ( $itd && defined $itd->{cache_creation_input_tokens} ) { $cache_write = $itd->{cache_creation_input_tokens} }
+  elsif ( defined $hash->{cache_creation_input_tokens} )        { $cache_write = $hash->{cache_creation_input_tokens} }
 
   my %args = ( input_tokens => $input, output_tokens => $output );
   $args{total_tokens}       = 0 + $total       if defined $total;
@@ -230,13 +239,16 @@ overload only ever serves caller hash derefs.
 =attr cached_tokens
 
 Number of prompt tokens served from the provider's prefix cache (the cache
-B<read> count), when the provider reports it. L</from_hash> parses it from
-either wire spelling: OpenAI nests it at
+B<read> count), when the provider reports it. L</from_hash> parses it from any
+of its wire spellings: OpenAI's Chat wire nests it at
 C<usage.prompt_tokens_details.cached_tokens> (also Mistral, and any
 OpenAI-compatible server such as SGLang with C<return_cached_tokens_details>),
-and Anthropic reports it flat as C<usage.cache_read_input_tokens>. The OpenAI
-nesting wins when both are present. C<undef> when the provider does not report
-a cache-read count.
+the Open-Responses envelope (OpenAI Responses, the Perplexity Agent API) nests
+it at C<usage.input_tokens_details.cached_tokens> (or the Anthropic-named
+C<cache_read_input_tokens> in the same block), and Anthropic reports it flat as
+C<usage.cache_read_input_tokens>. The OpenAI Chat nesting wins, then the
+Responses nesting, then the Anthropic flat key. C<undef> when the provider does
+not report a cache-read count.
 
 Note: on OpenAI (GPT-5.6 and later) this count excludes hidden tokens and
 rounds down to a multiple of 128, so cost arithmetic built on it is
@@ -246,12 +258,15 @@ approximate by construction.
 
 Number of prompt tokens written to the provider's prefix cache (the cache
 B<creation> count), a distinct quantity from L</cached_tokens> and deliberately
-not folded into it. L</from_hash> parses it from either wire spelling: OpenAI
-nests it at C<usage.prompt_tokens_details.cache_write_tokens> and Anthropic
-reports it flat as C<usage.cache_creation_input_tokens> (Anthropic further
-splits that count across TTL tiers under C<usage.cache_creation>, which stays
-verbatim in L</raw>). The OpenAI nesting wins when both are present. C<undef>
-when the provider does not report a cache-write count.
+not folded into it. L</from_hash> parses it from any of its wire spellings:
+OpenAI's Chat wire nests it at C<usage.prompt_tokens_details.cache_write_tokens>,
+the Open-Responses envelope (OpenAI Responses, the Perplexity Agent API) nests
+it at C<usage.input_tokens_details.cache_creation_input_tokens>, and Anthropic
+reports it flat as C<usage.cache_creation_input_tokens> (Anthropic further splits
+that count across TTL tiers under C<usage.cache_creation>, which stays verbatim
+in L</raw>). The OpenAI Chat nesting wins, then the Responses nesting, then the
+Anthropic flat key. C<undef> when the provider does not report a cache-write
+count.
 
 =attr raw
 

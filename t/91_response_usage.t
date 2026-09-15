@@ -10,9 +10,11 @@
 #   * `prompt_tokens` / `completion_tokens` / `total_tokens` read across
 #     all wire shapes consistently. `total_tokens` derives when the
 #     provider omits it.
-#   * cache-token keys survive on Anthropic (verbatim) but `cached_tokens`
-#     is LOST on OpenAIResponses (normalisation strips
-#     `input_tokens_details`). Documented as a gap.
+#   * cache-token keys survive on Anthropic (verbatim); on the Open-Responses
+#     envelope (OpenAIResponses, Perplexity) the automatic prompt-cache counts
+#     nested under `input_tokens_details` now reach `cached_tokens` /
+#     `cache_write_tokens` too — the gap the earlier lock recorded is closed
+#     (karr #159, resolving the #28-tracked telemetry gap).
 #   * Langertha::Usage / Pricing / Cost roundtrip arithmetically.
 #   * Langertha::Pricing ships an empty `rules` table by design —
 #     pricing is caller-supplied, no auto-fetch, determinism.
@@ -177,10 +179,12 @@ subtest 'Ollama: prompt_eval_count/eval_count → prompt_tokens/completion_token
         'Ollama does not synthesise total_tokens in usage');
 };
 
-subtest 'OpenAIResponses: normalises to chat-style, LOSES cached_tokens' => sub {
+subtest 'OpenAIResponses: normalises to chat-style, surfaces cache tokens' => sub {
     # Reads t/data/responses_api_text.json — same fixture t/60_responses_requests.t
-    # uses. Locks the gap that the OpenAIResponses engine strips
-    # `input_tokens_details.cached_tokens` during normalisation.
+    # uses. The chat-spelled overload keys stay (prompt_tokens / completion_tokens
+    # / completion_tokens_details), and the Responses input_tokens_details block
+    # now rides through so Langertha::Usage->from_hash parses the automatic
+    # prompt-cache read count onto the value object (karr #159).
     my $fixture = $json->decode(
         path('t/data/responses_api_text.json')->slurp
     );
@@ -198,17 +202,16 @@ subtest 'OpenAIResponses: normalises to chat-style, LOSES cached_tokens' => sub 
     is($resp->usage->{completion_tokens_details}{reasoning_tokens}, 18,
         'reasoning_tokens survives under completion_tokens_details');
 
-    # GAP (documented): input_tokens_details.cached_tokens is DROPPED here.
-    # The fixture has cached_tokens = 0; even at zero it should survive as
-    # a key in the raw hash if the engine treated it verbatim — but
-    # OpenAIResponses only projects prompt_tokens / completion_tokens /
-    # total_tokens / completion_tokens_details into the usage hash, so
-    # cache telemetry from the Responses API is invisible at the
-    # Response->usage level. karr #28 tracks surfacing this.
-    ok(!exists $resp->usage->{input_tokens_details},
-        'input_tokens_details is DROPPED on OpenAIResponses (GAP, see karr #28)');
-    ok(!exists $resp->usage->{cached_tokens},
-        'cached_tokens is DROPPED on OpenAIResponses (GAP, see karr #28)');
+    # FIXED (karr #159, resolving the #28-tracked gap): input_tokens_details now
+    # rides through verbatim, and its cache-read count parses onto the value
+    # object. The fixture reports cached_tokens = 0 — a real count, surfaced as
+    # a defined 0, not dropped.
+    is($resp->usage->{input_tokens_details}{cached_tokens}, 0,
+        'input_tokens_details survives verbatim under the usage overload');
+    is($resp->usage->cached_tokens, 0,
+        'input_tokens_details.cached_tokens parses onto Usage.cached_tokens');
+    ok($resp->has_cached_tokens, 'cached_tokens (0) surfaces on the Response');
+    is($resp->cached_tokens, 0, 'Response.cached_tokens lifted off the Usage object');
 };
 
 # =========================================================================
@@ -255,8 +258,8 @@ subtest 'accessor normalisation across raw shapes' => sub {
 };
 
 # =========================================================================
-# 3. Cache tokens survive verbatim for the engines that pass usage through;
-#    OpenAIResponses drops them — documented GAP.
+# 3. Cache tokens survive verbatim for the engines that pass usage through,
+#    and now also for the Open-Responses envelope (input_tokens_details).
 # =========================================================================
 
 subtest 'cache tokens: Anthropic survives verbatim' => sub {
@@ -304,9 +307,10 @@ subtest 'cache tokens: Anthropic survives verbatim' => sub {
         'prompt_tokens accessor does NOT include cache tokens (by design — karr #18e)');
 };
 
-subtest 'cache tokens: OpenAIResponses DROPS them (documented GAP)' => sub {
-    # Fixture contains cached_tokens = 0. Even when non-zero the engine
-    # would drop it — see engine code path. Lock the inconsistency.
+subtest 'cache tokens: Open-Responses surfaces them (karr #159)' => sub {
+    # Fixture contains cached_tokens = 0. The engine now carries
+    # input_tokens_details through and Langertha::Usage parses the read count,
+    # so the telemetry is reachable on the value object even at zero.
     my $fixture = $json->decode(
         path('t/data/responses_api_text.json')->slurp
     );
@@ -316,8 +320,10 @@ subtest 'cache tokens: OpenAIResponses DROPS them (documented GAP)' => sub {
     );
     my $resp = $engine->chat_response( mock_http($fixture) );
 
-    ok(!exists $resp->usage->{input_tokens_details},
-        'OpenAIResponses drops input_tokens_details (cached_tokens telemetry is invisible)');
+    is($resp->usage->{input_tokens_details}{cached_tokens}, 0,
+        'OpenAIResponses carries input_tokens_details through (cache telemetry visible)');
+    is($resp->usage->cached_tokens, 0,
+        'the cache read count parses onto the Usage value object');
 };
 
 # =========================================================================
