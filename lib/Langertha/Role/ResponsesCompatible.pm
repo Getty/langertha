@@ -7,6 +7,7 @@ use JSON::MaybeXS;
 use Langertha::ToolCall;
 use Langertha::ToolChoice;
 use Langertha::Response;
+use Langertha::Usage;
 
 =head1 SYNOPSIS
 
@@ -316,8 +317,19 @@ sub chat_response {
             # Real Responses API emits function_call as a top-level output[]
             # item carrying name/arguments/call_id directly on the item.
             push @tc_data, $item;
-            $finish_reason //= 'tool_calls';
         }
+    }
+
+    # A response that carries tool calls reports finish_reason 'tool_calls',
+    # matching the OpenAI Chat-Completions convention -- regardless of where the
+    # calls sit in output[] (a top-level function_call, or one nested in a
+    # message) and regardless of a coexisting assistant text message. A completed
+    # message sets finish_reason 'stop' in the loop above; a tool call present
+    # alongside it must win, so resolve it here rather than let output[] ordering
+    # decide (a message preamble may precede or follow the call). A genuinely
+    # non-completed message status (e.g. truncation) is left intact. -- k171
+    if ( @tc_data && ( !defined $finish_reason || $finish_reason eq 'stop' ) ) {
+        $finish_reason = 'tool_calls';
     }
 
     # Normalize usage to chat-style keys (Langertha::Usage / Goldmine read
@@ -338,8 +350,14 @@ sub chat_response {
         ( ref $usage->{cost} eq 'HASH'
             ? ( cost => $usage->{cost} ) : () ),
     };
-    if ( my $rt = $usage->{output_tokens_details}{reasoning_tokens} ) {
-        $normalized_usage->{completion_tokens_details} = { reasoning_tokens => $rt };
+    # Read output_tokens_details into a lexical and ref-check before deref: the
+    # chained rvalue $usage->{output_tokens_details}{reasoning_tokens} would
+    # autovivify output_tokens_details => {} into $data->{usage} (the same ref as
+    # raw => $data) when the provider omits the block, polluting the trace. -- k168
+    my $otd = $usage->{output_tokens_details};
+    if ( ref($otd) eq 'HASH' && $otd->{reasoning_tokens} ) {
+        $normalized_usage->{completion_tokens_details}
+            = { reasoning_tokens => $otd->{reasoning_tokens} };
     }
 
     my @tcs = map { $self->_parse_function_call($_) } @tc_data;
@@ -489,6 +507,18 @@ sub parse_stream_chunk {
         # divergence hook (the base envelope returns none) so a streamed reply
         # surfaces citations too, on the final chunk (karr #158).
         my %extra = $self->_responses_extra_fields($resp);
+        # Surface the prefix-cache read count and (Perplexity) cost off the
+        # terminal usage, symmetric to the non-streaming chat_response (k159).
+        # cached_tokens is parsed by Langertha::Usage->from_hash -- the same value
+        # object and spelling precedence the non-streaming path relies on, so both
+        # paths read every Agent/Responses cache spelling identically (from_hash
+        # reads into lexicals, so a missing block never autovivifies into
+        # raw => $data). The dedicated Stream::Chunk cached_tokens Int carries the
+        # read count; the input_tokens_details and cost blocks ride verbatim in
+        # the usage hash (cost has no Chunk attribute), mirroring the non-streaming
+        # normalized usage. -- k160
+        my $cached = ref($usage) eq 'HASH'
+            ? Langertha::Usage->from_hash($usage)->cached_tokens : undef;
         return Langertha::Stream::Chunk->new(
             content  => '',
             raw      => $data,
@@ -498,7 +528,12 @@ sub parse_stream_chunk {
                 prompt_tokens     => $usage->{input_tokens},
                 completion_tokens => $usage->{output_tokens},
                 total_tokens      => $usage->{total_tokens},
+                ( ref $usage->{input_tokens_details} eq 'HASH'
+                    ? ( input_tokens_details => $usage->{input_tokens_details} ) : () ),
+                ( ref $usage->{cost} eq 'HASH'
+                    ? ( cost => $usage->{cost} ) : () ),
             } ) : (),
+            defined $cached ? ( cached_tokens => $cached ) : (),
             $extra{citations} ? ( citations => $extra{citations} ) : (),
         );
     }
@@ -514,9 +549,12 @@ sub parse_stream_chunk {
 
 Parses one typed-SSE data payload from a Responses/Agent stream. Returns a
 L<Langertha::Stream::Chunk> for C<response.output_text.delta> (text) and the
-terminal C<response.completed> (final chunk: usage, and — via
-L</_responses_extra_fields> — any search-augmented C<citations> lifted from the
-completed C<output[]>), C<undef> for every other typed event.
+terminal C<response.completed> (final chunk: usage, the prefix-cache read count
+from C<usage.input_tokens_details.cached_tokens> lifted onto
+L<Langertha::Stream::Chunk/cached_tokens>, any C<usage.cost> carried through the
+usage hash, and — via L</_responses_extra_fields> — any search-augmented
+C<citations> lifted from the completed C<output[]>), C<undef> for every other
+typed event.
 
 =cut
 

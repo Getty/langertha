@@ -2,6 +2,26 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Open-Responses / Perplexity Agent streaming now surfaces the prefix-cache
+      read count and cost on the terminal chunk (karr k160), the streaming
+      counterpart to k159: the final response.completed frame parses
+      usage.input_tokens_details.cached_tokens through Langertha::Usage->from_hash
+      onto $chunk->cached_tokens (the same value object and spelling precedence
+      the non-streaming path uses), and carries the input_tokens_details and
+      Perplexity usage.cost blocks verbatim in $chunk->usage — both were dropped
+      before by the prompt/completion/total normalization.
+
+    - Open-Responses replies now report finish_reason `tool_calls` whenever the
+      response carries a tool call, even alongside an assistant text message and
+      regardless of the output[] ordering (karr k171). A completed message no
+      longer overwrites the tool-call finish_reason with `stop`; a genuinely
+      truncated (non-completed) message status is left intact.
+
+    - Open-Responses response parsing no longer autovivifies an empty
+      output_tokens_details block into the raw usage trace when a provider omits
+      it (karr k168); the reasoning-token normalization ref-checks the block
+      before reading it.
+
     - Raider: a raid paused by an interactive self-tool (raider_ask_user etc.)
       in a parallel-tool batch no longer re-runs the tool calls that already
       completed before it, and no longer drops the self-tools queued after it

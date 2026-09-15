@@ -410,6 +410,56 @@ subtest 'streamed search_results lift to citations (k158)' => sub {
     is( scalar @{ $stream->citations }, 2, 'Stream->citations surfaces the streamed sources' );
 };
 
+# k160: the terminal response.completed frame carries the prefix-cache read
+# count under usage.input_tokens_details.cached_tokens and a usage.cost block.
+# The streamed final chunk must surface both -- cached_tokens on the dedicated
+# Stream::Chunk attribute (symmetric to the non-streaming path and the
+# OpenAI-compatible chat wire), cost through the usage hash -- rather than
+# dropping them the way the prompt/completion/total normalization used to.
+subtest 'streamed response.completed lifts cached_tokens and cost (k160)' => sub {
+    my $engine = ppx();
+
+    # Real captured wire: the k147 fixture's terminal frame carries
+    # input_tokens_details.cached_tokens = 0 (a cache write, not read) and a full
+    # cost block. Zero is a real count, so it surfaces (defined, not truthy-gated).
+    my $sse    = path('t/data/perplexity_agent_stream.sse')->slurp_raw;
+    my $chunks = $engine->process_stream_data($sse);
+    my ($final) = grep { $_->is_final } @$chunks;
+
+    ok( $final->has_cached_tokens,
+        'cached_tokens surfaced on the final chunk (0 is a real count)' );
+    is( $final->cached_tokens, 0,
+        'cached_tokens lifted from usage.input_tokens_details.cached_tokens' );
+    is( ref $final->usage->{cost}, 'HASH', 'cost block carried through the usage hash' );
+    is( $final->usage->{cost}{currency}, 'USD', 'cost.currency preserved' );
+    cmp_ok( $final->usage->{cost}{total_cost}, '>', 0, 'cost.total_cost is a real number' );
+    is( $final->usage->{prompt_tokens}, 1353, 'usage still normalized to prompt_tokens' );
+
+    # A non-zero cache read surfaces the same way.
+    my $hit = $engine->parse_stream_chunk( {
+        type     => 'response.completed',
+        response => { model => 'sonar', usage => {
+            input_tokens         => 100,
+            input_tokens_details => { cached_tokens => 64 },
+            output_tokens        => 20,
+            total_tokens         => 120,
+        } },
+    } );
+    is( $hit->cached_tokens, 64, 'non-zero cache read count surfaced' );
+
+    # No detail block: no cached_tokens, and the source usage is not polluted by
+    # an autovivified input_tokens_details.
+    my $bare = $engine->parse_stream_chunk( {
+        type     => 'response.completed',
+        response => { model => 'sonar', usage => {
+            input_tokens => 3, output_tokens => 7, total_tokens => 10 } },
+    } );
+    ok( !$bare->has_cached_tokens, 'no cached_tokens when no input_tokens_details' );
+    ok( !exists $bare->raw->{response}{usage}{input_tokens_details},
+        'input_tokens_details not autovivified into raw when the frame omits it' );
+    ok( !exists $bare->usage->{cost}, 'no cost key when the frame carries none' );
+};
+
 sub _http {
     my ($data) = @_;
     return HTTP::Response->new( 200, 'OK',

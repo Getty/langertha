@@ -171,8 +171,10 @@ Number of prompt tokens served from the prefix cache, if reported by the
 provider on the final chunk. Populated from
 C<usage.prompt_tokens_details.cached_tokens> on the OpenAI-compatible wire
 (SGLang with C<return_cached_tokens_details> enabled, and other servers
-that emit the detail block). C<undef> when the provider does not report
-it. Use C<has_cached_tokens> to check availability.
+that emit the detail block) and from C<usage.input_tokens_details.cached_tokens>
+on the Open-Responses wire (OpenAI Responses / Perplexity Agent). C<undef>
+when the provider does not report it. Use C<has_cached_tokens> to check
+availability.
 
 =cut
 
