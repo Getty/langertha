@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-09-15T02:28:54Z
+id: 172
+priority: medium
+status: backlog
+tags:
+- raider
+- async
+- embedding
+- followup
+title: 'Raider: session-history embeddings async (root-cause fix behind no_session_embeddings)'
+updated: 2026-09-15T02:28:54Z
+---
+
+Follow-up to k165 (comment-only). _push_session_history calls blocking Role::Embedding::simple_embedding (LWP) per message inline in the async raid loop, stalling the reactor and deadlocking a self-referencing proxy (why no_session_embeddings exists). Full async fix deferred as too risky for a medium ticket. Design: (1) add simple_embedding_f in Role::Embedding via _async_http->do_request; (2) MULTI-LOOP HAZARD: each engine has its own _async_loop, a separate embedding_engine runs on a loop nobody drives so its futures never resolve -- only auto-detect (embedding==active engine, shared loop) is safe to fire-and-forget; (3) reserve one undef slot per message synchronously, fill on completion guarded by message-ref identity to survive clear_session_history/splice races; (4) retain fired futures on the object; (5) _query_session_history has the same blocking call (query-time), fold in. Tests: reactor not blocked by a pending future; slot invariant survives in-flight fill + clear_session_history.
