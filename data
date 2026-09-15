@@ -1,0 +1,25 @@
+---
+class: standard
+completed: 2026-09-15T00:26:33Z
+created: 2026-09-14T21:57:23Z
+id: 158
+priority: low
+started: 2026-09-15T00:04:34Z
+status: done
+tags:
+- perplexity
+- responses
+- streaming
+- citations
+- k147
+title: Responses/Agent streaming path drops citations (search_results)
+updated: 2026-09-15T00:26:33Z
+---
+
+Found during k147 live wire probing. Role::ResponsesCompatible::_responses_extra_fields lifts the output[] search_results block into Response.citations, but it is only called from chat_response (non-streaming). parse_stream_chunk / the stream aggregation never extract search_results, so a STREAMED search-augmented Perplexity reply loses its citations. Live evidence: non-streaming probe A returned 10 citations; the streaming envelope carries search_results in output[] frames / the response.completed payload but the parser ignores them. Shared behavior with Engine::OpenAIResponses (same role), though only Perplexity currently streams. Fix: surface citations on the streaming path (e.g. lift search_results in parse_stream_chunk into Stream::Chunk, or from the final response.completed output[] during aggregation). Out of scope for the k147 8-point confirmation.
+
+2026-09-15 00:21 Fixed in worktree agent-a63cd78 (branched off main a0570cd), commit 98f352a. parse_stream_chunk now lifts search_results from the terminal response.completed output[] via the _responses_extra_fields divergence hook (same seam as non-streaming) onto the final Stream::Chunk; added Stream::Chunk->citations + Stream->citations (streaming counterpart to Response.citations). NOTE: the trimmed live stream fixture (perplexity_agent_stream.sse) is a non-search '7' reply and carries NO search_results frame, so I did NOT fabricate one into the .sse. Tested: (a) real fixture stream -> final chunk has_citations false (no false positives); (b) a constructed response.completed frame whose output[] carries the search_results block sourced 1:1 verbatim from the non-streaming fixture -> 2 citations lifted onto the final chunk and Stream->citations. Offline only, no live call. prove -lr t/ all green incl. t/60. NOT merged to main.
+
+Implemented + tested offline; needs integration/QA. Commit 98f352a on worktree branch (not merged). See note re: fixture has no search_results frame.
+
+MERGE (main agent, 2026-09-15): gemergt nach main (16885c1), Suite 3630 gruen, t/60 (OpenAIResponses) gruen. Streaming-Pfad hebt Citations aus dem terminalen response.completed-output[] via _responses_extra_fields (ADR-0020-Hook) auf den finalen Chunk; neue Stream::Chunk.citations + Stream->citations. Offline getestet gegen t/data/perplexity_agent_stream.sse (real: kein search_results-Frame -> keine false positives) + konstruierter response.completed-Frame mit search_results 1:1 aus dem non-streaming-Fixture. CAVEAT: realer Streaming-search_results-Frame-Shape noch nicht live-verifiziert (Fix liest vom autoritativen finalen output[]); spaeteres gated Live-Capture koennte ein echtes search-stream-Fixture ergaenzen. -> done.
