@@ -485,7 +485,11 @@ sub _check_capability_exclusions { return }
 # forced named tool_choice. Used to feed the capability-exclusion hook.
 sub _chat_tools_requested {
   my ( $self, $opts ) = @_;
-  return 1 if exists $opts->{tools};
+  # An empty tools => [] sends zero tools on the wire, so it must NOT trip the
+  # capability-exclusion guard (which would croak on Cerebras/Groq for a request
+  # that combines tools with a structured-output response_format). Only a
+  # non-empty tools array counts as "tools requested" here.
+  return 1 if ref $opts->{tools} eq 'ARRAY' && @{ $opts->{tools} };
   return 0 unless exists $opts->{tool_choice};
   my $tc = Langertha::ToolChoice->from_hash( $opts->{tool_choice} );
   return ( $tc && $tc->type eq 'tool' ) ? 1 : 0;

@@ -11,6 +11,12 @@ Revision history for Langertha
       and line breaks are now parsed CRLF-tolerantly (\r?\n), as the sync path
       already was.
 
+    - An empty `tools => []` no longer trips the Cerebras/Groq
+      capability-exclusion croak (karr k169). Zero tools are sent on the wire, so
+      a request pairing an empty tools array with a structured-output
+      response_format is allowed through; only a non-empty tools array (or a
+      forced named tool_choice) counts as tools requested.
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its
