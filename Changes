@@ -2,6 +2,21 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Anthropic-family streaming now delivers finish_reason and usage on the
+      final (is_final) chunk (karr k167). Anthropic splits the terminal metadata
+      across two SSE events — message_delta carries stop_reason/usage while
+      message_stop is the is_final event — so the message_delta metadata is
+      replayed onto the message_stop chunk, matching the OpenAI/Gemini/Ollama
+      contract that a `$chunk->is_final` guard also finds finish_reason and usage
+      on that chunk.
+
+    - A malformed or error payload that still parses as a 200 JSON body no longer
+      crashes on a raw dereference (karr k171). Anthropic-family chat responses
+      default a missing `content` block list to empty (graceful empty content),
+      and OpenAI-compatible embedding responses croak with a readable message
+      naming the missing `data` array (and any payload error message) instead of
+      "Can't use an undefined value as an ARRAY reference".
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its

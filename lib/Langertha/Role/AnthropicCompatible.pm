@@ -140,6 +140,23 @@ where C<inference_geo> does not apply.
 
 =cut
 
+# Anthropic splits the terminal stream metadata across two SSE events:
+# message_delta carries finish_reason (stop_reason) + usage but is not the final
+# event, and message_stop is the final event but carries neither. The
+# cross-dialect Stream::Chunk contract (OpenAI/Gemini/Ollama parse_stream_chunk)
+# puts finish_reason + usage on the same chunk that is is_final -- which the
+# documented `if ($chunk->is_final) { ...$chunk->finish_reason... }` consumer
+# relies on. parse_stream_chunk is invoked per SSE event, so this holds the
+# message_delta metadata to replay it onto the is_final message_stop chunk. It is
+# scoped to a single in-flight stream (set on message_delta, cleared on
+# message_stop, and reset on message_start). -- karr k167
+has _stream_final_meta => (
+  is => 'rw',
+  isa => 'Maybe[HashRef]',
+  init_arg => undef,
+  default => undef,
+);
+
 sub update_request {
   my ( $self, $request ) = @_;
   $request->header('x-api-key', $self->api_key);
@@ -400,7 +417,11 @@ C<parallel_tool_use> into the C<tool_choice> block as C<disable_parallel_tool_us
 sub chat_response {
   my ( $self, $response, $rf_routed ) = @_;
   my $data = $self->parse_response($response);
-  my @blocks = @{$data->{content}};
+  # A malformed/error payload that still parses as a 200 JSON body (a shim
+  # error shape) can lack the `content` array; default it to empty so callers
+  # get graceful empty content rather than a raw deref crash on @{undef}. The
+  # OpenAI path is defensive at the equivalent spot. -- karr k171
+  my @blocks = @{ $data->{content} // [] };
   my $text = join('', map { $_->{text} // '' } grep { $_->{type} eq 'text' } @blocks);
   my @thinking = map { $_->{thinking} // '' } grep { $_->{type} eq 'thinking' } @blocks;
   my $thinking = @thinking ? join("\n", @thinking) : undef;
@@ -538,6 +559,13 @@ sub parse_stream_chunk {
   # Anthropic uses event types: content_block_delta, message_delta, message_stop
   my $type = $data->{type} // '';
 
+  # A new message begins the terminal-metadata carry fresh (karr k167): guards
+  # against a prior stream on the same engine that aborted before message_stop.
+  if ($type eq 'message_start') {
+    $self->_stream_final_meta(undef);
+    return undef;
+  }
+
   if ($type eq 'content_block_delta') {
     my $delta = $data->{delta} || {};
     # A content_block_delta is discriminated by delta.type: text_delta carries
@@ -556,20 +584,33 @@ sub parse_stream_chunk {
 
   if ($type eq 'message_delta') {
     my $delta = $data->{delta} || {};
+    # Remember the terminal metadata (finish_reason + usage) so it can be
+    # replayed onto the is_final message_stop chunk, matching the cross-dialect
+    # contract (see _stream_final_meta). It still rides this chunk too. -- k167
+    my %final = (
+      $delta->{stop_reason} ? (finish_reason => $delta->{stop_reason}) : (),
+      $data->{usage} ? (usage => $data->{usage}) : (),
+    );
+    $self->_stream_final_meta( %final ? { %final } : undef );
     return Langertha::Stream::Chunk->new(
       content => '',
       raw => $data,
       is_final => 0,
-      $delta->{stop_reason} ? (finish_reason => $delta->{stop_reason}) : (),
-      $data->{usage} ? (usage => $data->{usage}) : (),
+      %final,
     );
   }
 
   if ($type eq 'message_stop') {
+    # Replay the finish_reason + usage that message_delta carried onto the
+    # is_final chunk, so is_final and the terminal metadata land together as
+    # every other dialect delivers them (karr k167).
+    my $final = $self->_stream_final_meta;
+    $self->_stream_final_meta(undef);
     return Langertha::Stream::Chunk->new(
       content => '',
       raw => $data,
       is_final => 1,
+      ( ref $final eq 'HASH' ? %$final : () ),
     );
   }
 
@@ -583,7 +624,12 @@ sub parse_stream_chunk {
 
 Parses a single SSE data payload from an Anthropic-format stream by event
 type. A C<content_block_delta> of type C<thinking_delta> surfaces its
-C<thinking> text onto the chunk's C<thinking> attribute. Returns a
+C<thinking> text onto the chunk's C<thinking> attribute. Anthropic splits the
+terminal metadata across two events — C<message_delta> carries C<finish_reason>
+(C<stop_reason>) and C<usage> while C<message_stop> is the C<is_final> event — so
+the C<message_delta> metadata is replayed onto the C<is_final> C<message_stop>
+chunk, matching the cross-dialect contract where C<finish_reason> and C<usage>
+land on the same chunk that is C<is_final>. Returns a
 L<Langertha::Stream::Chunk>, or C<undef> for event types that carry no content.
 
 =cut
