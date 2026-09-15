@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::Perplexity streaming no longer drops citations: a streamed
+      search-augmented reply lifts the search_results block from the terminal
+      response.completed frame onto the final Langertha::Stream::Chunk, reachable
+      as $chunk->citations and, off the iterator, as $stream->citations — the
+      streaming counterpart to $response->citations (karr k158).
+
     - Open-Responses engines (Engine::Perplexity, Engine::OpenAIResponses) now
       surface the automatic prompt-cache counts the Agent / Responses wire nests
       under usage.input_tokens_details: $response->usage->cached_tokens (read)

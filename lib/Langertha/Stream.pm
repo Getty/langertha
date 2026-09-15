@@ -120,6 +120,28 @@ string, regardless of the current cursor position.
 
 =cut
 
+sub citations {
+  my ($self) = @_;
+  for my $chunk (@{$self->chunks}) {
+    return $chunk->citations if eval { $chunk->has_citations } && $chunk->citations;
+  }
+  return undef;
+}
+
+=method citations
+
+    my $citations = $stream->citations;
+
+Returns the search-augmented source citations of the stream, or C<undef> when
+the engine surfaced none. Search-augmented engines
+(L<Langertha::Engine::Perplexity>) attach the C<search_results> block to the
+final L<Langertha::Stream::Chunk> (see L<Langertha::Stream::Chunk/citations>);
+this walks the chunks and returns the first citation list found, regardless of
+the cursor position — the streaming counterpart to
+L<Langertha::Response/citations>.
+
+=cut
+
 sub each {
   my ($self, $callback) = @_;
   croak "each() requires a callback" unless ref $callback eq 'CODE';

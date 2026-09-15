@@ -483,6 +483,12 @@ sub parse_stream_chunk {
     if ( $type eq 'response.completed' || $type eq 'response.incomplete' ) {
         my $resp  = $data->{response} // {};
         my $usage = $resp->{usage};
+        # A search-augmented reply carries its sources as a search_results item
+        # in the terminal response.output[] array — the same block
+        # _responses_extra_fields lifts on the non-streaming path. Reuse that
+        # divergence hook (the base envelope returns none) so a streamed reply
+        # surfaces citations too, on the final chunk (karr #158).
+        my %extra = $self->_responses_extra_fields($resp);
         return Langertha::Stream::Chunk->new(
             content  => '',
             raw      => $data,
@@ -493,6 +499,7 @@ sub parse_stream_chunk {
                 completion_tokens => $usage->{output_tokens},
                 total_tokens      => $usage->{total_tokens},
             } ) : (),
+            $extra{citations} ? ( citations => $extra{citations} ) : (),
         );
     }
 
@@ -507,8 +514,9 @@ sub parse_stream_chunk {
 
 Parses one typed-SSE data payload from a Responses/Agent stream. Returns a
 L<Langertha::Stream::Chunk> for C<response.output_text.delta> (text) and the
-terminal C<response.completed> (final, usage), C<undef> for every other typed
-event.
+terminal C<response.completed> (final chunk: usage, and — via
+L</_responses_extra_fields> — any search-augmented C<citations> lifted from the
+completed C<output[]>), C<undef> for every other typed event.
 
 =cut
 

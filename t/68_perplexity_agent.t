@@ -21,6 +21,7 @@ use lib 't/lib';
 use Test::MockAsyncHTTP;
 
 use Langertha::Engine::Perplexity;
+use Langertha::Stream;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
@@ -357,6 +358,56 @@ subtest 'real captured typed-SSE stream (fixture, k147)' => sub {
     ok( $final->has_usage, 'usage rides on response.completed (no trailing frame)' );
     is( $final->usage->{prompt_tokens}, 1353, 'input_tokens from response.completed' );
     is( $final->usage->{completion_tokens}, 5, 'output_tokens from response.completed' );
+
+    # k158: the captured stream is a non-search reply (the trimmed fixture holds
+    # no search_results frame), so it must NOT invent citations.
+    ok( !$final->has_citations, 'no search_results -> final chunk carries no citations' );
+    my $stream = Langertha::Stream->new( chunks => $chunks );
+    is( $stream->citations, undef, 'Stream->citations undef when the stream had no sources' );
+};
+
+subtest 'streamed search_results lift to citations (k158)' => sub {
+    my $engine = ppx();
+
+    # The trimmed live stream fixture captured a non-search reply, so it cannot
+    # exercise the search path. This constructs a response.completed frame whose
+    # output[] carries the search_results block VERBATIM from the non-streaming
+    # fixture (t/data/perplexity_agent_search.json) — the same shape the Agent
+    # wire delivers in the terminal frame's output[] — to exercise the parser.
+    my $search = $json->decode( path('t/data/perplexity_agent_search.json')->slurp_raw );
+    my ($search_results) = grep { ( $_->{type} // '' ) eq 'search_results' }
+        @{ $search->{output} };
+    ok( $search_results, 'search_results block sourced 1:1 from the non-streaming fixture' );
+
+    my $frame = {
+        type     => 'response.completed',
+        response => {
+            model  => 'openai/gpt-5.6-luna',
+            output => [
+                { type => 'message', status => 'completed', content => [
+                    { type => 'output_text', text => 'Paris is the capital of France.[1]' },
+                ] },
+                $search_results,
+            ],
+            usage => { input_tokens => 4071, output_tokens => 13, total_tokens => 4084 },
+        },
+    };
+
+    my $final = $engine->parse_stream_chunk($frame);
+    ok( $final->is_final, 'response.completed with search_results is still the final chunk' );
+    ok( $final->has_citations, 'search_results lifted onto the final chunk' );
+    is( scalar @{ $final->citations }, 2, 'both search results present' );
+    is( $final->citations->[0]{url}, 'https://en.wikipedia.org/wiki/Paris',
+        'first citation url matches the non-streaming source list' );
+    is( $final->citations->[1]{title}, 'What is the Capital of France?',
+        'second citation title preserved' );
+
+    # And the ergonomic streaming surface: Stream->citations reassembles them.
+    my $stream = Langertha::Stream->new( chunks => [
+        $engine->parse_stream_chunk( { type => 'response.output_text.delta', delta => 'Paris' } ),
+        $final,
+    ] );
+    is( scalar @{ $stream->citations }, 2, 'Stream->citations surfaces the streamed sources' );
 };
 
 sub _http {

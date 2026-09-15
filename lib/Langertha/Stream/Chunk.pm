@@ -120,6 +120,24 @@ chunks have no tool calls — use C<has_tool_calls> to check.
 
 =cut
 
+has citations => (
+  is        => 'ro',
+  isa       => 'Maybe[ArrayRef]',
+  predicate => 'has_citations',
+);
+
+=attr citations
+
+Optional ArrayRef of search-augmented source citations, populated on the final
+chunk when a search-augmented engine emits them mid-stream. The Open-Responses
+envelope (L<Langertha::Engine::Perplexity>) lifts the C<search_results> block
+out of the terminal C<response.completed> C<output[]> here, so a streamed reply
+surfaces the same sources the non-streaming path exposes as
+L<Langertha::Response/citations>. Most chunks carry none — use C<has_citations>
+to check. L<Langertha::Stream/citations> reassembles them off the stream.
+
+=cut
+
 has thinking => (
   is        => 'ro',
   isa       => 'Maybe[Str]',
