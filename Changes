@@ -17,6 +17,12 @@ Revision history for Langertha
       response_format is allowed through; only a non-empty tools array (or a
       forced named tool_choice) counts as tools requested.
 
+    - The forced-tool -> response_format fallback no longer fabricates a hollow
+      success from a non-object result (karr k170). When the model returns valid
+      JSON that is not an object (e.g. a bare array), chat_f attaches no synthetic
+      tool_call — whose arguments would otherwise be coerced to empty {} — and
+      leaves the raw content on the Response so the caller sees the gap.
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its

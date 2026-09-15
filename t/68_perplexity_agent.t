@@ -277,6 +277,46 @@ subtest 'chat_f direction-1 rewrite: forced tool -> response_format (ADR 0005 ex
     is_deeply( $tc->arguments, { city => 'Berlin' }, 'loose-parsed structured args' );
 };
 
+subtest 'chat_f direction-1 rewrite: non-object result yields no false-success ToolCall (k170)' => sub {
+    # The model can return valid JSON that is NOT an object — a bare array here.
+    # Tool arguments must be an object, and Response coerces non-hash args to {},
+    # so a synthetic ToolCall built from an array would falsely claim success
+    # with empty arguments. chat_f must instead attach NO tool_call, leaving the
+    # raw content on Response so the caller sees the gap.
+    my $tool = {
+        name        => 'extract',
+        description => 'extract a city',
+        input_schema => {
+            type => 'object', properties => { city => { type => 'string' } },
+            required => ['city'],
+        },
+    };
+
+    my $mock = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response( {
+        id => 'resp_4', model => 'sonar', status => 'completed',
+        output => [ { type => 'message', status => 'completed',
+            content => [ { type => 'output_text', text => '["Berlin","Paris"]' } ] } ],
+        usage => { input_tokens => 1, output_tokens => 1, total_tokens => 2 },
+    } ) ] );
+
+    my $engine = ppx( model => 'sonar', _async_http => $mock );
+    my $resp = $engine->chat_f(
+        messages    => [ { role => 'user', content => 'Which city?' } ],
+        tools       => [ $tool ],
+        tool_choice => { type => 'tool', name => 'extract' },
+    )->get;
+
+    # The rewrite still fired on the wire (tools cleared, response_format set)...
+    my ($sent) = $mock->requests;
+    my $body = body_of($sent);
+    is( $body->{response_format}{type}, 'json_schema', 'still rewritten to response_format json_schema' );
+
+    # ...but the non-object result produces NO synthetic ToolCall.
+    ok( !$resp->has_tool_calls, 'no synthetic ToolCall for a non-object result' );
+    is( $resp->tool_call('extract'), undef, 'named lookup finds nothing' );
+    is( "$resp", '["Berlin","Paris"]', 'raw non-object content stays on Response.content' );
+};
+
 sub _http {
     my ($data) = @_;
     return HTTP::Response->new( 200, 'OK',

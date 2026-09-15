@@ -571,7 +571,13 @@ async sub chat_f {
 
   if ( $synth_tool_name && blessed($result) && $result->isa('Langertha::Response') ) {
     my $args = $self->decode_loose_json( $result->content );
-    if ( defined $args ) {
+    # A tool's arguments are a JSON object. Only synthesize the ToolCall when the
+    # model actually returned one — a non-object result (e.g. a bare JSON array)
+    # would otherwise be coerced to empty {} in Response BUILDARGS and the
+    # synthetic call would falsely claim success with no arguments. Leaving
+    # tool_calls unset lets the caller see the gap (the raw content is still on
+    # Response.content) instead of a hollow success.
+    if ( ref $args eq 'HASH' ) {
       $result = $result->clone_with(
         tool_calls => [{
           name      => $synth_tool_name,
@@ -579,6 +585,11 @@ async sub chat_f {
           synthetic => 1,
         }],
       );
+    }
+    else {
+      $log->debugf(
+        "[%s] forced-tool fallback: '%s' response was not a JSON object; no synthetic tool_call attached",
+        ref $self, $synth_tool_name);
     }
   }
 
