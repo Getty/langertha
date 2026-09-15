@@ -1,0 +1,22 @@
+---
+class: standard
+completed: 2026-09-15T02:23:19Z
+created: 2026-09-15T02:10:23Z
+id: 163
+priority: high
+started: 2026-09-15T02:12:36Z
+status: done
+tags:
+- hermes
+- tools
+- bug
+- hunt
+title: Hermes Tool-Loop crasht bei gueltigem Nicht-Objekt-JSON <tool_call>
+updated: 2026-09-15T02:23:19Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT. Role::Tools.pm:186-195 (response_tool_calls Hermes-Zweig) pusht decodierte Struktur OHNE Validierung; extract_tool_call:211 macht $tc->{name}/$tc->{arguments}. Gueltiges Nicht-Objekt-JSON im <tool_call> ([1,2], "hello", {"arguments":{}} ohne name) -> CRASH Not a HASH reference bzw. name=undef -> Tool "" not found -> ganze Raid stirbt. Der kanonische ToolCall->extract_hermes_from_text (ToolCall.pm:261) guardet das (next unless ref eq HASH; next unless defined name && length), der Loop-Pfad nicht. Betrifft NousResearch/AKI. Fix: gleiche Guards im Role::Tools Hermes-Zweig.
+
+2026-09-15 02:19 Fix implemented in worktree agent-aa794ab61ce3b4edc (branch worktree-agent-aa794ab61ce3b4edc, commit 2c80cff), NOT merged. response_tool_calls hermes branch now applies the ToolCall->extract_hermes_from_text guard (next unless ref eq HASH; next unless defined name && length) inline, keeping the raw-hashref contract with extract_tool_call/format_tool_results (routing through extract_hermes_from_text was rejected: it returns ToolCall objects, breaking that contract, and hardcodes tool_call instead of hermes_call_tag). +12 asserts in t/66_tool_calling_hermes.t. prove -lr t/ green (105 files, 3614 tests; live 80-89 skip w/o keys). perlcritic clean.
+
+MERGE (main agent, 2026-09-15): gemergt nach main, Suite gruen. Inline-Guards im Hermes-Zweig von response_tool_calls (ref eq HASH + defined/length name), spiegelt ToolCall->extract_hermes_from_text. +12 Tests in t/66. -> done.
