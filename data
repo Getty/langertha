@@ -1,0 +1,23 @@
+---
+class: standard
+completed: 2026-09-15T02:38:31Z
+created: 2026-09-15T02:10:35Z
+id: 165
+priority: medium
+started: 2026-09-15T02:12:48Z
+status: done
+tags:
+- raider
+- async
+- embedding
+- bug
+- hunt
+title: 'Raider: blockierender Sync-Embedding-Call im Async-Raid-Loop (proxy-deadlock)'
+updated: 2026-09-15T02:38:31Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT. Raider.pm:1411-1440 _push_session_history -> Role::Embedding::simple_embedding (Embedding.pm:47-52, blockierendes LWP $self->user_agent->request). Wird aus raid_f/_run_raid_loop (async) pro Nachricht/Tool-Result/Antwort aufgerufen; _get_embedding_engine auto-detektiert das Haupt-Engine wenn es Role::Embedding komponiert (OpenAI/Mistral/Ollama default) -> synchroner LWP-Request pro Nachricht blockiert den IO::Async-Loop. Wurzel des in no_session_embeddings dokumentierten proxy-deadlock. Kommentar Fire-and-forget ist falsch. Fix: Embedding ueber _f-Pfad entkoppeln/retain oder ausserhalb des loop-kritischen Pfads; mind. Kommentar korrigieren.
+
+Comment-only fix in commit 9d52be9 (branch worktree-agent-a1273dc04a7dac40b). Corrected the false 'fire-and-forget' comment in _push_session_history to state it is a blocking sync embedding that stalls the reactor / deadlocks a self-referencing proxy. Full async rewrite deferred as too risky (medium ticket): no simple_embedding_f exists, and a separate embedding_engine runs on its own undriven _async_loop so fired futures never resolve. Follow-up filed as k172. NOT merged.
+
+MERGE (main agent, 2026-09-15): irrefuehrenden fire-and-forget-Kommentar korrigiert (blockierender Sync-LWP inline im Async-Loop). Voller Async-Umbau als k172 ausgegliedert (Blocker: embedding_engine auf ungetriebenem Loop). -> done.
