@@ -2,6 +2,17 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Raider respond_f no longer mishandles a paused parallel tool batch (karr
+      k162). When one iteration emitted several tool calls and an interactive
+      self-tool (raider_ask_user / raider_pause) paused mid-batch, resuming
+      re-ran the calls that had already executed before it — doubling their side
+      effects and emitting a second tool_result for the same tool_use id — and
+      dropped any tool call queued after it without a tool_result. Both produced
+      an invalid tool_use/tool_result set (a 400 on strict providers like
+      Anthropic). Resume now runs only the calls after the pause, and a trailing
+      raider_wait/raider_abort or a second interactive self-tool is handled (the
+      latter re-pauses) so every tool_use ends with exactly one tool_result.
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its

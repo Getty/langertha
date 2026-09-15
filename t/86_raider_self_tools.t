@@ -695,4 +695,195 @@ subtest 'cosine similarity' => sub {
   is($sim, 0, 'zero vector returns 0');
 };
 
+# --- Test: respond_f continuation across a parallel tool batch (karr #162) ---
+#
+# When one iteration emits several tool calls and an interactive self-tool
+# somewhere in the batch pauses the raid, respond_f must resume WITHOUT re-running
+# the calls that already executed, and every tool_use in the batch must end up
+# with exactly one matching tool_result — a re-run (double side effect) or a
+# tool_use left without a tool_result is a 400 on strict providers like Anthropic.
+#
+# These drive the real raid_f -> respond_f loop offline through a scripted engine,
+# so they exercise the continuation math the isolated _execute_self_tool tests
+# above never reach.
+
+{
+  package SeqResponse;
+  use Moose;
+  sub is_success  { 1 }
+  sub status_line { '200 OK' }
+  sub content     { '' }
+  __PACKAGE__->meta->make_immutable;
+}
+
+{
+  package SeqHTTP;
+  use Moose;
+  use IO::Async::Loop;
+  has loop => (is => 'ro', default => sub { IO::Async::Loop->new });
+  # A ready, loop-associated future: nothing suspends on it, but any real
+  # suspension in the raid (e.g. raider_wait's delay) lands on this same loop.
+  sub do_request { return $_[0]->loop->new_future->done(SeqResponse->new) }
+  __PACKAGE__->meta->make_immutable;
+}
+
+{
+  package SeqMCP;
+  use Moose;
+  use Future;
+  has tools    => (is => 'ro', default => sub { [] });
+  has call_log => (is => 'ro', default => sub { [] });
+  sub list_tools { return Future->done($_[0]->tools) }
+  sub call_tool {
+    my ( $self, $name, $input ) = @_;
+    push @{$self->call_log}, { name => $name, input => $input };
+    return Future->done({ content => [{ type => 'text', text => "ran $name" }] });
+  }
+  __PACKAGE__->meta->make_immutable;
+}
+
+# Scripted engine: each LLM turn is popped from `turns` in order. It records every
+# result handed to format_tool_results so a test can prove the tool_result set.
+{
+  package SeqEngine;
+  use Moose;
+  with 'Langertha::Role::Tools';
+
+  has chat_model     => (is => 'ro', default => 'seq-model');
+  has '+mcp_servers' => (default => sub { [] });
+  has turns          => (is => 'ro', default => sub { [] });
+  has _turn_idx      => (is => 'rw', default => 0);
+  has captured       => (is => 'ro', default => sub { [] });
+  has _http          => (is => 'ro', lazy => 1, default => sub { SeqHTTP->new });
+
+  sub _async_http { return $_[0]->_http }
+
+  sub format_tools            { return $_[1] }
+  sub build_tool_chat_request { return { request => 1 } }
+  sub response_tool_calls     { return $_[1]->{tool_calls} // [] }
+  sub response_text_content   { return $_[1]->{text} // 'final answer' }
+  sub extract_tool_call       { return ($_[1]->{name}, $_[1]->{input}) }
+  sub think_tag_filter        { 0 }
+
+  sub parse_response {
+    my ( $self ) = @_;
+    my $i = $self->_turn_idx;
+    $self->_turn_idx($i + 1);
+    return $self->turns->[$i] // { tool_calls => [] };
+  }
+
+  sub format_tool_results {
+    my ( $self, $data, $results ) = @_;
+    push @{$self->captured}, @$results;
+    return map {
+      { role => 'tool', tool_call_id => ($_->{tool_call}{id} // ''),
+        content => $_->{result} }
+    } @$results;
+  }
+
+  __PACKAGE__->meta->make_immutable;
+}
+
+# How many tool_result blocks carry each tool_use id, across every
+# format_tool_results call the engine saw during the whole raid.
+sub result_id_counts {
+  my ( $engine ) = @_;
+  my %count;
+  $count{ $_->{tool_call}{id} // '' }++ for @{$engine->captured};
+  return \%count;
+}
+
+subtest 'respond_f does not re-run an already-executed tool from the batch' => sub {
+  my $mcp = SeqMCP->new(tools => [{ name => 'record' }]);
+  my $engine = SeqEngine->new(
+    mcp_servers => [$mcp],
+    turns => [
+      # iteration 1: the model runs `record`, then asks the user (pauses)
+      { tool_calls => [
+        { name => 'record',          input => { note => 'x' }, id => 'tc_rec' },
+        { name => 'raider_ask_user', input => { question => 'Proceed?' }, id => 'tc_ask' },
+      ] },
+      # iteration 2 (after respond_f): the model is done
+      { tool_calls => [], text => 'all done' },
+    ],
+  );
+  my $raider = Langertha::Raider->new(engine => $engine, raider_mcp => 1);
+
+  my $r1 = $raider->raid('record it, then ask me');
+  ok($r1->is_question, 'the batch pauses on raider_ask_user');
+  is($r1->content, 'Proceed?', 'the question text surfaces');
+  is(scalar @{$mcp->call_log}, 1, 'record ran once before the pause');
+
+  my $r2 = $raider->respond('yes, go ahead');
+  ok($r2->is_final, 'respond_f resumes to a final answer');
+  is("$r2", 'all done', 'final text is the second turn');
+
+  is(scalar @{$mcp->call_log}, 1, 'record was NOT run a second time on resume');
+
+  my $counts = result_id_counts($engine);
+  is($counts->{tc_rec}, 1, 'exactly one tool_result for the record call');
+  is($counts->{tc_ask}, 1, 'exactly one tool_result for the ask_user call');
+  ok(!(grep { $_ != 1 } values %$counts), 'every tool_use id has exactly one tool_result');
+};
+
+subtest 'respond_f leaves a trailing raider_wait with a tool_result' => sub {
+  my $mcp = SeqMCP->new(tools => [{ name => 'record' }]);
+  my $engine = SeqEngine->new(
+    mcp_servers => [$mcp],
+    turns => [
+      # iteration 1: record, ask (pauses), and a wait queued AFTER the pause
+      { tool_calls => [
+        { name => 'record',          input => { note => 'y' }, id => 'tc_rec' },
+        { name => 'raider_ask_user', input => { question => 'OK?' }, id => 'tc_ask' },
+        { name => 'raider_wait',     input => { seconds => 0 },       id => 'tc_wait' },
+      ] },
+      { tool_calls => [], text => 'finished' },
+    ],
+  );
+  my $raider = Langertha::Raider->new(engine => $engine, raider_mcp => 1);
+
+  ok($raider->raid('do the batch')->is_question, 'pauses on ask_user');
+  my $r2 = $raider->respond('continue');
+  ok($r2->is_final, 'resumes past the trailing wait to final');
+
+  is(scalar @{$mcp->call_log}, 1, 'record still ran only once');
+
+  my $counts = result_id_counts($engine);
+  is($counts->{tc_rec},  1, 'record has its tool_result');
+  is($counts->{tc_ask},  1, 'ask_user has its tool_result');
+  is($counts->{tc_wait}, 1, 'the trailing raider_wait got a tool_result too');
+  ok(!(grep { $_ != 1 } values %$counts), 'no tool_use left without a tool_result');
+};
+
+subtest 'respond_f re-pauses on a second interactive self-tool in the batch' => sub {
+  my $engine = SeqEngine->new(
+    turns => [
+      # iteration 1: two questions queued back to back
+      { tool_calls => [
+        { name => 'raider_ask_user', input => { question => 'First?' },  id => 'tc_q1' },
+        { name => 'raider_ask_user', input => { question => 'Second?' }, id => 'tc_q2' },
+      ] },
+      { tool_calls => [], text => 'both answered' },
+    ],
+  );
+  my $raider = Langertha::Raider->new(engine => $engine, raider_mcp => 1);
+
+  my $r1 = $raider->raid('ask me twice');
+  ok($r1->is_question, 'pauses on the first question');
+  is($r1->content, 'First?', 'first question surfaces');
+
+  my $r2 = $raider->respond('answer one');
+  ok($r2->is_question, 'respond_f re-pauses on the second question');
+  is($r2->content, 'Second?', 'second question surfaces after the first answer');
+
+  my $r3 = $raider->respond('answer two');
+  ok($r3->is_final, 'the second respond_f reaches the final answer');
+  is("$r3", 'both answered', 'final text after both questions');
+
+  my $counts = result_id_counts($engine);
+  is($counts->{tc_q1}, 1, 'first question has one tool_result');
+  is($counts->{tc_q2}, 1, 'second question has one tool_result');
+  ok(!(grep { $_ != 1 } values %$counts), 'each question answered exactly once');
+};
+
 done_testing;
