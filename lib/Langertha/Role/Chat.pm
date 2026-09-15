@@ -485,7 +485,11 @@ sub _check_capability_exclusions { return }
 # forced named tool_choice. Used to feed the capability-exclusion hook.
 sub _chat_tools_requested {
   my ( $self, $opts ) = @_;
-  return 1 if exists $opts->{tools};
+  # An empty tools => [] sends zero tools on the wire, so it must NOT trip the
+  # capability-exclusion guard (which would croak on Cerebras/Groq for a request
+  # that combines tools with a structured-output response_format). Only a
+  # non-empty tools array counts as "tools requested" here.
+  return 1 if ref $opts->{tools} eq 'ARRAY' && @{ $opts->{tools} };
   return 0 unless exists $opts->{tool_choice};
   my $tc = Langertha::ToolChoice->from_hash( $opts->{tool_choice} );
   return ( $tc && $tc->type eq 'tool' ) ? 1 : 0;
@@ -567,7 +571,13 @@ async sub chat_f {
 
   if ( $synth_tool_name && blessed($result) && $result->isa('Langertha::Response') ) {
     my $args = $self->decode_loose_json( $result->content );
-    if ( defined $args ) {
+    # A tool's arguments are a JSON object. Only synthesize the ToolCall when the
+    # model actually returned one — a non-object result (e.g. a bare JSON array)
+    # would otherwise be coerced to empty {} in Response BUILDARGS and the
+    # synthetic call would falsely claim success with no arguments. Leaving
+    # tool_calls unset lets the caller see the gap (the raw content is still on
+    # Response.content) instead of a hollow success.
+    if ( ref $args eq 'HASH' ) {
       $result = $result->clone_with(
         tool_calls => [{
           name      => $synth_tool_name,
@@ -575,6 +585,11 @@ async sub chat_f {
           synthetic => 1,
         }],
       );
+    }
+    else {
+      $log->debugf(
+        "[%s] forced-tool fallback: '%s' response was not a JSON object; no synthetic tool_call attached",
+        ref $self, $synth_tool_name);
     }
   }
 
@@ -899,9 +914,17 @@ sub _process_stream_buffer {
   my @chunks;
 
   if ($format eq 'sse') {
-    while ($$buffer_ref =~ s/^(.*?)\n\n//s) {
+    # On the final flush ($final, passed after the stream body ends) the last
+    # event can arrive without its terminating blank line — the connection just
+    # closed. Append one so the loop below consumes the remainder instead of
+    # dropping it (its finish_reason / usage would be lost, and the sync
+    # process_stream_data path — which splits the whole body at once — keeps it).
+    # Event separators and line breaks are matched CRLF-tolerantly (\r?\n) to
+    # match that sync path (split /\r?\n/).
+    $$buffer_ref .= "\n\n" if $final && $$buffer_ref ne '';
+    while ($$buffer_ref =~ s/^(.*?)\r?\n\r?\n//s) {
       my $block = $1;
-      for my $line (split /\n/, $block) {
+      for my $line (split /\r?\n/, $block) {
         next if $line eq '' || $line =~ /^:/;
         if ($line =~ /^data:\s*(.*)$/) {
           my $json_data = $1;
@@ -913,7 +936,8 @@ sub _process_stream_buffer {
       }
     }
   } elsif ($format eq 'ndjson') {
-    while ($$buffer_ref =~ s/^(.*?)\n//s) {
+    $$buffer_ref .= "\n" if $final && $$buffer_ref ne '';
+    while ($$buffer_ref =~ s/^(.*?)\r?\n//s) {
       my $line = $1;
       next if $line eq '';
       my $parsed = $self->json->decode($line);

@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Streaming (async path): the final unterminated SSE/NDJSON event is no
+      longer dropped (karr k166) — a provider that sends its last chunk (with
+      finish_reason / usage) and closes without a trailing blank line now has
+      that event parsed, matching the sync path; event/line splitting is also
+      CRLF-tolerant now, like the sync path.
+
+    - chat_f no longer trips the Cerebras/Groq tools+response_format croak on an
+      empty tools => [] (karr k169), and no longer attaches a false-success
+      empty-argument synthetic tool_call when a forced-tool rewrite returns valid
+      but non-object JSON — it leaves tool_calls unset so the caller sees the gap
+      (karr k170).
+
     - Anthropic streaming now delivers finish_reason and usage on the is_final
       chunk (karr k167): Anthropic splits them across message_delta (metadata,
       not final) and message_stop (final, empty), so the documented

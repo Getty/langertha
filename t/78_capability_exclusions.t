@@ -173,6 +173,23 @@ sub run {
     'Cerebras: response_format-only request reached the transport' );
 }
 
+# --- Cerebras: empty tools => [] + response_format -> NO croak (k169) ------
+# An empty tools array sends ZERO tools on the wire, so it must not trip the
+# exclusion the way a populated array does. Only a non-empty tools array (or a
+# forced named tool_choice) counts as "tools requested".
+{
+  my $engine = cerebras();
+  my ( $ok, $err ) = run( sub { $engine->chat_f(
+    messages        => ['weather?'],
+    tools           => [],
+    response_format => $JSON_SCHEMA_RF,
+  ) });
+  ok( $ok, 'Cerebras: empty tools => [] + response_format does NOT croak (k169)' )
+    or diag $err;
+  is( $engine->_async_http->request_count, 1,
+    'Cerebras: empty-tools request reached the transport' );
+}
+
 # ======================================================================
 # Groq — MODE-AWARE (json_schema only) + streaming exclusion
 # ======================================================================
@@ -213,6 +230,22 @@ sub run {
     'Groq: json_object response_format is still on the wire' );
   ok( ref $body->{tools} eq 'ARRAY' && @{ $body->{tools} },
     'Groq: tools are still on the wire alongside json_object' );
+}
+
+# --- Groq: empty tools => [] + json_schema -> NO croak (k169) -------------
+# json_schema alone (no tools) is a valid Groq non-streaming request; an empty
+# tools array is no tools, so the exclusion must not fire.
+{
+  my $engine = groq();
+  my ( $ok, $err ) = run( sub { $engine->chat_f(
+    messages        => ['weather?'],
+    tools           => [],
+    response_format => $JSON_SCHEMA_RF,
+  ) });
+  ok( $ok, 'Groq: empty tools => [] + json_schema does NOT croak (k169)' )
+    or diag $err;
+  is( $engine->_async_http->request_count, 1,
+    'Groq: empty-tools json_schema request reached the transport' );
 }
 
 # --- Groq: json_schema + streaming -> croak (regardless of tools) ---------
