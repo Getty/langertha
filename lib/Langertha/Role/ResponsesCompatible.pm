@@ -320,13 +320,23 @@ sub chat_response {
         }
     }
 
-    # Normalize usage to chat-style (Langertha::Usage / Goldmine expect
-    # prompt_tokens/completion_tokens).
+    # Normalize usage to chat-style keys (Langertha::Usage / Goldmine read
+    # prompt_tokens/completion_tokens off the %{} overload), while carrying the
+    # Responses-native detail blocks through verbatim: input_tokens_details holds
+    # the automatic prompt-cache read/write counts, and Langertha::Usage->from_hash
+    # parses them onto cached_tokens / cache_write_tokens the same way it does the
+    # chat wire (karr #159). The per-call cost block rides along under usage.cost.
+    # The chat-spelled aliases stay so the overload keeps returning
+    # prompt_tokens/completion_tokens for existing callers (t/60, t/91).
     my $usage = $data->{usage} // {};
     my $normalized_usage = {
         prompt_tokens     => $usage->{input_tokens},
         completion_tokens => $usage->{output_tokens},
         total_tokens      => $usage->{total_tokens},
+        ( ref $usage->{input_tokens_details} eq 'HASH'
+            ? ( input_tokens_details => $usage->{input_tokens_details} ) : () ),
+        ( ref $usage->{cost} eq 'HASH'
+            ? ( cost => $usage->{cost} ) : () ),
     };
     if ( my $rt = $usage->{output_tokens_details}{reasoning_tokens} ) {
         $normalized_usage->{completion_tokens_details} = { reasoning_tokens => $rt };

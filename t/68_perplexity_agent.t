@@ -313,6 +313,35 @@ subtest 'real captured Agent response (fixture, k147)' => sub {
         'output_text annotations[] present but empty' );
 };
 
+subtest 'usage carries prompt-cache tokens + cost (fixture, k159)' => sub {
+    my $data = $json->decode( path('t/data/perplexity_agent_search.json')->slurp_raw );
+    my $resp = ppx()->chat_response( _http( $data ) );
+
+    # The Agent wire nests the automatic prompt-cache counts under
+    # usage.input_tokens_details (caching is automatic on every call).
+    # Langertha::Usage->from_hash now parses them onto the value object the same
+    # way it does the chat wire's prompt_tokens_details, so cache read/write
+    # observability reaches Responses-envelope engines too (karr #159).
+    is( $resp->usage->cache_write_tokens, 4068,
+        'input_tokens_details.cache_creation_input_tokens -> Usage.cache_write_tokens' );
+    is( $resp->usage->cached_tokens, 0,
+        'input_tokens_details cache read count -> Usage.cached_tokens (0 preserved)' );
+    ok( $resp->has_cached_tokens, 'cached_tokens surfaces on the Response (defined 0)' );
+    is( $resp->cached_tokens, 0, 'Response.cached_tokens lifted off the Usage object' );
+
+    # The chat-spelled overload keys stay for existing callers (t/60, t/91), and
+    # the raw Responses detail block survives verbatim under the usage overload.
+    is( $resp->usage->{prompt_tokens},     4071, 'chat-spelled prompt_tokens overload kept' );
+    is( $resp->usage->{completion_tokens}, 13,   'chat-spelled completion_tokens overload kept' );
+    is( $resp->usage->{input_tokens_details}{cache_creation_input_tokens}, 4068,
+        'input_tokens_details survives verbatim under the usage overload' );
+
+    # The per-call cost block rides along under usage.cost (passthrough).
+    is( ref $resp->usage->{cost}, 'HASH', 'usage.cost block passed through' );
+    is( $resp->usage->{cost}{currency}, 'USD', 'cost currency preserved' );
+    cmp_ok( $resp->usage->{cost}{total_cost}, '>', 0, 'cost.total_cost is a real number' );
+};
+
 subtest 'real captured typed-SSE stream (fixture, k147)' => sub {
     my $engine = ppx();
     my $sse    = path('t/data/perplexity_agent_stream.sse')->slurp_raw;

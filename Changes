@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Open-Responses engines (Engine::Perplexity, Engine::OpenAIResponses) now
+      surface the automatic prompt-cache counts the Agent / Responses wire nests
+      under usage.input_tokens_details: $response->usage->cached_tokens (read)
+      and $response->usage->cache_write_tokens (write) are populated the same way
+      they already are for the OpenAI and Anthropic wires, and $response->cached_tokens
+      reflects the read count (karr k159). Langertha::Usage->from_hash learned the
+      input_tokens_details spelling; the Perplexity per-call usage.cost block is
+      passed through under $response->usage->{cost}.
+
     - DeepSeek: the default model is now deepseek-flash (DeepSeek-V4.1-Flash,
       native multimodal vision, 1M context), the stable id that supersedes the
       retired deepseek-v4-flash — which DeepSeek only temporarily routes to
