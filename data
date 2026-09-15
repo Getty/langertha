@@ -1,0 +1,25 @@
+---
+class: standard
+completed: 2026-09-15T00:26:51Z
+created: 2026-09-14T21:57:36Z
+id: 159
+priority: low
+started: 2026-09-15T00:04:40Z
+status: done
+tags:
+- perplexity
+- responses
+- usage
+- prompt-cache
+- k147
+title: Responses/Agent usage normalization drops cache tokens + cost
+updated: 2026-09-15T00:26:51Z
+---
+
+Found during k147 live wire probing. Role::ResponsesCompatible::chat_response hand-builds a normalized usage hash (prompt_tokens/completion_tokens/total_tokens + reasoning_tokens) and drops input_tokens_details. The live Perplexity Agent wire returns input_tokens_details.{cache_creation_input_tokens,cache_read_input_tokens,cached_tokens} on every call (caching is automatic) plus a usage.cost {input_cost,output_cost,tool_calls_cost,total_cost,currency} block. Because the hand-normalized hash omits these, $response->cached_tokens and $response->usage->cache_write_tokens stay undef for Responses-envelope engines even though the wire provides them — the prompt-cache observability that Langertha::Usage->from_hash parses for the chat wire is lost here. Fix: pass the raw usage block through Langertha::Usage->from_hash (or merge the details) instead of hand-normalizing, so the value object parses cache read/write like it does for OpenAI/Anthropic. Optionally surface usage.cost. Shared with Engine::OpenAIResponses. Out of scope for the k147 8-point confirmation.
+
+2026-09-15 00:21 Fixed in worktree agent-a63cd78 (branched off main a0570cd), commit dafc8ab. Usage->from_hash learned the Responses input_tokens_details nesting (cache read/write; precedence OpenAI-chat > Responses > Anthropic-flat). ResponsesCompatible::chat_response carries input_tokens_details + cost through, keeping chat-spelled overload aliases for t/60 and t/91 back-compat (a pure raw passthrough would break those). Verified vs t/data/perplexity_agent_search.json: usage->cache_write_tokens=4068, usage->cached_tokens=0, response->cached_tokens=0, usage->{cost} present. Resolves the #28-tracked OpenAIResponses telemetry gap (t/91 gap subtests flipped to assert the fix). Offline only, no live call. prove -lr t/ all green incl. t/60. NOT merged to main.
+
+Implemented + tested offline; needs integration/QA. Commit dafc8ab on worktree branch (not merged).
+
+MERGE (main agent, 2026-09-15): gemergt nach main (16885c1), Suite 3630 gruen, t/60 gruen. Usage->from_hash lernt die Open-Responses input_tokens_details-Verschachtelung (Praezedenz OpenAI-chat > Responses > Anthropic-flat); chat_response reicht input_tokens_details + cost durch. cache_write_tokens/cached_tokens befuellen jetzt fuer Responses-Envelope-Engines (Evidenz Fixture: cache_creation_input_tokens=4068 -> cache_write_tokens=4068). HOUSE-RULE-5: %{}-Overload bleibt chat-spelled (Goldmine-Kontrakt t/60/t/91) -> Aliase behalten, Details zusaetzlich durchgereicht. Schliesst den t/91-dokumentierten Gap karr #28. OFFEN: Stream::Chunk.usage laeuft noch nicht durch from_hash -> k160. -> done.
