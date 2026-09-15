@@ -1,0 +1,23 @@
+---
+class: standard
+completed: 2026-09-15T02:38:13Z
+created: 2026-09-15T02:10:17Z
+id: 162
+priority: high
+started: 2026-09-15T02:12:30Z
+status: done
+tags:
+- raider
+- tools
+- bug
+- hunt
+title: 'Raider respond_f: erledigte Tool-Calls werden erneut ausgefuehrt + trailing
+  Self-Tools ohne tool_result'
+updated: 2026-09-15T02:38:13Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT. Raider.pm:1865 speichert remaining_tcs=[grep {$_ != $tc} @$tool_calls] (ALLE ausser dem pausierenden, inkl. der VOR dem Self-Tool bereits erledigten, die schon in results_so_far stehen). Resume 2028-2062 fuehrt sie erneut aus. Bei parallelem Tool-Use [search_files, raider_ask_user]: search_files laeuft 2x (Doppel-Seiteneffekt) + 2 tool_result-Bloecke fuer dieselbe ID -> Anthropic 400. Fix: Index des pending-tc merken, remaining_tcs=[@$tool_calls[$idx+1..$#]]. ZUSATZ (2043): question/pause/wait/abort im Resume fallen durch next OHNE tool_result -> Assistant tool_use ohne result -> Anthropic 400. Untested (t/86 nur _execute_self_tool isoliert).
+
+Fixed in commit c87f2f2 (branch worktree-agent-a1273dc04a7dac40b). Index-based remaining_tcs + respond_f resume handles trailing self-tools. Tests in t/86 drive raid_f->respond_f offline; verified they fail on the pre-fix code. prove -lr t/ green (105 files, 3605 tests). NOT merged.
+
+MERGE (main agent, 2026-09-15): gemergt nach main, Suite gruen. Continuation index-basiert (nur Calls NACH dem pausierenden), respond_f-resume spiegelt Hauptschleife (question/pause re-pause, abort, wait->tool_result, result); genau ein tool_result je tool_use. 3 revert-verifizierte Subtests in t/86. -> done.
