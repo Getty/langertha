@@ -1,0 +1,21 @@
+---
+class: standard
+created: 2026-09-15T02:11:10Z
+id: 171
+priority: low
+status: backlog
+tags:
+- bug
+- hunt
+- verify
+title: 'Bug-Hunt VERMUTET-Cluster: defensive Guards + Kleinfunde'
+updated: 2026-09-15T03:09:31Z
+---
+
+Bug-Hunt 2026-09-15, VERMUTET (brauchen Verifikation). (1) OpenAICompatible.pm:267 embedding_response @{$data->{data}} ohne Guard -> Crash bei fehlendem data-Feld. (2) AnthropicCompatible.pm:403 @{$data->{content}} ohne //[] -> Crash bei content-loser 200-Shape. (3) Moment.pm:167-170 13-stellige ms-Epoch -> from_epoch out-of-range -> created faellt still weg. (4) Chat.pm:902 Async-SSE nur \n\n nicht CRLF. (5) ToolChoice.pm:132 to_gemini sendet snake_case allowed_function_names in camelCase-Struktur -> Risiko bei nicht-protobuf Gemini-Proxies (OpenRouter/LMStudio, k131-Klasse) degradiert forced->ANY; t/76:96 pinnt snake_case. (6) Raider.pm:1709 vs 2075 plugin_before_llm_call neues conversation-ArrayRef divergiert vom Continuation-State. (7) aggregate_tool_calls-POD ueberverspricht (kein Dialekt fuellt Stream::Chunk.tool_calls) = bekannte akzeptierte Luecke, nur POD.
+
+SPLIT (main agent, 2026-09-15): abgearbeitet ueber Wave-2-Worker — CRLF-SSE (Chat.pm-Worker), content-deref-Guard (AnthropicCompatible-Worker), embedding-deref-Guard (OpenAICompatible via Anthropic-Worker), Responses-finish_reason-Overwrite (ResponsesCompatible-Worker). BLEIBEN OFFEN (brauchen Verifikation/Entscheidung): Moment ms-epoch (grenzwertig by-design lenient), ToolChoice gemini snake_case allowed_function_names (braucht Provider-Verifikation gegen k131-Proxies, t/76 pinnt snake_case), plugin_before_llm_call conversation-Divergenz (braucht Repro), aggregate_tool_calls-POD-Ueberversprechen (bekannte akzeptierte Luecke = nur POD).
+
+2026-09-15 02:52 Two of the VERMUTET guards implemented + verified on branch worktree-agent-a4f040e6b80ed317c (commit 897e08f), NOT merged: (2) AnthropicCompatible.pm chat_response content deref -> @{ $data->{content} // [] } (content-less 200 shim shape now yields graceful empty content). (1) OpenAICompatible.pm embedding_response now croaks 'embedding response missing data array (error: ...)' instead of @{undef} deref crash on a data-less/error 200 payload. New test t/44_malformed_response_guards.t covers both (well-formed sanity + malformed graceful/croak). prove -lr green, perlcritic clean. STILL OPEN in this cluster: Moment ms-epoch, ToolChoice gemini snake_case allowed_function_names, plugin_before_llm_call conversation divergence, aggregate_tool_calls POD overpromise.
+
+2026-09-15 03:04 Responses finish_reason-Overwrite sub-item: CONFIRMED real and FIXED on commit 9718bc4 (base main 99af00e). Confirmed via existing fixture responses_api_toolcall.json (function_call nested in a status:completed message) which yielded finish_reason stop instead of tool_calls; also the common [message-preamble, function_call] top-level ordering. Fix: chat_response resolves finish_reason after the output[] walk -- tool calls present => tool_calls unless a non-completed (truncation) status, order-independent. t/60 asserts both orderings + the nested fixture + plain-message-stays-stop. REMAINING k171 items still open (Moment ms-epoch, ToolChoice gemini snake_case, plugin_before_llm_call divergence, aggregate_tool_calls POD).
