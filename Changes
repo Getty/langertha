@@ -2,6 +2,16 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - decode_loose_json (Role::ResponseFormat) no longer loses non-ASCII
+      structured output or hangs on malformed JSON (karr k161). It now
+      UTF-8-encodes the already-decoded Perl-Unicode content before the utf8
+      JSON decoder, so Umlaut/emoji/CJK payloads parse instead of dying "Wide
+      character in subroutine entry" and silently dropping the forced-tool
+      fallback's synthetic ToolCall. Its trailing-junk trim loop now stops as
+      soon as the candidate stops shrinking, so unbalanced input such as
+      `{{"a":1}` returns undef instead of spinning forever and wedging the
+      async event loop.
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its
