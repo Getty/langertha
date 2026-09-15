@@ -1,0 +1,25 @@
+---
+class: standard
+completed: 2026-09-15T03:00:49Z
+created: 2026-09-15T02:10:40Z
+id: 166
+priority: medium
+started: 2026-09-15T02:40:50Z
+status: done
+tags:
+- streaming
+- async
+- bug
+- hunt
+title: 'Chat.pm _process_stream_buffer: toter $final -> letztes unterminiertes SSE/NDJSON-Event
+  faellt weg'
+updated: 2026-09-15T03:00:49Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT. Role::Chat.pm:896-926 destrukturiert $final, referenziert es NIE; Call-Site 739-746 uebergibt $final=1 nach der Stream-Schleife um Rest-Event zu flushen. Nur s/^(.*?)\n\n//s (SSE) bzw. \n (NDJSON) greift -> finales data:{...} OHNE abschliessendes \n\n bleibt im Buffer und wird verworfen (finish_reason/usage verloren). Sync-Pfad process_stream_data verliert es NICHT -> Async/Sync divergieren. Fix: bei $final Rest ohne Terminator-Anforderung parsen. VERMUTET zusaetzlich: Async-SSE kennt nur \n\n, nicht CRLF (Z.902).
+
+2026-09-15 02:55 Fixed in commit 8b82523. _process_stream_buffer flushes the final unterminated event on $final (append terminator + reparse); SSE/NDJSON separators+line breaks now CRLF-tolerant (\r?\n) to match sync process_stream_data. CRLF decision: IMPLEMENTED, not just noted — the sync path already uses split /\r?\n/, so this removes a proven code-level sync/async divergence (k171 pt.4) and is strictly safe (every \n-only stream parses identically). Could not live-confirm a specific provider emits CRLF (needs approved live calls); aligned to the sync-path precedent rather than provider observation. Test: t/43_streaming_buffer_final.t (sabotage-verified).
+
+2026-09-15 02:55 Impl+test done, ready for review
+
+MERGE (main agent, 2026-09-15): gemergt, Suite gruen. _process_stream_buffer flusht bei $final das letzte unterminierte Event (haengt Terminator an) + CRLF-tolerant (\r?\n) wie der Sync-Pfad. CAVEAT: CRLF nicht live-provider-bestaetigt, an Sync-Praezedenz angeglichen (risikolos, \n-only parst identisch). -> done.
