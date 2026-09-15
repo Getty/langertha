@@ -899,9 +899,17 @@ sub _process_stream_buffer {
   my @chunks;
 
   if ($format eq 'sse') {
-    while ($$buffer_ref =~ s/^(.*?)\n\n//s) {
+    # On the final flush ($final, passed after the stream body ends) the last
+    # event can arrive without its terminating blank line — the connection just
+    # closed. Append one so the loop below consumes the remainder instead of
+    # dropping it (its finish_reason / usage would be lost, and the sync
+    # process_stream_data path — which splits the whole body at once — keeps it).
+    # Event separators and line breaks are matched CRLF-tolerantly (\r?\n) to
+    # match that sync path (split /\r?\n/).
+    $$buffer_ref .= "\n\n" if $final && $$buffer_ref ne '';
+    while ($$buffer_ref =~ s/^(.*?)\r?\n\r?\n//s) {
       my $block = $1;
-      for my $line (split /\n/, $block) {
+      for my $line (split /\r?\n/, $block) {
         next if $line eq '' || $line =~ /^:/;
         if ($line =~ /^data:\s*(.*)$/) {
           my $json_data = $1;
@@ -913,7 +921,8 @@ sub _process_stream_buffer {
       }
     }
   } elsif ($format eq 'ndjson') {
-    while ($$buffer_ref =~ s/^(.*?)\n//s) {
+    $$buffer_ref .= "\n" if $final && $$buffer_ref ne '';
+    while ($$buffer_ref =~ s/^(.*?)\r?\n//s) {
       my $line = $1;
       next if $line eq '';
       my $parsed = $self->json->decode($line);

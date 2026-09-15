@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Streaming: the final unterminated event of an SSE or NDJSON response is no
+      longer dropped on the async path (karr k166). chat_stream_realtime_f now
+      flushes the trailing buffer after the body ends, so a last `data:` event
+      (or NDJSON line) that arrives without its terminator — and the
+      finish_reason / usage it carries — is parsed instead of discarded, matching
+      the synchronous process_stream_data path. Both dialects' event separators
+      and line breaks are now parsed CRLF-tolerantly (\r?\n), as the sync path
+      already was.
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its
