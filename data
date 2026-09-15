@@ -1,0 +1,25 @@
+---
+class: standard
+completed: 2026-09-15T03:01:02Z
+created: 2026-09-15T02:10:58Z
+id: 169
+priority: low
+started: 2026-09-15T02:41:08Z
+status: done
+tags:
+- chat_f
+- capabilities
+- bug
+- hunt
+title: '_chat_tools_requested: leeres tools=>[] loest false-positive capability-exclusion-croak
+  aus'
+updated: 2026-09-15T03:01:02Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT (C). Chat.pm:488 return 1 if exists $opts->{tools}. chat_f an Cerebras/Groq mit response_format json_schema UND tools=>[] (leer) -> _check_capability_exclusions croaked obwohl 0 Tools gesendet wuerden. Fix: return 1 if ref eq ARRAY && @{...}.
+
+2026-09-15 02:55 Fixed in commit 41a71fc. _chat_tools_requested: return 1 only for ref eq ARRAY && non-empty; forced-named tool_choice detection preserved. Test: t/78_capability_exclusions.t empty-tools cases for Cerebras+Groq (sabotage-verified); existing populated-tools croak cases still green.
+
+2026-09-15 02:55 Impl+test done, ready for review
+
+MERGE: leeres tools=>[] loest den Cerebras/Groq-Croak nicht mehr aus (ref ARRAY && @{}), forced-named tool_choice-Erkennung erhalten. -> done.
