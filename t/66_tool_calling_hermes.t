@@ -239,6 +239,76 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 }
 
 # ========================================================================
+# response_tool_calls — valid-but-non-object JSON is skipped, not crashed
+# (karr k163: [1,2], "hello", 42, and an object without a name each decode
+#  fine, so the old eval-only guard let them through to the tool loop's
+#  $tc->{name}/$tc->{arguments} — either dying "Not a HASH reference" or
+#  resolving to name='' -> "Tool '' not found" and killing the whole raid)
+# ========================================================================
+
+{
+  my $nous = Langertha::Engine::NousResearch->new(
+    api_key => 'test-key',
+    model   => 'test',
+  );
+
+  for my $case (
+    [ 'array'          => '[1, 2]' ],
+    [ 'bare string'    => '"hello"' ],
+    [ 'bare number'    => '42' ],
+    [ 'object no name' => '{"arguments": {}}' ],
+  ) {
+    my ( $label, $payload ) = @$case;
+    my $data = {
+      choices => [{
+        message => {
+          role    => 'assistant',
+          content => "<tool_call>\n$payload\n</tool_call>",
+        },
+      }],
+    };
+    my $calls;
+    my $survived = eval { $calls = $nous->response_tool_calls($data); 1 };
+    ok($survived, "response_tool_calls survives non-object JSON ($label)");
+    is(scalar @{ $calls || [] }, 0, "non-object JSON skipped ($label)");
+  }
+}
+
+# ========================================================================
+# response_tool_calls — broken calls skipped, the valid one between them kept,
+# and the survivor flows through the tool loop's extract path without dying
+# ========================================================================
+
+{
+  my $nous = Langertha::Engine::NousResearch->new(
+    api_key => 'test-key',
+    model   => 'test',
+  );
+
+  my $data = {
+    choices => [{
+      message => {
+        role    => 'assistant',
+        content => "<tool_call>\n[1, 2]\n</tool_call>\n"
+          . "<tool_call>\n\"hello\"\n</tool_call>\n"
+          . "<tool_call>\n{\"name\": \"add\", \"arguments\": {\"a\": 7, \"b\": 15}}\n</tool_call>\n"
+          . "<tool_call>\n{\"arguments\": {}}\n</tool_call>",
+      },
+    }],
+  };
+
+  my $calls = $nous->response_tool_calls($data);
+  is(scalar @$calls, 1, 'only the one valid call survives the broken siblings');
+  is($calls->[0]{name}, 'add', 'valid call name');
+
+  # The tool loop does $self->extract_tool_call($tc) then $tc->{name}; the
+  # survivor must flow through without dying.
+  my ( $name, $args ) = $nous->extract_tool_call($calls->[0]);
+  is($name, 'add', 'extract_tool_call name from survivor');
+  is_deeply($args, { a => 7, b => 15 }, 'extract_tool_call arguments from survivor');
+}
+
+# ========================================================================
 # response_text_content — strips tool_call tags
 # ========================================================================
 

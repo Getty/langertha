@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Hermes tool calling no longer crashes a raid on valid-but-non-object JSON
+      inside a `<tool_call>` tag (karr k163). An array, a bare string/number, or
+      an object without a `name` is now skipped rather than pushed on to the
+      tool loop, which then either died "Not a HASH reference" or fell into
+      "Tool '' not found". The Hermes branch of response_tool_calls now applies
+      the same HASH + non-empty-name guard the canonical
+      ToolCall->extract_hermes_from_text already used. Affects Hermes-format
+      engines (NousResearch, AKI).
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its
