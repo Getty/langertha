@@ -1,0 +1,24 @@
+---
+class: standard
+completed: 2026-09-15T03:01:14Z
+created: 2026-09-15T02:11:04Z
+id: 170
+priority: low
+started: 2026-09-15T02:41:14Z
+status: done
+tags:
+- chat_f
+- tools
+- bug
+- hunt
+title: chat_f verwirft Nicht-Objekt-Ergebnis der forced-tool-Rewrite still
+updated: 2026-09-15T03:01:14Z
+---
+
+Bug-Hunt 2026-09-15, BESTAETIGT (C). Chat.pm:570-578 + Response.pm:448 BUILDARGS. Perplexity forced-tool->response_format: liefert Modell gueltiges Nicht-Objekt-JSON (Array), gibt decode_loose_json ArrayRef, defined $args wahr, aber BUILDARGS coerced arguments bei ref ne HASH still auf {}. Synthetischer ToolCall behauptet Erfolg mit leeren Args. Fix: nur bei ref eq HASH synthetisieren.
+
+2026-09-15 02:55 Fixed in commit f433a49. chat_f synthesizes the forced-tool fallback ToolCall only when decode_loose_json returns a HASH; non-object (array) result -> no tool_call + debug log, raw content stays on Response. Response.pm BUILDARGS coercion untouched (defensive back-compat). Test: t/68_perplexity_agent.t non-object-result subtest (sabotage-verified).
+
+2026-09-15 02:55 Impl+test done, ready for review
+
+MERGE: chat_f synthetisiert den fallback-ToolCall nur bei ref eq HASH; Nicht-Objekt (Array) -> kein Falsch-Erfolg, tool_calls unset + debug-log, raw content bleibt auf Response. Response.pm-BUILDARGS bewusst unberuehrt. -> done.
