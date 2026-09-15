@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Runtime metrics: the synchronous poll_metrics / export_otlp now return the
+      records ArrayRef / HTTP::Response they document, not the underlying Future
+      (karr k164). IO::Async::Loop->await returns the future itself, so the
+      wrappers were missing ->get and the documented for(@$records) died on "Not
+      an ARRAY reference"; the runtime-metrics live test now drives the sync
+      public API so a real server run confirms the fix.
+
     - Hermes tool calling no longer crashes the raid on a valid-but-non-object
       <tool_call> payload (karr k163): response_tool_calls guards the decoded
       JSON the way Langertha::ToolCall->extract_hermes_from_text does — only a

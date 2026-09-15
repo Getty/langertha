@@ -12,6 +12,11 @@ use Test2::Bundle::More;
 #      serve a real /metrics endpoint. Skip cleanly if none are set.
 #   2) Generic TEST_LANGERTHA_RUNTIME_METRICS_URL with no engine match —
 #      skipped by default (no engine prefix to test).
+#
+# This drives the *sync* public API (poll_metrics / export_otlp) on purpose:
+# a real server run then confirms the sync wrappers unwrap their Future to the
+# documented payload (ArrayRef / HTTP::Response) rather than masking a
+# Future-leak regression (karr k164).
 BEGIN {
   my %engines = (
     vllm     => $ENV{TEST_LANGERTHA_VLLM_URL},
@@ -24,7 +29,6 @@ BEGIN {
   }
 }
 
-require Future::AsyncAwait;
 require Langertha::Engine::vLLM;
 require Langertha::Engine::SGLang;
 require Langertha::Engine::LlamaCpp;
@@ -42,16 +46,9 @@ subtest 'vLLM scrape' => sub {
   ok($engine->supports('runtime_metrics'),
     'vLLM engine advertises runtime_metrics capability');
 
-  my $records;
-  eval {
-    require IO::Async::Loop;
-    my $loop = IO::Async::Loop->new;
-    $records = $loop->await(
-      Future->wrap($engine->poll_metrics_f('vllm:'))
-    );
-  };
-  if ($@) { fail "poll_metrics_f: $@"; return; }
-  ok(ref($records) eq 'ARRAY', 'vLLM scrape returns ArrayRef');
+  my $records = eval { $engine->poll_metrics('vllm:') };
+  if ($@) { fail "poll_metrics: $@"; return; }
+  is(ref($records), 'ARRAY', 'vLLM scrape returns ArrayRef');
   diag "vLLM scraped " . scalar(@$records) . " vllm: records";
 };
 
@@ -68,16 +65,9 @@ subtest 'SGLang scrape' => sub {
   ok($engine->supports('runtime_metrics'),
     'SGLang engine advertises runtime_metrics capability');
 
-  my $records;
-  eval {
-    require IO::Async::Loop;
-    my $loop = IO::Async::Loop->new;
-    $records = $loop->await(
-      Future->wrap($engine->poll_metrics_f('sglang:'))
-    );
-  };
-  if ($@) { fail "poll_metrics_f: $@"; return; }
-  ok(ref($records) eq 'ARRAY', 'SGLang scrape returns ArrayRef');
+  my $records = eval { $engine->poll_metrics('sglang:') };
+  if ($@) { fail "poll_metrics: $@"; return; }
+  is(ref($records), 'ARRAY', 'SGLang scrape returns ArrayRef');
   diag "SGLang scraped " . scalar(@$records) . " sglang: records";
 };
 
@@ -94,16 +84,9 @@ subtest 'llama.cpp scrape' => sub {
   ok($engine->supports('runtime_metrics'),
     'LlamaCpp engine advertises runtime_metrics capability');
 
-  my $records;
-  eval {
-    require IO::Async::Loop;
-    my $loop = IO::Async::Loop->new;
-    $records = $loop->await(
-      Future->wrap($engine->poll_metrics_f('llama_'))
-    );
-  };
-  if ($@) { fail "poll_metrics_f: $@"; return; }
-  ok(ref($records) eq 'ARRAY', 'llama.cpp scrape returns ArrayRef');
+  my $records = eval { $engine->poll_metrics('llama_') };
+  if ($@) { fail "poll_metrics: $@"; return; }
+  is(ref($records), 'ARRAY', 'llama.cpp scrape returns ArrayRef');
   diag "llama.cpp scraped " . scalar(@$records) . " llama_ records";
 };
 
@@ -140,29 +123,19 @@ subtest 'OTLP export to TEST_LANGERTHA_OTLP_ENDPOINT' => sub {
   my $engine = eval { $class->new(url => $ENV{$url_env}) };
   if ($@) { fail "construct $class: $@"; return; }
 
-  my $records;
-  eval {
-    require IO::Async::Loop;
-    my $loop = IO::Async::Loop->new;
-    $records = $loop->await(
-      Future->wrap($engine->poll_metrics_f($prefix))
-    );
-  };
-  if ($@) { fail "poll_metrics_f: $@"; return; }
+  my $records = eval { $engine->poll_metrics($prefix) };
+  if ($@) { fail "poll_metrics: $@"; return; }
   ok(ref($records) eq 'ARRAY' && @$records, "scraped " . scalar(@$records) . " records");
 
-  my $response;
-  eval {
-    require IO::Async::Loop;
-    my $loop = IO::Async::Loop->new;
-    $response = $loop->await(
-      Future->wrap($engine->export_otlp_f($records,
-        endpoint     => $endpoint,
-        service_name => $class,
-      ))
+  my $response = eval {
+    $engine->export_otlp($records,
+      endpoint     => $endpoint,
+      service_name => $class,
     );
   };
-  if ($@) { fail "export_otlp_f: $@"; return; }
+  if ($@) { fail "export_otlp: $@"; return; }
+  ok(ref($response) && $response->isa('HTTP::Response'),
+    'export_otlp returns an HTTP::Response');
   ok($response->is_success, "OTLP export to $endpoint returned 2xx");
   diag "OTLP export status: " . $response->status_line;
 };
