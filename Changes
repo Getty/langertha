@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Hermes tool calling no longer crashes the raid on a valid-but-non-object
+      <tool_call> payload (karr k163): response_tool_calls guards the decoded
+      JSON the way Langertha::ToolCall->extract_hermes_from_text does — only a
+      hash carrying a non-empty name reaches the tool loop, so an arrayref, a
+      bare scalar, or a nameless object is skipped instead of dying with "Not a
+      HASH reference" / "Tool '' not found". Affects Hermes engines (NousResearch,
+      AKI).
+
     - Engine::Perplexity streaming no longer drops citations: a streamed
       search-augmented reply lifts the search_results block from the terminal
       response.completed frame onto the final Langertha::Stream::Chunk, reachable

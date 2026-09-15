@@ -185,10 +185,16 @@ sub response_tool_calls {
     my @tool_calls;
     while ( $content =~ m{<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>}sg ) {
       my $json_str = $1;
-      eval {
-        my $tc = $self->decode_json_text($json_str);
-        push @tool_calls, $tc;
-      };
+      my $tc = eval { $self->decode_json_text($json_str) };
+      # Guard as Langertha::ToolCall->extract_hermes_from_text does: only a
+      # well-formed call (a HASH carrying a non-empty name) may reach the tool
+      # loop, which then does $tc->{name}/$tc->{arguments}. Valid-but-non-object
+      # JSON ([1,2], a bare string/number) or an object without a name would
+      # otherwise crash the raid ("Not a HASH reference" / "Tool '' not found").
+      # -- karr k163
+      next unless ref($tc) eq 'HASH';
+      next unless defined $tc->{name} && length $tc->{name};
+      push @tool_calls, $tc;
     }
     return \@tool_calls;
   }
