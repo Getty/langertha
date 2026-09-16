@@ -104,18 +104,20 @@ Gemini 3 family it is the accepted C<thinkingLevel> subset.
 =cut
 
 has levels_by_wire => (
-  is        => 'ro',
-  isa       => 'HashRef[ArrayRef[Langertha::Reasoning::Level]]',
-  predicate => 'has_levels_by_wire',
-  default   => sub { {} },
+  is      => 'ro',
+  isa     => 'HashRef[ArrayRef[Langertha::Reasoning::Level]]',
+  default => sub { {} },
 );
 
 =attr levels_by_wire
 
 Per-wire refinement of L</levels> for a family whose accepted set differs
 between the wires it speaks (the OpenAI C<openai> vs C<responses> axis, karr
-k176). Phase 1 populates both wires identically; the C<max> split lands in
-Phase 1.5.
+k176). The gpt-6 and gpt-5.6 generations drop C<max> on the C<openai> (Chat
+Completions) wire while keeping it on C<responses> — C<max> is Responses-only
+(live-confirmed 2026-09-16, karr k176). A family whose wires agree populates
+both keys with the same set; the unlisted-id default leaves it empty (no
+per-wire restriction).
 
 =cut
 
@@ -245,7 +247,6 @@ checks membership in its L</levels_by_wire> set for that wire.
 
 sub effort_accepted_on {
   my ( $self, $wire, $effort ) = @_;
-  return 1 unless $self->has_levels_by_wire;
   my $set = $self->levels_by_wire->{$wire};
   return 1 unless defined $set;
   return ( grep { $_ eq $effort } @$set ) ? 1 : 0;
@@ -321,14 +322,28 @@ my $GEMINI3_SRC = 'ai.google.dev/gemini-api/docs/thinking; k140 2026-09-01, 3.8-
 # 2026-09-16 (karr k173).
 my $GEMINI25_SRC = 'ai.google.dev/gemini-api/docs/thinking budget table; k173 2026-09-16';
 
+# karr k176: 'max' is Responses-only for the gpt-6 and gpt-5.6 generations. The
+# gpt-5.6 split is live-confirmed (2026-09-16 on gpt-5.6-terra): Chat Completions
+# reasoning_effort=max -> HTTP 400 ("Supported values are: 'none', 'low',
+# 'medium', 'high', and 'xhigh'."), Responses reasoning.effort=max -> HTTP 200.
+# The gpt-6 split is doc-sourced (advisor Azure mirror, same Responses-only-max
+# pattern) — not live-probed.
+my $OPENAI_K176_LIVE = "$OPENAI_SRC; k176 2026-09-16 live gpt-5.6-terra: chat reasoning_effort=max->400, responses reasoning.effort=max->200";
+my $OPENAI_K176_DOC  = "$OPENAI_SRC; k176 gpt-6 max Responses-only (advisor Azure mirror, doc-sourced, not live-probed)";
+
+# $levels is the superset a family accepts on the `responses` (Responses API)
+# wire; $extra{openai_levels} is the narrower Chat Completions set, defaulting to
+# $levels when the two wires agree. The k176 per-wire max split is exactly this
+# openai_levels-vs-levels divergence for the gpt-6 / gpt-5.6 generations.
 sub _openai_profile {
   my ( $match, $levels, %extra ) = @_;
+  my $openai_levels = delete $extra{openai_levels} // $levels;
   return __PACKAGE__->new(
     model_match    => $match,
     control        => 'effort',
     wire_format    => 'openai',
     levels         => $levels,
-    levels_by_wire => { openai => $levels, responses => $levels },
+    levels_by_wire => { openai => $openai_levels, responses => $levels },
     source         => $OPENAI_SRC,
     %extra,
   );
@@ -365,10 +380,19 @@ sub _ensure_registry {
     # OpenAI generation ladders. gpt-6 (astra): no none/minimal. gpt-5.6 /
     # gpt-5.5: none but no minimal. Legacy gpt-5: minimal but no none/xhigh/max
     # — the gpt-5(?![.\d]) negative-lookahead keeps it off gpt-5.5/5.6/5.1.
+    # gpt-6 and gpt-5.6 carry a per-wire split (karr k176): 'max' is
+    # Responses-only, so their openai (Chat Completions) set drops max while the
+    # responses set (== levels) keeps it. gpt-5.6 live-confirmed, gpt-6 doc-sourced.
     _openai_profile( qr/\Agpt-6/,
-      [qw( low medium high xhigh max )], disable_form => 'absent', can_disable => 1 ),
+      [qw( low medium high xhigh max )],
+      openai_levels => [qw( low medium high xhigh )],
+      source        => $OPENAI_K176_DOC,
+      disable_form => 'absent', can_disable => 1 ),
     _openai_profile( qr/\Agpt-5\.6/,
-      [qw( none low medium high xhigh max )], disable_form => 'explicit_none' ),
+      [qw( none low medium high xhigh max )],
+      openai_levels => [qw( none low medium high xhigh )],
+      source        => $OPENAI_K176_LIVE,
+      disable_form => 'explicit_none' ),
     _openai_profile( qr/\Agpt-5\.5/,
       [qw( none low medium high xhigh )], disable_form => 'explicit_none' ),
     _openai_profile( qr/\Agpt-5(?![.\d])/,

@@ -8,11 +8,13 @@
 # NATURAL wire (the wire the model's engine actually speaks) — the cross-wire
 # combinations an engine never issues are deliberately not pinned.
 #
-# This test INTENTIONALLY locks two behaviours that Phase 1.5 will change:
-#   - gpt-5.6 reasoning_effort=max reaching the Chat Completions wire (#176),
-#   - the shared (not per-wire) openai/responses clamp (#176).
-# Do NOT "fix" them here; a Phase 1.5 edit flips exactly one row each, cited to
-# its live probe.
+# Phase 1.5 (karr k176) has applied the OpenAI per-wire 'max' split: the gpt-6
+# and gpt-5.6 generations drop reasoning_effort=max on the Chat Completions
+# (openai) wire while keeping reasoning.effort=max on the Responses wire.
+# Live-confirmed 2026-09-16 on gpt-5.6-terra: chat reasoning_effort=max -> HTTP
+# 400 ("Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'."),
+# responses reasoning.effort=max -> HTTP 200. gpt-6 is doc-sourced (advisor Azure
+# mirror). A { openai => ..., responses => ... } ladder cell pins each divergence.
 
 use strict;
 use warnings;
@@ -31,12 +33,14 @@ sub kw {
 my @EFFORTS = qw( none minimal low medium high xhigh max );
 
 # ---------------------------------------------------------------------------
-# openai + responses wires: model-gated ladder, shared across both wires today.
-# undef = the effort was clamped away (empty kwargs).
+# openai + responses wires: model-gated ladder. A scalar cell is shared by both
+# wires; a { openai => ..., responses => ... } cell pins a per-wire divergence
+# (karr k176: 'max' is Responses-only for gpt-6 / gpt-5.6). undef = the effort
+# was clamped away (empty kwargs).
 # ---------------------------------------------------------------------------
 my %OPENAI_LADDER = (
-  'gpt-6-astra'   => { none => undef, minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => 'max' },
-  'gpt-5.6-terra' => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => 'max' },
+  'gpt-6-astra'   => { none => undef, minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => { openai => undef, responses => 'max' } },
+  'gpt-5.6-terra' => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => { openai => undef, responses => 'max' } },
   'gpt-5.5'       => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => undef },
   'gpt-5'         => { none => undef, minimal => 'minimal', low => 'low', medium => 'medium', high => 'high', xhigh => undef, max => undef },
   # gpt-5.1 is deliberately un-gated today (the negative-lookahead spares it):
@@ -46,17 +50,25 @@ my %OPENAI_LADDER = (
 
 for my $model ( sort keys %OPENAI_LADDER ) {
   for my $effort ( @EFFORTS ) {
-    my $want = $OPENAI_LADDER{$model}{$effort};
+    my $cell = $OPENAI_LADDER{$model}{$effort};
+    my ( $want_chat, $want_resp ) = ref $cell eq 'HASH'
+      ? ( $cell->{openai}, $cell->{responses} )
+      : ( $cell, $cell );
     my $chat = kw( 'openai',    effort => $effort, model => $model );
     my $resp = kw( 'responses', effort => $effort, model => $model );
-    if ( defined $want ) {
-      is_deeply( $chat, { reasoning_effort => $want },
-        "openai:    $model + $effort -> reasoning_effort=$want" );
-      is_deeply( $resp, { reasoning => { effort => $want } },
-        "responses: $model + $effort -> reasoning.effort=$want" );
+
+    if ( defined $want_chat ) {
+      is_deeply( $chat, { reasoning_effort => $want_chat },
+        "openai:    $model + $effort -> reasoning_effort=$want_chat" );
     }
     else {
       is_deeply( $chat, {}, "openai:    $model + $effort -> DROP" );
+    }
+    if ( defined $want_resp ) {
+      is_deeply( $resp, { reasoning => { effort => $want_resp } },
+        "responses: $model + $effort -> reasoning.effort=$want_resp" );
+    }
+    else {
       is_deeply( $resp, {}, "responses: $model + $effort -> DROP" );
     }
   }
