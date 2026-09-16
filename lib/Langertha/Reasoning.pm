@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;
+use Langertha::Reasoning::Profile;
 
 =head1 SYNOPSIS
 
@@ -134,42 +135,31 @@ form would be ambiguous.
 
 =cut
 
-# OpenAI reasoning effort is gated per MODEL, not per wire. Chat Completions
-# `reasoning_effort` and the Responses API `reasoning.effort` $ref the identical
-# ReasoningEffort schema (enum none|minimal|low|medium|high|xhigh|max, default
-# medium), so a given model accepts the same value set on both wires — to_openai
-# and to_responses therefore share the one clamp below (_openai_effort_ok), which
-# structurally forbids the two wires diverging. The accepted set is per model
-# generation and the generations do NOT overlap on the extremes: the gpt-5
-# (legacy) generation has `minimal` but rejects none/xhigh/max, the gpt-5.5+
-# generation has none/xhigh/max but rejects `minimal`, and gpt-6 (astra) rejects
-# BOTH none and minimal while keeping low/medium/high/xhigh/max. Only OpenAI's
-# own gpt-5.x and gpt-6 ids are gated; every other id (an unlisted OpenAI model,
-# or another OpenAI-compatible provider sharing this wire) keeps the full
-# normalized vocabulary, which IS the current OpenAI enum, so no value is dropped
-# from it.
-# (developers.openai.com/api/docs/guides/reasoning + the per-model pages,
-# advisor-verified 2026-09-01 — karr k140; gpt-6-astra verified against
-# developers.openai.com/api/docs/models/gpt-6-astra 2026-09-14 — karr k151, where
-# `none` returns HTTP 400 on both wires and `minimal` is unsupported, identically
-# on Chat Completions and Responses. gpt-5.1's ladder is not among the verified
-# families and is deliberately left un-gated: it falls through to the full-enum
-# pass-through rather than being clamped on a guess.)
-my %OPENAI_MODEL_EFFORT = (
-  'gpt-6'   => { map { $_ => 1 } qw(            low medium high xhigh max ) },
-  'gpt-5.6' => { map { $_ => 1 } qw(       none low medium high xhigh max ) },
-  'gpt-5.5' => { map { $_ => 1 } qw(       none low medium high xhigh     ) },
-  'gpt-5'   => { map { $_ => 1 } qw( minimal   low medium high            ) },
+# The resolved reasoning profile (Langertha::Reasoning::Profile) for the
+# configured model — the single source for what the model's wire accepts. All
+# per-model gating (openai ladder, gemini clamp, fable-class, budget-vs-effort
+# control) reads from here instead of the inline hashes/regexes that used to
+# live in this file (karr k173). Resolved once, lazily, off the immutable model.
+has _profile => (
+  is       => 'ro',
+  isa      => 'Langertha::Reasoning::Profile',
+  lazy     => 1,
+  init_arg => undef,
+  builder  => '_build_profile',
 );
 
-# Anthropic output_config.effort accepts low|medium|high|xhigh|max; the
-# normalized none/minimal have no Anthropic equivalent and are dropped.
-my %ANTHROPIC_EFFORT = map { $_ => 1 } qw( low medium high xhigh max );
+sub _build_profile {
+  my ( $self ) = @_;
+  return Langertha::Reasoning::Profile->for_model(
+    $self->has_model ? $self->model : '' );
+}
 
 # Build-time wire-truth gate: exactly one native control per generation, never
 # both. Errors here surface before the request is built (Langertha::Engine::Gemini
 # calls to() inside chat_request), so a misconfigured engine never produces an
-# ambiguous wire form.
+# ambiguous wire form. The budget-vs-effort split derives from the resolved
+# profile's control (Gemini 2.5 is the only control=budget family today), so the
+# family boundary lives in Langertha::Reasoning::Profile, not in an inline regex.
 sub BUILD {
   my ( $self ) = @_;
 
@@ -183,81 +173,23 @@ sub BUILD {
       . "thinkingBudget); model='" . $model . "'";
   }
 
-  if ( $has_budget && !_is_gemini_25($model) ) {
+  my $is_budget_control = $self->_profile->control eq 'budget';
+
+  if ( $has_budget && !$is_budget_control ) {
     croak "Langertha::Reasoning: 'thinking_budget' is only valid on Gemini 2.5 "
       . "models (model id starting with 'gemini-2.5'); got model='" . $model . "'";
   }
 
-  if ( $has_effort && _is_gemini_25($model) ) {
+  if ( $has_effort && $is_budget_control ) {
     croak "Langertha::Reasoning: 'effort' is not valid on Gemini 2.5 models — "
       . "use 'thinking_budget' (integer tokens) instead; got model='"
       . $model . "'";
   }
 }
 
-sub _is_fable_class {
-  my ( $self ) = @_;
-  return ( $self->has_model && $self->model =~ /fable|mythos/i ) ? 1 : 0;
-}
-
-# Gemini 2.5 generationConfig.thinkingConfig.thinkingBudget is an integer
-# tokens budget (no level vocabulary); Gemini 3 takes thinkingLevel instead.
-# Match the model-id family the way the gemini API does.
-sub _is_gemini_25 { $_[0] =~ /\Agemini-2\.5/ ? 1 : 0 }
-
-# Gemini 3 generationConfig.thinkingConfig.thinkingLevel vocabulary is
-# minimal|low|medium|high, but which subset a model accepts is model-gated
-# (ai.google.dev/gemini-api/docs/thinking level table, verified 2026-09-01 —
-# karr k140; re-verified 2026-09-14 for gemini-3.8-flash — karr k153):
-#
-#   gemini-3-flash-preview / gemini-3.6-flash / *-flash-lite: minimal low medium high
-#   gemini-3.7-flash / gemini-3.8-flash:                      low medium high (no minimal)
-#   gemini-3.1-pro-*:                                         low medium high (no minimal)
-#   gemini-3-pro-*:                                           low high (binary)
-#
-# The API rejects an unsupported level instead of mapping it, so the
-# normalized vocabulary is clamped to the model family's subset here. Models
-# outside the gemini-3 line (or no model given) keep the universally-accepted
-# low|high collapse. (Gemini 2.5 never reaches this serializer with an effort
-# — BUILD gates it onto the thinkingBudget path.) The gemini-3-pro-* branch is
-# defensive: the current catalogue ships only gemini-3-pro-image (not a
-# thinking text model), but the clamp stays so a returning gemini-3-pro text id
-# cannot 400 on minimal/medium.
-my %GEMINI3_LEVEL = (
-  none    => 'minimal',
-  minimal => 'minimal',
-  low     => 'low',
-  medium  => 'medium',
-  high    => 'high',
-  xhigh   => 'high',
-  max     => 'high',
-);
-
 sub to_gemini_level {
   my ( $self ) = @_;
-  my $e = $self->effort;
-  my $model = $self->has_model ? $self->model : '';
-
-  # Unknown or non-Gemini-3 model: binary low|high collapse, the subset every
-  # thinking model accepts.
-  return ( $e eq 'high' || $e eq 'xhigh' || $e eq 'max' ) ? 'high' : 'low'
-    unless $model =~ /\Agemini-3/;
-
-  my $level = $GEMINI3_LEVEL{$e} // 'low';
-
-  # gemini-3.7-flash and gemini-3.8-flash dropped `minimal` (low|medium|high);
-  # gemini-3.1-pro-* has no minimal; gemini-3-pro-* is low|high only. Clamp down
-  # (never up): an unsupported level would be rejected by the API.
-  if ( $model =~ /\Agemini-3\.[78]-flash/ ) {
-    $level = 'low' if $level eq 'minimal';
-  }
-  elsif ( $model =~ /\Agemini-3\.1-pro/ ) {
-    $level = 'low' if $level eq 'minimal';
-  }
-  elsif ( $model =~ /\Agemini-3-pro/ ) {
-    $level = 'low' if $level eq 'minimal' || $level eq 'medium';
-  }
-  return $level;
+  return $self->_profile->gemini_level_for( $self->effort );
 }
 
 =method to_gemini_level
@@ -274,37 +206,17 @@ at C<high>.
 
 =cut
 
-# Shared per-model effort gate for both OpenAI wires (see %OPENAI_MODEL_EFFORT).
-# Returns true when the configured model accepts the current effort. Model ids
-# come in families, so match by anchored prefix, most specific first: gpt-6-*
-# (astra) is the GPT-6 generation; gpt-5.6-* (sol/terra/luna) and gpt-5.5* are
-# the gpt-5.5+ generation, gpt-5 / gpt-5-* the legacy one. gpt-5.1 (and every
-# other unrecognized id) returns true — its vocabulary is unverified, so it keeps
-# the full enum rather than a guessed clamp.
-sub _openai_effort_ok {
-  my ( $self ) = @_;
-  my $e     = $self->effort;
-  my $model = $self->has_model ? $self->model : '';
-  my $set = $model =~ /\Agpt-6/           ? $OPENAI_MODEL_EFFORT{'gpt-6'}
-          : $model =~ /\Agpt-5\.6/        ? $OPENAI_MODEL_EFFORT{'gpt-5.6'}
-          : $model =~ /\Agpt-5\.5/        ? $OPENAI_MODEL_EFFORT{'gpt-5.5'}
-          : $model =~ /\Agpt-5(?![.\d])/  ? $OPENAI_MODEL_EFFORT{'gpt-5'}
-          :                                 undef;
-  return 1 unless defined $set;
-  return $set->{$e} ? 1 : 0;
-}
-
 sub to_openai {
   my ( $self ) = @_;
   return () unless $self->has_effort;
-  return () unless $self->_openai_effort_ok;
+  return () unless $self->_profile->effort_accepted_on( 'openai', $self->effort );
   return ( reasoning_effort => $self->effort );
 }
 
 sub to_responses {
   my ( $self ) = @_;
   return () unless $self->has_effort;
-  return () unless $self->_openai_effort_ok;
+  return () unless $self->_profile->effort_accepted_on( 'responses', $self->effort );
   return ( reasoning => { effort => $self->effort } );
 }
 
@@ -329,7 +241,7 @@ they can never diverge. Empty list when no L</effort> is set.
 sub to_anthropic {
   my ( $self ) = @_;
   my $e = $self->has_effort ? $self->effort : undef;
-  my $effort_ok = defined $e && $ANTHROPIC_EFFORT{$e};
+  my $effort_ok = defined $e && $self->_profile->anthropic_effort_ok($e);
 
   # Adaptive-thinking models need thinking:{type:adaptive} or thinking stays
   # off; always-on "Fable-class" models 400 on thinking:{type:disabled} and
@@ -339,7 +251,7 @@ sub to_anthropic {
   # "summarized". We emit the thinking block whenever an effort or a display is
   # in play so a display-only request still turns summaries on.
   my @thinking;
-  if ( !$self->_is_fable_class && ( $effort_ok || $self->has_thinking_display ) ) {
+  if ( !$self->_profile->fable_class && ( $effort_ok || $self->has_thinking_display ) ) {
     @thinking = ( thinking => {
       type => 'adaptive',
       ( $self->has_thinking_display ? ( display => $self->thinking_display ) : () ),
@@ -378,8 +290,11 @@ sub to_gemini {
 sub to_ollama {
   my ( $self ) = @_;
   return () unless $self->has_effort;
-  # Ollama's only reasoning knob is the boolean options.think; the normalized
-  # vocabulary collapses onto it (any effort level -> on, 'none' -> off).
+  # Ollama's reasoning knob is the boolean options.think (the ollama profile's
+  # control=boolean / disable_form=think_false): the normalized vocabulary
+  # collapses onto it (any effort level -> on, 'none' -> off). Per-model level
+  # support (GPT-OSS accepts level strings) is a wire-truth change deferred to
+  # Phase 1.5 (karr k175), so Phase 1 keeps the model-agnostic boolean.
   return ( think => $self->effort eq 'none' ? JSON->false : JSON->true );
 }
 
@@ -423,6 +338,8 @@ __PACKAGE__->meta->make_immutable;
 =seealso
 
 =over
+
+=item * L<Langertha::Reasoning::Profile> - The per-model wire-truth this value object resolves and consumes
 
 =item * L<Langertha::Role::ReasoningEffort> - The composed role exposing C<reasoning_effort>
 and C<thinking_budget>
