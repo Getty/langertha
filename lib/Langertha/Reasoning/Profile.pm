@@ -330,6 +330,11 @@ my $GEMINI25_SRC = 'ai.google.dev/gemini-api/docs/thinking budget table; k173 20
 # pattern) — not live-probed.
 my $OPENAI_K176_LIVE = "$OPENAI_SRC; k176 2026-09-16 live gpt-5.6-terra: chat reasoning_effort=max->400, responses reasoning.effort=max->200";
 my $OPENAI_K176_DOC  = "$OPENAI_SRC; k176 gpt-6 max Responses-only (advisor Azure mirror, doc-sourced, not live-probed)";
+# karr k174: gpt-5.1 is gated (Azure Foundry reasoning table, advisor-verified
+# 2026-09-16 — doc-sourced, NOT live-probed). Base gpt-5.1 drops minimal/xhigh/max
+# (none|low|medium|high); gpt-5.1-codex-max re-adds xhigh (still no max). Both
+# wires identical (xhigh is not Responses-only), so no openai_levels split.
+my $OPENAI_K174_DOC  = "$OPENAI_SRC; k174 gpt-5.1 gate (Azure Foundry reasoning table, advisor-verified 2026-09-16, doc-sourced not live)";
 
 # $levels is the superset a family accepts on the `responses` (Responses API)
 # wire; $extra{openai_levels} is the narrower Chat Completions set, defaulting to
@@ -378,8 +383,9 @@ sub _ensure_registry {
     ),
 
     # OpenAI generation ladders. gpt-6 (astra): no none/minimal. gpt-5.6 /
-    # gpt-5.5: none but no minimal. Legacy gpt-5: minimal but no none/xhigh/max
-    # — the gpt-5(?![.\d]) negative-lookahead keeps it off gpt-5.5/5.6/5.1.
+    # gpt-5.5: none but no minimal. gpt-5.1: gated (karr k174), with a codex-max
+    # carve-out matched first. Legacy gpt-5: minimal but no none/xhigh/max — the
+    # gpt-5(?![.\d]) negative-lookahead keeps it off gpt-5.5/5.6/5.1.
     # gpt-6 and gpt-5.6 carry a per-wire split (karr k176): 'max' is
     # Responses-only, so their openai (Chat Completions) set drops max while the
     # responses set (== levels) keeps it. gpt-5.6 live-confirmed, gpt-6 doc-sourced.
@@ -395,6 +401,14 @@ sub _ensure_registry {
       disable_form => 'explicit_none' ),
     _openai_profile( qr/\Agpt-5\.5/,
       [qw( none low medium high xhigh )], disable_form => 'explicit_none' ),
+    # gpt-5.1 (karr k174), most-specific-first: codex-max re-adds xhigh, base
+    # drops minimal/xhigh/max. Both wires identical (xhigh is not Responses-only).
+    _openai_profile( qr/\Agpt-5\.1-codex-max/,
+      [qw( none low medium high xhigh )],
+      source => $OPENAI_K174_DOC, disable_form => 'explicit_none' ),
+    _openai_profile( qr/\Agpt-5\.1/,
+      [qw( none low medium high )],
+      source => $OPENAI_K174_DOC, disable_form => 'explicit_none' ),
     _openai_profile( qr/\Agpt-5(?![.\d])/,
       [qw( minimal low medium high )], disable_form => 'absent' ),
 

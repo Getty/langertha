@@ -34,7 +34,9 @@ my @EFFORTS = qw( none minimal low medium high xhigh max );
 # generations do NOT overlap on the extremes: gpt-6-astra rejects BOTH none (HTTP
 # 400) and minimal (unsupported) while keeping low..max; gpt-5.6/gpt-5.5 have
 # none/xhigh(/max) but no minimal; legacy gpt-5 has minimal but no none/xhigh/max.
-# Unlisted ids (gpt-5.1, gpt-4o-mini) keep the whole normalized enum.
+# gpt-5.1 is gated (karr k174, doc-sourced): base drops minimal/xhigh/max,
+# gpt-5.1-codex-max re-adds xhigh (still no max); the remaining unlisted id
+# (gpt-4o-mini) keeps the whole normalized enum.
 #
 # karr k176 (live-confirmed 2026-09-16 on gpt-5.6-terra): 'max' is Responses-only
 # for the gpt-6 and gpt-5.6 generations — Chat Completions reasoning_effort=max ->
@@ -50,7 +52,8 @@ my %EXPECT = (
   'gpt-5.5-pro'   => { none => 1, minimal => 0, low => 1, medium => 1, high => 1, xhigh => 1, max => 0 },
   'gpt-5'         => { none => 0, minimal => 1, low => 1, medium => 1, high => 1, xhigh => 0, max => 0 },
   'gpt-5-mini'    => { none => 0, minimal => 1, low => 1, medium => 1, high => 1, xhigh => 0, max => 0 },
-  'gpt-5.1'       => { none => 1, minimal => 1, low => 1, medium => 1, high => 1, xhigh => 1, max => 1 },
+  'gpt-5.1'           => { none => 1, minimal => 0, low => 1, medium => 1, high => 1, xhigh => 0, max => 0 },
+  'gpt-5.1-codex-max' => { none => 1, minimal => 0, low => 1, medium => 1, high => 1, xhigh => 1, max => 0 },
   'gpt-4o-mini'   => { none => 1, minimal => 1, low => 1, medium => 1, high => 1, xhigh => 1, max => 1 },
 );
 

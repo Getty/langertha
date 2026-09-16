@@ -43,9 +43,10 @@ my %OPENAI_LADDER = (
   'gpt-5.6-terra' => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => { openai => undef, responses => 'max' } },
   'gpt-5.5'       => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => undef },
   'gpt-5'         => { none => undef, minimal => 'minimal', low => 'low', medium => 'medium', high => 'high', xhigh => undef, max => undef },
-  # gpt-5.1 is deliberately un-gated today (the negative-lookahead spares it):
-  # the whole normalized enum passes through on both wires.
-  'gpt-5.1'       => { none => 'none', minimal => 'minimal', low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => 'max' },
+  # gpt-5.1 is gated (karr k174, doc-sourced): base drops minimal/xhigh/max,
+  # codex-max re-adds xhigh (still no max). Both wires identical, so scalar cells.
+  'gpt-5.1'           => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => undef, max => undef },
+  'gpt-5.1-codex-max' => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => undef },
 );
 
 for my $model ( sort keys %OPENAI_LADDER ) {
