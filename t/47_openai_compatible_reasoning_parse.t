@@ -72,6 +72,22 @@ for my $name (sort keys %ENGINE) {
     'reasoning_content wins over the bare reasoning fallback');
 }
 
+# ... but only when it actually carries the thought. A back-compat stub that is
+# present-but-empty beside a filled `reasoning` must be stepped over -- the
+# failure mode the vLLM migration note calls out ("your client code could
+# silently read an empty reasoning_content, even when reasoning is populated").
+# The precedence therefore tests length, not defined. -- karr k79
+{
+  my $engine = Langertha::Engine::vLLM->new(url => 'http://x');
+  my $resp = $engine->chat_response(msg_response(
+    reasoning_content => '',
+    reasoning         => 'the real thought',
+    content           => 'ok',
+  ));
+  is($resp->thinking, 'the real thought',
+    'an empty reasoning_content stub does not mask a filled reasoning');
+}
+
 # The !ref guard: OpenRouter ships a structured `reasoning_details` ARRAY and a
 # `reasoning` STRING side by side. The string is lifted; a non-string `reasoning`
 # must never reach the Str thinking attribute (Moose type-constraint death).

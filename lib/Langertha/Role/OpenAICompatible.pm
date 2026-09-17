@@ -374,9 +374,12 @@ sub chat_response {
   # OpenRouter and AKI.IO send. Read the canonical spelling first, then fall
   # back to `reasoning` -- guarded !ref so OpenRouter's structured
   # `reasoning_details` ARRAY (or any non-string shape) never lands in the Str
-  # thinking attribute. -- karr k127, k129
+  # thinking attribute. The precedence tests `length`, not `defined`: a server
+  # that keeps `reasoning_content` as an empty back-compat stub beside a filled
+  # `reasoning` must not mask it -- the exact failure mode the vLLM migration
+  # note warns about. -- karr k127, k129, k79
   my $thinking =
-      defined $msg->{reasoning_content} ? $msg->{reasoning_content}
+      length( $msg->{reasoning_content} // '' ) ? $msg->{reasoning_content}
     : ( defined $msg->{reasoning} && !ref $msg->{reasoning} ) ? $msg->{reasoning}
     : undef;
   return Langertha::Response->new(
@@ -509,10 +512,12 @@ sub parse_stream_chunk {
   # reasoning_content), Cerebras and AKI.IO send. Read the canonical spelling
   # first, then fall back to `reasoning` -- guarded !ref so a non-string shape
   # (e.g. OpenRouter's `reasoning_details` ARRAY, which the docs put on the
-  # delta) never lands in the Str thinking attribute. -- karr k129
+  # delta) never lands in the Str thinking attribute. As in chat_response the
+  # precedence tests `length`, not `defined`, so an empty back-compat
+  # `reasoning_content` stub cannot mask a filled `reasoning`. -- karr k129, k79
   my $delta = $choice->{delta} || {};
   my $thinking =
-      defined $delta->{reasoning_content} ? $delta->{reasoning_content}
+      length( $delta->{reasoning_content} // '' ) ? $delta->{reasoning_content}
     : ( defined $delta->{reasoning} && !ref $delta->{reasoning} ) ? $delta->{reasoning}
     : undef;
 
