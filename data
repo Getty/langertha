@@ -1,0 +1,62 @@
+---
+class: standard
+completed: 2026-09-17T18:32:40Z
+created: 2026-09-01T19:39:14Z
+id: 137
+priority: low
+started: 2026-09-17T18:32:40Z
+status: done
+tags:
+- tests
+- http
+- rate-limit
+title: 't/12_rate_limit.t still hand-writes every header: AKI captures cannot replace
+  them'
+updated: 2026-09-17T18:32:40Z
+---
+
+Fallout from k101, recorded so the orchestrator's stated reason for capturing response headers is not silently unmet.
+
+The k101 decision was: capture the response HEADERS alongside the bodies so t/12_rate_limit.t
+can stop hand-writing them. The captures are landed (t/data/*.headers.json, five files), but
+they cannot serve that purpose:
+
+AKI.IO sends NO rate-limit headers on any of its three wires. The captured header sets are
+exactly access-control-allow-origin, connection, content-length, content-type, date, server.
+No x-ratelimit-* (Role::OpenAICompatible.pm:569-594 reads six of those) and no
+anthropic-ratelimit-* (Role::AnthropicCompatible.pm:582-612 reads twelve).
+
+What t/28_aki_fixtures.t does assert with them -- the most they can prove -- is that
+has_rate_limit stays false after a real 200 driven through the shims' own
+_parse_rate_limit_headers. A future AKI capture that DOES carry the headers will fail there
+rather than pass unnoticed.
+
+t/12_rate_limit.t is therefore unchanged and still builds every header by hand, which is the
+same class of gap k101 is about: the parser is only ever fed payloads written to fit it.
+
+To close this, a capture is needed from a provider that actually emits the headers -- OpenAI,
+Anthropic or Groq all do. That means a live call with a key Langertha's agents do not have
+standing approval for (memory rule: only AKI.IO is pre-approved), so this is blocked on the
+maintainer choosing a provider and authorising one cheap request. One request per wire family
+(one OpenAI-shaped, one Anthropic-shaped) is enough; the bodies are irrelevant, only the
+headers matter.
+
+Getty 2026-09-17: Freigabe erteilt fuer Anthropic-Call (kombiniert mit #149) + OpenAI-Call, je einer pro Wire-Familie, nur Header zaehlen. Bereit fuer Umsetzung.
+
+2026-09-17 18:32 ERLEDIGT. Beide freigegebenen Captures liegen vor, t/12_rate_limit.t parst sie statt hand-geschriebener Header.
+
+LIVE-CALLS (2026-09-17, je durch die Engines selbst geschickt):
+1. OpenAI gpt-4o-mini, max_tokens 16, "Say OK" -> HTTP 200. Sendet GENAU sechs x-ratelimit-*: limit-requests 5000, remaining-requests 4999, reset-requests 12ms, limit-tokens 4000000, remaining-tokens 3999996, reset-tokens 0s.
+2. Anthropic claude-haiku-4-5-20251001, max_tokens 16, "Say OK" -> HTTP 200. Sendet ZWOELF anthropic-ratelimit-*: requests-{limit 10000, remaining 9999, reset}, tokens-{limit 12000000, remaining 12000000, reset}, input-tokens-{limit 10000000, remaining 10000000, reset}, output-tokens-{limit 2000000, remaining 2000000, reset}. Alle vier reset-Stempel identisch: 2026-09-17T18:21:21Z (RFC 3339).
+
+ANMERKUNG ZUM VERBRAUCH DER FREIGABE: der erste Anthropic-Call war der mit k149 kombinierte (response_format=json_object). Der ist mit HTTP 400 abgewiesen worden (k149/k182), und ein Validierungsfehler traegt KEINE anthropic-ratelimit-* Header — die Kombination konnte den Header-Capture also nicht liefern. Deshalb ein zweiter, korrigierender Anthropic-Call mit schlichtem Chat-Body: derselbe freigegebene Artefakt-Typ ("ein Request pro Wire-Familie, nur Header zaehlen"), nur mit einem Body den die API nicht ablehnt. Kein Retry-Loop, insgesamt 3 Requests (2x Anthropic, 1x OpenAI).
+
+WAS DIE CAPTURES ZEIGEN, WAS HAND-GESCHRIEBENES NICHT ZEIGTE:
+- OpenAI reset-requests ist 12ms (sub-second Go-Duration) und reset-tokens ist 0s. Der alte Test schrieb 12s/6s. Die 0 ist der interessante Fall: tokens_reset_after muss als echte 0 ueberleben und nicht als undef durchfallen — jetzt eigens assertiert.
+- Anthropic schickt die input-tokens-/output-tokens-Buckets wirklich (der alte Test hat sie mit erfundenen Werten unterstellt). Sie landen nur in raw, nicht auf benannten Attributen. raw-Groesse ist jetzt exakt assertiert: 6 bzw. 12.
+
+DATEIEN: t/data/openai_chat_response.{json,headers.json}, t/data/anthropic_chat_response.{json,headers.json} — Body verbatim, Header verbatim bis auf: LWP-eigene client-* Pseudo-Header und OpenAIs __cf_bm set-cookie entfernt; vier Account-IDs behalten den Header-NAMEN, bekommen aber Platzhalter-Werte (anthropic-organization-id, anthropic-workspace-id, openai-organization, openai-project). An den Rate-Limit-Praefixen wurde nichts angefasst.
+
+t/12: Teile 2 und 3 (Header-Parsing) sowie 5, 6 und 13 laufen jetzt ueber die Captures. Synthetisch bleibt nur, was ein Capture nicht zeigen kann: ein Bucket der ueber zwei Antworten runterzaehlt, ein Header-Name ausserhalb dessen was dieser Account bekommt (x-ratelimit-limit-project-tokens, anthropic-priority-*), ein fehlender reset-Header, und vLLM hinter einem Gateway (Teil 7 — vLLM selbst sendet nichts). Jeder dieser Faelle sagt im Kommentar warum. 102 -> 111 Tests, prove -lr t/ gruen (3611 Tests, 14 Live-Tests ohne Keys geskippt), perlcritic sauber.
+
+NEBENBEFUND: die Bodies sind die ersten echten First-Party-OpenAI-/Anthropic-chat_response-Fixtures der Distribution (bisher nur AKI). Der Anthropic-Body traegt container, stop_details, cache_creation.ephemeral_*, inference_geo — Felder die kein hand-geschriebener Payload je hatte. Wer sie tiefer auswerten will: eigenes Ticket, hier nur Identitaets-Assertions (content/model/finish_reason) damit die Fixtures nicht unbemerkt ausgetauscht werden koennen.
