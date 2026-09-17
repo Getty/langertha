@@ -240,9 +240,13 @@ sub chat_request {
   }
   $format = 'json' if !defined $format && $self->json_format;
 
-  # reasoning_effort -> options.think (Ollama's only reasoning knob). Ollama
-  # does not compose ReasoningEffort, so serialize directly via the value
-  # object rather than advertising the capability.
+  # reasoning_effort -> the TOP-LEVEL `think` field, a sibling of
+  # model/messages/stream — NOT under options. Live-probed 2026-09-17 via
+  # ollama.com gpt-oss:20b: `think` inside options is silently ignored (low and
+  # max both yield the default ~180-220 thinking chars), while top-level `think`
+  # grades cleanly (low ~25-47, max ~207-402). Ollama does not compose
+  # ReasoningEffort, so serialize directly via the value object rather than
+  # advertising the capability; to_ollama emits (think => <boolean|level>).
   my @reasoning = exists $controls->{reasoning_effort}
     ? Langertha::Reasoning->new(
         effort => $controls->{reasoning_effort},
@@ -254,6 +258,7 @@ sub chat_request {
     model => $self->chat_model,
     messages => $messages,
     stream => JSON->false,
+    @reasoning,
     defined $format ? ( format => $format ) : (),
     defined $self->get_keep_alive ? ( keep_alive => $self->get_keep_alive ) : (),
     options => {
@@ -268,7 +273,6 @@ sub chat_request {
         ? ( seed => $controls->{seed} )
         : ( $self->has_seed ? ( seed => $self->seed )
           : $self->randomize_seed ? ( seed => $self->random_seed ) : () ),
-      @reasoning,
       $extra{options} ? (%{delete $extra{options}}) : (),
     },
     %extra,
@@ -479,7 +483,10 @@ sub chat_stream_request {
   }
   $format = 'json' if !defined $format && $self->json_format;
 
-  # reasoning_effort -> options.think, same wire as chat_request.
+  # reasoning_effort -> top-level `think`, same wire and placement as
+  # chat_request: a sibling of model/messages/stream, never under options
+  # (Ollama silently ignores options.think). Live-probed 2026-09-17 via
+  # ollama.com gpt-oss:20b (k175).
   my @reasoning = exists $controls->{reasoning_effort}
     ? Langertha::Reasoning->new(
         effort => $controls->{reasoning_effort},
@@ -491,6 +498,7 @@ sub chat_stream_request {
     model => $self->chat_model,
     messages => $messages,
     stream => JSON->true,
+    @reasoning,
     defined $format ? ( format => $format ) : (),
     defined $self->get_keep_alive ? ( keep_alive => $self->get_keep_alive ) : (),
     options => {
@@ -505,7 +513,6 @@ sub chat_stream_request {
         ? ( seed => $controls->{seed} )
         : ( $self->has_seed ? ( seed => $self->seed )
           : $self->randomize_seed ? ( seed => $self->random_seed ) : () ),
-      @reasoning,
       $extra{options} ? (%{delete $extra{options}}) : (),
     },
     %extra,

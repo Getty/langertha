@@ -87,6 +87,14 @@ sub wire {
   );
 }
 
+# Same, but the streaming request builder — control placement must match.
+sub wire_stream {
+  my ( $engine, %extra ) = @_;
+  return $json->decode(
+    $engine->chat_stream_request( $engine->chat_messages('testprompt'), %extra )->content
+  );
+}
+
 # --- _extract_controls: canonical keys out, unknown keys stay -------------
 {
   my $engine = openai();
@@ -260,7 +268,10 @@ sub wire {
   is( $data->{custom_extra}, 'x', 'Anthropic: unknown key still passes straight through' );
 }
 
-# --- Ollama: controls land under options, not top-level -------------------
+# --- Ollama: most controls land under options; `think` is TOP-LEVEL --------
+# reasoning_effort -> the top-level `think` field, NOT options.think: Ollama
+# silently ignores options.think (live-probed 2026-09-17 via ollama.com
+# gpt-oss:20b — `think` under options does not grade; k175).
 {
   my $data = wire( ollama(), controls => {
     temperature      => 0.3,
@@ -276,16 +287,43 @@ sub wire {
     'Ollama: max_tokens control lands as options.num_predict (not top-level)' );
   ok( !exists $data->{max_tokens}, 'Ollama: no top-level max_tokens leak' );
   is( $data->{options}{seed}, 42, 'Ollama: seed control lands under options' );
-  is( $data->{options}{think}, JSON->true,
-    'Ollama: reasoning_effort control lands as options.think' );
+  is( $data->{think}, JSON->true,
+    'Ollama: reasoning_effort control lands as TOP-LEVEL think (not options.think)' );
+  ok( !exists $data->{options}{think},
+    'Ollama: think does NOT leak into options (options.think is ignored by Ollama)' );
   ok( !exists $data->{controls}, 'Ollama: controls hash is consumed, not leaked' );
 }
 
-# --- Ollama: reasoning_effort=none turns think off ------------------------
+# --- Ollama: reasoning_effort=none turns top-level think off ---------------
 {
   my $data = wire( ollama(), controls => { reasoning_effort => 'none' } );
-  is( $data->{options}{think}, JSON->false,
-    'Ollama: reasoning_effort=none control -> options.think=false' );
+  is( $data->{think}, JSON->false,
+    'Ollama: reasoning_effort=none control -> top-level think=false' );
+  ok( !exists $data->{options}{think}, 'Ollama: no options.think leak on none' );
+}
+
+# --- Ollama: think placement holds on BOTH request paths + gpt-oss levels --
+# The chat (chat_request) and stream (chat_stream_request) builders must place
+# `think` identically at top level. gpt-oss takes a graded level STRING (k175);
+# it too rides top-level, never under options. Live-probed 2026-09-17 via
+# ollama.com gpt-oss:20b.
+{
+  for my $path ( [ chat => \&wire ], [ stream => \&wire_stream ] ) {
+    my ( $name, $build ) = @$path;
+
+    my $b = $build->( ollama(), controls => { reasoning_effort => 'high' } );
+    is( $b->{think}, JSON->true,
+      "Ollama $name: boolean model reasoning_effort=high -> top-level think=true" );
+    ok( !exists $b->{options}{think},
+      "Ollama $name: boolean model leaves options.think unset" );
+
+    my $g = $build->( ollama( model => 'gpt-oss:20b' ),
+      controls => { reasoning_effort => 'high' } );
+    is( $g->{think}, 'high',
+      "Ollama $name: gpt-oss reasoning_effort=high -> top-level think=\"high\" (level string)" );
+    ok( !exists $g->{options}{think},
+      "Ollama $name: gpt-oss leaves options.think unset" );
+  }
 }
 
 # --- Ollama: response_format control -> format ----------------------------
@@ -397,8 +435,10 @@ sub wire {
   is( $body->{options}{num_predict}, 100,
     'chat_f: max_tokens control reached options.num_predict' );
   is( $body->{options}{seed}, 42, 'chat_f: seed control reached options.seed' );
-  is( $body->{options}{think}, JSON->true,
-    'chat_f: reasoning_effort control reached options.think' );
+  is( $body->{think}, JSON->true,
+    'chat_f: reasoning_effort control reached TOP-LEVEL think (not options.think)' );
+  ok( !exists $body->{options}{think},
+    'chat_f: think does not leak into options' );
   ok( !exists $body->{temperature} && !exists $body->{max_tokens}
     && !exists $body->{seed} && !exists $body->{reasoning_effort},
     'chat_f: no canonical control leaked top-level (raw-extra path not used)' );

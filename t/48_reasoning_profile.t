@@ -20,7 +20,7 @@ use strict;
 use warnings;
 
 use Test2::Bundle::More;
-use JSON::MaybeXS;
+use JSON::MaybeXS qw( is_bool );
 
 use Langertha::Reasoning;
 
@@ -188,17 +188,46 @@ is_deeply( kw( 'gemini', thinking_budget => 512, model => 'gemini-2.5-flash' ),
   'gemini: gemini-2.5-flash thinking_budget=512 passes through' );
 
 # ---------------------------------------------------------------------------
-# ollama wire: boolean options.think collapse (any effort -> on, none -> off).
+# ollama wire (karr k175). GPT-OSS takes graded level STRINGS on Ollama's think
+# knob (low<medium<high<max) and ALWAYS reasons — there is no "off": think:false is
+# ignored, so 'none' maps to the floor 'low'. Every other model takes only the
+# model-agnostic boolean (any effort -> on, none -> off), UNCHANGED. Live-probed
+# 2026-09-17 via ollama.com gpt-oss:20b.
 # ---------------------------------------------------------------------------
 {
-  my $json = JSON::MaybeXS->new;
-  for my $effort (qw( minimal low medium high xhigh max )) {
-    my $got = kw( 'ollama', effort => $effort, model => 'gpt-oss' );
-    ok( exists $got->{think} && $got->{think}, "ollama: $effort -> think=true" );
+  # GPT-OSS: effort -> level string, across the model-id spellings. none/minimal
+  # collapse to 'low' (no off), xhigh/max to 'max'; medium/high pass through.
+  my %OSS_LEVEL = ( none => 'low', minimal => 'low', low => 'low',
+    medium => 'medium', high => 'high', xhigh => 'max', max => 'max' );
+  for my $model (qw( gpt-oss gpt-oss:20b gpt-oss:120b )) {
+    for my $effort ( @EFFORTS ) {
+      my $want = $OSS_LEVEL{$effort};
+      is_deeply( kw( 'ollama', effort => $effort, model => $model ),
+        { think => $want },
+        "ollama: $model + $effort -> think=\"$want\" (level string, gpt-oss has no off)" );
+    }
   }
-  my $off = kw( 'ollama', effort => 'none', model => 'gpt-oss' );
-  ok( exists $off->{think} && !$off->{think}, 'ollama: none -> think=false' );
+
+  # Non-gpt-oss: the boolean collapse, UNCHANGED. think must be a real JSON
+  # boolean (true/false), never the string level.
+  for my $model (qw( llama3.3 qwen3:8b )) {
+    my $on = kw( 'ollama', effort => 'high', model => $model );
+    ok( is_bool( $on->{think} ), "ollama: $model + high -> think is a JSON boolean" );
+    ok( $on->{think}, "ollama: $model + high -> think is true" );
+    my $off = kw( 'ollama', effort => 'none', model => $model );
+    ok( is_bool( $off->{think} ), "ollama: $model + none -> think is a JSON boolean" );
+    ok( !$off->{think}, "ollama: $model + none -> think is false" );
+  }
+
   is_deeply( kw( 'ollama' ), {}, 'ollama: no effort -> nothing emitted' );
+
+  # The Engine::Ollama direct construction path (bypasses Role::ReasoningEffort,
+  # builds the value object straight from model + effort) flows through the same
+  # Profile and yields the level string for gpt-oss.
+  is_deeply(
+    { Langertha::Reasoning->new( model => 'gpt-oss:20b', effort => 'high' )->to('ollama') },
+    { think => 'high' },
+    'ollama: direct Engine::Ollama path (gpt-oss:20b + high) -> think="high"' );
 }
 
 # ---------------------------------------------------------------------------
