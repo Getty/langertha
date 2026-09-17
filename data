@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-17T02:25:39Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-17T02:25:39Z
+created: 2026-09-16T05:07:34Z
+id: 176
+priority: high
+started: 2026-09-16T17:52:08Z
+status: done
+tags:
+- reasoning
+- openai
+- drift
+- llm
+- blocker
+title: 'OpenAI max evtl. Responses-API-only: Shared-Gate-Invariante chat/responses-divergieren-nie
+  live pruefen'
+updated: 2026-09-17T02:25:39Z
+---
+
+Advisor-Fund 2026-09-16 (Azure Foundry mirror): "max works only with GPT-6/5.6 AND the Responses API." Falls first-party bestaetigt, ist max auf responses gueltig, auf chat_completions fuer dasselbe Modell abgelehnt -> die zwei Wires DIVERGIEREN auf max. Widerspricht Reasoning.pm zentraler Behauptung, to_openai/to_responses teilten eine gemeinsame _openai_effort_ok-Gate und koennten nie divergieren. Braucht LIVE-Verifikation gegen OpenAI First-Party (1 guenstiger Call, Freigabe noetig). BLOCKIERT #173: bestimmt, ob das OpenAI-Profil eine per-Wire-Achse fuer max braucht. Verwandt: #173, ADR 0009.
+
+VERDIKT (live-verifiziert 2026-09-16, gpt-5.6-terra, 2 Requests, Getty-freigegeben): DIVERGENZ BESTAETIGT.
+- Chat Completions reasoning_effort=max -> HTTP 400 "does not support max with this model. Supported: none, low, medium, high, xhigh."
+- Responses API reasoning.effort=max -> HTTP 200, akzeptiert.
+Die zwei Wires divergieren auf max. Widerlegt Reasoning.pm-Invariante (shared _openai_effort_ok, "koennen nie divergieren"). LATENTER BUG: %OPENAI_MODEL_EFFORT{gpt-5.6} enthaelt max und gilt fuer BEIDE Wires -> to_openai sendet reasoning_effort=max -> 400. t/47_openai_reasoning.t asserted dieses fehlerhafte Chat-Verhalten.
+FIX-ORT: #173 Phase 1.5 (per-Wire-Achse levels_by_wire). Chat gpt-5.6: none|low|medium|high|xhigh (kein max). Responses: +max. Gleiches Muster fuer gpt-6 laut Doc, ohne weiteren Spend kuratieren. t/47-Chat-max-Assertion umdrehen, dieser Probe als Quelle.
+
+IMPLEMENTIERT + orchestrator-verifiziert: Commit a820d0f auf k173-reasoning-profile. gpt-5.6 openai=[none,low,medium,high,xhigh] responses=+max (live-bestaetigt 2026-09-16); gpt-6 analog (doc-sourced). levels_by_wire-Split via _openai_profile openai_levels-Override. t/47+t/48 Assertions gedreht, dead has_levels_by_wire-Guard entfernt. prove -lr t/: 3865 PASS. Ritt auf #173-Merge nach main.
