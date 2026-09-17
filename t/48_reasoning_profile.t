@@ -188,8 +188,8 @@ is_deeply( kw( 'gemini', thinking_budget => 512, model => 'gemini-2.5-flash' ),
   'gemini: gemini-2.5-flash thinking_budget=512 passes through' );
 
 # ---------------------------------------------------------------------------
-# ollama wire (karr k175). GPT-OSS takes graded level STRINGS on options.think
-# (low<medium<high<max) and ALWAYS reasons — there is no "off": think:false is
+# ollama wire (karr k175). GPT-OSS takes graded level STRINGS on Ollama's think
+# knob (low<medium<high<max) and ALWAYS reasons — there is no "off": think:false is
 # ignored, so 'none' maps to the floor 'low'. Every other model takes only the
 # model-agnostic boolean (any effort -> on, none -> off), UNCHANGED. Live-probed
 # 2026-09-17 via ollama.com gpt-oss:20b.
