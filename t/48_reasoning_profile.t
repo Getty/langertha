@@ -1,0 +1,183 @@
+#!/usr/bin/env perl
+# ABSTRACT: Characterization matrix locking Langertha::Reasoning wire output (karr k173)
+
+# Golden-master matrix for the reasoning-profile refactor (karr k173 Phase 1).
+# Captured BEFORE the internal Profile extraction and asserted to stay
+# byte-identical THROUGH it. Every (model, effort/budget) -> wire kwargs pair
+# below is the output the value object produces TODAY, tested on each model's
+# NATURAL wire (the wire the model's engine actually speaks) — the cross-wire
+# combinations an engine never issues are deliberately not pinned.
+#
+# Phase 1.5 (karr k176) has applied the OpenAI per-wire 'max' split: the gpt-6
+# and gpt-5.6 generations drop reasoning_effort=max on the Chat Completions
+# (openai) wire while keeping reasoning.effort=max on the Responses wire.
+# Live-confirmed 2026-09-16 on gpt-5.6-terra: chat reasoning_effort=max -> HTTP
+# 400 ("Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'."),
+# responses reasoning.effort=max -> HTTP 200. gpt-6 is doc-sourced (advisor Azure
+# mirror). A { openai => ..., responses => ... } ladder cell pins each divergence.
+
+use strict;
+use warnings;
+
+use Test2::Bundle::More;
+use JSON::MaybeXS;
+
+use Langertha::Reasoning;
+
+# Read the exact kwargs the value object emits for a wire, as a hashref.
+sub kw {
+  my ( $fmt, %args ) = @_;
+  return { Langertha::Reasoning->new(%args)->to($fmt) };
+}
+
+my @EFFORTS = qw( none minimal low medium high xhigh max );
+
+# ---------------------------------------------------------------------------
+# openai + responses wires: model-gated ladder. A scalar cell is shared by both
+# wires; a { openai => ..., responses => ... } cell pins a per-wire divergence
+# (karr k176: 'max' is Responses-only for gpt-6 / gpt-5.6). undef = the effort
+# was clamped away (empty kwargs).
+# ---------------------------------------------------------------------------
+my %OPENAI_LADDER = (
+  'gpt-6-astra'   => { none => undef, minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => { openai => undef, responses => 'max' } },
+  'gpt-5.6-terra' => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => { openai => undef, responses => 'max' } },
+  'gpt-5.5'       => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => undef },
+  'gpt-5'         => { none => undef, minimal => 'minimal', low => 'low', medium => 'medium', high => 'high', xhigh => undef, max => undef },
+  # gpt-5.1 is gated (karr k174, doc-sourced): base drops minimal/xhigh/max,
+  # codex-max re-adds xhigh (still no max). Both wires identical, so scalar cells.
+  'gpt-5.1'           => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => undef, max => undef },
+  'gpt-5.1-codex-max' => { none => 'none', minimal => undef, low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => undef },
+);
+
+for my $model ( sort keys %OPENAI_LADDER ) {
+  for my $effort ( @EFFORTS ) {
+    my $cell = $OPENAI_LADDER{$model}{$effort};
+    my ( $want_chat, $want_resp ) = ref $cell eq 'HASH'
+      ? ( $cell->{openai}, $cell->{responses} )
+      : ( $cell, $cell );
+    my $chat = kw( 'openai',    effort => $effort, model => $model );
+    my $resp = kw( 'responses', effort => $effort, model => $model );
+
+    if ( defined $want_chat ) {
+      is_deeply( $chat, { reasoning_effort => $want_chat },
+        "openai:    $model + $effort -> reasoning_effort=$want_chat" );
+    }
+    else {
+      is_deeply( $chat, {}, "openai:    $model + $effort -> DROP" );
+    }
+    if ( defined $want_resp ) {
+      is_deeply( $resp, { reasoning => { effort => $want_resp } },
+        "responses: $model + $effort -> reasoning.effort=$want_resp" );
+    }
+    else {
+      is_deeply( $resp, {}, "responses: $model + $effort -> DROP" );
+    }
+  }
+}
+
+# No model on the openai wire: full-enum passthrough (unrecognized id keeps all).
+is_deeply( kw( 'openai', effort => 'max' ), { reasoning_effort => 'max' },
+  'openai: no model keeps the full enum (max passes through)' );
+
+# ---------------------------------------------------------------------------
+# anthropic wire: fixed effort set low|medium|high|xhigh|max + adaptive thinking
+# block; Fable-class models carry effort but never a thinking block.
+# ---------------------------------------------------------------------------
+{
+  my %ADAPTIVE = ( none => undef, minimal => undef,
+    low => 'low', medium => 'medium', high => 'high', xhigh => 'xhigh', max => 'max' );
+  for my $effort ( @EFFORTS ) {
+    my $got  = kw( 'anthropic', effort => $effort, model => 'claude-opus-4-8' );
+    my $eff  = $ADAPTIVE{$effort};
+    my $want = defined $eff
+      ? { output_config => { effort => $eff }, thinking => { type => 'adaptive' } }
+      : {};
+    is_deeply( $got, $want, "anthropic: claude-opus-4-8 + $effort" );
+
+    my $fab  = kw( 'anthropic', effort => $effort, model => 'claude-fable-5-1' );
+    my $fwant = defined $eff ? { output_config => { effort => $eff } } : {};
+    is_deeply( $fab, $fwant, "anthropic: claude-fable-5-1 + $effort (no thinking block)" );
+  }
+
+  # thinking_display rides on the adaptive block (and turns it on alone).
+  is_deeply(
+    kw( 'anthropic', effort => 'high', thinking_display => 'summarized', model => 'claude-opus-4-8' ),
+    { output_config => { effort => 'high' }, thinking => { type => 'adaptive', display => 'summarized' } },
+    'anthropic: effort + display -> both fields' );
+  is_deeply(
+    kw( 'anthropic', thinking_display => 'summarized', model => 'claude-opus-4-8' ),
+    { thinking => { type => 'adaptive', display => 'summarized' } },
+    'anthropic: display-only turns on an adaptive block, no output_config' );
+  # Fable-class: display cannot ride (no thinking block at all).
+  is_deeply(
+    kw( 'anthropic', effort => 'high', thinking_display => 'summarized', model => 'claude-fable-5-1' ),
+    { output_config => { effort => 'high' } },
+    'anthropic: fable-class drops display (no thinking block)' );
+}
+
+# ---------------------------------------------------------------------------
+# gemini wire (effort path): thinkingConfig.thinkingLevel, per-family clamp.
+# ---------------------------------------------------------------------------
+my %GEMINI_LEVEL = (
+  'gemini-3-pro-preview' => { none => 'low', minimal => 'low', low => 'low', medium => 'low',    high => 'high', xhigh => 'high', max => 'high' },
+  'gemini-3.7-flash'     => { none => 'low', minimal => 'low', low => 'low', medium => 'medium', high => 'high', xhigh => 'high', max => 'high' },
+  'gemini-3.6-flash'     => { none => 'minimal', minimal => 'minimal', low => 'low', medium => 'medium', high => 'high', xhigh => 'high', max => 'high' },
+  # Non-gemini-3 model: universally-accepted binary low|high collapse.
+  'gemini-2.0-flash'     => { none => 'low', minimal => 'low', low => 'low', medium => 'low',    high => 'high', xhigh => 'high', max => 'high' },
+);
+
+for my $model ( sort keys %GEMINI_LEVEL ) {
+  for my $effort ( @EFFORTS ) {
+    my $want = $GEMINI_LEVEL{$model}{$effort};
+    is_deeply( kw( 'gemini', effort => $effort, model => $model ),
+      { thinkingConfig => { thinkingLevel => $want } },
+      "gemini: $model + $effort -> thinkingLevel=$want" );
+  }
+}
+
+# No model on the gemini wire: same binary collapse as a non-gemini-3 model.
+is_deeply( kw( 'gemini', effort => 'medium' ),
+  { thinkingConfig => { thinkingLevel => 'low' } },
+  'gemini: no model medium -> low (binary fallback)' );
+is_deeply( kw( 'gemini', effort => 'max' ),
+  { thinkingConfig => { thinkingLevel => 'high' } },
+  'gemini: no model max -> high (binary fallback)' );
+
+# ---------------------------------------------------------------------------
+# gemini wire (budget path): thinkingConfig.thinkingBudget passes the integer
+# through verbatim (no Phase-1 clamping).
+# ---------------------------------------------------------------------------
+is_deeply( kw( 'gemini', thinking_budget => 2048, model => 'gemini-2.5-pro' ),
+  { thinkingConfig => { thinkingBudget => 2048 } },
+  'gemini: gemini-2.5-pro thinking_budget=2048 passes through' );
+is_deeply( kw( 'gemini', thinking_budget => 512, model => 'gemini-2.5-flash' ),
+  { thinkingConfig => { thinkingBudget => 512 } },
+  'gemini: gemini-2.5-flash thinking_budget=512 passes through' );
+
+# ---------------------------------------------------------------------------
+# ollama wire: boolean options.think collapse (any effort -> on, none -> off).
+# ---------------------------------------------------------------------------
+{
+  my $json = JSON::MaybeXS->new;
+  for my $effort (qw( minimal low medium high xhigh max )) {
+    my $got = kw( 'ollama', effort => $effort, model => 'gpt-oss' );
+    ok( exists $got->{think} && $got->{think}, "ollama: $effort -> think=true" );
+  }
+  my $off = kw( 'ollama', effort => 'none', model => 'gpt-oss' );
+  ok( exists $off->{think} && !$off->{think}, 'ollama: none -> think=false' );
+  is_deeply( kw( 'ollama' ), {}, 'ollama: no effort -> nothing emitted' );
+}
+
+# ---------------------------------------------------------------------------
+# BUILD wire-truth gates: exactly one native control per generation.
+# ---------------------------------------------------------------------------
+like( eval { Langertha::Reasoning->new( effort => 'high', thinking_budget => 2048, model => 'gemini-3.5-flash' ); 1 } ? '' : $@,
+  qr/mutually exclusive/i, 'BUILD: effort + thinking_budget croaks (mutually exclusive)' );
+like( eval { Langertha::Reasoning->new( thinking_budget => 2048, model => 'claude-opus-4-8' ); 1 } ? '' : $@,
+  qr/only valid on Gemini 2\.5/i, 'BUILD: thinking_budget on a non-Gemini-2.5 model croaks' );
+like( eval { Langertha::Reasoning->new( thinking_budget => 2048, model => 'gemini-3.5-flash' ); 1 } ? '' : $@,
+  qr/only valid on Gemini 2\.5/i, 'BUILD: thinking_budget on Gemini 3 croaks' );
+like( eval { Langertha::Reasoning->new( effort => 'high', model => 'gemini-2.5-pro' ); 1 } ? '' : $@,
+  qr/not valid on Gemini 2\.5/i, 'BUILD: effort on Gemini 2.5 croaks' );
+
+done_testing;
