@@ -158,7 +158,7 @@ is($tc_named->{tool_choice}{function}{name}, 'echo',
 
 my $ids = $hetzner->list_models;
 is(ref($ids), 'ARRAY', 'list_models returns ArrayRef (static, no HTTP)');
-ok(scalar(@$ids) == 4, 'static model list has exactly 4 entries');
+ok(scalar(@$ids) == 2, 'static model list has exactly 2 entries');
 ok((grep { $_ eq 'Qwen/Qwen3.6-35B-A3B-FP8' } @$ids),
   'static model list contains Qwen/Qwen3.6-35B-A3B-FP8');
 

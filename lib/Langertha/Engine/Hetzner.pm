@@ -55,26 +55,25 @@ endpoint.
 
 =head1 DEFAULT MODEL
 
-C<Qwen/Qwen3.6-35B-A3B-FP8> — the smallest MoE of the four currently-listed
-Hetzner models (35B total / 3B activated), Apache 2.0, text + image input,
-262K context window. Picked because it is distinct from the existing
-L<Langertha::Engine::Moonshot> default (Kimi K3) and avoids overlap with the
-two text-only giants on the catalog (DeepSeek-V4-Flash, GLM-5.2-NVFP4).
+C<Qwen/Qwen3.6-35B-A3B-FP8> — one of the two currently-listed Hetzner models,
+an MoE (35B total / 3B activated), Apache 2.0, text + image input, 262K context
+window. Picked because it is distinct from the existing
+L<Langertha::Engine::Moonshot> default (Kimi K3); the catalog's only other entry
+(C<Qwen3.8-27B>, a dense 27B model) is likewise text + image, so the choice is a
+capacity/architecture preference rather than a modality one.
 
 =head1 MODELS
 
-The four models currently listed at C</api/v1/models>:
+The two models currently listed at C</api/v1/models> (Hetzner narrowed the
+Inference experiment to the small Qwen models in Aug 2026, retiring the earlier
+DeepSeek/GLM/Kimi checkpoints):
 
 =over 4
 
 =item * C<Qwen/Qwen3.6-35B-A3B-FP8> — C<default>. Apache 2.0. MoE 35B/3B.
 262K context. Text + image input.
 
-=item * C<DeepSeek-V4-Flash-0731> — MoE 304B/13B. 512K context. Text only.
-
-=item * C<GLM-5.2-NVFP4> — MoE 744B/40B. 512K context. Text only.
-
-=item * C<Kimi-K2.7-Code> — MoE 1T/32B. 262K context. Text + image input.
+=item * C<Qwen3.8-27B> — dense 27B. 262K context. Text + image input.
 
 =back
 
@@ -126,11 +125,16 @@ sub default_model { 'Qwen/Qwen3.6-35B-A3B-FP8' }
 
 sub default_response_size { 4096 }
 
+# DOC-SOURCED, NOT LIVE-CONFIRMED (Hetzner blog "inference-experiment", reduced
+# scope, 2026-08-17 + docs catalog, checked 2026-09-17): the Inference
+# experiment was narrowed to the small Qwen models — DeepSeek-V4-Flash-0731,
+# GLM-5.2-NVFP4 and Kimi-K2.7-Code were retired. This list reflects the
+# published docs, not a live /v1/models read. The drift check in
+# t/88_live_hetzner.t (karr k40) should confirm against the live endpoint
+# before this catalog is considered frozen.
 sub _build_static_models {[
   { id => 'Qwen/Qwen3.6-35B-A3B-FP8' },
-  { id => 'DeepSeek-V4-Flash-0731' },
-  { id => 'GLM-5.2-NVFP4' },
-  { id => 'Kimi-K2.7-Code' },
+  { id => 'Qwen3.8-27B' },
 ]}
 
 # Hetzner Inference documents neither tool calling nor structured output on its
@@ -179,10 +183,10 @@ and L<Langertha::Role::ResponseFormat> are composed — the engine clears them i
 its C<around engine_capabilities> (see the tool-support caveat above). If a live
 test confirms them, re-add them there.
 
-Vision input is supported on the two multimodal models (Qwen/Qwen3.6-35B-A3B-FP8
-and Kimi-K2.7-Code) via C<image_url> content parts; this is handled by
-L<Langertha::Content::Image> and L<Langertha::Role::Chat>'s normalization — there
-is no engine-level C<vision> flag.
+Vision input is supported on both currently-listed models
+(Qwen/Qwen3.6-35B-A3B-FP8 and Qwen3.8-27B) via C<image_url> content parts; this
+is handled by L<Langertha::Content::Image> and L<Langertha::Role::Chat>'s
+normalization — there is no engine-level C<vision> flag.
 
 =cut
 
