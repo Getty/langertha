@@ -1,0 +1,31 @@
+---
+claimed_at: 2026-09-17T05:05:19Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-17T05:05:12Z
+created: 2026-09-16T05:07:28Z
+id: 175
+priority: medium
+started: 2026-09-17T04:36:42Z
+status: done
+tags:
+- reasoning
+- ollama
+- drift
+- llm
+title: 'Ollama reasoning-Knopf nicht mehr boolean-only: Level-Strings (low/medium/high/max),
+  GPT-OSS = No-op'
+updated: 2026-09-17T05:05:19Z
+---
+
+Advisor-verifiziert 2026-09-16 (docs.ollama.com/capabilities/thinking). Reasoning::to_ollama emittiert nur think=>true/false. Doc jetzt: "Most models accept booleans or levels (low, medium, high, max)". GPT-OSS via Ollama IGNORIERT true/false und ERFORDERT ein Level -> Langerthas think=>true ist dort stiller No-op, kein Pfad zu low/medium/high. Fix: to_ollama modelliert boolean-OR-level mit per-Modell-Diskriminator (GPT-OSS=level-only). Natuerlicher Ort: #173 Ollama-Profil control=boolean|effort per Modell.
+
+DEFERRED (2026-09-17, autonome Nacht-Runde): braucht Live-Ollama. to_ollama boolean->level fuer GPT-OSS ist bounded, ABER GPT-OSS ignoriert boolean und hat keine klare Off-Semantik (none->think:false wird ignoriert) -> ohne Live-Ollama-Test nicht sicher shippbar. Getty markierte k175 selbst als eigene saubere Runde + live. Advisor-Realitaet steht im Ticket. Wartet auf Live-Ollama + Off-Verhalten-Entscheidung.
+
+2026-09-17 04:44 Implemented on k175-ollama-levels @ d270d08 (LIVE-VERIFIED ground truth 2026-09-17 gpt-oss:20b). Profile: ollama_levels attr+predicate, ollama_level_for (none/minimal->low, low->low, medium->medium, high->high, xhigh/max->max), gpt-oss profile qr/\Agpt-oss/ control=effort. to_ollama emits level STRING when has_ollama_levels else unchanged boolean. No off for gpt-oss (none->low). No other wire narrowed (no levels_by_wire -> openai full passthrough; levels=anthropic set). prove -lr t/: 3904 pass / 109 files. perlcritic clean. Awaiting orchestrator live-verify.
+
+LIVE-VERIFY-FUND (2026-09-17, ollama.com gpt-oss:20b): ROOT-CAUSE groesser als gedacht. think-Placement-Test: top-level think stuft (low ~25-47 vs max ~207-402 thinking-chars); options.think stuft NICHT (low ~186-220 ~= max ~169-183 = Default). => Ollama IGNORIERT options.think. Langertha steckt think in options (Engine/Ollama.pm:271 chat, :509 stream) -> Reasoning (Boolean UND Level) erreicht Ollama fuer KEIN Modell. Worker-Commit d270d08 (Level-Strings) ist NOTWENDIG aber NICHT HINREICHEND. Erweiterung: think top-level verschieben (chat+stream), Root-Cause-Fix fuer ALLE Ollama-Reasoning. Worker resumed.
+
+2026-09-17 04:58 Extension @ 4f884c4 (root-cause placement fix, coordinator-live-verified 2026-09-17): options.think is IGNORED by Ollama; think must be TOP-LEVEL. Moved @reasoning out of options into top-level generate_request args in BOTH chat_request and chat_stream_request. Updated comments + share/ollama.yaml think enum (+max, top-level note). Tests: t/78 flipped options.think->top-level (wire + chat_f e2e), added !exists options.think guards + both-paths(chat/stream) x (boolean/gpt-oss) block via wire_stream helper. prove -lr t/: 3915 pass / 109 files. perlcritic clean. No push. Awaiting coordinator live-verify of top-level think+level on the wire.
+
+DONE + GEMERGT + LIVE-E2E-VERIFIZIERT (2026-09-17): commits d270d08 (gpt-oss Level-Strings) + 4f884c4 (think top-level statt options, Root-Cause) -> main. GOLD-STANDARD-Verifikation: (1) t/78 dekodiert echten Request-Body, think top-level; (2) probe3: top-level think stuft gpt-oss live (low~25-47 vs max~207-402); (3) End-to-End via chat_f durch Langertha->ollama.com->gpt-oss:20b: reasoning_effort=low->23 vs high->1534 thinking-chars (24-66x). Vorher: options.think von Ollama IGNORIERT -> Reasoning erreichte KEIN Ollama-Modell. Nativer Ollama-Engine hat Bearer (LANGERTHA_OLLAMA_API_KEY) -> Cloud-Zugriff funktioniert. prove -lr t/ 3915 PASS.
