@@ -169,13 +169,16 @@ Revision history for Langertha
       with tools). Every other engine keeps the no-op default and is unaffected.
 
     - Model reasoning is surfaced on both the non-streaming and streaming paths
-      (karr k129). Non-streaming: the shared OpenAI-compatible chat_response
+      (karr k129, k79). Non-streaming: the shared OpenAI-compatible chat_response
       reads the bare `reasoning` key (vLLM, Groq, Cerebras, OpenRouter, AKI) as
       well as `reasoning_content`, so $response->thinking is no longer empty on
-      those engines; Gemini's stream parser walks every content part, so a
-      leading thought no longer hides the answer; Ollama's native chat_response
-      reads message.thinking. Streaming: each Stream::Chunk carries a `thinking`
-      delta (filled per dialect and delivered to the real-time callback),
+      those engines; whichever of the two spellings carries the thought wins, so
+      an empty `reasoning_content` stub cannot mask a filled `reasoning` (vLLM
+      renamed the field in 0.16 and warns about exactly that); Gemini's stream
+      parser walks every content part, so a leading thought no longer hides the
+      answer; Ollama's native chat_response reads message.thinking. Streaming:
+      each Stream::Chunk carries a `thinking` delta (filled per dialect and
+      delivered to the real-time callback),
       chat_stream_realtime_f returns the aggregated thinking as an additive
       trailing element, and simple_chat_stream returns it in list context —
       matching $response->thinking on the non-streaming path.

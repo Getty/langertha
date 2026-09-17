@@ -101,6 +101,18 @@ SSE
     'OpenRouter: no string reasoning delta -> aggregate_thinking is undef');
 }
 
+# An empty back-compat `reasoning_content` stub on the delta must not mask a
+# filled bare `reasoning` -- the delta half of the k79 length-over-defined
+# precedence, matching chat_response (t/47_openai_compatible_reasoning_parse.t).
+{
+  my $vllm = Langertha::Engine::vLLM->new(url => 'http://x');
+  my $chunk = $vllm->parse_stream_chunk({
+    choices => [{ delta => { reasoning_content => '', reasoning => 'real thought' } }],
+  });
+  is($chunk->thinking, 'real thought',
+    'an empty reasoning_content delta does not mask a filled reasoning delta');
+}
+
 # A ref-valued bare `reasoning` on the delta must be ignored, not blow up.
 {
   my $vllm = Langertha::Engine::vLLM->new(url => 'http://x');
