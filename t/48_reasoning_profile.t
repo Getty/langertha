@@ -116,6 +116,39 @@ is_deeply( kw( 'openai', effort => 'max' ), { reasoning_effort => 'max' },
 }
 
 # ---------------------------------------------------------------------------
+# anthropic wire, per-model effort vocabulary (karr k177). Claude 4.6
+# (opus/sonnet) accepts low|medium|high|max but NOT xhigh — Anthropic's effort
+# doc lists 4.6 under `max`, not under `xhigh` (advisor-verified 2026-09-16,
+# platform.claude.com; doc-sourced, not live-probed). Claude 4.7+/5 keep the
+# full low|medium|high|xhigh|max. On xhigh the 4.6 models drop
+# output_config.effort — and its thinking block, since no effort/display remains;
+# every other accepted effort emits the adaptive block unchanged.
+# ---------------------------------------------------------------------------
+{
+  my %CLAUDE_46 = ( none => undef, minimal => undef,
+    low => 'low', medium => 'medium', high => 'high', xhigh => undef, max => 'max' );
+  for my $model (qw( claude-opus-4-6 claude-sonnet-4-6 )) {
+    for my $effort ( @EFFORTS ) {
+      my $got  = kw( 'anthropic', effort => $effort, model => $model );
+      my $eff  = $CLAUDE_46{$effort};
+      my $want = defined $eff
+        ? { output_config => { effort => $eff }, thinking => { type => 'adaptive' } }
+        : {};
+      is_deeply( $got, $want, "anthropic: $model + $effort (4.6 accepts no xhigh)" );
+    }
+  }
+
+  # The more-specific 4.6 profile must not narrow the generic Claude 4.7+/5
+  # family — they still emit xhigh (unchanged behaviour).
+  for my $model (qw( claude-opus-4-8 claude-sonnet-5 )) {
+    is_deeply(
+      kw( 'anthropic', effort => 'xhigh', model => $model ),
+      { output_config => { effort => 'xhigh' }, thinking => { type => 'adaptive' } },
+      "anthropic: $model + xhigh still emitted (generic claude keeps full set)" );
+  }
+}
+
+# ---------------------------------------------------------------------------
 # gemini wire (effort path): thinkingConfig.thinkingLevel, per-family clamp.
 # ---------------------------------------------------------------------------
 my %GEMINI_LEVEL = (

@@ -42,12 +42,13 @@ enum 'Langertha::Reasoning::DisableForm'
 enum 'Langertha::Reasoning::Wire'
   => [qw( openai responses anthropic gemini ollama )];
 
-# The Anthropic Messages-API output_config.effort vocabulary — uniform across
-# every current Claude model (the normalized none/minimal have no Anthropic
-# equivalent and drop). A wire-level fact, so to_anthropic checks it directly
-# rather than the per-model resolved levels.
+# The full Anthropic Messages-API output_config.effort vocabulary (the
+# normalized none/minimal have no Anthropic equivalent and drop). The default
+# the generic-claude, Fable/Mythos and provider-default profiles reuse — but NOT
+# uniform across every Claude model: Claude 4.6 (opus/sonnet) drops xhigh, so
+# anthropic_effort_ok checks the resolved profile's own `levels` rather than this
+# module-level set (karr k177).
 my @ANTHROPIC_EFFORT_LEVELS = qw( low medium high xhigh max );
-my %ANTHROPIC_EFFORT_SET    = map { $_ => 1 } @ANTHROPIC_EFFORT_LEVELS;
 
 # Normalized effort -> Gemini 3 thinkingLevel base vocabulary
 # (minimal|low|medium|high); then clamped down to the family's accepted subset.
@@ -254,14 +255,18 @@ sub effort_accepted_on {
 
 =method anthropic_effort_ok
 
-Whether the effort maps onto Anthropic's C<output_config.effort> vocabulary
-(C<low|medium|high|xhigh|max>). A wire-level fact, uniform across Claude models.
+Whether the effort maps onto this model's C<output_config.effort> vocabulary.
+Per-model, checking membership in the resolved profile's own L</levels> rather
+than a uniform Anthropic set: Claude 4.6 (opus/sonnet) accepts
+C<low|medium|high|max> but B<not> C<xhigh>, while Claude 4.7+/5 accept the full
+C<low|medium|high|xhigh|max> (karr k177). The normalized C<none>/C<minimal> have
+no Anthropic equivalent and are absent from every Claude profile's C<levels>.
 
 =cut
 
 sub anthropic_effort_ok {
   my ( $self, $effort ) = @_;
-  return $ANTHROPIC_EFFORT_SET{$effort} ? 1 : 0;
+  return ( grep { $_ eq $effort } @{ $self->levels } ) ? 1 : 0;
 }
 
 =method gemini_level_for
@@ -335,6 +340,10 @@ my $OPENAI_K176_DOC  = "$OPENAI_SRC; k176 gpt-6 max Responses-only (advisor Azur
 # (none|low|medium|high); gpt-5.1-codex-max re-adds xhigh (still no max). Both
 # wires identical (xhigh is not Responses-only), so no openai_levels split.
 my $OPENAI_K174_DOC  = "$OPENAI_SRC; k174 gpt-5.1 gate (Azure Foundry reasoning table, advisor-verified 2026-09-16, doc-sourced not live)";
+# karr k177: Claude 4.6 (opus/sonnet) accepts low|medium|high|max but NOT xhigh
+# — Anthropic's effort doc lists 4.6 under `max` yet not under `xhigh`; 4.7+/5
+# take the full set. Advisor-verified 2026-09-16 (doc-sourced, NOT live-probed).
+my $ANTHROPIC_K177_DOC = 'platform.claude.com output_config.effort doc; k177 2026-09-16 claude-4.6 no xhigh (advisor-verified, doc-sourced not live)';
 
 # $levels is the superset a family accepts on the `responses` (Responses API)
 # wire; $extra{openai_levels} is the narrower Chat Completions set, defaulting to
@@ -446,6 +455,17 @@ sub _ensure_registry {
     _gemini3_profile( qr/\Agemini-3\.1-pro/,      [qw( low medium high )] ),
     _gemini3_profile( qr/\Agemini-3-pro/,         [qw( low high )] ),
     _gemini3_profile( qr/\Agemini-3/,             [qw( minimal low medium high )] ),
+
+    # Claude 4.6 (opus/sonnet): accepts low|medium|high|max but NOT xhigh —
+    # Anthropic's effort doc lists 4.6 under `max`, not under `xhigh`. Matched
+    # before the generic claude family. karr k177, doc-sourced (not live).
+    __PACKAGE__->new(
+      model_match => qr/\Aclaude-(opus|sonnet)-4-6/,
+      control     => 'effort',
+      wire_format => 'anthropic',
+      levels      => [qw( low medium high max )],
+      source      => $ANTHROPIC_K177_DOC,
+    ),
 
     # Generic Claude family (adaptive thinking, can disable).
     __PACKAGE__->new(
