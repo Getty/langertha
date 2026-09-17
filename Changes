@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Hetzner Inference model catalog now lists Qwen/Qwen3.6-35B-A3B-FP8 and
+      Qwen3.8-27B only (karr k154): the retired DeepSeek-V4-Flash-0731,
+      GLM-5.2-NVFP4 and Kimi-K2.7-Code checkpoints are dropped, and both
+      remaining models are text + image. Doc-sourced (Hetzner blog + docs
+      catalog, 2026-09-17); the live t/88_live_hetzner.t drift check confirms.
+      Default model unchanged.
+
     - Open-Responses streaming now surfaces the prefix-cache read count and cost
       on the final chunk (karr k160): a streamed response.completed lifts
       cached_tokens (via Langertha::Usage->from_hash, the same value object the
