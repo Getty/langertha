@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-17T03:38:43Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-17T03:38:37Z
+created: 2026-09-14T18:31:13Z
+id: 154
+priority: low
+started: 2026-09-17T03:29:46Z
+status: done
+tags:
+- hetzner
+- model
+- catalog
+title: 'Hetzner-Katalog: ist DeepSeek-V4-Flash-0731 noch aktuell? (aus k150)'
+updated: 2026-09-17T03:38:43Z
+---
+
+Beim k150-DeepSeek-Audit zeigte sich: die Modell-ID DeepSeek-V4-Flash-0731 (im k150-Ticket faelschlich Engine::DeepSeek zugeschrieben) liegt tatsaechlich in lib/Langertha/Engine/Hetzner.pm (Z.73, 131) — Hetzners self-hosted open-weight-Checkpoint-Katalog, ein anderer Provider. DeepSeek selbst hat V4-Flash am 2026-09-10 retired. OFFEN: serviert Hetzner Inference diesen Checkpoint noch? Gegen Hetzners aktuellen Modell-Katalog verifizieren; falls veraltet, ersetzen/droppen. Niedrig, kein Live-Call noetig (Doc/Katalog-Check). Quelle: k150-Worker-Handoff 2026-09-14.
+
+RESEARCH (advisor 2026-09-17, web-only, kein Live): Katalog STALE. DeepSeek-V4-Flash-0731 + GLM-5.2-NVFP4 + Kimi-K2.7-Code ~Aug 2026 retired (Hetzner-Blog inference-experiment 2026-08-17: reduced scope, nur kleine Qwen-Modelle). Aktueller Katalog: Qwen/Qwen3.6-35B-A3B-FP8 + Qwen3.8-27B (beide Text+Image). Default korrekt. FIX (nach k177): _build_static_models die 3 raus, Qwen3.8-27B rein, POD umschreiben (two-text-only-giants/Kimi-multimodal-Begruendung falsch), Changes-Eintrag. CAVEAT: Live /v1/models (t/88_live_hetzner.t) sollte vor Einfrieren bestaetigen; offline doc-sourced.
+
+2026-09-17 03:34 Implemented commit a83879c on k154-hetzner-catalog: static list -> Qwen/Qwen3.6-35B-A3B-FP8 + Qwen3.8-27B; POD (DEFAULT/MODELS/CAPABILITIES) rewritten; t/48 count 4->2; Changes entry. prove -lr t/ green (3881 tests), perlcritic clean, live test skipped (no key). Doc-sourced, not live-confirmed; drift check k40 pending.
+
+IMPLEMENTIERT + GEMERGT: commit a83879c -> main. 3 retired raus (DeepSeek-V4-Flash-0731/GLM-5.2-NVFP4/Kimi-K2.7-Code), Qwen3.8-27B rein, Default unveraendert, POD+Changes. prove -lr t/ 3881 PASS. CAVEAT: exakte Wire-Schreibweise von Qwen3.8-27B (kein Qwen/-Praefix?) ist doc-sourced, nicht live - k40 (t/88_live_hetzner.t) muss gegen Live /v1/models bestaetigen bevor eingefroren.
