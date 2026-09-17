@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-17T02:25:33Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-17T02:25:33Z
+created: 2026-09-16T05:07:22Z
+id: 174
+priority: medium
+started: 2026-09-16T17:52:16Z
+status: done
+tags:
+- reasoning
+- openai
+- drift
+- llm
+title: 'gpt-5.1 reasoning_effort nicht mehr un-gated: minimal/xhigh/max ablehnen,
+  gpt-5.1-codex-max ausnehmen'
+updated: 2026-09-17T02:25:33Z
+---
+
+Advisor-verifiziert 2026-09-16 (Azure Foundry reasoning table). Reasoning.pm laesst gpt-5.1 heute bewusst durch die volle Enum (_openai_effort_ok gibt 1 fuer unbekannte IDs). Doc jetzt: gpt-5.1 akzeptiert KEIN minimal ("doesnt work with gpt-5.1 or greater"), KEIN max (nur GPT-6/5.6), KEIN xhigh (nur 5.4+/5.5/5.6/6 oder gpt-5.1-codex-max). Base gpt-5.1 ~= none|low|medium|high. Aktueller Pass-through leitet minimal/xhigh/max weiter -> OpenAI 400. Fix: gpt-5.1-Gate, most-specific-first, Ausnahme gpt-5.1-codex-max (fuegt xhigh hinzu). Natuerlicher Ort: #173 Profile-Registry.
+
+IMPLEMENTIERT + orchestrator-verifiziert: Commit 50ef0ad. gpt-5.1=[none,low,medium,high], gpt-5.1-codex-max=[+xhigh], most-specific-first. Doc-sourced (Azure Foundry reasoning table 2026-09-16, NICHT live-geprobt). prove -lr t/: 3865 PASS. Ritt auf #173-Merge.
