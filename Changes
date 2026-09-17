@@ -133,6 +133,15 @@ Revision history for Langertha
       Adds a gated live test (t/85_live_perplexity.t) and offline regression
       fixtures captured from the real wire.
 
+    - Real OpenAI and Anthropic response captures back the rate-limit tests
+      (karr k137). t/data carries one verbatim 200 per wire family with its
+      response headers, taken through the engines themselves, and
+      t/12_rate_limit.t parses those instead of hand-written header sets: the
+      six x-ratelimit-* headers OpenAI sends (a sub-second `12ms` reset and a
+      literal `0s` among them) and the twelve anthropic-ratelimit-* headers
+      Anthropic sends, four of which reach only `raw`. Account identifiers in
+      the captures carry placeholder values.
+
     - simple_chat / chat now carp when a message argument exactly matches a
       chat_f control name (karr k122) — e.g. `simple_chat($prompt,
       reasoning_effort => 'high')`, which silently sent the control name and its
