@@ -63,6 +63,19 @@ my %GEMINI_BASE = (
 );
 my %GEMINI_ORDER = ( minimal => 0, low => 1, medium => 2, high => 3 );
 
+# Normalized effort -> GPT-OSS Ollama options.think level (low|medium|high|max).
+# GPT-OSS always reasons — there is no "off" — so 'none' (and 'minimal') map to
+# the floor 'low' (live-probed 2026-09-17 via ollama.com gpt-oss:20b, k175).
+my %OLLAMA_LEVEL = (
+  none    => 'low',
+  minimal => 'low',
+  low     => 'low',
+  medium  => 'medium',
+  high    => 'high',
+  xhigh   => 'max',
+  max     => 'max',
+);
+
 has model_match => (
   is  => 'ro',
   isa => 'Str | RegexpRef',
@@ -119,6 +132,23 @@ Completions) wire while keeping it on C<responses> — C<max> is Responses-only
 (live-confirmed 2026-09-16, karr k176). A family whose wires agree populates
 both keys with the same set; the unlisted-id default leaves it empty (no
 per-wire restriction).
+
+=cut
+
+has ollama_levels => (
+  is        => 'ro',
+  isa       => 'ArrayRef[Langertha::Reasoning::Level]',
+  predicate => 'has_ollama_levels',
+);
+
+=attr ollama_levels
+
+The graded level strings this model accepts on Ollama's C<options.think> knob,
+in place of the model-agnostic boolean. Set only on the GPT-OSS family, which
+ignores C<think:true>/C<think:false> and instead takes C<low|medium|high|max>
+(live-probed 2026-09-17 via ollama.com gpt-oss:20b, k175). L</has_ollama_levels>
+gates L<Langertha::Reasoning/to_ollama> between the level-string and boolean
+serializations; unset for every other model (they take the boolean).
 
 =cut
 
@@ -310,6 +340,24 @@ sub _clamp_gemini_level {
   return defined $result ? $result : $sorted[0];
 }
 
+=method ollama_level_for
+
+    $profile->ollama_level_for('xhigh')   # -> 'max'
+
+Maps the normalized effort onto the GPT-OSS C<options.think> level vocabulary
+(C<low|medium|high|max>): C<none>/C<minimal>/C<low> become C<low>,
+C<xhigh>/C<max> become C<max>, C<medium> and C<high> pass through. GPT-OSS
+always reasons, so C<none> collapses onto the floor C<low> rather than an off
+state (there is no off — C<think:false> is ignored). Mirrors
+L</gemini_level_for>; only meaningful when L</has_ollama_levels> is true.
+
+=cut
+
+sub ollama_level_for {
+  my ( $self, $effort ) = @_;
+  return $OLLAMA_LEVEL{$effort} // 'low';
+}
+
 # ---------------------------------------------------------------------------
 # The registry — one ordered, most-specific-first table. Built lazily so the
 # class is fully defined (and immutable) before any profile is constructed.
@@ -474,6 +522,22 @@ sub _ensure_registry {
       wire_format => 'anthropic',
       levels      => [@ANTHROPIC_EFFORT_LEVELS],
       source      => 'Anthropic Messages API output_config.effort; k173 2026-09-16',
+    ),
+
+    # GPT-OSS on Ollama: the one family that takes graded level STRINGS on the
+    # options.think knob (low<medium<high<max) instead of the model-agnostic
+    # boolean, and ALWAYS reasons — there is no "off" (think:false is ignored,
+    # so 'none' -> floor 'low'). Its other wires stay unrestricted so nothing
+    # regresses off the ollama path: no levels_by_wire (openai passes the full
+    # enum through), and levels keeps the generic anthropic set. Live-probed
+    # 2026-09-17 via ollama.com gpt-oss:20b (k175).
+    __PACKAGE__->new(
+      model_match   => qr/\Agpt-oss/,
+      control       => 'effort',
+      wire_format   => 'ollama',
+      levels        => [@ANTHROPIC_EFFORT_LEVELS],
+      ollama_levels => [qw( low medium high max )],
+      source        => 'live-probed 2026-09-17 via ollama.com gpt-oss:20b (k175)',
     ),
   );
 

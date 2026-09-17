@@ -290,20 +290,27 @@ sub to_gemini {
 sub to_ollama {
   my ( $self ) = @_;
   return () unless $self->has_effort;
-  # Ollama's reasoning knob is the boolean options.think (the ollama profile's
-  # control=boolean / disable_form=think_false): the normalized vocabulary
-  # collapses onto it (any effort level -> on, 'none' -> off). Per-model level
-  # support (GPT-OSS accepts level strings) is a wire-truth change deferred to
-  # Phase 1.5 (karr k175), so Phase 1 keeps the model-agnostic boolean.
+  # GPT-OSS takes graded level STRINGS on the options.think knob
+  # (low<medium<high<max) and ALWAYS reasons — there is no "off": think:false is
+  # ignored, so a boolean has zero effect and 'none' maps to the floor 'low'.
+  # Live-probed 2026-09-17 via ollama.com gpt-oss:20b (k175). Every other model
+  # takes only the boolean: any effort level -> on, 'none' -> off.
+  return ( think => $self->_profile->ollama_level_for( $self->effort ) )
+    if $self->_profile->has_ollama_levels;
   return ( think => $self->effort eq 'none' ? JSON->false : JSON->true );
 }
 
 =method to_ollama
 
-Serializes to Ollama's C<options.think> boolean: any effort level other than
-C<none> turns thinking on, C<none> turns it off. Empty list when no effort is
-set. (Ollama does not compose L<Langertha::Role::ReasoningEffort> — the engine
-calls this serializer directly from its C<chat_request> when a per-request
+Serializes to Ollama's C<options.think> knob. For the GPT-OSS family (whose
+resolved L<Langertha::Reasoning::Profile> carries C<ollama_levels>) it emits a
+graded level B<string> — C<low>/C<medium>/C<high>/C<max> — because GPT-OSS
+ignores the boolean and always reasons (C<none> maps to the floor C<low>;
+live-probed 2026-09-17 via ollama.com gpt-oss:20b, k175). For every other model
+it emits the C<options.think> B<boolean>: any effort level other than C<none>
+turns thinking on, C<none> turns it off. Empty list when no effort is set.
+(Ollama does not compose L<Langertha::Role::ReasoningEffort> — the engine calls
+this serializer directly from its C<chat_request> when a per-request
 C<reasoning_effort> control arrives.)
 
 =cut
