@@ -1,0 +1,22 @@
+---
+class: standard
+completed: 2026-09-17T03:41:53Z
+created: 2026-09-14T19:32:20Z
+id: 156
+priority: low
+started: 2026-09-17T03:41:53Z
+status: done
+tags:
+- gemini
+- eol
+- catalog
+- docs
+title: Gemini 2.5 Deprecation-Datum bestaetigen (aus k153)
+updated: 2026-09-17T03:41:59Z
+---
+
+Aus k153 (2026-09-14): der Worker konnte das gemini-2.5-flash-Deprecation-Datum 2026-10-16 NICHT gegen ai.google.dev bestaetigen — Models-Seite listet gemini-2.5-flash als current stable ohne Datum; Changelog sagt nur "will be shut down soon" / "2-week notice via email". Datum stammt aus Sekundaerquelle (cloudzero.com). OFFEN: sobald ai.google.dev ein konkretes Datum publiziert, in Gemini.pm-POD notieren und den gemini-2.5 thinkingBudget-Pfad (_is_gemini_25 in Reasoning.pm) neu bewerten. Niedrig, Doc-Check, kein Live-Call. Quelle: k153-Handoff.
+
+RESEARCH (advisor 2026-09-17): KEINE Code-Aktion noetig. Langertha nutzt Developer API generativelanguage.googleapis.com (?key=), NICHT Vertex. Dort GA gemini-2.5-pro/flash/flash-lite = "No shutdown date announced" (ai.google.dev/gemini-api/docs/deprecations, Stand 2026-09-16). Die kursierende Okt-20-2026-Retirement ist NUR Vertex/Agent Platform, N/A hier. thinkingBudget-Pfad bleibt. Optional (fold ich nach k177 ein): 1-Zeilen-datierter Klarstellungs-Kommentar am /gemini-2.5/-Block gegen kuenftige Fehlalarme. Danach done.
+
+DONE (2026-09-17): keine Code-Aktion noetig. Langerthas Developer-API-Surface (generativelanguage.googleapis.com) hat KEIN announced shutdown fuer GA gemini-2.5 (Stand 2026-09-16); die kursierende Okt-20-2026-Retirement ist Vertex-only, N/A. Optional-nice-to-have (nicht blockierend): 1-Zeilen-Klarstellungskommentar am /gemini-2.5/-Block gegen kuenftige Fehlalarme - bewusst nicht gemacht (waere Orchestrator-Edit an .pm; triviale Getty-Folgeaufgabe falls gewuenscht).
