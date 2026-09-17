@@ -1,0 +1,203 @@
+---
+claimed_at: 2026-09-17T02:25:45Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-17T02:25:26Z
+created: 2026-09-16T04:43:14Z
+id: 173
+priority: medium
+started: 2026-09-16T16:36:38Z
+status: done
+tags:
+- reasoning
+- capabilities
+- refactor
+- datatype
+- followup
+title: 'Reasoning-Profil als echter Datentyp: Modell-Faehigkeiten + Budget/Level strukturiert
+  statt verstreuter %HASH-Tabellen'
+updated: 2026-09-17T02:25:45Z
+---
+
+PROBLEM
+Das Reasoning-Modellwissen liegt heute verstreut und untypisiert in
+Langertha::Reasoning als ad-hoc Lookup-Tabellen plus Regex-Praedikate:
+- %OPENAI_MODEL_EFFORT  (per-Generation akzeptierte effort-Level)
+- %ANTHROPIC_EFFORT     (low..max)
+- %GEMINI3_LEVEL + to_gemini_level (Familien-Clamps: gemini-3.1-pro ohne
+  minimal, gemini-3-pro nur low|high)
+- _is_gemini_25, _is_fable_class (Regex-Modell-Familien-Gates)
+- thinking_budget nur Gemini-2.5, croakt sonst hart im BUILD
+Kein einziges Feld traegt, was ein Level in Token-Budget bedeutet. Jede
+neue Modell-Familie heisst: noch eine Tabelle, noch ein Regex, an mehreren
+Stellen. Driftanfaellig, nicht als Ganzes testbar, keine saubere
+Query-Schnittstelle fuer Consumer.
+
+ZIEL
+Ein echter, typisierter Datentyp - ein per-Modell Reasoning-Profil - der die
+Definition IST. Strukturen statt %HASH. Die verstreuten Tabellen/Praedikate
+werden durch strukturierte Profil-Objekte ersetzt; das Profil ist die einzige
+Wahrheitsquelle, aus der to_* UND die Capability-Schicht ableiten.
+
+DATENTYP (Profil-Shape, Vorschlag zur Diskussion)
+Pro Modell(-Familie):
+- levels: akzeptiertes Vokabular als Teilmenge des normalisierten Enums
+  (none / minimal / low / medium / high / xhigh / max)
+- control: nativer Wire-Control-Typ - effort-enum | token-budget | boolean
+- budget-mapping: ENTWEDER range [min,max] + Interpolationsregel (linear|log)
+  ODER explizite per-Level Budget-Punkte; Magic-Werte first-class
+  (gemini-2.5: 0=aus, -1=dynamisch)
+- off/none-Semantik als eigener Fall, nicht als Range-Randpunkt
+
+ZWEI-SCHICHTEN-TRENNUNG (wichtig - nicht die Croak-Mine neu bauen)
+- Harte Wire-Wahrheit: was die API literal akzeptiert (levels, control-Typ)
+  -> Capability, nicht ueberschreibbar. Fuegt sich in die bestehende
+  3-Schichten-Logik (engine_capabilities -> around engine_capabilities ->
+  model_capability_corrections), ersetzt sie nicht.
+- Kuratierte Policy: die erfundenen Token-Zahlen (z. B. high=32k)
+  -> ueberschreibbarer Default. Anthropic publiziert keine Level->Token-Tabelle;
+  das ist Konvention, kein Protokoll. Architektonisch getrennt von der harten
+  Wahrheit halten.
+
+BIDIREKTIONAL
+Das Profil bedient beide Richtungen aus einer Quelle:
+- outbound: Level -> nativer Control (effort-enum / Int-Budget via Mapping /
+  Boolean-Bit). Ersetzt die verstreute to_*-Logik.
+- inbound: Budget-Int -> Level (quantisieren auf naechsten Anker),
+  Boolean true -> konfigurierbarer Default-Level. Genau das, was Consumer
+  wie Knarr fuer Inbound-Normalisierung brauchen.
+
+KURATIERUNG (LLM-Experten, laufend)
+Die per-Modell-Daten muessen fuer ALLE Modelle aufgefuellt werden. Das ist
+eine laufende Kuratierungs-Aufgabe fuer LLM-Experten-Agenten (Sonnet-Clients):
+pro Provider/Familie die akzeptierten Level und - wo sinnvoll - eine Default
+Budget<->Level-Tabelle gegen die Provider-Docs verifizieren, Quelle + Datum
+vermerken. Key-frei wo moeglich; Wire-Wahrheit vs. erfundene Policy im
+Datensatz kennzeichnen.
+
+NICHT-ZIELE / MIGRATION
+- Bestehende to_*-Wire-Ausgabe fuer heute abgedeckte Modelle bleibt
+  verhaltensgleich (Regressionstests; t/78_capability_registry.t-Guard und
+  reasoning-Tests beachten).
+- Keine neuen Wire-Felder erfinden, die eine Engine nicht akzeptiert.
+
+DOWNSTREAM
+Entblockt langertha-knarr #13 (Reasoning-Inbound-Mapping fuer Anthropic/Ollama
+auf dem routed Path) als duennen Consumer - der greift dann das Profil ab
+statt selbst zu erfinden.
+
+VERWANDT
+Langertha #79 (vLLM reasoning_effort live), #155 (OpenAI reasoning-model
+temperature-Gate). Consumer: langertha-knarr #13.
+
+
+
+=== DESIGN-VORSCHLAG: Profil-Shape (v1 - widersprechbar) ===
+Stand 2026-09-16. Vorschlag aus Consumer-Sicht (knarr). Der Langertha-Owner
+drueben darf widersprechen - das ist Absicht, nur Shape, kein Impl-Commit.
+
+KERNIDEE
+Zwei getrennte Value-Types entlang der Zwei-Schichten-Trennung, damit
+Wire-Wahrheit und erfundene Policy nie im selben Croak-Layer landen.
+
+--- 1) Langertha::Reasoning::Profile  (HARTE WIRE-WAHRHEIT -> Capability) ---
+Beschreibt, was ein Modell am Reasoning-Knopf LITERAL akzeptiert. Immutable
+Moose value object. ReasoningLevel ist ein echter enum-Subtype, kein Str.
+
+  ReasoningLevel = enum[ none minimal low medium high xhigh max ]
+
+  has model_match  => isa Str|RegexpRef      # exakte id oder Familien-Pattern
+  has control      => isa enum[effort budget boolean none]
+  has levels       => isa ArrayRef[ReasoningLevel]   # on-Spektrum, aufsteigend
+  has can_disable  => isa Bool, default 1     # Fable-class: 0 (thinking always on)
+  has disable_form => isa enum[absent explicit_none think_false]
+  has wire_format  => isa enum[openai responses anthropic gemini ollama]
+
+Ersetzt: %OPENAI_MODEL_EFFORT, %ANTHROPIC_EFFORT, %GEMINI3_LEVEL,
+         _is_gemini_25, _is_fable_class.
+
+--- 2) Langertha::Reasoning::BudgetPolicy  (KURATIERT, UEBERSCHREIBBAR) ---
+Die erfundenen Token-Zahlen. Optional, nur wo Budget<->Level konvertiert wird.
+NICHT Teil von engine_capabilities (kein Wire-Feld, sondern Konvention).
+
+  has form          => isa enum[range explicit]
+  # range-Form:
+  has min           => isa Int
+  has max           => isa Int
+  has curve         => isa enum[linear log], default log
+  # explicit-Form:
+  has points        => isa HashRef[ ReasoningLevel => Int ]
+  # Magic-Werte:
+  has off_value     => isa Maybe[Int]     # gemini: 0
+  has dynamic_value => isa Maybe[Int]     # gemini: -1
+  has source        => isa Str            # doc-URL + Datum (Kuratierungs-Nachweis)
+
+Methoden (die Bijektion):
+  budget_for($level)  -> Int     # outbound: Level -> Budget (range interpoliert
+                                 #   ueber die profile->levels in Reihenfolge)
+  level_for($budget)  -> Level   # inbound: quantisiert Budget auf naechsten Anker
+  default_bool_level  -> Level   # Boolean true -> Default ("Mitte", z.B. medium)
+
+--- WIE Langertha::Reasoning das konsumiert ---
+Der to_*-Dispatch fragt statt der %HASH-Zweige das Profil:
+- to() holt Profil via Registry (for_model), clampt/dropt ueber profile->levels
+  und waehlt die Wire-Form ueber profile->control + profile->wire_format.
+- budget<->level laeuft ueber BudgetPolicy statt hartcodierter Zahlen.
+- die BUILD-Gates (effort/budget mutually exclusive; budget nur wo
+  control=budget) werden AUS dem Profil abgeleitet statt aus _is_gemini_25.
+
+--- REGISTRY / RESOLUTION ---
+Langertha::Reasoning::Profile->for_model($id): geordnete Match-Regeln
+(exakte id -> Familien-Prefix/Regex -> Provider-Default), most-specific-first.
+Ersetzt die verstreuten Regex-Praedikate durch EINE Resolver-Tabelle. Profile
+deklarativ an einem Ort, jede mit source+Datum -> die Sonnet-Client-Kuratierung
+ist ein Single-File-Add pro Familie (analog zum Capability-Registry-Prinzip:
+neue Capability = Single-File-Change).
+
+--- INTEGRATION Capabilities ---
+Wire-Wahrheit-Schicht (levels/control/can_disable) speist engine_capabilities
+(Layer 3 model_capability_corrections leitet daraus ab). BudgetPolicy NICHT.
+
+--- BEISPIEL-PROFILE (illustrativ; Budget-Zahlen sind Policy-Platzhalter) ---
+Anthropic adaptive (claude-*):
+  control=effort, levels=[low,medium,high,xhigh,max], can_disable=1,
+  disable_form=absent, wire=anthropic
+  (thinking:{type:adaptive} bleibt Serializer-Detail)
+Anthropic Fable-class (fable*/mythos*):
+  control=effort, levels=[low,medium,high,xhigh,max], can_disable=0
+Gemini 2.5 (gemini-2.5*):
+  control=budget, levels=[], wire=gemini,
+  BudgetPolicy range(min=..,max=..), off_value=0, dynamic_value=-1
+gemini-3-pro*:
+  control=effort, levels=[low,high], wire=gemini
+OpenAI gpt-5.5-gen:
+  control=effort, levels=[none,minimal,low,medium,high,xhigh], wire=openai
+Ollama:
+  control=boolean, levels=[], default_bool_level=medium, wire=ollama
+
+--- OFFENE FRAGEN (bitte widersprechen) ---
+- none hat zwei Bedeutungen: Feld-absent vs. akzeptierter enum-Wert
+  (OpenAI reasoning_effort:"none"). Reicht disable_form zum Disambiguieren,
+  oder braucht none einen eigenen levels-Eintrag?
+- Gehoert BudgetPolicy ans Profil (Modell-Default), an die Engine (per-Instanz
+  ueberschreibbar) oder beides mit Merge (Engine schlaegt Profil)?
+- curve default log oder linear? (Budgets fuehlen sich log-skaliert an.)
+- levels leer bei budget/boolean, oder implizit [low..high] fuer die
+  Consumer-seitige Quantisierung?
+- Profil pro Modell-id oder pro Familie als Default + id-Overrides?
+
+ORCHESTRATOR-REVIEW + Advisor-Red-Team (2026-09-16). Kern bestaetigt, drei Schaerfungen:
+(1) LINCHPIN bestaetigt: kein Provider publiziert Level->Token-Tabelle; OpenAI/Anthropic-Budgets sind Konvention (OpenRouter erfindet eigene Ratios, explizit als Konvention markiert). Zwei-Schichten-Firewall ist richtig.
+(2) TAXONOMIE-FIX: 3 Kategorien statt 2. (a) Wire-Wahrheit Vokabular/Control -> Profile/Capability. (b) Wire-Wahrheit numerische Bounds+Magic-Werte (Gemini 2.5: 128/32768, 0=aus nur Flash/Flash-Lite, -1=dynamisch; Anthropic budget_tokens-Verfuegbarkeit ist per-Generation!) -> gehoert ZUM Profile (source-markiert), NICHT in BudgetPolicy, sonst kann ein Override eine harte API-Grenze verletzen. (c) erfundene Level<->Budget-Interpolation -> BudgetPolicy.
+(3) PHASIERUNG: Phase 1 verhaltensgleich (Capability-Schicht unangetastet; thinking_budget bleibt Geminis around-Flag, ist NICHT in %ROLE_TO_CAPS); BudgetPolicy erst wenn knarr #13 es real braucht (Kategorie c + Inbound).
+BLOCKER: OpenAI-max evtl. Responses-only (#176) muss vor OpenAI-Profil-Shape-Freeze live geklaert werden. Drift-Tickets gefiled: #174 (gpt-5.1-Gate), #175 (Ollama-Level), #176 (max-Divergenz, blockt). Auch: Anthropic xhigh NICHT uniform (Opus/Sonnet 4.6 haben max aber nicht xhigh) -> flat %ANTHROPIC_EFFORT driftet, per-Modell-Profil fixt es. Warten auf Owner-Go.
+
+PHASE 1 FERTIG + orchestrator-verifiziert (2026-09-16). Commit c312baf auf k173-reasoning-profile. Reiner Transform: neue Langertha::Reasoning::Profile (immutable VO; ReasoningLevel/Control/DisableForm/Wire-Enums einmal definiert; for_model most-specific-first-Resolver; levels_by_wire-Seam fuer k176 in Phase 1 identisch bestueckt). Reasoning.pm rewired; %OPENAI_MODEL_EFFORT/%ANTHROPIC_EFFORT/%GEMINI3_LEVEL/_is_gemini_25/_is_fable_class/_openai_effort_ok geloescht. Ollama-Direktpfad fliesst automatisch durch. t/48 Charakterisierungs-Matrix neu. prove -lr t/: Files=109 Tests=3836 PASS (unabhaengig nachgelaufen). perlcritic clean. Capability-Schicht unberuehrt. NIT fuer 1.5: has_levels_by_wire-Predicate durch {}-Default effektiv immer wahr (1. Guard toter Code, 2. faengt es korrekt). OFFEN: Phase 1.5 (#174/#175/#176 + Anthropic-xhigh als Daten-Edits), Phase 2 (BudgetPolicy deferred knarr #13), Phase 3 (ADR).
+
+PHASE 3 (ADR) FERTIG + verifiziert: ADR 0023 "Per-model reasoning wire-truth is a typed Profile value object", commit 1cd1461 auf k173-reasoning-profile. CLAUDE.md-Index-Zeile ergaenzt, kein Verhaltenscode. Amendiert 0009, nuanciert 0019, relates 0002. Branch: f97cfbd(spec) c312baf(Phase1) 1cd1461(ADR). OFFEN: Phase 1.5 - Neubewertung des Umfangs: k174 (gpt-5.1-Gate) + k176 (max per-Wire-Split) sind echte Daten-Edits (safe-direction, k176 live-bestaetigt); k175 (Ollama boolean->level) + Anthropic-xhigh-Nicht-Uniformitaet sind eher kleine Logik/Design-Tasks (to_ollama-Mapping bzw. per-Modell-anthropic_effort_ok) und ideal live zu pruefen -> separat statt als Daten-Edit. Plus Merge nach main.
+
+PHASE 1.5 (Teil) FERTIG + verifiziert: k176 (a820d0f) + k174 (50ef0ad) implementiert, prove -lr t/ 3865 PASS unabhaengig nachgelaufen. Branch-Stack: f97cfbd(spec) c312baf(Phase1) 1cd1461(ADR0023) a820d0f(k176) 50ef0ad(k174). OFFEN separat: k175 (Ollama-Level), Anthropic-xhigh-Nicht-Uniformitaet, Phase 2 BudgetPolicy (deferred knarr #13). NAECHSTES: Merge k173-reasoning-profile nach main (lokal, kein Push) - wartet auf Owner-Go.
+
+AUF BRANCH BELASSEN (Owner-Entscheidung 2026-09-17): kein Merge durch Agent. Branch k173-reasoning-profile ist verifiziert (5 Commits, prove -lr t/ 3865 PASS) und wartet auf Owner-Review/Merge (git merge --no-ff, kein Push). Kern fertig: Profile-Refactor Phase 1 (c312baf) + ADR 0023 (1cd1461) + safe Fixes k176 (a820d0f) + k174 (50ef0ad). Follow-ups als eigene Tickets gefiled: k175 (Ollama-Level), k177 (Anthropic-xhigh-Nicht-Uniformitaet), k178 (Phase 2 BudgetPolicy, deferred knarr #13).
+
+GEMERGT nach main (Merge-Commit a4be967, git merge --no-ff, kein Push). main: 3865 Tests PASS. Follow-ups k175/k177/k178 bleiben backlog.
