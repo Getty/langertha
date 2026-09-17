@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-17T03:29:40Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-17T03:29:34Z
+created: 2026-09-17T02:04:13Z
+id: 177
+priority: medium
+started: 2026-09-17T03:19:03Z
+status: done
+tags:
+- reasoning
+- anthropic
+- drift
+- llm
+title: 'Anthropic xhigh nicht uniform: Opus 4.6 / Sonnet 4.6 haben max aber nicht
+  xhigh'
+updated: 2026-09-17T03:29:40Z
+---
+
+Advisor-verifiziert 2026-09-16 (platform.claude.com effort doc). Langerthas anthropic_effort_ok prueft die uniforme Konstante [low,medium,high,xhigh,max] fuer ALLE Claude-Modelle. Doc: die max-Liste enthaelt Opus 4.6 + Sonnet 4.6, deren xhigh-Liste NICHT -> xhigh auf diesen Modellen evtl. 400. Fix: per-Modell-anthropic (anthropic_effort_ok konsultiert profile->levels fuer spezifische 4.6-Modelle statt der Konstante); Langertha-Katalog gegenpruefen ob 4.6-Modelle vorhanden. Bewusst NICHT als Phase-1.5-Daten-Edit durchgerutscht (Logik-Aenderung + Katalog-Check). Verwandt: k173, ADR 0023 Future work.
+
+IMPLEMENTIERT + verifiziert + GEMERGT: commit ad4ffa8, gemergt nach main. anthropic_effort_ok liest jetzt profile->levels; neues claude-(opus|sonnet)-4-6-Profil [low,medium,high,max] (kein xhigh) vor generischem claude. Shim-Engines (Nicht-Claude auf anthropic-Wire) unveraendert (DEFAULT-Profil voll). prove -lr t/ 3881 PASS. Doc-sourced (nicht live).
