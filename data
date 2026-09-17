@@ -1,0 +1,34 @@
+---
+class: standard
+completed: 2026-09-17T18:31:49Z
+created: 2026-09-14T17:58:40Z
+id: 149
+priority: low
+started: 2026-09-17T18:31:49Z
+status: done
+tags:
+- anthropic
+- structured-output
+- live-confirm
+- k133
+title: 'Anthropic json_object: live-confirm der open-object json_schema-Shape (k133)'
+updated: 2026-09-17T18:31:49Z
+---
+
+Ausgegliedert aus k133 (Getty 2026-09-14: native structured output abgenommen). Bei der k133-Implementierung wurde nur response_format type=json_schema live-verifiziert. json_object-Mode wird auf Anthropic als open-object json_schema {type:object, additionalProperties:true} nach output_config.format uebersetzt -- das ist EXTRAPOLIERT, nicht live bestaetigt. Ein einziger freigegebener Anthropic-Call mit response_format={type:json_object} + tools/schema loest das: bestaetige, dass die open-object-Uebersetzung akzeptiert wird und valides JSON zurueckkommt. Niedrig, nicht blockierend (Risiko nur falls jemand json_object-Mode gegen Anthropic nutzt). Braucht LANGERTHA_ANTHROPIC_API_KEY (Live-Call = Freigabe-gated, MEMORY.md).
+
+Getty 2026-09-17: Freigabe erteilt fuer Anthropic-Call; kombinierbar mit #137s Anthropic-Header-Capture in einem Request (response_format=json_object + tools/schema).
+
+2026-09-17 18:31 LIVE-ERGEBNIS: Extrapolation WIDERLEGT. Der freigegebene Anthropic-Call ist gelaufen (2026-09-17, Engine::Anthropic, claude-haiku-4-5-20251001, max_tokens 128).
+
+GESENDET (genau die k133-Extrapolation, unveraendert aus chat_request):
+  {"max_tokens":128,"messages":[{"content":"Return a JSON object with the keys city (string) and population (integer) for Berlin.","role":"user"}],"model":"claude-haiku-4-5-20251001","output_config":{"format":{"schema":{"additionalProperties":true,"type":"object"},"type":"json_schema"}}}
+
+ANTWORT: HTTP 400 Bad Request, invalid_request_error, Wortlaut:
+  output_config.format.schema: For "object" type, "additionalProperties: true" is not supported. Please set "additionalProperties" to false
+
+Also: die open-object-Uebersetzung wird NICHT akzeptiert, und es kommt kein JSON zurueck, sondern gar keine Antwort. json_object gegen die First-Party-Claude-API ist heute ein garantierter 400.
+
+Response-Header des 400 (Auszug, Account-IDs entfernt): anthropic-organization-id, anthropic-workspace-id, cf-cache-status, cf-ray, content-security-policy, content-type, date, request-id, server, strict-transport-security, traceresponse, vary, x-robots-tag, x-should-retry=false. KEINE anthropic-ratelimit-* Header — ein Validierungsfehler wird vor dem Rate-Limiting beantwortet. Deshalb konnte dieser kombinierte Call den k137-Header-Capture nicht miterledigen (dort separat vermerkt).
+
+Die Frage dieses Tickets ist damit beantwortet. Der Fix ist eigene Arbeit und braucht eine eigene Freigabe fuer den Bestaetigungs-Call -> k182 (Optionen, angrenzender Befund zu offenen json_schema-Schemas, und die Tests die die heutige Shape festschreiben, stehen dort).
