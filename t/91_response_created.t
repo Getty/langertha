@@ -143,6 +143,39 @@ subtest 'from_wire accepts every shape a provider actually sends' => sub {
   # replacement must not quietly narrow the door.
 };
 
+subtest 'from_wire reads a 13-digit millisecond epoch, not a seconds one' => sub {
+  # karr #171. Some providers report the epoch in milliseconds. Fed straight to
+  # from_epoch a 13-digit value is out of Time::Moment's range (its whole span
+  # through year 9999 tops out at the 12-digit 253402300799), so it used to die
+  # inside the eval and the `created` field was silently dropped. It is now read
+  # as milliseconds and scaled to seconds, sub-second precision kept.
+  my $MS = $GH3_EPOCH * 1000 + 138;   # 1777949583138 — a real 13-digit epoch
+
+  for my $input ( $MS, "$MS" ) {
+    my $m = Langertha::Moment->from_wire($input);
+    isa_ok($m, 'Langertha::Moment') or next;
+    is(0 + $m, $GH3_EPOCH, "'$input': numifies to the seconds epoch, not the raw ms value");
+    is($m->millisecond, 138, "'$input': the milliseconds survive as sub-seconds");
+    is("$m", '2026-05-05T02:53:03.138Z', "'$input': lands on the correct instant");
+  }
+
+  # The boundary must not misclassify a normal seconds epoch. A ~10-digit
+  # seconds epoch is below 1e12 and is left exactly as it was — scaling it would
+  # push the instant back to 1970.
+  my $secs = Langertha::Moment->from_wire($GH3_EPOCH);
+  is(0 + $secs, $GH3_EPOCH, 'a 10-digit seconds epoch is not scaled');
+  is($secs->millisecond, 0, 'and carries no phantom sub-seconds');
+
+  # Leniency is unchanged: garbage still drops the field rather than dying, and
+  # only the millisecond band is rescued — a 16-digit microsecond value stays
+  # out of range and is dropped, exactly as before.
+  ok(!$@, 'no death along the way');
+  is(Langertha::Moment->from_wire('not-a-timestamp'), undef,
+    'garbage still yields undef');
+  is(Langertha::Moment->from_wire('1777949583138000'), undef,
+    'a 16-digit microsecond epoch is still dropped (only the ms case changed)');
+};
+
 subtest 'from_wire returns undef instead of dying, for everything else' => sub {
   my %rejected = (
     'undef'                  => undef,

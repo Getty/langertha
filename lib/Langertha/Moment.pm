@@ -167,7 +167,18 @@ sub from_wire {
   elsif ( $value =~ /\A [-+]? [0-9]+ (?: \. [0-9]+ )? \z/x ) {
     # The OpenAI-compatible wire sends an epoch integer, and Ollama-compatible
     # shims sometimes send epoch seconds where Ollama itself sends RFC3339.
-    $moment = eval { $class->from_epoch( 0 + $value ) };
+    #
+    # Seconds and milliseconds are told apart by magnitude, not by any wire
+    # flag: Time::Moment's whole representable range (through year 9999) tops
+    # out at epoch 253402300799 -- 12 digits -- so a genuine seconds epoch is
+    # always below 1e12. A 13-digit value is out of range as seconds but is a
+    # sane milliseconds epoch (1e12 ms is year 2001), so scale it down instead
+    # of letting from_epoch reject it and silently drop the field. The division
+    # keeps the sub-second part. A normal ~10-digit seconds epoch is untouched
+    # (karr #171).
+    my $epoch = 0 + $value;
+    $epoch /= 1000 if abs($epoch) >= 1e12;
+    $moment = eval { $class->from_epoch( $epoch ) };
   }
   else {
     # lenient => 1 is chosen, not a default: it is what makes this accept the
@@ -204,7 +215,9 @@ Accepts, in this order:
 L<Time::Moment>, re-parsed from its canonical string;
 
 =item * an epoch number, integer or fractional, as a number or as a
-digit string — the OpenAI-compatible wire form;
+digit string — the OpenAI-compatible wire form; a 13-digit value is read as a
+millisecond epoch and scaled to seconds, keeping its sub-second precision,
+since no representable seconds epoch reaches that magnitude;
 
 =item * an ISO-8601 / RFC3339 string, parsed with L<Time::Moment/from_string>
 in C<lenient> mode, keeping sub-seconds at full precision.
