@@ -114,3 +114,44 @@ The rules move to where the constraint actually lives:
 - **Nuances ADR 0005** — its single-path rewrites are unaffected and pre-empt the guard.
 - `CONTEXT.md` gains a `model_capability_exclusions` entry, sibling to `model_capability_corrections`,
   in the capability-axis vocabulary.
+
+## Update (k184 — live-verify: Groq rejects `json_object` + tools too; the "model-intrinsic" premise is a serving-stack property)
+
+A Getty-approved live probe (2026-09-19, raw `/chat/completions`, `gpt-oss-120b` tools ×
+`response_format` matrix — karr #184) corrected two claims this ADR made: one resolved, one parked.
+
+- **RESOLVED — the Groq `json_object` + tools pass-through is disproven.** §Decision.2 ("`json_object`
+  + tools passes through"), the §Consequences "Groq `json_object` + tools pass-through" bullet, and the
+  §Future-work "common-denominator" reasoning all rested on *"Groq confirms `json_object` + tools works
+  on gpt-oss."* **It does not.** Groq 400s `json_object` + tools with the *same* "json mode cannot be
+  combined with tool/function calling" message it returns for `json_schema` + tools.
+  `Engine::Groq::_exclude_json_schema_with_tools_or_streaming` now croaks **both** `json_object` and
+  `json_schema` in the tools branch (the streaming branch stays `json_schema`-only — `json_object` +
+  streaming is not live-disproven), so Groq is now any-`response_format`-refusing in the tools lane,
+  like Cerebras. The stale "`json_object` is allowed alongside tools" comments on `Groq.pm` and
+  `OpenAIBase.pm` are corrected. This does **not** touch the shared `OpenAIBase` `gpt-oss` rule, which
+  stays `json_schema`-only.
+
+- **PARKED — the "model-intrinsic" premise is only half true.** §Context and §Rationale argue the
+  `tools` + `json_schema` conflict is *"a property of the MODEL, not the endpoint … it fires wherever
+  gpt-oss is served,"* which is why the shared rule is homed on `OpenAIBase`. The same probe refutes
+  the universal reading: **AKI (`aki.io/openai/v1`) serves `gpt-oss-120b` + tools + `json_schema` with
+  HTTP 200** (a real `tool_call` returned). So the conflict is a **serving-stack** property — Groq and
+  Cerebras enforce it platform-wide, AKI's SGLang backend does not — and the shared `qr/gpt-oss/` rule
+  is a confirmed **false-positive on `AKIOpenAI`**. (Orthogonally, AKI rejects `json_object` at all on
+  that backend — a missing-capability 400, not a tool-grammar conflict.)
+
+  **The shared `OpenAIBase` `gpt-oss` rule was deliberately left unchanged.** Getty's decision
+  (2026-09-19): ship only the live-verified Groq subset now; keep the shared rule and its placement
+  pending a live probe of the *other* gpt-oss default, **TSystems** — whose key was empty at probe
+  time (Cerebras returned 402). So this ADR's **Decision stands as shipped**; the model-vs-stack scope
+  question and the AKI false-positive remain open in **karr #184** (in-progress, TSystems-blocked).
+  When TSystems is verifiable, resolve by either narrowing the shared rule off the pure-model axis
+  (per-engine / per-stack scope) or accepting the false-positive as the safe common denominator.
+
+- **The mechanism is untouched.** The per-model exclusion table, the coderef payload, and the
+  base-vs-engine homing (§Decision) are exactly as shipped; this Update corrects a wire *fact* and
+  reopens a scoping *premise*, not the seam. It **supersedes the original §Future-work item** ("one
+  live-unverified inference"): that probe has now run — the Groq half is resolved, the gpt-oss half is
+  karr #184. Verified offline: `t/78_model_capability_exclusions.t` and `t/78_capability_exclusions.t`
+  now assert Groq `json_object` + tools croaks (and `json_object` without tools still passes).
