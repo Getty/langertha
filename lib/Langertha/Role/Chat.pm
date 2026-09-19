@@ -860,12 +860,16 @@ the flat list of L<Langertha::ToolCall> objects collected from any
 chunks that carry C<tool_calls>. Returns an empty ArrayRef if none of
 the chunks emitted tool calls.
 
-This is the streaming counterpart to L<Langertha::Response/tool_calls>.
-Engines that need to assemble fragmented tool-call deltas (OpenAI's
-C<delta.tool_calls> stream, Anthropic's C<input_json_delta>) are
-expected to do that assembly inside C<parse_stream_chunk> and attach
-the finished L<Langertha::ToolCall> to the relevant chunk; this
-helper just collects them.
+This is the collection seam for streamed tool-call aggregation, the
+streaming counterpart to L<Langertha::Response/tool_calls>. Assembling
+fragmented tool-call deltas (OpenAI's C<delta.tool_calls> stream,
+Anthropic's C<input_json_delta>) into a finished L<Langertha::ToolCall>
+on the chunk belongs in C<parse_stream_chunk> — but B<no engine dialect
+does that assembly today>, so C<Stream::Chunk> carries no tool calls on
+the streaming path and this helper returns an empty list in practice. It
+is the collection point for when an engine implements that assembly, a
+known and accepted gap; use the non-streaming path when you need tool
+calls.
 
 =cut
 
