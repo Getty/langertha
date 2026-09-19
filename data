@@ -1,0 +1,36 @@
+---
+claimed_at: 2026-09-19T05:20:31Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-09-19T05:20:31Z
+created: 2026-09-17T17:29:03Z
+id: 179
+priority: low
+started: 2026-09-19T05:11:41Z
+status: done
+tags:
+- llm
+- docs
+- vllm
+- reasoning
+title: 'README/POD: vLLM reasoning field is ''reasoning'', not ''reasoning_content''
+  (mainline since v0.16.0)'
+updated: 2026-09-19T05:20:31Z
+---
+
+Doku-Drift, kein Verhaltensfehler -- der Code faengt beide Schreibweisen bereits ab (Role::OpenAICompatible, k129, ADR 0018 Layer 2).
+
+Live verifiziert 2026-09-17 (llm-advisor, im Zuge von k79):
+- vllm#27752 (merged 2025-11-08) benannte reasoning_content -> reasoning um.
+- vLLM v0.16.0 Release Notes: "Removed deprecated `reasoning_content` message field (#33402)" -- seitdem schickt Mainline-vLLM NUR noch reasoning, non-streaming (message.reasoning) wie streaming (delta.reasoning).
+- docs.vllm.ai/en/latest/features/reasoning_outputs/ warnt explizit vor Clients, die weiter reasoning_content lesen.
+- Unabhaengige Bestaetigung Streaming: litellm#20246 (Feb 2026).
+
+Zu korrigieren:
+1. README.md:537-540, Tabelle "Provider | Reasoning Field": fuehrt nur reasoning_content. vLLM fehlt bzw. waere dort falsch einsortiert. Ergaenzen als "vLLM | `reasoning` (>= v0.16.0; frueher `reasoning_content`)". Der OpenAI-Eintrag (o1/o3/o4-mini -> reasoning_content) ist bei der Gelegenheit gegenzupruefen, das war nicht Teil dieser Recherche.
+2. t/88_live_vllm_reasoning.t: Kommentare und diag-Texte sprechen durchgehend von reasoning_content. Die Assertions gehen ueber $resp->thinking und sind damit korrekt -- nur die Prosa ist veraltet und wuerde den naechsten Leser in die Irre fuehren.
+3. lib/Langertha/Engine/vLLM.pm, Abschnitt REASONING MODELS: beschreibt reasoning_effort -> enable_thinking korrekt, benennt aber das Antwortfeld nicht. Ein Satz dazu waere hilfreich.
+
+Nicht in Scope: das Feld-Mapping selbst (funktioniert), sowie die optionale defined->length-Haertung der Praezedenz (auf k79 als Punkt 3 notiert).
+
+Erledigt (orchestrator, Haupt-Tree): README-Reasoning-Tabelle um vLLM-Zeile (reasoning >= v0.16.0, frueher reasoning_content) ergaenzt; vLLM.pm REASONING-MODELS-POD benennt jetzt das Antwortfeld (reasoning, via Response->thinking); t/88-Prosa (Z.12/126) von reasoning_content auf chain-of-thought korrigiert. Reine Doku, kein Verhaltens-Change -> kein Changes-Eintrag. vLLM.pm perl -c OK, t/88 skippt sauber.
