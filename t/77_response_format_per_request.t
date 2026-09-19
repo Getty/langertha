@@ -34,6 +34,13 @@ my $OTHER_SCHEMA = {
   properties => { country => { type => 'string' } },
 };
 
+# k182: the first-party output_config.format validator rejects an open schema
+# (additionalProperties other than false 400s), so a caller schema that omits
+# additionalProperties is normalized to closed on the native path. These are the
+# closed forms the wire now carries.
+my $CLOSED_SCHEMA       = { %$SCHEMA,       additionalProperties => JSON->false };
+my $CLOSED_OTHER_SCHEMA = { %$OTHER_SCHEMA, additionalProperties => JSON->false };
+
 sub anthropic {
   return Langertha::Engine::Anthropic->new(
     api_key       => 'apikey',
@@ -71,8 +78,11 @@ sub wire {
 # structured output. Engine::Anthropic emits it as output_config.format instead
 # of the legacy synthesized-tool + forced tool_choice rewrite — no tools,
 # no tool_choice, no 400 on Fable/Mythos 5.1 (which reject forced tool use).
-# Sabotage check: revert _native_structured_output to 0 and these go red
-# (tools/tool_choice reappear, output_config.format vanishes).
+# k182: the caller's $SCHEMA omits additionalProperties, which the first-party
+# validator rejects (open schema -> HTTP 400), so the schema is normalized to
+# closed (additionalProperties:false) on the way to the wire — normalize the
+# wire quirk rather than gatekeep. Sabotage check: revert _native_structured_output
+# to 0 and these go red (tools/tool_choice reappear, output_config.format vanishes).
 {
   my $data = wire( anthropic(), response_format => {
     type        => 'json_schema',
@@ -81,23 +91,50 @@ sub wire {
 
   ok( !exists $data->{response_format},
     'Anthropic: per-request response_format is consumed, not passed to the wire' );
-  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
-    'Anthropic: per-request json_schema becomes native output_config.format' );
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $CLOSED_SCHEMA },
+    'Anthropic: per-request json_schema becomes native output_config.format, normalized closed' );
   ok( !exists $data->{tools} && !exists $data->{tool_choice},
     'Anthropic: native structured output injects no synthesized tool / tool_choice' );
 }
 
-# --- Anthropic: per-request json_object (open-object native schema) -------
+# --- Anthropic: per-request json_object (synthesized-tool path) -----------
+# k182: a bare json_object has no schema and output_config.format has no native
+# free-form JSON form (an open-object schema 400s, a closed empty object means
+# only {}), so first-party Engine::Anthropic routes json_object through the same
+# synthesized-tool + forced tool_choice path the /anthropic shims use — a tool
+# input_schema is not strict, so the open object passes. Sabotage check: route
+# json_object back through output_config.format and this goes red.
 {
   my $data = wire( anthropic(), response_format => { type => 'json_object' } );
 
   ok( !exists $data->{response_format},
     'Anthropic: per-request json_object is consumed, not passed to the wire' );
-  is_deeply( $data->{output_config}{format},
-    { type => 'json_schema', schema => { type => 'object', additionalProperties => JSON->true } },
-    'Anthropic: json_object maps onto an open-object native json_schema' );
-  ok( !exists $data->{tools} && !exists $data->{tool_choice},
-    'Anthropic: json_object native output injects no synthesized tool' );
+  ok( !exists $data->{output_config},
+    'Anthropic: json_object gets no native output_config.format (no free-form form)' );
+  is( scalar @{ $data->{tools} // [] }, 1,
+    'Anthropic: json_object injects exactly one synthesized tool' );
+  is( $data->{tools}[0]{input_schema}{additionalProperties}, JSON->true,
+    'Anthropic: the synthesized json_object tool carries an open input_schema' );
+  is( $data->{tool_choice}{type}, 'tool',
+    'Anthropic: json_object forces the synthesized tool (model supports forced tool use)' );
+  is( $data->{tool_choice}{name}, $data->{tools}[0]{name},
+    'Anthropic: the forced tool_choice names the synthesized tool' );
+}
+
+# --- Anthropic: json_object degrades to auto where forced tool use 400s ---
+# k182 caveat: claude-fable-5-1 / claude-mythos-5-1 reject a forced tool_choice
+# (k133 point 2 clears tool_choice_named there). json_object has no clean native
+# form on those models either, so it degrades to tool_choice `auto` — best effort,
+# never a 400. chat_response lifts the tool_use only if the model chooses to emit it.
+for my $model (qw( claude-fable-5-1 claude-mythos-5-1 )) {
+  my $data = wire( anthropic( model => $model ), response_format => { type => 'json_object' } );
+
+  ok( !exists $data->{output_config},
+    "$model: json_object still gets no native output_config.format" );
+  is( scalar @{ $data->{tools} // [] }, 1,
+    "$model: json_object still injects the synthesized tool" );
+  is_deeply( $data->{tool_choice}, { type => 'auto' },
+    "$model: json_object degrades to tool_choice auto (forced tool use 400s)" );
 }
 
 # --- Anthropic: output_config.effort and .format MERGE, never clobber -----
@@ -116,7 +153,7 @@ sub wire {
 
   is( $data->{output_config}{effort}, 'high',
     'Anthropic: output_config.effort survives alongside .format (merged, not clobbered)' );
-  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $CLOSED_SCHEMA },
     'Anthropic: output_config.format is present alongside .effort' );
 }
 
@@ -131,7 +168,7 @@ sub wire {
     json_schema => { name => 'per_request', schema => $SCHEMA },
   });
 
-  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $CLOSED_SCHEMA },
     'Anthropic: per-request response_format wins over the engine attribute' );
 }
 
@@ -142,8 +179,24 @@ sub wire {
     json_schema => { name => 'engine_level', schema => $OTHER_SCHEMA },
   }));
 
-  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $OTHER_SCHEMA },
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $CLOSED_OTHER_SCHEMA },
     'Anthropic: engine-attribute response_format still translates to output_config.format' );
+}
+
+# --- Anthropic: a caller-supplied CLOSED json_schema is honored natively --
+# k182: a schema the caller already closed (additionalProperties:false) is
+# native-valid, so it rides output_config.format unchanged and never touches the
+# tool path. Normalization is idempotent — it must not re-open or mangle it.
+{
+  my $data = wire( anthropic(), response_format => {
+    type        => 'json_schema',
+    json_schema => { name => 'extract', schema => $CLOSED_SCHEMA },
+  });
+
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $CLOSED_SCHEMA },
+    'Anthropic: an already-closed json_schema stays native and unchanged' );
+  ok( !exists $data->{tools} && !exists $data->{tool_choice},
+    'Anthropic: a closed json_schema needs no synthesized tool' );
 }
 
 # --- Anthropic: the native structured payload arrives as Response.content -
