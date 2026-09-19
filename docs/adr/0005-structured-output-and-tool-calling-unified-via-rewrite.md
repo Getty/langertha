@@ -192,3 +192,36 @@ structured output, but only for a schema (normalized closed), while a schemaless
 back to the same rewrite the shims use — so `json_object` is a *capability gap* on this wire after
 all, exactly the case Decision 4 anticipated. The unify-and-rewrite core stands. (Verified offline:
 `t/77_response_format_per_request.t`, `t/77_response_format_streaming.t`, `t/78_chat_f_controls.t`.)
+
+## Update (k183 — `_close_schema` keeps a map/dictionary `additionalProperties` schema instead of clobbering it)
+
+The k182 Update above describes `_close_schema` as *"recursively sets `additionalProperties:false` on
+every object."* That is now **nuanced for one edge**: an `additionalProperties` that is itself a
+**schema HashRef** — a dictionary/map value type, e.g. `{ type => 'string' }` (`map<string,string>`)
+or a nested object (`map<string,object>`) — is a legitimate JSON Schema construct, **not** an
+open-object marker. Clobbering it to `false` would silently drop the map's value constraint. So
+`_close_schema` (`AnthropicCompatible.pm:327`) now branches on the *value* of `additionalProperties`
+(k183):
+
+- a **HashRef** `additionalProperties` is **kept and recursed into as a subschema** (a
+  `map<string,object>` value object is itself closed);
+- only an **absent** or **truthy-boolean** (`JSON->true`) `additionalProperties` still means "open
+  object" and is set to `false`;
+- an already-**explicit `false`** stays `false`.
+
+- **Scope is exactly the map edge.** The rest of the k182 Update is unchanged: `_close_schema` still
+  walks `properties` / `items` / `anyOf`/`allOf`/`oneOf` / `$defs`/`definitions`, still closes every
+  ordinary object, still does not mutate the caller's schema, and the native-vs-`json_object` routing
+  and streaming rules are untouched. It stays the house "normalize the wire quirk, don't gatekeep"
+  stance — a caller who genuinely wants free-form values uses `response_format json_object` (the
+  non-strict tool path).
+- **`_close_schema` does *not* add `required`.** k183's originating question was whether the
+  first-party `output_config.format` validator needs a non-empty `required` on a closed schema. It
+  does **not** — live-confirmed HTTP 200 without `required` — so `_close_schema` stays
+  `additionalProperties`-only and adds no `required` key; only the map edge was fixed. (This is
+  separate from `Tool->to_anthropic`'s top-level `strict:true`, which keys on `additionalProperties`
+  + a non-empty `required` for the *tool* path — ADR 0001 / the k133 Update — and is unchanged.)
+
+Verified offline: `t/77_response_format_per_request.t` (the map-schema matrix: `map<string,string>`
+kept, `map<string,object>` value object recursively closed, an enclosing object without
+`additionalProperties` still closed to `false`).
