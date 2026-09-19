@@ -1,0 +1,92 @@
+---
+class: standard
+completed: 2026-09-19T05:11:21Z
+created: 2026-08-15T06:09:22Z
+id: 79
+priority: medium
+started: 2026-09-17T18:09:20Z
+status: done
+tags:
+- vllm
+- reasoning
+- live-test
+title: 'vLLM live test: reasoning_effort on real reasoning model server'
+updated: 2026-09-19T05:11:21Z
+---
+
+Live-test the reasoning_effort wire against a real vLLM server. Gated on TEST_LANGERTHA_VLLM_URL (existing) plus a reasoning model name (TEST_LANGERTHA_VLLM_REASONING_MODEL).
+
+Wire reality to verify (per vLLM docs https://docs.vllm.ai/en/latest/features/reasoning_outputs/):
+- reasoning_effort=low|medium|high emits enable_thinking=true in chat template
+- reasoning_effort=none emits enable_thinking=false
+- Server MUST be started with --reasoning-parser <qwen3|deepseek_r1|...> matching the loaded model
+- Response includes reasoning_content (when model emits it) accessible via Langertha::Response->thinking or similar
+
+Scope: small new file t/88_live_vllm_reasoning.t modeled after t/87_live_vllm_hook.t (skip_all without env var). Should:
+1. Send a hard problem (e.g. 'solve 7 factorial step by step') with reasoning_effort=high
+2. Assert response non-empty
+3. Assert reasoning_content present when --reasoning-parser is set
+4. Cross-check with reasoning_effort=none to confirm non-thinking path works
+
+Off the table for this ticket: model-gated capability refinement (capability currently engine-wide; some vLLM models do not honor reasoning_effort). Filed as a separate follow-up if real users hit it.
+
+Relates: karr #77 (documentation portion of the vLLM reasoning-model coverage audit).
+Nicht ausfuehrbar ohne Infrastruktur (orchestrator, 2026-08-15): braucht einen laufenden vLLM-Server mit geladenem Reasoning-Modell (Qwen3 / DeepSeek-R1 / QwQ) und --reasoning-parser. Offline-Abdeckung existiert bereits als t/65c_vllm_reasoning.t. Bleibt im Backlog bis eine Testinstanz bereitsteht.
+
+worker 2026-08-23: t/88_live_vllm_reasoning.t geschrieben (nicht committed). Gate: TEST_LANGERTHA_VLLM_URL + TEST_LANGERTHA_VLLM_REASONING_MODEL, skip_all im BEGIN nach Vorbild t/87_live_vllm_hook.t. Zwei Subtests (high / none), reasoning_content-Checks defensiv (--reasoning-parser ist serverseitig). Verifiziert: skippt sauber ohne env vars, perlcritic sauber, prove -lr t/ gruen (91 Dateien, 3108 Tests). OFFEN: die echte Live-Ausfuehrung gegen einen vLLM-Server mit Reasoning-Modell - Ticket bleibt bis dahin unerledigt. Nebenbefund als #118 gefiled (vLLM POD SYNOPSIS 5 zeigt reasoning_effort falsch als simple_chat-Argument).
+
+Status 2026-08-31 (weak-feel): the gated live test IS in main (commit df531dd, t/88_live_vllm_reasoning.t) -- high-effort path, reasoning_content round trip, none cross-check. Verified today: skips cleanly ('TEST_LANGERTHA_VLLM_URL and TEST_LANGERTHA_VLLM_REASONING_MODEL not set'), no vLLM env present here and none in .env. The only outstanding work is a real live run against a reasoning-model server, which this environment cannot provide. Not faked. Stays in backlog until a test instance is available; offline coverage remains t/65c_vllm_reasoning.t.
+
+Getty 2026-09-17: Plan bestaetigt - vLLM-Server wird bei Bedarf hochgefahren (grosse Server vorhanden, alternativ lokal on-demand wie Ollama). Hinweis: vLLM laeuft nativ nur Linux/CUDA, lokal unter Windows braucht es WSL2+Docker (kein natives Windows-vllm-serve). Sobald Instanz steht: TEST_LANGERTHA_VLLM_URL + TEST_LANGERTHA_VLLM_REASONING_MODEL setzen, Ticket ist ausfuehrungsbereit.
+
+Getty+Worker 2026-09-17: vLLM-Server steht auf cl-cortex (DGX Spark GB10, cortex.ai.citilan.de), Container 'qwen38-reasoning' via 'docker run -d --restart unless-stopped', Image ghcr.io/anemll/dspark-vllm-gx10:0.1.1 (bereits vorhandenes gepatchtes vLLM 0.25.2.dev0 fuer GB10/SM121a). Modell: Qwen/Qwen3.8-27B-FP8 (bereits im lokalen HF-Cache /home/getty/hf-cache, kein Download noetig, HF_HUB_OFFLINE=1). Gestartet mit --reasoning-parser qwen3 --max-model-len 32768 --gpu-memory-utilization 0.85 --host 0.0.0.0 --port 8000. Health-Check + externe Erreichbarkeit OHNE SSH-Tunnel bestaetigt (curl http://cortex.ai.citilan.de:8000/health -> 200). Restart-fest per Docker-Restart-Policy (kein systemd noetig).
+
+Fertige Werte fuer den Live-Test:
+TEST_LANGERTHA_VLLM_URL=http://cortex.ai.citilan.de:8000/v1  (v1-Suffix zwingend, siehe Engine::vLLM POD: 'The URL must include the /v1 path prefix')
+TEST_LANGERTHA_VLLM_REASONING_MODEL=Qwen/Qwen3.8-27B-FP8
+
+WICHTIGER WIRE-BEFUND (live verifiziert, roh per curl, NICHT ueber Langertha): Diese vLLM-Version liefert das Reasoning-Feld in der chat/completions-Response als message.reasoning (curl-verifiziert: enable_thinking=true -> reasoning:'<text>'; enable_thinking=false -> reasoning:null), NICHT als reasoning_content wie in der Ticket-Beschreibung und dem vLLM-Upstream-Doc angenommen. t/88_live_vllm_reasoning.t und/oder Langertha::Response muessen ggf. auf dieses Feld geprueft/angepasst werden, bevor der Live-Test gegen DIESEN Server gruen laufen kann -- das ist noch NICHT verifiziert, nur der rohe Wire-Fakt. Model + Server sind bereit, der eigentliche 't/88'-Lauf steht noch aus (bewusst nicht durchgefuehrt, siehe Vorgabe).
+
+Nebenbefund: cl-cortex hat bereits ein umfangreiches eigenes 'dspark'-Toolkit (/home/getty/dspark, primaer fuer DeepSeek-V4-Flash TP=2 ueber 2 Sparks) plus vorbereitete Downloads fuer mehrere Modelle (Qwen3.8-27B-FP8, GLM-5.3-Flash-NVFP4, DeepSeek-V4-Flash-0731) -- fuer diesen Task NICHT angefasst/veraendert, nur der neue Container 'qwen38-reasoning' hinzugefuegt.
+
+2026-09-17 17:28 llm-advisor 2026-09-17 (advisory, kein Code angefasst): Der Wire-Befund "message.reasoning statt reasoning_content" ist KEIN Quirk des dspark-vllm-gx10-Forks -- es ist aktuelles Mainline-vLLM. Belege (live geprueft 2026-09-17):
+- PR vllm#27752 (merged 2025-11-08) benannte das Feld reasoning_content -> reasoning um (OpenAI-Guidance, GPT-OSS-Konvention), zunaechst rueckwaertskompatibel mit beiden Feldern.
+- RFC vllm#27755 (2025-10-29) beschloss die vollstaendige Entfernung.
+- vLLM v0.16.0 Release Notes: "Removed deprecated `reasoning_content` message field (#33402)." (Branch-Cut 08. Februar, Release ~Feb/Mrz 2026).
+- docs.vllm.ai/en/latest/features/reasoning_outputs/ (gelesen 2026-09-17) dokumentiert message.reasoning UND delta.reasoning, mit explizitem Migrationswarnhinweis: "reasoning used to be called reasoning_content ... your client code could silently read an empty reasoning_content, even when reasoning is populated."
+- Unabhaengige Bestaetigung fuer den Streaming-Pfad: litellm#20246 (Feb 2026) -- vLLM liefert delta.reasoning, litellms Parser las nur reasoning_content und verlor den Inhalt.
+Der Fork basiert auf 0.25.2.dev0, also ~9 Minors NACH der Entfernung in 0.16.0. Die in der Ticket-Beschreibung zitierte Doku-Erwartung (reasoning_content) stammt aus der alten Fassung derselben URL und ist seit v0.16.0 falsch.
+
+Modell: Qwen/Qwen3.8-27B-FP8 ist ein offizielles Qwen-HF-Repo (huggingface.co/Qwen/Qwen3.8-27B-FP8, publ. 2026-08-13), kein Custom-Tag. --reasoning-parser qwen3 ist laut vLLM-Tabelle der korrekte Parser fuer die Qwen3-Serie. Das Modell ist also NICHT die Ursache der Feldnamen-Abweichung; das Setup ist repraesentativ fuer Mainline-vLLM.
+
+EMPFEHLUNG ZU CODE: keine Aenderung noetig -- Langertha faengt beide Schreibweisen bereits ab. Role::OpenAICompatible::chat_response (lib/Langertha/Role/OpenAICompatible.pm:372-381) und parse_stream_chunk (:508-518) lesen reasoning_content zuerst, dann bare reasoning (!ref-guarded). Das kam mit k129 (20935d0, 74ccc6d), ist per ADR 0018 Layer 2 (Envelope-Rolle) verortet und in t/47_openai_compatible_reasoning_parse.t explizit fuer vLLM/VLLMHook/Groq/Cerebras/OpenRouter getestet. Auch Role::Tools::format_tool_results (:395) spiegelt allowlist-basiert zurueck, was der Provider geschickt hat -- fuer vLLM also reasoning, genau das, was vLLM >=0.16 inbound noch akzeptiert (vgl. vllm#38488: reasoning_content wird inbound seit der Entfernung still verworfen).
+
+OFFENE PUNKTE FUER DEN MAINTAINER (keine Blocker fuer t/88):
+1. LIVE-RUN-RISIKO (wichtigster praktischer Punkt): t/88 setzt response_size => 2048 und assertet length("$resp") > 0. Bei einem Reasoning-Modell mit high effort kann das Token-Budget erschoepft sein, bevor </think> geschlossen wird -- der qwen3-Reasoning-Parser gibt dann den gesamten Text als reasoning zurueck und content bleibt leer, finish_reason=length. Der Test wuerde rot, ohne dass irgendetwas am Feldnamen liegt (dokumentiert u.a. im DGX-Spark-vLLM-Playbook vlaicu.io/posts/dgx-vllm, Jun 2026: "a low cap truncates it mid-thought - which returns empty or garbled content"). Vor dem Live-Lauf response_size auf ~8000-10000 anheben und finish_reason diaggen.
+2. DOKU-DRIFT (kosmetisch, aber irrefuehrend): die Kommentare/diag-Texte in t/88_live_vllm_reasoning.t sprechen durchgehend von reasoning_content; die README-Tabelle "Provider | Reasoning Field" (README.md:537-540) fuehrt vLLM-relevant ebenfalls nur reasoning_content. Sollte auf "reasoning (vLLM >= 0.16; frueher reasoning_content)" aktualisiert werden.
+3. OPTIONALE HAERTUNG (Maintainer-Entscheid, nicht dringend): die Praezedenz ist mit `defined` implementiert, d.h. ein leerer String in reasoning_content wuerde ein befuelltes reasoning verdecken -- exakt der Fehlermodus, vor dem die vLLM-Doku warnt. Ein Wechsel auf `length` in beiden Zweigen waere die billige Absicherung. Ich habe KEINEN Server beobachtet, der beide Felder mit leerem reasoning_content schickt (vLLM >=0.16 schickt nur noch eines), daher niedrige Prioritaet. t/47 deckt den Leerstring-Fall aktuell nicht ab.
+
+Fazit: reasoning_content ist NICHT mehr die korrekte Mainline-Erwartung; reasoning ist es. Kein Fork-Quirk, kein Code-Change am Feld-Mapping noetig.
+
+2026-09-17 17:46 worker 2026-09-17: LIVE-LAUF GRUEN. t/88_live_vllm_reasoning.t gegen http://cortex.ai.citilan.de:8000/v1 / Qwen/Qwen3.8-27B-FP8: beide Subtests bestanden (2/2, 6 Assertions). Commit ddeae33 (Merge) / a96e44a.
+
+Ergebnis des Laufs:
+- reasoning_effort=xhigh akzeptiert, finish_reason=stop, thinking 164 Zeichen sauber auf Response->thinking gelandet -- das Feld kam als message.reasoning (nicht reasoning_content), Langertha normalisiert das bereits korrekt in Role::OpenAICompatible. Kein Produktionsbug.
+- reasoning_effort=none: reasoning null, content 392 Zeichen -> Cross-Check 'none unterdrueckt das Denken' greift.
+- Bonus: t/89_runtime_metrics_live.t gegen denselben Server ebenfalls gruen (364 vllm:-Records gescraped) -- ADR 0014 gegen Mainline-vLLM bestaetigt.
+
+NEUER WIRE-BEFUND (roh per curl verifiziert, 6 Werte durchprobiert): dieses Modell/Chat-Template LEHNT reasoning_effort=high mit HTTP 400 ab -- "Unexpected reasoning effort high. Supported types are xhigh (default), medium, and low." Akzeptiert: xhigh, medium, low und none (none -> reasoning:null). Abgelehnt: high, minimal. Die Vokabel-Menge kommt also vom Chat-Template des geladenen Modells, NICHT von vLLM -- ein Live-Test kann sie nicht statisch kennen. Deshalb probiert der Test jetzt high/xhigh/medium/low durch und nimmt den ersten akzeptierten Wert (diag nennt ihn). Der urspruengliche Rotlauf war KEIN Budget-/finish_reason=length-Problem, sondern genau dieses 400.
+
+Geaendert:
+- lib/Langertha/Role/OpenAICompatible.pm: Haertung WAR noetig. Beide Stellen (chat_response:382, parse_stream_chunk:520) pruefen die Vorrangs-Bedingung jetzt mit length statt defined -- ein leerer reasoning_content-Stub verdeckt kein befuelltes reasoning mehr (der Fehlermodus, vor dem die vLLM-Migrationsnotiz warnt). !ref-Guard unveraendert.
+- t/47_openai_compatible_reasoning_parse.t + t/43_streamed_thinking.t: je ein Leerstring-Stub-Testfall (non-streaming + Delta-Pfad). Gegengeprueft: beide schlagen mit der alten defined-Logik fehl, sind also nicht fail-unfaehig.
+- t/88_live_vllm_reasoning.t: response_size 2048 -> 8192, Effort-Fallback-Liste, finish_reason-Diag mit Budget-Hinweis.
+- Changes: in den bestehenden k129-Reasoning-Bullet eingefaltet (ein Thema, ein Eintrag).
+
+Verifikation: prove -lr t/ gruen (109 Dateien, 3917 Tests; die ueblichen Live-Tests ohne Keys skipped), perlcritic --profile .perlcriticrc lib/ bin/ maint/ sauber.
+
+VORSCHLAG AN DEN MAINTAINER: Ticket kann nach 'review' -- bewusst NICHT selbst verschoben. Offen/ausserhalb dieses Tickets: (a) #179 Doku-Drift (reasoning_content in README/POD) unangetastet; (b) moeglicher Follow-up: ob die xhigh/medium/low-Vokabel eines selbst gehosteten Modells irgendwann als Reasoning::Profile-Eintrag (ADR 0023) gehoert -- fuer vLLM aber fragwuerdig, weil dort jedes beliebige Modell geladen sein kann, daher bewusst nicht implementiert.
+
+Getty 2026-09-17: Live-Test gruen bestaetigt (worker-Bericht), Blocker aufgeloest, Haertung + volle Testsuite verifiziert. Nach 'review' geschoben auf Gettys Entscheidung.
+
+Live gegen cortex.ai.citilan.de:8000 (Qwen3.8-27B-FP8) gruen: t/88 PASS (thinking via Response->thinking, effort=none suppress bestaetigt, Antwort 5040). Offline-Suite gruen. Live-Run war bereits in a96e44a committet.
