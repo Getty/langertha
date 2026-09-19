@@ -1,0 +1,38 @@
+---
+claimed_at: 2026-09-19T19:34:38Z
+claimed_by: worker-185profile
+class: standard
+completed: 2026-09-19T19:34:38Z
+created: 2026-09-19T06:02:21Z
+id: 185
+priority: low
+started: 2026-09-19T16:07:12Z
+status: done
+tags:
+- openai
+- reasoning
+- temperature
+- followup
+- k155
+title: 'OpenAI temperature-gate Follow-ups: Familien live-verifizieren + Reasoning-Modell-Wissen
+  in Profile-Seam konsolidieren'
+updated: 2026-09-19T19:34:38Z
+---
+
+Follow-up aus k155. (1) Nur gpt-5.6 (terra+frontier) wurde live-bestaetigt; o-series/gpt-6/gpt-5.5/gpt-5.1 sind aus dem angegebenen Familienverhalten + Profile implementiert, nicht live-geprobt. Braucht freigegebene Live-Calls zur Bestaetigung. (2) Der Predicate _temperature_rejected_by_reasoning (Engine::OpenAI) dupliziert Modell-Familien-Wissen (gpt-5.x/gpt-6-Regex), muss aber auch o-series abdecken (nicht im Profile) und gpt-5-chat ausschliessen (das Profile-Regex qr/\Agpt-5(?![.\d])/ matcht es faelschlich). Kandidat: ein read-only 'ist-Reasoning-Modell / reasoned-by-default'-Seam am Profile, damit die Engine ihr eigenes Regex loswird. Mit Reasoning-Subsystem-Owner abstimmen.
+
+Live-verify Runde queued (Getty freigegeben 2026-09-19). Wire-Probe (am _temperature_rejected_by_reasoning-Gate vorbei): o-series / gpt-5.5 / gpt-5.1 / gpt-6 non-default temperature unter aktivem Reasoning -> 400? Nur gpt-5.6 bisher bestaetigt.
+
+2026-09-19 14:04 LIVE 2026-09-19 (advisor), raw /v1/chat/completions, temperature=0.7, max_completion_tokens=16.
+REJECT (400 "temperature does not support 0.7 with this model. Only the default (1) value is supported") bei KEINEM effort (server-default reasoning ON): o4-mini, gpt-5 (legacy), gpt-5.5, gpt-5.6-terra, gpt-6-astra. => k155 bestaetigt + erweitert.
+effort=none + temp=0.7 -> HTTP 200 fuer gpt-5.1, gpt-5.5, gpt-5.6-terra (effort-awareness des Gates live bestaetigt).
+gpt-6-astra effort=none -> 400 "reasoning_effort does not support none. Supported values are: low, medium, high, and xhigh" -> deckt Profile gpt-6 openai-levels EXAKT und bestaetigt OpenAI.pm-Kommentar (gpt-6 nicht abschaltbar, temp bleibt rejected).
+NEUER BEFUND (Divergenz): gpt-5.1 / gpt-5.2 / gpt-5.4 akzeptieren temp=0.7 bei KEINEM effort -> HTTP 200 (reasoning_tokens=0; server-default reasoning OFF). Gegenprobe gpt-5.1 + effort=low + temp=0.7 -> 400 (reasoning explizit an => reject). D.h. Langertha _temperature_rejected_by_reasoning gibt im no-effort-Fall fuer ALLE gematchten Modelle 1 zurueck und droppt temp -> FALSE-DROP fuer gpt-5.1/5.2/5.4 (die API wuerde temp ehren). Gate korrekt fuer 5.5/5.6/6/o-series/legacy-5, aber over-broad fuer die mittlere 5.x-Linie, weil es "no effort => reasoning on" fuer alle annimmt. Fix braucht per-Modell default-effort-Wissen (drift-anfaellig -> Profile-Seam, s. Ticket-Titel).
+CHAT-KONTROLLE nicht verifizierbar: gpt-5-chat-latest, gpt-5.1/5.2/5.3-chat-latest alle 404 "has been deprecated". Der (?!-chat)-Ausschluss hat aktuell kein lebendes Modell zum Testen.
+CODE-READ Nebenpunkt: Temp-Gate-Regex \Agpt-5(?!-chat) matcht dotted chat-Modelle (gpt-5.1-chat-latest etc.) faelschlich (Lookahead prueft nur literal "-chat" direkt nach gpt-5, nicht nach gpt-5.N) -> latenter false-drop, derzeit nicht erreichbar da chat-latest deprecated. Profile.pm:476 \Agpt-5(?![.\d]) matcht gpt-5-chat (dot-lose), ABER Temp-Gate konsultiert Profile nur fuer \Agpt-5(?!-chat)-Treffer, gpt-5-chat ist dort ausgeschlossen -> KEIN Temp-Impact; betrifft nur Reasoning-Serialisierung eines Chat-Modells (edge, low). Raw-Logs: scratchpad 185_*.log
+
+Getty-Entscheidung 2026-09-19: Profile-Seam. Live-Matrix (advisor): REJECT bei no-effort -> o4-mini, gpt-5(legacy), gpt-5.5, gpt-5.6-terra, gpt-6-astra. ACCEPT bei no-effort (server-side default reasoning OFF) -> gpt-5.1, gpt-5.2, gpt-5.4 => aktueller Gate FALSE-DROP fuer 5.1/5.2/5.4. effort=none+temp -> 200 (5.1/5.5/5.6), gpt-6-astra effort=none -> 400 (nicht abschaltbar). Fix: per-Profil default-reasoning-off-Signal in Reasoning::Profile, vom no-effort-Zweig von _temperature_rejected_by_reasoning konsultiert; beruehrt ADR 0023. Dotted-chat-Regex-Gap (gpt-5.1-chat-latest) mitfixen (latent). Offline verifizierbar, keine Live-Calls noetig.
+
+KERN-FIX & merged (7980072). Regression behoben: no-effort-Temperatur-Gate jetzt per-Modell ueber neues Reasoning::Profile default_reasoning_off-Signal; gpt-5.1/5.2/5.4 behalten non-default temperature bei no-effort (live), reasoning-on-Familien droppen weiter. Neues gpt-5.2/5.4-Profil ist behavioral identisch zum DEFAULT-Passthrough + Signal (keine Effort-Serialisierungs-Aenderung, verifiziert). t/79 kodiert Live-Matrix, sabotage-geprueft. REST (bewusst minimal gehalten): (1) is-Reasoning-Klassifikation-Regex noch nicht in Profile konsolidiert (Registry trennt Nicht-Reasoning-Member nicht sauber); (2) latenter (?!-chat)-Lookahead-Gap bei dotted chat-IDs (alle *-chat-latest deprecated). ADR-0023/0025-Reconcile via adr-auditor.
+
+DONE: Live-Verify + Kern-Regression erledigt & gemerged (7980072). no-effort-Temperatur-Gate per-Modell ueber Reasoning::Profile default_reasoning_off; gpt-5.1/5.2/5.4 behalten temperature bei no-effort (live), reasoning-on-Familien droppen weiter. ADR 0023/0025 amended (5177917). Der bewusst zurueckgestellte Rest (Regex->Profile-Konsolidierung + latenter dotted-chat-Lookahead-Gap) ist ausgegliedert nach k186.
