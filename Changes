@@ -57,24 +57,25 @@ Revision history for Langertha
 
     - A request that combines `tools` with a structured-output
       `response_format` raises a clear local error instead of an opaque
-      provider HTTP 400, and the guard is model-scoped rather than
-      engine-scoped: the constraint travels with the model, firing wherever a
-      constrained-decoding model is served — gpt-oss-120b on Cerebras
-      directly, as the TSystems and AKIOpenAI default, and down aggregator
-      routes (OpenRouter, HuggingFace, Replicate) that resolve to a gpt-oss
-      backend — while a non-constrained sibling model on the same engine is
-      unaffected. No boolean capability flag can express a mutual exclusion
-      between two capabilities, so chat_f and chat_stream_realtime_f consult an
-      ordered per-model `model_capability_exclusions` table (keyed on the chat
-      model, each rule a coderef): the shared gpt-oss rule refuses tools
-      alongside a json_schema response_format, Cerebras refuses tools alongside
-      response_format of either type, and Groq refuses tools alongside a JSON
-      response_format of either type as well (json_object and json_schema both
-      400 with tools) while its streaming restriction stays json_schema-only.
-      chat_f no longer trips the guard on an empty `tools => []`, and no longer
-      attaches a false-success empty-argument synthetic tool_call when a
-      forced-tool rewrite returns valid but non-object JSON — it leaves
-      tool_calls unset so the caller sees the gap. (ADR 0021.)
+      provider HTTP 400 on Groq and Cerebras, the serving stacks that reject
+      the combination across every model they serve. The exclusion is a
+      property of the serving stack, not of the gpt-oss model — AKI serves
+      gpt-oss-120b with tools and a json_schema response_format at HTTP 200 —
+      so it is scoped to those two engines and is not inherited by every
+      gpt-oss route: the AKIOpenAI and TSystems defaults and the OpenRouter,
+      HuggingFace and Replicate routes send tools and a json_schema
+      response_format together on the wire. No boolean capability flag can
+      express a mutual exclusion between two capabilities, so chat_f and
+      chat_stream_realtime_f consult an ordered per-model
+      `model_capability_exclusions` table (keyed on the chat model, each rule a
+      coderef): Cerebras refuses tools alongside response_format of either
+      type, and Groq refuses tools alongside a JSON response_format of either
+      type as well (json_object and json_schema both 400 with tools) while its
+      streaming restriction stays json_schema-only. chat_f no longer trips the
+      guard on an empty `tools => []`, and no longer attaches a false-success
+      empty-argument synthetic tool_call when a forced-tool rewrite returns
+      valid but non-object JSON — it leaves tool_calls unset so the caller sees
+      the gap. (ADR 0021.)
 
     - Engine capabilities are now model-scoped on the tool /
       structured-output axis: supports() used to answer from one identical
