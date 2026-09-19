@@ -68,8 +68,9 @@ Revision history for Langertha
       ordered per-model `model_capability_exclusions` table (keyed on the chat
       model, each rule a coderef): the shared gpt-oss rule refuses tools
       alongside a json_schema response_format, Cerebras refuses tools alongside
-      response_format of either type, and Groq refuses tools, or streaming,
-      alongside json_schema output only (json_object stays allowed with tools).
+      response_format of either type, and Groq refuses tools alongside a JSON
+      response_format of either type as well (json_object and json_schema both
+      400 with tools) while its streaming restriction stays json_schema-only.
       chat_f no longer trips the guard on an empty `tools => []`, and no longer
       attaches a false-success empty-argument synthetic tool_call when a
       forced-tool rewrite returns valid but non-object JSON — it leaves
@@ -105,8 +106,10 @@ Revision history for Langertha
       per-request before the engine attribute. Engine::Anthropic (first-party
       Claude Messages API) takes a `json_schema` structured output natively as
       `output_config.format`, normalizing the schema to a closed one
-      (additionalProperties:false on every object) since the validator rejects
-      an open schema, merging with output_config.effort rather than clobbering
+      (additionalProperties:false on every object that does not close itself,
+      while an additionalProperties that is itself a schema — a map value type —
+      is kept and recursed rather than clobbered to false) since the validator
+      rejects an open schema, merging with output_config.effort rather than clobbering
       it, and emitting `strict:true`; this also makes json_schema stream. A
       bare `json_object` has no closed native form, so it routes through a
       synthesized tool with a forced tool_choice (an open, non-strict tool
@@ -152,14 +155,17 @@ Revision history for Langertha
     - OpenAI reasoning models (gpt-5.x, gpt-6, o-series) reject a non-default
       temperature while reasoning is active — only the wire default (1) is
       accepted — so the temperature is dropped and the caller warned rather
-      than letting the request 400. The drop is effort-aware: it consults the
-      resolved reasoning effort including the model's server-side default (so
-      the no-effort path is covered too) and keeps the temperature when
-      reasoning is off (`reasoning_effort => 'none'`, where the model accepts
-      it); a temperature of 1 always passes through silently. The gate lives in
-      a shared _temperature_kwargs helper on both OpenAI wire roles (chat and
-      responses); only Engine::OpenAI carries the reasoning-model predicate, so
-      other OpenAI-compatible engines keep every temperature.
+      than letting the request 400. The drop is effort-aware and per-model: it
+      resolves the reasoning effort including each model's server-side default
+      through Langertha::Reasoning::Profile, so the no-effort path is covered
+      yet honours the models whose default is reasoning-off — gpt-5.1, gpt-5.2
+      and gpt-5.4 keep a non-default temperature with no effort set — and it
+      keeps the temperature whenever reasoning is off (`reasoning_effort =>
+      'none'`, where the model accepts it); a temperature of 1 always passes
+      through silently. The gate lives in a shared _temperature_kwargs helper on
+      both OpenAI wire roles (chat and responses); only Engine::OpenAI carries
+      the reasoning-model predicate, so other OpenAI-compatible engines keep
+      every temperature.
 
     - New request-side `reasoning_effort` control normalized across engines
       (vocabulary none|minimal|low|medium|high|xhigh|max, emitted

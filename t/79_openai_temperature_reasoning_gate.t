@@ -196,4 +196,51 @@ for my $w (@wires) {
   ok( $c, 'gpt-6-astra: carp fired (effort=none does not disable gpt-6 reasoning)' );
 }
 
+# --- k185: the no-effort default path is per-model, via Reasoning::Profile ----
+# The model's server-side default effort decides the no-effort path. Most
+# reasoning models default to a reasoning level (temperature dropped), but the
+# gpt-5.1/5.2/5.4 line defaults to reasoning-OFF (reasoning_tokens=0 with no
+# effort), so a non-default temperature is honored there. Live-verified
+# 2026-09-19. Before k185 the no-effort branch returned 1 for every model matched
+# by the reasoning-model regex, wrongly dropping temperature on 5.1/5.2/5.4.
+#
+# Sabotage check: make the no-effort branch of _temperature_rejected_by_reasoning
+# return 1 unconditionally (the pre-k185 bug), or clear a profile's
+# default_reasoning_off, and the "kept" assertions below flip to dropped.
+
+# Default reasoning OFF -> temperature kept on the no-effort path, no carp.
+for my $model (qw( gpt-5.1 gpt-5.1-codex-max gpt-5.2 gpt-5.4 )) {
+  my ( $b, $c ) = probe( openai( model => $model, temperature => 0.7 ) );
+  is( $b->{temperature}, 0.7,
+    "$model: no-effort server default is reasoning-off, temperature kept" );
+  ok( !$c, "$model: no carp (temperature honored on the default path)" );
+}
+
+# Default reasoning ON -> temperature dropped on the no-effort path, carp fires.
+for my $model (qw( o4-mini gpt-5 gpt-5.5 gpt-5.6 gpt-6-astra )) {
+  my ( $b, $c ) = probe( openai( model => $model, temperature => 0.7 ) );
+  ok( !exists $b->{temperature},
+    "$model: no-effort server default is reasoning-on, temperature dropped" );
+  ok( $c, "$model: carp fired on the default-path drop" );
+}
+
+# A default-reasoning-off model still drops temperature once an explicit effort
+# turns reasoning back on (matrix: gpt-5.1 + effort=low -> 400).
+{
+  my ( $b, $c ) = probe(
+    openai( model => 'gpt-5.1', temperature => 0.7, reasoning_effort => 'low' ) );
+  ok( !exists $b->{temperature},
+    'gpt-5.1: explicit effort=low turns reasoning on -> temperature dropped' );
+  ok( $c, 'gpt-5.1: carp fired for the explicit-effort drop' );
+}
+
+# effort=none on a default-reasoning-off model that accepts none keeps temperature.
+{
+  my ( $b, $c ) = probe(
+    openai( model => 'gpt-5.1', temperature => 0.7, reasoning_effort => 'none' ) );
+  is( $b->{temperature}, 0.7,
+    'gpt-5.1: effort=none (accepted) keeps temperature' );
+  ok( !$c, 'gpt-5.1: no carp when reasoning is disabled via effort=none' );
+}
+
 done_testing;

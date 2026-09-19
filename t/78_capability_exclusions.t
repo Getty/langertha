@@ -9,10 +9,11 @@
 # 400 into a clear LOCAL croak naming the engine and the conflicting fields.
 #
 #   Cerebras: tools + response_format (json_object OR json_schema) -> croak.
-#   Groq: MODE-AWARE — tools + response_format json_schema -> croak, but
-#         json_object + tools is provider-ALLOWED and must NOT croak. Groq
-#         Structured Outputs also exclude streaming: response_format json_schema
-#         on the streaming path croaks regardless of tools.
+#   Groq: tools + response_format (json_object OR json_schema) -> croak (k184
+#         live-verified 2026-09-19: Groq 400s json mode + tools for either type,
+#         same message). Groq Structured Outputs additionally exclude streaming:
+#         response_format json_schema on the streaming path croaks regardless of
+#         tools, while json_object without tools is not refused by the guard.
 #
 # All cases are MOCKED — no live API calls. The mock also makes the sabotage
 # check hermetic: removing a guard lets the request reach the mock (returning a
@@ -191,7 +192,7 @@ sub run {
 }
 
 # ======================================================================
-# Groq — MODE-AWARE (json_schema only) + streaming exclusion
+# Groq — tools + JSON response_format (either type) + json_schema streaming
 # ======================================================================
 
 # --- Groq: tools + json_schema -> croak -----------------------------------
@@ -203,15 +204,16 @@ sub run {
   ) });
   ok( !$ok, 'Groq: tools + response_format json_schema croaks in chat_f' );
   like( $err, qr/Groq/, 'Groq json_schema+tools croak names the engine' );
-  like( $err, qr/tools and response_format json_schema/,
+  like( $err, qr/tools with a JSON response_format/,
     'Groq json_schema+tools croak names both conflicting fields' );
   like( $err, qr/400/, 'Groq json_schema+tools croak says the provider rejects it (400)' );
 }
 
-# --- Groq: tools + json_object -> NO croak (PASS-THROUGH) -----------------
-# The over-fire the advisor warned about: json_object + tools is a valid Groq
-# combination and must NOT be refused. Removing the mode check (json_schema
-# only) would croak here and turn this red.
+# --- Groq: tools + json_object -> croak (k184) ----------------------------
+# Live-verified 2026-09-19: Groq 400s json mode + tools for BOTH json_object and
+# json_schema with the same message, so the tools branch refuses either type
+# (not json_schema-only). Sabotage check: narrow the tools branch back to
+# json_schema-only and this goes green (the request reaches the mock instead).
 {
   my $engine = groq();
   my ( $ok, $err ) = run( sub { $engine->chat_f(
@@ -219,17 +221,11 @@ sub run {
     tools           => [$TOOL],
     response_format => $JSON_OBJECT_RF,
   ) });
-  ok( $ok, 'Groq: tools + response_format json_object does NOT croak (allowed)' )
-    or diag $err;
-
-  is( $engine->_async_http->request_count, 1,
-    'Groq: json_object+tools request reached the transport' );
-  my ($request) = $engine->_async_http->requests;
-  my $body = $json->decode( $request->content );
-  is( $body->{response_format}{type}, 'json_object',
-    'Groq: json_object response_format is still on the wire' );
-  ok( ref $body->{tools} eq 'ARRAY' && @{ $body->{tools} },
-    'Groq: tools are still on the wire alongside json_object' );
+  ok( !$ok, 'Groq: tools + response_format json_object croaks (k184)' );
+  like( $err, qr/Groq/, 'Groq json_object+tools croak names the engine' );
+  like( $err, qr/tool/, 'Groq json_object+tools croak names the tool conflict' );
+  is( $engine->_async_http->request_count, 0,
+    'Groq: json_object+tools request never reached the transport' );
 }
 
 # --- Groq: empty tools => [] + json_schema -> NO croak (k169) -------------
@@ -261,20 +257,29 @@ sub run {
   like( $err, qr/400/, 'Groq streaming croak says the provider rejects it (400)' );
 }
 
-# --- Groq: json_object + tools + streaming path -> NO exclusion croak -----
-# json_object is unrestricted, so the exclusion guard must let it through even
-# on the streaming path. (The mock transport does not implement the streaming
-# header callback, so the request fails downstream — but crucially NOT with the
-# capability-exclusion croak.)
+# --- Groq: json_object on the streaming path ------------------------------
+# k184: the tools branch refuses json_object + tools regardless of path, so a
+# streaming request carrying tools is refused before transport. But the streaming
+# branch itself stays json_schema-only, so json_object WITHOUT tools is NOT
+# refused by the exclusion guard on the streaming path (it fails downstream on
+# the mock's missing streaming header, not with an exclusion croak).
 {
   my ( $ok, $err ) = run( sub { groq()->chat_stream_realtime_f(
     messages        => ['weather?'],
     tools           => [$TOOL],
     response_format => $JSON_OBJECT_RF,
   ) });
-  ok( !$ok, 'Groq: json_object streaming still fails on the mock transport' );
-  unlike( $err, qr/Structured Outputs|json_schema/,
-    'Groq: json_object streaming is NOT refused by the exclusion guard' );
+  ok( !$ok, 'Groq: json_object + tools croaks on the streaming path too (k184 tools rule)' );
+  like( $err, qr/Groq/, 'Groq json_object+tools streaming croak names the engine' );
+  like( $err, qr/tool/, 'Groq json_object+tools streaming croak names the tool conflict' );
+
+  my ( $ok2, $err2 ) = run( sub { groq()->chat_stream_realtime_f(
+    messages        => ['weather?'],
+    response_format => $JSON_OBJECT_RF,
+  ) });
+  ok( !$ok2, 'Groq: json_object streaming (no tools) still fails on the mock transport' );
+  unlike( $err2, qr/Structured Outputs|json_schema|json mode/,
+    'Groq: json_object streaming without tools is NOT refused by the exclusion guard' );
 }
 
 # ======================================================================

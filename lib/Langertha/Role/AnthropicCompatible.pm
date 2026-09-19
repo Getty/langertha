@@ -317,16 +317,28 @@ sub _response_format_to_output_config {
 # which requires additionalProperties:false on every object and rejects an open
 # schema (k182/k149). Recurses the standard schema carriers and sets
 # additionalProperties:false on each object that does not already close itself,
-# without mutating the caller's schema. This is the house "normalize the wire
-# quirk, don't gatekeep" stance; a caller who wants genuinely free-form JSON uses
-# response_format json_object, which routes through the non-strict tool path.
+# without mutating the caller's schema. An additionalProperties that is itself a
+# schema — a dictionary/map value type, e.g. { type => 'string' } — is kept and
+# recursed as a subschema, not clobbered to false (k183): only an absent or
+# truthy-boolean additionalProperties means "open object" and gets closed. This
+# is the house "normalize the wire quirk, don't gatekeep" stance; a caller who
+# wants genuinely free-form JSON uses response_format json_object, which routes
+# through the non-strict tool path.
 sub _close_schema {
   my ( $self, $node ) = @_;
   return $node unless ref($node) eq 'HASH';
   my %out = %$node;
   if ( ( ( $out{type} // '' ) eq 'object' ) || exists $out{properties} ) {
-    $out{additionalProperties} = JSON->false
-      if !exists $out{additionalProperties} || $out{additionalProperties};
+    my $ap = $out{additionalProperties};
+    if ( ref $ap eq 'HASH' ) {
+      # A map/dictionary value schema: recurse into it, keep it as a schema.
+      $out{additionalProperties} = $self->_close_schema($ap);
+    }
+    elsif ( !exists $out{additionalProperties} || $ap ) {
+      # Absent, or a truthy boolean (JSON true) -> close the object.
+      $out{additionalProperties} = JSON->false;
+    }
+    # else: already explicitly false -> leave it closed.
   }
   if ( ref $out{properties} eq 'HASH' ) {
     $out{properties} = {

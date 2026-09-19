@@ -40,6 +40,7 @@ use Langertha::Engine::AKIOpenAI;
 use Langertha::Engine::OpenRouter;
 use Langertha::Engine::HuggingFace;
 use Langertha::Engine::Cerebras;
+use Langertha::Engine::Groq;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
@@ -210,6 +211,58 @@ for my $case (
   ) });
   ok( $ok2, 'TSystems (gpt-oss-120b): tools + json_object does NOT croak (json_object is not constrained decoding)' )
     or diag $err2;
+}
+
+# ======================================================================
+# GROQ platform rule (karr #184): Groq 400s a JSON response_format combined with
+# tools -- BOTH json_object and json_schema, with the same "json mode cannot be
+# combined with tool/function calling" message (live-verified 2026-09-19). Its
+# qr// all-models override REPLACES the inherited gpt-oss json_schema-only rule,
+# so unlike the aggregators above, Groq refuses json_object + tools too. A
+# json_object request WITHOUT tools still reaches the wire.
+#
+# Sabotage check: narrow the has_tools branch of
+# _exclude_json_schema_with_tools_or_streaming back to json_schema-only and the
+# "json_object + tools croaks" assertion goes red (the request reaches the mock).
+# ======================================================================
+{
+  # json_schema + tools -> croak (unchanged behavior).
+  my $g1 = Langertha::Engine::Groq->new(
+    api_key => 'apikey', model => 'llama-3.3-70b-versatile', _async_http => mock() );
+  my ( $ok1, $err1 ) = run( sub { $g1->chat_f(
+    messages        => ['weather?'],
+    tools           => [$TOOL],
+    response_format => $JSON_SCHEMA_RF,
+  ) });
+  ok( !$ok1, 'Groq: tools + json_schema still croaks' );
+  like( $err1, qr/Groq/, 'Groq json_schema croak names the engine' );
+  is( $g1->_async_http->request_count, 0,
+    'Groq: the json_schema + tools request never reached the transport' );
+
+  # json_object + tools -> croak (the #184 fix: Groq 400s json mode + tools too).
+  my $g2 = Langertha::Engine::Groq->new(
+    api_key => 'apikey', model => 'llama-3.3-70b-versatile', _async_http => mock() );
+  my ( $ok2, $err2 ) = run( sub { $g2->chat_f(
+    messages        => ['weather?'],
+    tools           => [$TOOL],
+    response_format => $JSON_OBJECT_RF,
+  ) });
+  ok( !$ok2, 'Groq: tools + json_object now croaks (Groq rejects json mode + tools, #184)' );
+  like( $err2, qr/Groq/, 'Groq json_object croak names the engine' );
+  like( $err2, qr/tool/, 'Groq json_object croak mentions the tool conflict' );
+  is( $g2->_async_http->request_count, 0,
+    'Groq: the json_object + tools request never reached the transport' );
+
+  # json_object WITHOUT tools -> passes through (the rule only fires with tools).
+  my $g3 = Langertha::Engine::Groq->new(
+    api_key => 'apikey', model => 'llama-3.3-70b-versatile', _async_http => mock() );
+  my ( $ok3, $err3 ) = run( sub { $g3->chat_f(
+    messages        => ['weather?'],
+    response_format => $JSON_OBJECT_RF,
+  ) });
+  ok( $ok3, 'Groq: json_object WITHOUT tools does NOT croak' ) or diag $err3;
+  is( $g3->_async_http->request_count, 1,
+    'Groq: the json_object-only request reached the transport' );
 }
 
 done_testing;

@@ -109,7 +109,8 @@ audio-transcription handle.
 # self-corrects. The seam and the (matcher => rule) contract live in
 # Langertha::Role::Chat::model_capability_exclusions. json_object mode is NOT
 # constrained decoding and is left to the stricter per-engine rules that need it
-# (Cerebras refuses json_object too; Groq allows json_object alongside tools).
+# (Cerebras and Groq both refuse json_object alongside tools too, via their own
+# all-models overrides).
 sub model_capability_exclusions {
   return (
     qr/gpt-oss/ => \&_exclude_tools_with_json_schema,
