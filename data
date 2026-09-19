@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-09-19T06:00:54Z
+claimed_by: worker-reasoning
+class: standard
+completed: 2026-09-19T06:00:54Z
+created: 2026-09-17T02:04:19Z
+id: 178
+priority: medium
+started: 2026-09-19T05:11:48Z
+status: done
+tags:
+- reasoning
+- datatype
+- budgetpolicy
+- deferred
+title: 'Phase 2: Langertha::Reasoning::BudgetPolicy (Kategorie c + Inbound budget<->level)'
+updated: 2026-09-19T06:00:54Z
+---
+
+Deferred bis ein Consumer es real braucht (knarr #13). Kategorie (c) der ADR-0023-Taxonomie: erfundene Level<->Budget-Interpolation + Inbound-Bijektion (level_for/budget_for/default_bool_level). NICHT Capability, NICHT Default-shipped fuer effort-Provider; jeder numerische Output an die Profile-(b)-Bounds geklemmt (Firewall). Kein Provider publiziert Level->Token-Tabelle -> reine Konvention, quellen-ehrlich. Design steht: spec docs/superpowers/specs/2026-09-16-reasoning-profile-design.md §3 + ADR 0023. Consumer: knarr #13.
+
+Getty 2026-09-17: Entscheidung - trotz fehlendem akutem Consumer (knarr #13 noch nicht real) wird die Umsetzung vorgezogen. Design steht (Spec docs/superpowers/specs/2026-09-16-reasoning-profile-design.md + ADR 0023), bereit fuer Umsetzungsplanung.
+
+Gebuendelt mit #180 in einem Reasoning-Worker (beide Reasoning/Profile-Subsystem).
+
+DONE & reviewed (branch worktree-agent-af435570e2a712055, UNCOMMITTED). New Langertha::Reasoning::BudgetPolicy (category-c level<->budget interpolation, range linear/log + explicit anchors, inverse lookup). FIREWALL enforced: every budget_for output + level_for input clamped to owning Profile (b) bounds. NOT a capability, NOT default-shipped, nothing constructs it (2 guard tests). Standalone/unwired (consumer knarr #13 not real). t/48_reasoning_budget_policy.t 64 assertions. prove -lr gruen (4021 T), perlcritic clean. NOTE: BudgetPolicy.pm + its test are UNTRACKED -> git add on integration (Git::GatherDir). Realizes ADR 0023 Phase 2. Held for integration.
+
+Integriert & gemerged in main (--no-ff, kein Push); volle Suite gruen (113 Dateien, 4120 Tests), perlcritic sauber. Changes-Eintrag zentral gepflegt. ADR-Aufzeichnung laeuft via adr-auditor.
