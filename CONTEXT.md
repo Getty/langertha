@@ -223,6 +223,22 @@ runs outside the base method and so is the last word. → **ADR 0019**, **ADR 00
 _Avoid_: "capability override" (ambiguous — say which layer), "the `around` for
 a model" (the whole point is that per-model reality does *not* go in the `around`)
 
+**model_capability_exclusions** (the per-model pairwise-exclusion seam):
+The sibling of `model_capability_corrections`, one layer up — at the
+`chat_f` / `chat_stream_realtime_f` level, not inside `engine_capabilities`. A
+declarative, ordered list of `( $matcher => $rule )` pairs keyed on `chat_model`
+(same matcher grammar: exact id `eq`, or a `qr//` family regex). The difference
+is the payload: a **coderef**, not a `{ cap => 0|1 }` hash — because it expresses
+a *relationship between two* request fields (combining `tools` with a
+structured-output `response_format` in one body) that a boolean flag cannot
+spell, and the rule croaks on the combination its model rejects with an opaque
+400. The shared, model-intrinsic rules live on the wire-dialect base (e.g.
+`Engine::OpenAIBase`'s `gpt-oss` rule), so the constraint travels with the model
+to aggregator routes and provider defaults; an engine narrows or replaces the
+inherited set. → **ADR 0024**, **ADR 0021**, **ADR 0019**.
+_Avoid_: "capability_exclusions DSL" (the payload is a coderef, deliberately not
+a declarative constraint language); "the exclusion capability" (it is not a flag)
+
 ## Relationships
 
 - An engine declares exactly one **tool_wire_format**; its default follows the
