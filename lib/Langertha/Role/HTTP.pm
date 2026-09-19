@@ -111,11 +111,30 @@ Basic authentication is set automatically.
 
 =cut
 
+our $error_body_max_length = 500;
+
+sub _error_response_body {
+  my ( $self, $response ) = @_;
+  my $body = eval { $response->decoded_content };
+  $body = $response->content unless defined $body && length $body;
+  return '' unless defined $body && length $body;
+  $body =~ s/\s+/ /g;
+  $body =~ s/\A\s+//;
+  $body =~ s/\s+\z//;
+  return '' unless length $body;
+  if ( length($body) > $error_body_max_length ) {
+    $body = substr($body, 0, $error_body_max_length) . '...';
+  }
+  return $body;
+}
+
 sub parse_response {
   my ( $self, $response ) = @_;
   unless ($response->is_success) {
+    my $body = $self->_error_response_body($response);
     $log->errorf("[%s] HTTP %s", ref $self, $response->status_line);
-    croak "".(ref $self)." request failed: ".($response->status_line);
+    croak "".(ref $self)." request failed: ".($response->status_line)
+      .( length $body ? " - ".$body : "" );
   }
   $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   $log->tracef("[%s] Response: %s", ref $self, $response->decoded_content);
@@ -127,9 +146,12 @@ sub parse_response {
     my $data = $engine->parse_response($http_response);
 
 Decodes a successful L<HTTP::Response> body as JSON and returns the data
-structure. Croaks with the HTTP status line on failure. If the engine
-supports rate limiting, extracts rate limit headers via
-C<_update_rate_limit> before decoding the body.
+structure. On failure croaks with the HTTP status line, and appends the
+provider's response body (whitespace-collapsed and truncated to
+C<$error_body_max_length> characters) so the real cause — e.g. a provider
+JSON error object — is visible in the croak message. If the engine supports
+rate limiting, extracts rate limit headers via C<_update_rate_limit> before
+decoding the body.
 
 =cut
 
@@ -192,8 +214,11 @@ sub execute_streaming_request {
   my $t0 = [gettimeofday];
   my $response = $self->user_agent->request($request);
 
-  croak "".(ref $self)." streaming request failed: ".($response->status_line)
-    unless $response->is_success;
+  unless ($response->is_success) {
+    my $body = $self->_error_response_body($response);
+    croak "".(ref $self)." streaming request failed: ".($response->status_line)
+      .( length $body ? " - ".$body : "" );
+  }
 
   my $chunks = $self->process_stream_data($response->content, $chunk_callback);
   my $total_seconds = tv_interval($t0);
@@ -214,7 +239,10 @@ sub execute_streaming_request {
 
 Executes a streaming HTTP request synchronously using L<LWP::UserAgent> and
 delegates stream parsing to L<Langertha::Role::Streaming/process_stream_data>.
-Requires the engine to also compose L<Langertha::Role::Streaming>. Returns an
+Requires the engine to also compose L<Langertha::Role::Streaming>. On a
+non-success response croaks with the HTTP status line and the provider's
+response body appended (whitespace-collapsed and length-limited), mirroring
+L</parse_response>. Returns an
 ArrayRef of L<Langertha::Stream::Chunk> objects and a timing HashRef with
 C<total_seconds> (Float, seconds). C<ttft_seconds> is omitted because
 L<LWP::UserAgent> buffers the body before parsing — switch to the async path
