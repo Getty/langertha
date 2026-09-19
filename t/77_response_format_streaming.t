@@ -38,6 +38,12 @@ my $OTHER_SCHEMA = {
   properties => { country => { type => 'string' } },
 };
 
+# k182: the first-party output_config.format validator rejects an open schema, so
+# a caller schema that omits additionalProperties is normalized to closed on the
+# native streaming path too. These are the closed forms the wire now carries.
+my $CLOSED_SCHEMA       = { %$SCHEMA,       additionalProperties => JSON->false };
+my $CLOSED_OTHER_SCHEMA = { %$OTHER_SCHEMA, additionalProperties => JSON->false };
+
 sub anthropic {
   return Langertha::Engine::Anthropic->new(
     api_key       => 'apikey',
@@ -74,8 +80,9 @@ sub stream_wire {
 # k133: with native structured output (output_config.format) there is no
 # synthesized tool_use to lift, so the JSON streams as ordinary text deltas.
 # Engine::Anthropic therefore emits output_config.format on the stream instead
-# of croaking. Sabotage check: revert _native_structured_output to 0 and this
-# reverts to the shim croak below.
+# of croaking. k182: the caller's open $SCHEMA is normalized to closed here too.
+# Sabotage check: revert _native_structured_output to 0 and this reverts to the
+# shim croak below.
 {
   my $data = stream_wire( anthropic(), response_format => {
     type        => 'json_schema',
@@ -84,20 +91,29 @@ sub stream_wire {
 
   ok( !exists $data->{response_format},
     'Anthropic: streaming response_format is consumed, not passed to the wire' );
-  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
-    'Anthropic: streaming json_schema becomes native output_config.format' );
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $CLOSED_SCHEMA },
+    'Anthropic: streaming json_schema becomes native output_config.format, normalized closed' );
   is( $data->{stream}, JSON->true, 'Anthropic: structured stream still streams' );
   ok( !exists $data->{tools} && !exists $data->{tool_choice},
     'Anthropic: native structured stream injects no synthesized tool' );
 }
 
+# --- Anthropic (native): streaming json_object is refused ------------------
+# k182: a bare json_object has no native free-form form (output_config.format
+# needs a closed schema) and the synthesized-tool fallback has no streaming lift,
+# so first-party Engine::Anthropic consumes the key and croaks rather than 400 on
+# the wire or stream unstructured text — mirroring the shim behavior below.
 {
-  my $data = stream_wire( anthropic(), response_format => { type => 'json_object' } );
-
-  is_deeply( $data->{output_config}{format},
-    { type => 'json_schema', schema => { type => 'object', additionalProperties => JSON->true } },
-    'Anthropic: streaming json_object maps onto an open-object native json_schema' );
-  is( $data->{stream}, JSON->true, 'Anthropic: json_object stream still streams' );
+  my $ok = eval {
+    anthropic()->chat_stream_request( anthropic()->chat_messages('p'),
+      response_format => { type => 'json_object' } );
+    1;
+  };
+  ok( !$ok, 'Anthropic: streaming json_object croaks' );
+  like( $@, qr/cannot stream a json_object response_format/,
+    'Anthropic: croak names the json_object streaming limitation' );
+  like( $@, qr/chat_f\/chat_request/,
+    'Anthropic: croak points at the non-streaming structured-output path' );
 }
 
 # --- Anthropic (native): engine-attribute response_format streams too -----
@@ -107,7 +123,7 @@ sub stream_wire {
     json_schema => { name => 'engine_level', schema => $OTHER_SCHEMA },
   });
   my $data = stream_wire($engine);
-  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $OTHER_SCHEMA },
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $CLOSED_OTHER_SCHEMA },
     'Anthropic: engine-attribute response_format streams as native output_config.format' );
 }
 

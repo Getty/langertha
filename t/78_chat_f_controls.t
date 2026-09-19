@@ -256,8 +256,9 @@ sub wire_stream {
 
   ok( !exists $data->{response_format},
     'Anthropic: response_format control is consumed, not passed to the wire' );
-  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $SCHEMA },
-    'Anthropic: response_format control lands as native output_config.format' );
+  is_deeply( $data->{output_config}{format},
+    { type => 'json_schema', schema => { %$SCHEMA, additionalProperties => JSON->false } },
+    'Anthropic: response_format control lands as native output_config.format (normalized closed, k182)' );
   ok( !exists $data->{tools} && !exists $data->{tool_choice},
     'Anthropic: native structured output injects no synthesized tool' );
 }

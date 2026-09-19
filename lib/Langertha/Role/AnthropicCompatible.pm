@@ -190,7 +190,21 @@ sub chat_request {
   my $output_config_format;
   if ( $self->_native_structured_output ) {
     my $rf = $self->_take_response_format(\%extra, $controls);
-    $output_config_format = $self->_response_format_to_output_config($rf);
+    # A schema-bearing response_format goes native (output_config.format); the
+    # first-party validator rejects an open schema, so it is normalized to a
+    # closed one first (k182/k149). A bare json_object has no schema and the
+    # Messages API has no native free-form JSON form, so it routes through the
+    # synthesized-tool path (open, non-strict input_schema) exactly like the
+    # legacy /anthropic shims -- forced where the model allows it, degraded to
+    # tool_choice `auto` where forced tool use 400s (fable-5-1 / mythos-5-1).
+    if ( $self->_rf_is_native_schema($rf) ) {
+      $output_config_format = $self->_response_format_to_output_config($rf);
+    }
+    else {
+      # // 0 keeps $rf_routed defined (a non-honorable rf yields undef) so
+      # chat_response does not fall back to the has_response_format heuristic.
+      $rf_routed = $self->_response_format_via_tool($rf, \%extra) // 0;
+    }
   }
   else {
     $rf_routed = $self->_translate_response_format(\%extra, $controls);
@@ -272,26 +286,65 @@ sub _take_response_format {
       : $self->has_response_format ? $self->response_format : undef;
 }
 
-# Turn a response_format hash into the native output_config.format value, or
-# undef when the hash is not an honorable json_schema / json_object. json_object
-# has no schema, so it maps onto an open-object json_schema.
+# True when a response_format hash is a json_schema carrying an actual schema
+# object -- the only form with a native output_config.format home. A bare
+# json_object (no schema) is not: it has no closed native form and routes
+# through the synthesized-tool path instead (k182).
+sub _rf_is_native_schema {
+  my ( $self, $rf ) = @_;
+  return 0 unless ref($rf) eq 'HASH';
+  return 0 unless ( $rf->{type} // '' ) eq 'json_schema';
+  return 0 unless ref( $rf->{json_schema} ) eq 'HASH';
+  return ref( $rf->{json_schema}{schema} ) eq 'HASH' ? 1 : 0;
+}
+
+# Turn a json_schema response_format into the native output_config.format value.
+# The first-party validator requires a CLOSED schema (additionalProperties:false
+# on every object) and 400s on anything else, so the caller's schema is
+# normalized to closed rather than passed through unchanged (k182/k149). Returns
+# undef when the hash is not a native json_schema (json_object has no schema and
+# goes via the synthesized-tool path).
 sub _response_format_to_output_config {
   my ( $self, $rf ) = @_;
-  return undef unless ref($rf) eq 'HASH';
-  my $type = $rf->{type} // '';
-  if ( $type eq 'json_schema'
-    && ref( $rf->{json_schema} ) eq 'HASH'
-    && ref( $rf->{json_schema}{schema} ) eq 'HASH'
-  ) {
-    return { type => 'json_schema', schema => $rf->{json_schema}{schema} };
+  return undef unless $self->_rf_is_native_schema($rf);
+  return {
+    type   => 'json_schema',
+    schema => $self->_close_schema( $rf->{json_schema}{schema} ),
+  };
+}
+
+# Normalize a JSON Schema for the first-party output_config.format validator,
+# which requires additionalProperties:false on every object and rejects an open
+# schema (k182/k149). Recurses the standard schema carriers and sets
+# additionalProperties:false on each object that does not already close itself,
+# without mutating the caller's schema. This is the house "normalize the wire
+# quirk, don't gatekeep" stance; a caller who wants genuinely free-form JSON uses
+# response_format json_object, which routes through the non-strict tool path.
+sub _close_schema {
+  my ( $self, $node ) = @_;
+  return $node unless ref($node) eq 'HASH';
+  my %out = %$node;
+  if ( ( ( $out{type} // '' ) eq 'object' ) || exists $out{properties} ) {
+    $out{additionalProperties} = JSON->false
+      if !exists $out{additionalProperties} || $out{additionalProperties};
   }
-  if ( $type eq 'json_object' ) {
-    return {
-      type   => 'json_schema',
-      schema => { type => 'object', additionalProperties => JSON->true },
+  if ( ref $out{properties} eq 'HASH' ) {
+    $out{properties} = {
+      map { $_ => $self->_close_schema( $out{properties}{$_} ) }
+        keys %{ $out{properties} }
     };
   }
-  return undef;
+  $out{items} = $self->_close_schema( $out{items} ) if ref $out{items} eq 'HASH';
+  for my $key (qw( anyOf allOf oneOf )) {
+    $out{$key} = [ map { $self->_close_schema($_) } @{ $out{$key} } ]
+      if ref $out{$key} eq 'ARRAY';
+  }
+  for my $key (qw( $defs definitions )) {
+    $out{$key} = {
+      map { $_ => $self->_close_schema( $out{$key}{$_} ) } keys %{ $out{$key} }
+    } if ref $out{$key} eq 'HASH';
+  }
+  return \%out;
 }
 
 # Fold a native structured-output format into output_config, MERGING rather than
@@ -336,6 +389,20 @@ sub _translate_response_format {
   # attribute, and is removed from the extras either way: the Messages API
   # has no response_format field and answers 400 when one reaches the wire.
   my $rf = $self->_take_response_format($extra, $controls);
+  return $self->_response_format_via_tool( $rf, $extra );
+}
+
+# Build the synthesized tool + tool_choice for a response_format hash, push them
+# onto %extra, and return the synthetic tool name (undef when the hash is not
+# honorable). The tool's input_schema is not strict, so an open schema -- a
+# caller's, or the open-object stand-in for a bare json_object -- passes here
+# where the native output_config.format validator would 400. The tool is forced
+# where the model allows forced tool use and degraded to `auto` where it does not
+# (claude-fable-5-1 / claude-mythos-5-1 clear tool_choice_named, k133 point 2);
+# under `auto` chat_response lifts the tool_use only if the model emits it, so
+# free-form json_object has no guaranteed path on those models (k182).
+sub _response_format_via_tool {
+  my ( $self, $rf, $extra ) = @_;
   return unless ref($rf) eq 'HASH';
   my $type = $rf->{type} // '';
 
@@ -363,15 +430,22 @@ sub _translate_response_format {
 
   $extra->{tools} ||= [];
   push @{ $extra->{tools} }, $tool;
-  $extra->{tool_choice} = { type => 'tool', name => $name };
+  $extra->{tool_choice} = $self->supports('tool_choice_named')
+    ? { type => 'tool', name => $name }
+    : { type => 'auto' };
   return $name;
 }
 
 =method _translate_response_format
 
-Internal: turns a C<response_format> hash into a synthesized tool plus a forced
-named C<tool_choice>, returning the synthetic tool name. Returns C<undef> when
-no usable structure is present.
+Internal: turns a C<response_format> hash into a synthesized tool plus a
+C<tool_choice>, returning the synthetic tool name. Returns C<undef> when no
+usable structure is present. Used by the legacy C</anthropic> shim engines and,
+for a bare C<json_object>, by first-party L<Langertha::Engine::Anthropic> (which
+routes a C<json_schema> natively via C<output_config.format> instead). The
+synthesized tool is forced via a named C<tool_choice> where the model supports
+forced tool use, and degraded to C<tool_choice> C<auto> where it does not
+(C<claude-fable-5-1> / C<claude-mythos-5-1>).
 
 =cut
 
@@ -489,7 +563,21 @@ sub chat_stream_request {
   my $rf = $self->_take_response_format(\%extra, $controls);
   my $output_config_format;
   if ( $self->_native_structured_output ) {
-    $output_config_format = $self->_response_format_to_output_config($rf);
+    # A json_schema streams as native output_config.format (normalized closed).
+    # A bare json_object has no native free-form form and the synthesized-tool
+    # fallback has no streaming lift, so -- like the shims below -- consume the
+    # key and refuse loudly rather than 400 on the wire or stream unstructured
+    # text (k182, ADR 0005 paragraph 2).
+    if ( $self->_rf_is_native_schema($rf) ) {
+      $output_config_format = $self->_response_format_to_output_config($rf);
+    }
+    elsif ( ref($rf) eq 'HASH' && ( $rf->{type} // '' ) eq 'json_object' ) {
+      croak "".(ref $self)." cannot stream a json_object response_format: the "
+        . "first-party Claude Messages API has no native free-form JSON structured "
+        . "output, and the synthesized-tool fallback has no streaming lift. Use "
+        . "chat_f/chat_request, or pass a json_schema response_format to stream "
+        . "native structured output.";
+    }
   }
   elsif ( ref($rf) eq 'HASH' ) {
     my $type = $rf->{type} // '';
