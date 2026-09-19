@@ -166,6 +166,26 @@ C<thinking> field may be sent.
 
 =cut
 
+has default_reasoning_off => (
+  is      => 'ro',
+  isa     => 'Bool',
+  default => 0,
+);
+
+=attr default_reasoning_off
+
+Whether the model's server-side default effort (the one that applies when no
+C<reasoning_effort> is sent) leaves reasoning OFF. C<0> — the common case —
+means the model reasons by default: a bare request already triggers reasoning.
+C<1> marks the models whose no-effort default is non-reasoning (the gpt-5.1 /
+gpt-5.2 / gpt-5.4 line: C<reasoning_tokens=0> with no effort, live-verified
+2026-09-19), so a control-on-control gate can tell "reasoning is active on the
+default path" apart from "an effort was set". Consumed read-only by
+L<Langertha::Engine::OpenAI/_temperature_rejected_by_reasoning>; distinct from
+L</can_disable> (whether an explicit C<none> effort turns reasoning off at all).
+
+=cut
+
 has disable_form => (
   is      => 'ro',
   isa     => 'Langertha::Reasoning::DisableForm',
@@ -467,12 +487,30 @@ sub _ensure_registry {
       [qw( none low medium high xhigh )], disable_form => 'explicit_none' ),
     # gpt-5.1 (karr k174), most-specific-first: codex-max re-adds xhigh, base
     # drops minimal/xhigh/max. Both wires identical (xhigh is not Responses-only).
+    # default_reasoning_off: the 5.1 line's no-effort server-side default is
+    # reasoning-OFF (k185 2026-09-19 live) — a bare request does not reason.
     _openai_profile( qr/\Agpt-5\.1-codex-max/,
       [qw( none low medium high xhigh )],
-      source => $OPENAI_K174_DOC, disable_form => 'explicit_none' ),
+      source => $OPENAI_K174_DOC, disable_form => 'explicit_none',
+      default_reasoning_off => 1 ),
     _openai_profile( qr/\Agpt-5\.1/,
       [qw( none low medium high )],
-      source => $OPENAI_K174_DOC, disable_form => 'explicit_none' ),
+      source => $OPENAI_K174_DOC, disable_form => 'explicit_none',
+      default_reasoning_off => 1 ),
+    # gpt-5.2 / gpt-5.4: same no-effort-default-off generation as gpt-5.1
+    # (reasoning_tokens=0 with no effort, a non-default temperature honored --
+    # k185 2026-09-19 live). Their accepted effort ladder is not yet live-curated,
+    # so they keep the unlisted-id passthrough (full enum, no per-wire restriction)
+    # rather than an invented gate — only the default-reasoning-off signal is
+    # sourced. gpt-5.3, if it appears, falls through to the reasoning-on default.
+    __PACKAGE__->new(
+      model_match           => qr/\Agpt-5\.[24]/,
+      control               => 'effort',
+      wire_format           => 'openai',
+      levels                => [@ANTHROPIC_EFFORT_LEVELS],
+      default_reasoning_off => 1,
+      source                => 'k185 2026-09-19 live: gpt-5.2/5.4 no-effort default reasoning off; effort ladder uncurated (passthrough)',
+    ),
     _openai_profile( qr/\Agpt-5(?![.\d])/,
       [qw( minimal low medium high )], disable_form => 'absent' ),
 

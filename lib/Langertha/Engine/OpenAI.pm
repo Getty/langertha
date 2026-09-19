@@ -116,35 +116,47 @@ sub _max_tokens_key {
 # EFFORT-AWARE, not a flat per-model capability clear: at reasoning_effort=none
 # (where the model accepts it) the same call returns 200, so clearing the
 # temperature capability wholesale would wrongly drop the valid effort=none path.
-# It also fires on the NO-EFFORT path, because the model's server-side default
-# effort (medium) applies -- so this predicate resolves the effort INCLUDING that
-# default. It is consumed READ-ONLY by the shared _temperature_kwargs gate in
-# Role::OpenAICompatible / Role::ResponsesCompatible; OpenAIResponses inherits it
-# and runs on the 'responses' wire. Non-reasoning OpenAI models (gpt-4o,
-# gpt-5-chat) and every other OpenAI-compatible engine never reach this predicate
-# (they do not define it), so they keep their temperature.
+# It also fires on the NO-EFFORT path for a model whose server-side default effort
+# is a reasoning level -- so this predicate resolves the effort INCLUDING that
+# default, via the Profile's default_reasoning_off signal (k185): the
+# gpt-5.1/5.2/5.4 line defaults to reasoning-OFF (reasoning_tokens=0 with no
+# effort) and keeps a non-default temperature there, while gpt-5.5/5.6, gpt-6, the
+# o-series and legacy gpt-5 default to reasoning-ON. It is consumed READ-ONLY by
+# the shared _temperature_kwargs gate in Role::OpenAICompatible /
+# Role::ResponsesCompatible; OpenAIResponses inherits it and runs on the
+# 'responses' wire. Non-reasoning OpenAI models (gpt-4o, gpt-5-chat) and every
+# other OpenAI-compatible engine never reach this predicate (they do not define
+# it), so they keep their temperature.
 sub _temperature_rejected_by_reasoning {
   my ( $self, $controls ) = @_;
   my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
-  # Which OpenAI models HAVE reasoning (and thus reject temperature when it is
-  # on): the o-series, the gpt-5 line except the non-reasoning gpt-5-chat, and
-  # gpt-6. This is the per-engine model list (ADR 0019); the effort-awareness
-  # below, not this regex, is what keeps the gate honest.
+  # Which OpenAI models HAVE reasoning (and thus can reject temperature): the
+  # o-series, the gpt-5 line except the non-reasoning gpt-5-chat, and gpt-6. This
+  # is the per-engine model list (ADR 0019); the Profile-driven effort resolution
+  # below, not this regex, is what keeps the gate honest per model.
   return 0 unless $model =~ /\A(?:o\d|gpt-5(?!-chat)|gpt-6)/;
   # Resolved reasoning effort: a per-request control (chat_f, karr #46) beats the
-  # engine attribute; neither set means the model's server-side default (a
-  # reasoning level) applies -> reasoning is on.
+  # engine attribute; neither set means the model's server-side default applies.
   my $effort = exists $controls->{reasoning_effort} ? $controls->{reasoning_effort}
              : $self->has_reasoning_effort          ? $self->reasoning_effort
              :                                         undef;
-  # Reasoning is off (and temperature accepted) only when 'none' is asked for AND
-  # this model's wire actually accepts 'none' as the disable value -- a read-only
+  my $profile = Langertha::Reasoning::Profile->for_model($model);
+  # No explicit effort: the model's server-side default effort applies. For most
+  # reasoning models that default is a reasoning level (temperature rejected), but
+  # the gpt-5.1/5.2/5.4 line defaults to reasoning-OFF, so a non-default
+  # temperature is honored there. The Profile carries which is which
+  # (default_reasoning_off, ADR 0023 wire-truth; live k185 2026-09-19).
+  if ( !defined $effort ) {
+    return 0 if $profile->default_reasoning_off;
+    return 1;
+  }
+  # Explicit effort=none disables reasoning (temperature accepted) only where the
+  # model's wire actually accepts 'none' as the disable value -- a read-only
   # consult of the same Langertha::Reasoning::Profile effort table the serializer
   # uses (ADR 0023). A model that cannot be disabled (gpt-6) drops a 'none' effort
   # server-side and keeps reasoning on, so temperature stays rejected there.
-  if ( defined $effort && $effort eq 'none' ) {
-    return 0 if Langertha::Reasoning::Profile->for_model($model)
-      ->effort_accepted_on( $self->reasoning_wire_format, 'none' );
+  if ( $effort eq 'none' ) {
+    return 0 if $profile->effort_accepted_on( $self->reasoning_wire_format, 'none' );
   }
   return 1;
 }

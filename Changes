@@ -153,14 +153,17 @@ Revision history for Langertha
     - OpenAI reasoning models (gpt-5.x, gpt-6, o-series) reject a non-default
       temperature while reasoning is active — only the wire default (1) is
       accepted — so the temperature is dropped and the caller warned rather
-      than letting the request 400. The drop is effort-aware: it consults the
-      resolved reasoning effort including the model's server-side default (so
-      the no-effort path is covered too) and keeps the temperature when
-      reasoning is off (`reasoning_effort => 'none'`, where the model accepts
-      it); a temperature of 1 always passes through silently. The gate lives in
-      a shared _temperature_kwargs helper on both OpenAI wire roles (chat and
-      responses); only Engine::OpenAI carries the reasoning-model predicate, so
-      other OpenAI-compatible engines keep every temperature.
+      than letting the request 400. The drop is effort-aware and per-model: it
+      resolves the reasoning effort including each model's server-side default
+      through Langertha::Reasoning::Profile, so the no-effort path is covered
+      yet honours the models whose default is reasoning-off — gpt-5.1, gpt-5.2
+      and gpt-5.4 keep a non-default temperature with no effort set — and it
+      keeps the temperature whenever reasoning is off (`reasoning_effort =>
+      'none'`, where the model accepts it); a temperature of 1 always passes
+      through silently. The gate lives in a shared _temperature_kwargs helper on
+      both OpenAI wire roles (chat and responses); only Engine::OpenAI carries
+      the reasoning-model predicate, so other OpenAI-compatible engines keep
+      every temperature.
 
     - New request-side `reasoning_effort` control normalized across engines
       (vocabulary none|minimal|low|medium|high|xhigh|max, emitted
