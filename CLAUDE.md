@@ -84,6 +84,10 @@ prove -lv t/60_tool_calling.t   # Single test, verbose
 **Verify recursively.** `prove -l t/` is NOT recursive and silently skips `t/` subdir tests.
 Use `prove -lr t/` or `dzil test`. Live tests (`t/80-86*`) are gated on
 `TEST_LANGERTHA_<ENGINE>_API_KEY` and skip without keys (and cost real money — be selective).
+**TSystems is not live-testable** — no developer key is available to the project (the `.env`
+key is empty and none is obtainable), so its wire behavior is **documentation-derived, not
+live-verified**; treat `docs.llmhub.t-systems.net` as the source of truth for it
+(→ ADR 0024 / karr #184).
 Test framework: `Test2::Bundle::More`. `dzil release` is forbidden without explicit go-ahead
 (house rules).
 

@@ -8,6 +8,11 @@ extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Embedding', 'Langertha::Role::Tools';
 
+# NOTE (karr #184 / ADR 0024): the project has no available developer key for AIFS (the
+# LANGERTHA_TSYSTEMS_API_KEY / test key is empty and none is obtainable), so this engine's wire
+# behavior -- notably whether gpt-oss-120b rejects tools + a structured-output response_format -- is
+# documentation-derived, NOT live-verified. Verify changes against docs.llmhub.t-systems.net.
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::TSystems;

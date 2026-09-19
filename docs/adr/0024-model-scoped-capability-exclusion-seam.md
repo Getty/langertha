@@ -143,11 +143,14 @@ A Getty-approved live probe (2026-09-19, raw `/chat/completions`, `gpt-oss-120b`
 
   **The shared `OpenAIBase` `gpt-oss` rule was deliberately left unchanged.** Getty's decision
   (2026-09-19): ship only the live-verified Groq subset now; keep the shared rule and its placement
-  pending a live probe of the *other* gpt-oss default, **TSystems** — whose key was empty at probe
-  time (Cerebras returned 402). So this ADR's **Decision stands as shipped**; the model-vs-stack scope
-  question and the AKI false-positive remain open in **karr #184** (in-progress, TSystems-blocked).
-  When TSystems is verifiable, resolve by either narrowing the shared rule off the pure-model axis
-  (per-engine / per-stack scope) or accepting the false-positive as the safe common denominator.
+  pending confirmation from the *other* gpt-oss default, **TSystems**. **That confirmation cannot come
+  from a live probe: the project has no available developer key for T-Systems AIFS** (the key was
+  empty at probe time and none is obtainable; Cerebras separately returned 402). TSystems is therefore
+  permanently not live-testable, and its wire behavior must be read from documentation
+  (`docs.llmhub.t-systems.net`), not observed. So this ADR's **Decision stands as shipped**; the
+  model-vs-stack scope question and the AKI false-positive remain open in **karr #184**, to be resolved
+  on a **documentation basis** — either narrowing the shared rule off the pure-model axis (per-engine /
+  per-stack scope) or accepting the false-positive as the safe common denominator.
 
 - **The mechanism is untouched.** The per-model exclusion table, the coderef payload, and the
   base-vs-engine homing (§Decision) are exactly as shipped; this Update corrects a wire *fact* and
