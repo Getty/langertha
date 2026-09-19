@@ -1,0 +1,33 @@
+---
+claimed_at: 2026-09-19T06:00:28Z
+claimed_by: worker-capexcl
+class: standard
+completed: 2026-09-19T06:00:28Z
+created: 2026-09-14T17:58:34Z
+id: 148
+priority: low
+started: 2026-09-19T05:12:13Z
+status: done
+tags:
+- capabilities
+- tools
+- chat_f
+- k142
+title: 'capability-exclusion: model-scoped statt engine-scoped + Aggregator-Transitivitaet
+  (k142 deferred)'
+updated: 2026-09-19T06:00:28Z
+---
+
+Ausgegliedert aus k142 (Getty 2026-09-14: minimaler engine-scoped Croak abgenommen, Generalisierung zurueckgestellt). Drei Punkte, alle vom llm-advisor als Architektur-Entscheidung markiert:
+1. MODEL-SCOPED statt engine-scoped: der Constraint (tools+response_format-Reject) ist fundamental eine MODELL-Eigenschaft (gpt-oss-120b + wenige constrained-decoding-Stacks), nicht eine Engine-Eigenschaft. Ein per-Modell-Seam neben model_capability_corrections (ADR 0019) wuerde den Constraint mit dem Modell reisen lassen, TSystems/AKIOpenAI mitfangen und self-korrigieren, wenn Cerebras es per-Modell lockert. ADR 0019 hat genau diesen boolean-vs-pairwise-Seam bewusst geparkt.
+2. AGGREGATOR-TRANSITIVITAET: OpenRouter/HuggingFace/Replicate/TSystems/AKIOpenAI reichen an ein Backend durch und koennen denselben 400 treffen, wenn nach gpt-oss-120b/Groq-Stack geroutet wird (TSystems + AKIOpenAI DEFAULTEN auf gpt-oss-120b). per-Route/per-Modell, nicht per-Engine.
+3. Deklaratives capability_exclusions-Layer / Mini-Constraint-Sprache (advisor Option c): muss Mode-Spezifik (Groq json_schema != json_object), Nicht-Capability-Achse (streaming) und per-Modell-Scoping ausdruecken -> wird zur DSL. Advisor: fuer heute over-built.
+Basis in main: ADR 0021, Role::Chat::_check_capability_exclusions, Cerebras/Groq-Overrides. Quelle: k142-Advisor-Note 2026-09-14.
+
+DEFERRED (2026-09-17, autonome Nacht-Runde): design-heavy (capability-exclusion model-scoped statt engine-scoped + Aggregator-Transitivitaet, deferred aus k142, ADR-0021/0002-beruehrend). Braucht Owner-Design-Entscheidung, nicht unbeaufsichtigt.
+
+Getty 2026-09-17: Owner-Design-Entscheidung getroffen. (1) Model-scoped Seam JA - neuer per-Modell-Constraint-Seam analog ADR 0019 model_capability_corrections wird gebaut. (2) Aggregator-Transitivitaet JA in gleichem Zug - Seam muss von Anfang an per-Route/per-Modell durchgereichte Aggregator-Faelle (OpenRouter/HuggingFace/Replicate/TSystems/AKIOpenAI) erfassen, nicht nur direkte Engines. (3) Mini-DSL/deklaratives Layer: Advisor-Empfehlung folgen, NICHT jetzt bauen. Bereit fuer Umsetzungsplanung.
+
+DONE & reviewed (branch worktree-agent-ac3d21b201cc43d37, UNCOMMITTED). Seam Role::Chat::model_capability_exclusions (ordered matcher=>coderef, keyed chat_model, mirrors ADR 0019); _check_capability_exclusions now the iterator (no-op when empty). Shared gpt-oss json_schema-only rule on OpenAIBase -> model-scoped travel: catches Cerebras/TSystems/AKIOpenAI defaults + aggregator routes (OpenRouter/HF/Replicate openai/gpt-oss-*). Cerebras/Groq MIGRATED off ADR-0021 per-engine hook onto the seam, exact croak msgs preserved (Cerebras=any-rf override, Groq=json_schema+tools/streaming, both qr// all-models). t/78_model_capability_exclusions.t 36 assertions, sabotage-verified. prove -lr gruen (3962), perlcritic clean. INFERENCE (needs live follow-up): shared rule json_schema-only; TSystems/AKIOpenAI gpt-oss+tools+json_object does NOT croak (no live data it 400s) - common-denominator reading. ADR: 0021 superseded in mechanism (new ADR/amendment), pairwise sibling of ADR 0019. Held for integration.
+
+Integriert & gemerged in main (--no-ff, kein Push); volle Suite gruen (113 Dateien, 4120 Tests), perlcritic sauber. Changes-Eintrag zentral gepflegt. ADR-Aufzeichnung laeuft via adr-auditor.
