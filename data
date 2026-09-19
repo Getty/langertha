@@ -1,0 +1,41 @@
+---
+claimed_at: 2026-09-19T21:49:18Z
+claimed_by: advisor-liveverify
+class: standard
+completed: 2026-09-19T21:49:18Z
+created: 2026-09-19T06:02:14Z
+id: 184
+priority: low
+started: 2026-09-19T13:51:46Z
+status: done
+tags:
+- capabilities
+- tools
+- followup
+- k148
+title: 'capability-exclusion: live-verify gpt-oss+tools+json_object auf TSystems/AKIOpenAI;
+  Matcher ueber gpt-oss hinaus'
+updated: 2026-09-19T21:49:18Z
+---
+
+Follow-up aus k148. Die shared gpt-oss-Exclusion-Rule (OpenAIBase) ist json_schema-ONLY - Groq bestaetigt json_object+tools funktioniert auf gpt-oss. Ob TSystems/AKIOpenAI gpt-oss-120b + tools + json_object ebenfalls 400t, ist NICHT live-verifiziert (common-denominator-Reading: croakt heute nicht). Wenn es doch 400t, shared Rule auf any-rf verbreitern oder diese Engines mit stricterem Override versehen. Braucht freigegebene Live-Calls (TSystems + AKIOpenAI). Ausserdem: Matcher ist bewusst auf qr/gpt-oss/ beschraenkt (einzige Familie mit Daten) - erweitern, wenn weitere constrained-decoding-Stacks live-bestaetigt sind.
+
+Live-verify Runde gestartet (Getty freigegeben 2026-09-19). Probe: gpt-oss-120b + tools + response_format json_object auf TSystems + AKIOpenAI -> 400 oder 200? Groq=200 bekannt.
+
+2026-09-19 14:04 LIVE 2026-09-19 (advisor), raw /chat/completions, gpt-oss-120b tools+response_format Matrix.
+AKI (aki.io/openai/v1): tools+json_SCHEMA -> HTTP 200, echtes tool_call zurueck => shared qr/gpt-oss/ json_schema-Croak ist FALSE-POSITIVE auf AKI (AKIs SGLang-Backend kann tools+json_schema). tools+json_OBJECT -> 400 "contains invalid type json_object! Only json_schema, regex, grammar, choice are allowed" (json_object-Modus auf AKI GAR NICHT unterstuetzt; json_object-only ohne tools 400t identisch -> kein Tool-Grammar-Konflikt sondern fehlende json_object-Capability).
+Groq (openai/gpt-oss-120b): tools+json_schema -> 400 "json mode cannot be combined with tool/function calling"; tools+json_OBJECT -> 400 SELBE Meldung. => Kommentar Groq.pm:69/97 + OpenAIBase.pm:112 + dieser Ticket-Body "Groq allows json_object alongside tools" ist LIVE WIDERLEGT. Groq lehnt JEDES response_format+tools ab (wie Cerebras), nicht nur json_schema.
+Cerebras: 402 payment_required -> nicht verifizierbar. TSystems: .env-Key leer (len 0) -> nicht verifizierbar.
+VERDIKT: (1) Tools+response_format-Inkompatibilitaet ist SERVING-STACK-Eigenschaft (Groq-weit, Cerebras-weit), NICHT gpt-oss-Modell-Eigenschaft -> die shared qr/gpt-oss/ Rule erzeugt bestaetigten False-Croak auf AKI. (2) Groq-Exclusion under-broad: sollte auf any-rf (json_object+json_schema) verbreitert werden wie Cerebras _exclude_tools_with_any_response_format. (3) AKIOpenAI json_object-Capability-Gap (gpt-oss-Backend). Raw-Logs: scratchpad 184_*.log
+
+Getty-Entscheidung 2026-09-19: NUR verifizierten Subset jetzt umsetzen -- Groq-Exclusion auf any response_format verbreitern (json_object+tools 400t live, gleiche Meldung) + falsche 'json_object erlaubt neben tools'-Kommentare (Groq.pm:71/97, OpenAIBase.pm:112, ADR 0024) korrigieren. shared qr/gpt-oss/-Rule + AKI-False-Positive (AKI serviert tools+json_schema mit 200 -> ADR-0024-Praemisse widerlegt) GEPARKT bis TSystems-Key verfuegbar (.env-Key aktuell leer). Bleibt in-progress fuer Groq-Subset; shared-rule-Teil offen.
+
+TEIL-UMGESETZT & merged (7980072). Verifizierter Groq-Subset: tools+json_object UND tools+json_schema croaken jetzt (beide 400 live, gleiche Meldung); streaming-Zweig json_schema-only; falsche 'json_object erlaubt'-Kommentare korrigiert; t/78 beide Dateien angepasst. GEPARKT: shared qr/gpt-oss/-Rule UNVERAENDERT. Live: AKI serviert gpt-oss-120b+tools+json_schema mit HTTP 200 -> shared Rule dort FALSE-POSITIVE, ADR-0024-Praemisse widerlegt. Getty: erst TSystems verifizieren, dann Scope-Entscheidung. BLOCKER: TEST_LANGERTHA_TSYSTEMS_API_KEY leer; Cerebras 402.
+
+2026-09-19 16:55 ADR-Reconcile recorded (adr-auditor, note only, claim untouched): ADR 0024 gained a k184 Update (commit 0f8ec14) documenting the resolved Groq json_object+tools correction and the PARKED shared-gpt-oss-rule / AKI-false-positive premise, linked back to this ticket; CONTEXT.md model_capability_exclusions entry qualified. ADR decision stands as shipped -- the model-vs-serving-stack scope question stays open here pending the TSystems live-probe.
+
+UPDATE 2026-09-19 (Getty): T-Systems bietet dem Projekt KEINEN beziehbaren Developer-Key -> TSystems ist dauerhaft NICHT live-testbar, der 'warte auf TSystems-Key'-Pfad ist tot. Dokumentiert in CLAUDE.md (Build & test), ADR-0024-Update, Engine/TSystems.pm (Dev-Kommentar) und Memory (Commit 0d22dab). Konsequenz: die shared qr/gpt-oss/-Rule-Scope-Entscheidung (AKI-False-Positive belegt: AKI serviert gpt-oss+tools+json_schema mit 200; Groq/Cerebras enforcen stack-weit) muss jetzt DOKU-BASIERT fallen, nicht per Live-Probe. Offene Optionen: (B) AKIOpenAI von der shared Rule ausnehmen / (C) shared Rule von OpenAIBase entfernen, Constraint nur engine-weit (Groq/Cerebras belegt), Aggregator-Routen laut Doku. Naechster Schritt: TSystems-AIFS-Doku (docs.llmhub.t-systems.net) + gpt-oss-Serving-Stack recherchieren, dann Scope entscheiden.
+
+2026-09-19 21:47 ADR-Reconcile Option C recorded (adr-auditor, note only; commit bca4d0b; claim re-stamped same owner, status untouched). ADR 0024 gained an Option-C Update: the prior PARKED shared-gpt-oss-rule / AKI-false-positive item is now RESOLVED -- shared OpenAIBase rule removed (Decision.1 reversed, code de5efa3), model-intrinsic premise retired for the serving-stack reading, Consequences 'caught wherever gpt-oss is served' headline withdrawn, aggregator/default transitivity deliberately no longer caught (accepted opaque-400 trade-off, reversible per-engine). CONTEXT.md model_capability_exclusions entry now states the resolved serving-stack scope (no 'under reconciliation'); CLAUDE.md 0024 one-liner updated; stale 'inherited gpt-oss rule' comments on Groq.pm/Cerebras.pm reconciled (comment-only). TSystems.pm NOTE left as-is (content-correct, no removed-premise allusion). perlcritic/dzil build/prove -lr t/ all green. Seam + Groq/Cerebras rules untouched. Ready to close.
+
+DONE (Option C, Getty 2026-09-19). Shared qr/gpt-oss/-Rule von OpenAIBase entfernt; Constraint jetzt engine-scoped auf Groq/Cerebras. Code de5efa3, merged 9052d80 (4153 Tests gruen, perlcritic/dzil ok, sabotage-geprueft). Doku-Reconcile bca4d0b: ADR-0024-'Option C'-Update (loest die geparkte Frage final, Decision.1 reversiert, Serving-Stack-Praemisse statt modell-intrinsisch), CONTEXT.md, CLAUDE.md-ADR-Zeile, Groq/Cerebras-Kommentare. Groq-json_object+tools-Fix (frueher, 7980072) bleibt. Akzeptierter Trade-off: TSystems/Aggregator-gpt-oss -> ggf. opaker 400 statt Croak, reversibel via per-Engine-Rule wenn je Evidenz. TSystems bleibt doku-abgeleitet (kein Developer-Key).
