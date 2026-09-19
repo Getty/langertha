@@ -96,38 +96,16 @@ audio-transcription handle.
 
 =cut
 
-# karr #148: gpt-oss-120b (and similar constrained-decoding stacks) cannot
-# combine tool use with a *structured* json_schema response_format in one
-# request — the grammar-constrained decoder and the tool-call grammar are
-# mutually exclusive, so the provider answers an opaque HTTP 400. This is a
-# property of the MODEL, not the endpoint: it fires wherever gpt-oss is served
-# — the Cerebras direct route, the TSystems / AKIOpenAI defaults, and aggregator
-# routes (OpenRouter / HuggingFace / Replicate) that resolve to a `.../gpt-oss-`
-# backend id. Declared here on the shared OpenAI base so every OpenAI-dialect
-# engine inherits it, keyed on the model via a regex so a sibling model on the
-# same engine is unaffected and a provider that relaxes it per-model
-# self-corrects. The seam and the (matcher => rule) contract live in
-# Langertha::Role::Chat::model_capability_exclusions. json_object mode is NOT
-# constrained decoding and is left to the stricter per-engine rules that need it
-# (Cerebras and Groq both refuse json_object alongside tools too, via their own
-# all-models overrides).
-sub model_capability_exclusions {
-  return (
-    qr/gpt-oss/ => \&_exclude_tools_with_json_schema,
-  );
-}
-
-sub _exclude_tools_with_json_schema {
-  my ( $self, %request ) = @_;
-  my $rf   = $request{response_format};
-  my $type = ( ref $rf eq 'HASH' ) ? ( $rf->{type} // '' ) : '';
-  return unless $request{has_tools} && $type eq 'json_schema';
-  croak "".(ref $self)." cannot combine tools and a json_schema response_format "
-    ."for model '".$self->chat_model."': this model rejects structured-output "
-    ."constrained decoding together with tool use (the provider answers HTTP "
-    ."400). Send tools or a json_schema response_format, not both (run the tools "
-    ."first, then a second structured-output turn).";
-}
+# The tools + structured-output response_format conflict is a property of the
+# serving STACK, not of the gpt-oss model: Groq and Cerebras enforce it
+# stack-wide (each via its own model_capability_exclusions override), while
+# AKI's gpt-oss-120b serves tools + a json_schema response_format at HTTP 200
+# (live-verified 2026-09-19, karr #184). So it is NOT gated here on the shared
+# OpenAI base — doing so was a false-positive on the AKIOpenAI / TSystems
+# defaults and aggregator routes. This base composes no exclusion rule and
+# inherits the Langertha::Role::Chat no-op; the per-model
+# model_capability_exclusions seam stays and Groq/Cerebras carry the rule
+# (ADR 0024).
 
 sub default_model { croak "".(ref $_[0])." requires model to be set" }
 

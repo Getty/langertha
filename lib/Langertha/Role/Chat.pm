@@ -470,15 +470,15 @@ sub _warn_control_message_args {
   return;
 }
 
-# karr #148: a couple of OpenAI-compatible providers reject a request that
-# combines tools and a structured-output response_format with an opaque HTTP
-# 400 and no body. No boolean capability flag can express a mutual exclusion
-# between two capabilities in one request (ADR 0021), AND the constraint is a
-# property of the MODEL (gpt-oss-120b and similar constrained-decoding stacks),
-# not of the engine — so it must travel with the model and fire wherever the
-# model is served: the Cerebras direct route, the TSystems / AKIOpenAI
-# defaults, and aggregator routes (OpenRouter / HuggingFace / Replicate) that
-# resolve to the same backend id.
+# karr #148 / #184: a couple of OpenAI-compatible serving stacks reject a
+# request that combines tools and a structured-output response_format with an
+# opaque HTTP 400 and no body. No boolean capability flag can express a mutual
+# exclusion between two capabilities in one request (ADR 0021). The constraint
+# is a property of the serving STACK, not of the model: Groq and Cerebras
+# enforce it across every model they serve, while AKI serves gpt-oss-120b with
+# tools + a json_schema response_format at HTTP 200 (live 2026-09-19) — so each
+# affected engine declares its own all-models rule and there is no shared base
+# rule to over-fire on the unaffected stacks.
 #
 # The seam mirrors ADR 0019's model_capability_corrections: an ORDERED list of
 # ( $matcher => $rule ) pairs keyed on chat_model. $matcher is an exact
@@ -486,11 +486,10 @@ sub _warn_control_message_args {
 # chat_model). $rule is a CODEREF — the concrete seam, deliberately NOT a
 # declarative constraint DSL (karr #148) — invoked as $self->$rule(%request)
 # with has_tools / response_format / streaming; it croaks when the request hits
-# the combination the model/endpoint rejects. The default is an empty list, so
-# engines that constrain nothing pay nothing; the shared model-intrinsic rules
-# live on the wire-dialect bases (e.g. Langertha::Engine::OpenAIBase) so every
-# engine of that dialect inherits them, and an engine narrows or replaces them
-# by overriding model_capability_exclusions.
+# the combination the stack rejects. The default is an empty list, so engines
+# that constrain nothing pay nothing; an engine whose serving stack rejects the
+# combination declares an all-models rule by overriding
+# model_capability_exclusions (Groq, Cerebras).
 sub model_capability_exclusions { return () }
 
 # Consulted by chat_f (streaming => 0) and chat_stream_realtime_f
@@ -521,8 +520,8 @@ sub _check_capability_exclusions {
 
     sub model_capability_exclusions {
       return (
-        qr/gpt-oss/   => \&_exclude_tools_with_json_schema,  # a model family
-        'zai-glm-4.7' => \&_exclude_tools_with_json_schema,  # an exact model id
+        qr/some-family/  => \&_exclude_some_combination,  # a model family (regex)
+        'exact-model-id' => \&_exclude_some_combination,  # an exact model id
       );
     }
 
@@ -543,12 +542,13 @@ constraint DSL) invoked as C<< $self->$rule(%request) >> with C<has_tools>,
 C<response_format> and C<streaming>; it C<croak>s when the request hits the
 combination the model rejects.
 
-Because the constraint is a property of the model, the shared rules live on the
-wire-dialect base (L<Langertha::Engine::OpenAIBase>) and every engine of that
-dialect inherits them — so a constrained model reached through a passthrough
-aggregator is caught without per-engine plumbing. An engine narrows, replaces
-or extends the inherited set by overriding this method; the default is an empty
-list.
+Where the rule lives depends on what the constraint belongs to. Groq and
+Cerebras reject C<tools> alongside a structured-output C<response_format> across
+every model they serve — a property of the serving stack — so each declares an
+all-models (C<qr//>) rule by overriding this method. A constraint that belonged
+to one model would instead be keyed on that model id or family regex, leaving a
+sibling model on the same engine unaffected. The default is an empty list, so an
+engine that constrains nothing pays nothing.
 
 =cut
 

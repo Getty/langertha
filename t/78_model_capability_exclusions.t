@@ -1,30 +1,24 @@
 #!/usr/bin/env perl
-# ABSTRACT: Model-scoped capability exclusion + aggregator transitivity (karr #148)
+# ABSTRACT: Model-scoped capability-exclusion seam + serving-stack scope (karr #148 / #184)
 
-# karr #148 generalizes the per-ENGINE capability-exclusion croak (ADR 0021)
-# to a per-MODEL seam (Langertha::Role::Chat::model_capability_exclusions). The
-# tools + json_schema mutual exclusion is a property of the MODEL (gpt-oss-120b
-# and similar constrained-decoding stacks), not the engine, so it must:
+# The tools + structured-output response_format mutual exclusion routes through a
+# per-MODEL seam (Langertha::Role::Chat::model_capability_exclusions), but the
+# conflict is a property of the serving STACK, not of the gpt-oss model:
 #
-#   (1) travel with the model — the shared rule lives on Langertha::Engine::
-#       OpenAIBase and every OpenAI-dialect engine inherits it, keyed on
-#       chat_model. A model that excludes (gpt-oss-120b) and a sibling that does
-#       not (llama-3.3-70b) on the SAME engine get opposite treatment.
-#   (2) catch AGGREGATOR routes — TSystems / AKIOpenAI DEFAULT to gpt-oss-120b,
-#       and OpenRouter / HuggingFace / Replicate reach it through a
-#       `provider/gpt-oss-...` id. All must croak on tools + json_schema without
-#       any per-engine plumbing, because the regex matcher catches the routed
-#       backend id.
+#   (1) Groq and Cerebras enforce it across every model they serve, each via its
+#       own all-models (qr//) override — so the SAME model (gpt-oss-120b) is
+#       refused there but not elsewhere (see the Groq/Cerebras blocks below).
+#   (2) AKI serves gpt-oss-120b with tools + a json_schema response_format at
+#       HTTP 200 (live-verified 2026-09-19, karr #184), so there is NO shared
+#       gpt-oss rule on Langertha::Engine::OpenAIBase. The AKIOpenAI / TSystems
+#       defaults and the OpenRouter / HuggingFace / Replicate routes therefore
+#       do NOT croak on tools + json_schema — the request reaches the wire
+#       carrying both fields.
 #
-# The shared rule is json_schema-ONLY (constrained decoding = grammar). The
-# stricter json_object refusal is a Cerebras platform quirk and stays on
-# Cerebras's own override — so an aggregator serving gpt-oss with json_object +
-# tools must NOT be refused by the inherited rule.
-#
-# All cases are MOCKED — no live API calls. Sabotage check: remove the
-# OpenAIBase rule (or the regex matcher) and the aggregator/model-scoped croaks
-# stop firing, turning the exclusion-message assertions red; the requests then
-# reach the mock instead.
+# All cases are MOCKED — no live API calls. Sabotage check: put a shared
+# qr/gpt-oss/ rule back on OpenAIBase and the aggregator/default requests below
+# stop reaching the mock (the false-positive croak returns), turning their
+# no-croak / wire-body assertions red.
 
 use strict;
 use warnings;
@@ -84,10 +78,11 @@ sub run {
 }
 
 # ======================================================================
-# (2) AGGREGATOR-DEFAULT — TSystems and AKIOpenAI DEFAULT to gpt-oss-120b,
-# so the exclusion is inherited from OpenAIBase and fires with no per-engine
-# code. This is the transitivity headline: neither engine has any exclusion
-# code of its own.
+# AGGREGATOR-DEFAULT — TSystems and AKIOpenAI DEFAULT to gpt-oss-120b. There is
+# no shared gpt-oss rule on OpenAIBase, so neither engine croaks on tools +
+# json_schema: the request reaches the wire carrying both fields. AKI serves
+# exactly this at HTTP 200 (live 2026-09-19, karr #184); TSystems is not
+# live-testable but shares the same OpenAI dialect.
 # ======================================================================
 for my $case (
   [ 'TSystems'  => sub { Langertha::Engine::TSystems->new(@_) } ],
@@ -95,7 +90,8 @@ for my $case (
 ) {
   my ( $name, $ctor ) = @$case;
 
-  # Default model (gpt-oss-120b) + tools + json_schema -> croak.
+  # Default model (gpt-oss-120b) + tools + json_schema -> NO croak; both fields
+  # reach the wire.
   {
     my $engine = $ctor->( api_key => 'apikey', _async_http => mock() );
     is( $engine->chat_model, 'gpt-oss-120b',
@@ -105,15 +101,19 @@ for my $case (
       tools           => [$TOOL],
       response_format => $JSON_SCHEMA_RF,
     ) });
-    ok( !$ok, "$name (default gpt-oss-120b): tools + json_schema croaks (inherited)" );
-    like( $err, qr/\Q$name\E/, "$name croak names the engine" );
-    like( $err, qr/gpt-oss-120b/, "$name croak names the constrained model" );
-    like( $err, qr/400/, "$name croak says the provider rejects it (400)" );
-    is( $engine->_async_http->request_count, 0,
-      "$name: the conflicting request never reached the transport" );
+    ok( $ok, "$name (default gpt-oss-120b): tools + json_schema does NOT croak (no shared rule)" )
+      or diag $err;
+    is( $engine->_async_http->request_count, 1,
+      "$name: the tools + json_schema request reached the transport" );
+    my ($req) = $engine->_async_http->requests;
+    my $body  = $json->decode( $req->content );
+    ok( $body->{tools}, "$name: tools sent on the wire" );
+    is( $body->{response_format}{type}, 'json_schema',
+      "$name: json_schema response_format sent on the wire alongside tools" );
   }
 
-  # (1) SIBLING model on the SAME engine that does NOT exclude -> no croak.
+  # A non-default sibling model on the same engine also reaches the wire (no
+  # engine-scoped rule here either).
   {
     my $engine = $ctor->( api_key => 'apikey', model => 'llama-3.3-70b', _async_http => mock() );
     my ( $ok, $err ) = run( sub { $engine->chat_f(
@@ -127,9 +127,8 @@ for my $case (
       "$name: the sibling-model request reached the transport" );
   }
 
-  # The shared rule is json_schema-ONLY: gpt-oss + tools + json_object is NOT
-  # refused by the inherited rule (Cerebras's stricter json_object refusal does
-  # not travel to the aggregators).
+  # tools + json_object also reaches the wire (json_object was never gated on
+  # the aggregators; Cerebras's stricter json_object refusal is Cerebras-only).
   {
     my $engine = $ctor->( api_key => 'apikey', _async_http => mock() );
     my ( $ok, $err ) = run( sub { $engine->chat_f(
@@ -137,7 +136,7 @@ for my $case (
       tools           => [$TOOL],
       response_format => $JSON_OBJECT_RF,
     ) });
-    ok( $ok, "$name (gpt-oss-120b): tools + json_object does NOT croak (json_schema-only rule)" )
+    ok( $ok, "$name (gpt-oss-120b): tools + json_object does NOT croak" )
       or diag $err;
     is( $engine->_async_http->request_count, 1,
       "$name: the json_object request reached the transport" );
@@ -145,9 +144,10 @@ for my $case (
 }
 
 # ======================================================================
-# (2) AGGREGATOR-ROUTE — a passthrough aggregator reaches gpt-oss through a
-# `provider/gpt-oss-...` id. The regex matcher catches the routed backend id,
-# so the exclusion fires; a non-gpt-oss route on the same engine does not.
+# AGGREGATOR-ROUTE — a passthrough aggregator reaches gpt-oss through a
+# `provider/gpt-oss-...` id. With no shared gpt-oss rule, the routed request
+# reaches the wire carrying tools + json_schema, exactly as a non-gpt-oss route
+# does.
 # ======================================================================
 for my $case (
   [ 'OpenRouter'  => sub { Langertha::Engine::OpenRouter->new(@_) } ],
@@ -162,11 +162,15 @@ for my $case (
       tools           => [$TOOL],
       response_format => $JSON_SCHEMA_RF,
     ) });
-    ok( !$ok, "$name (route openai/gpt-oss-120b): tools + json_schema croaks (transitive)" );
-    like( $err, qr/\Q$name\E/, "$name route croak names the engine" );
-    like( $err, qr{openai/gpt-oss-120b}, "$name route croak names the routed model id" );
-    is( $engine->_async_http->request_count, 0,
-      "$name: the conflicting routed request never reached the transport" );
+    ok( $ok, "$name (route openai/gpt-oss-120b): tools + json_schema does NOT croak (no shared rule)" )
+      or diag $err;
+    is( $engine->_async_http->request_count, 1,
+      "$name: the routed request reached the transport" );
+    my ($req) = $engine->_async_http->requests;
+    my $body  = $json->decode( $req->content );
+    ok( $body->{tools}, "$name: tools sent on the wire for the gpt-oss route" );
+    is( $body->{response_format}{type}, 'json_schema',
+      "$name: json_schema response_format sent on the wire alongside tools" );
   }
 
   {
@@ -184,11 +188,10 @@ for my $case (
 }
 
 # ======================================================================
-# ENGINE-vs-MODEL contrast on json_object: the SAME model (gpt-oss-120b) is
-# refused with json_object + tools on Cerebras (its stricter platform rule)
-# but NOT on the aggregators (the inherited json_schema-only rule). Proves the
-# migrated Cerebras behavior and that the model-intrinsic rule is the common
-# denominator, not the strictest reading.
+# ENGINE contrast on json_object: the SAME model (gpt-oss-120b) is refused with
+# json_object + tools on Cerebras (its engine-wide platform rule) but NOT on
+# TSystems (no engine rule there). Proves the exclusion is a serving-stack
+# property carried per-engine, not a property of the gpt-oss model.
 # ======================================================================
 {
   my $cerebras = Langertha::Engine::Cerebras->new(
@@ -209,7 +212,7 @@ for my $case (
     tools           => [$TOOL],
     response_format => $JSON_OBJECT_RF,
   ) });
-  ok( $ok2, 'TSystems (gpt-oss-120b): tools + json_object does NOT croak (json_object is not constrained decoding)' )
+  ok( $ok2, 'TSystems (gpt-oss-120b): tools + json_object does NOT croak (no engine-scoped rule on TSystems)' )
     or diag $err2;
 }
 
