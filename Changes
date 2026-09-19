@@ -55,18 +55,25 @@ Revision history for Langertha
       Responses input item { type: function_call_output, call_id, output }
       instead of an { role: tool, ... } chat message.
 
-    - Cerebras and Groq raise a clear local error instead of an opaque
-      provider HTTP 400 when a single request combines `tools` with a
-      structured-output `response_format` — no boolean capability flag can
-      express a mutual exclusion between two capabilities, so chat_f and
-      chat_stream_realtime_f consult a per-engine guard instead (Cerebras
-      refuses tools alongside response_format of either type; Groq refuses
-      tools, or streaming, alongside json_schema output only — json_object
-      stays allowed with tools). chat_f no longer trips that guard on an empty
-      `tools => []`, and no longer attaches a false-success empty-argument
-      synthetic tool_call when a forced-tool rewrite returns valid but
-      non-object JSON — it leaves tool_calls unset so the caller sees the gap.
-      (ADR 0021.)
+    - A request that combines `tools` with a structured-output
+      `response_format` raises a clear local error instead of an opaque
+      provider HTTP 400, and the guard is model-scoped rather than
+      engine-scoped: the constraint travels with the model, firing wherever a
+      constrained-decoding model is served — gpt-oss-120b on Cerebras
+      directly, as the TSystems and AKIOpenAI default, and down aggregator
+      routes (OpenRouter, HuggingFace, Replicate) that resolve to a gpt-oss
+      backend — while a non-constrained sibling model on the same engine is
+      unaffected. No boolean capability flag can express a mutual exclusion
+      between two capabilities, so chat_f and chat_stream_realtime_f consult an
+      ordered per-model `model_capability_exclusions` table (keyed on the chat
+      model, each rule a coderef): the shared gpt-oss rule refuses tools
+      alongside a json_schema response_format, Cerebras refuses tools alongside
+      response_format of either type, and Groq refuses tools, or streaming,
+      alongside json_schema output only (json_object stays allowed with tools).
+      chat_f no longer trips the guard on an empty `tools => []`, and no longer
+      attaches a false-success empty-argument synthetic tool_call when a
+      forced-tool rewrite returns valid but non-object JSON — it leaves
+      tool_calls unset so the caller sees the gap. (ADR 0021.)
 
     - Engine capabilities are now model-scoped on the tool /
       structured-output axis: supports() used to answer from one identical
@@ -96,15 +103,18 @@ Revision history for Langertha
       Anthropic answered 400 and Ollama/Gemini carried the format as dead
       weight while the structure itself went missing — all three now resolve
       per-request before the engine attribute. Engine::Anthropic (first-party
-      Claude Messages API) now takes structured output natively as
-      `output_config.format` rather than through the synthesized-tool-plus-
-      forced-tool_choice rewrite the legacy /anthropic shim engines still use;
-      this also makes structured output stream, merges with
-      output_config.effort rather than clobbering it, and emits `strict:true`
-      for a closed schema. Fable 5.1 and Mythos 5.1 400 on forced tool use, so
-      those models clear tool_choice_named/tool_choice_any and chat_f
-      auto-routes a forced named tool through the native structured-output
-      path there instead. Gemini now emits `responseJsonSchema` (which
+      Claude Messages API) takes a `json_schema` structured output natively as
+      `output_config.format`, normalizing the schema to a closed one
+      (additionalProperties:false on every object) since the validator rejects
+      an open schema, merging with output_config.effort rather than clobbering
+      it, and emitting `strict:true`; this also makes json_schema stream. A
+      bare `json_object` has no closed native form, so it routes through a
+      synthesized tool with a forced tool_choice (an open, non-strict tool
+      input_schema) — the same path the legacy /anthropic shim engines use —
+      and streaming a json_object croaks rather than sending a request the API
+      rejects. Fable 5.1 and Mythos 5.1 400 on forced tool use, so those models
+      clear tool_choice_named/tool_choice_any and a json_object degrades to
+      tool_choice `auto` there. Gemini now emits `responseJsonSchema` (which
       accepts an OpenAI-shaped JSON Schema directly) instead of the
       deprecated `responseSchema` (which wanted Google's own Schema proto
       dialect and could translate a JSON-Schema-keyword schema wrong).
@@ -138,6 +148,18 @@ Revision history for Langertha
       a successful request proves nothing about caching — only
       usage.cache_read_input_tokens does, since the minimum cacheable prefix
       is model-dependent and short prompts silently skip the cache.
+
+    - OpenAI reasoning models (gpt-5.x, gpt-6, o-series) reject a non-default
+      temperature while reasoning is active — only the wire default (1) is
+      accepted — so the temperature is dropped and the caller warned rather
+      than letting the request 400. The drop is effort-aware: it consults the
+      resolved reasoning effort including the model's server-side default (so
+      the no-effort path is covered too) and keeps the temperature when
+      reasoning is off (`reasoning_effort => 'none'`, where the model accepts
+      it); a temperature of 1 always passes through silently. The gate lives in
+      a shared _temperature_kwargs helper on both OpenAI wire roles (chat and
+      responses); only Engine::OpenAI carries the reasoning-model predicate, so
+      other OpenAI-compatible engines keep every temperature.
 
     - New request-side `reasoning_effort` control normalized across engines
       (vocabulary none|minimal|low|medium|high|xhigh|max, emitted
@@ -183,7 +205,13 @@ Revision history for Langertha
       minimal/xhigh/max entirely (none|low|medium|high), with a
       gpt-5.1-codex-max carve-out that re-adds xhigh on both wires; legacy
       gpt-5 keeps minimal|low|medium|high; unlisted ids keep the full
-      vocabulary. On Anthropic, Claude 4.6 (Opus/Sonnet) drops `xhigh` from
+      vocabulary. A self-hosted Qwen3.x reasoning family is registered too —
+      its accepted vocabulary (none|low|medium|xhigh; high and minimal
+      dropped) comes from the loaded model's chat template rather than the
+      vLLM/SGLang/llama.cpp server, matched with or without the HuggingFace
+      org prefix, so those two efforts drop before they can 400 the server;
+      an unknown self-hosted model still passes its effort through unchanged.
+      On Anthropic, Claude 4.6 (Opus/Sonnet) drops `xhigh` from
       the effort vocabulary that 4.7+ and the 5-series accept. Those same
       OpenAI reasoning-model families (gpt-5.x, gpt-6) also get
       `max_completion_tokens` instead of `max_tokens` for response_size and
@@ -204,6 +232,14 @@ Revision history for Langertha
       returns the aggregated thinking as an additive trailing element, and
       simple_chat_stream returns it in list context, matching
       $response->thinking on the non-streaming path.
+
+    - New Langertha::Reasoning::BudgetPolicy converts between reasoning levels
+      and integer token budgets — a range interpolation (linear or log) or a
+      curated set of anchors, plus the inverse budget-to-level lookup. Every
+      budget it returns is clamped to the owning Langertha::Reasoning::Profile's
+      provider-enforced bounds, so the invented level<->token convention can
+      never emit a value the API rejects. It is not a capability and nothing
+      constructs it by default; a consumer instantiates it explicitly.
 
     - Engine::Anthropic's inference_geo POD documented an 'eu' value as an
       EU-data-residency guarantee; Anthropic's first-party API actually only
@@ -295,8 +331,10 @@ Revision history for Langertha
       epoch (0 + $response->created) and stringifies to the full ISO-8601
       instant with sub-seconds, so both a numeric and a formatted read work
       off the one field. Engines hand the provider's wire value to the
-      lenient Moment->from_wire inbound door, which never dies — an
-      unparseable stamp simply drops the field — and this replaced the
+      lenient Moment->from_wire inbound door, which never dies: an
+      unparseable stamp simply drops the field, and a 13-digit millisecond
+      epoch is read as milliseconds (scaled to seconds, sub-seconds kept)
+      rather than overflowing Time::Moment and dropping. This replaced the
       earlier engine-side epoch conversion (e.g. Ollama's created_at
       normalization), which now lives once in the value object. Deliberately
       not a Moose class (the one documented exception, since Time::Moment is
@@ -335,6 +373,13 @@ Revision history for Langertha
       array to empty instead of dereferencing undef, and OpenAICompatible's
       embedding_response croaks a readable "missing 'data' array" message
       instead of a raw deref crash on a malformed 200 body.
+
+    - A failed HTTP request now surfaces the provider's error body in the
+      croak instead of only the status line: parse_response and the streaming
+      request path append the response body (whitespace-collapsed, truncated
+      to 500 characters) after the status line, so a provider JSON error
+      object — the real reason for a 400 — is visible to the caller; an empty
+      body falls back to the status line alone.
 
     - decode_loose_json is UTF-8-safe and can no longer hang: it
       encode_utf8's each candidate before the utf8 decode_json, so a
@@ -406,6 +451,12 @@ Revision history for Langertha
       preserving their 1:1 invariant that a bare reset left stale; the
       embedding-search path guards on a length match and falls back safely if
       the two ever drift.
+
+    - Raider: a plugin's plugin_before_llm_call no longer diverges from the
+      conversation a paused raid resumes with. A plugin that returns a fresh
+      conversation arrayref now updates the continuation state, so respond_f
+      keeps every assistant and tool_result message accumulated before the
+      pause instead of reverting to the pre-plugin array.
 
     - chat_f now normalizes a canonical set of per-request controls instead
       of spreading them as raw target-wire kwargs: previously only
