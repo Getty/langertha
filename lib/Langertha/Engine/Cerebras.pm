@@ -56,17 +56,26 @@ sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
 
-# karr #142: the Cerebras API rejects a request that carries both tools and a
-# structured-output response_format (json_object or json_schema) with an opaque
-# HTTP 400. Its docs make this per-model, but every model this engine currently
-# serves (gpt-oss-120b, zai-glm-4.7) rejects the combination, so guard it
-# engine-wide and convert the known 400 into a clear local croak. Consulted by
-# Langertha::Role::Chat from chat_f and chat_stream_realtime_f.
-sub _check_capability_exclusions {
-  my ( $self, %args ) = @_;
-  my $rf   = $args{response_format};
+# karr #148: the Cerebras API rejects a request that carries both tools and a
+# structured-output response_format of EITHER type (json_object or json_schema)
+# with an opaque HTTP 400. Its docs make this per-model, but every model this
+# engine currently serves (gpt-oss-120b default, zai-glm-4.7) rejects the
+# combination, so an all-models matcher (qr//) expresses the platform-wide
+# reality on the model-scoped exclusion seam (Langertha::Role::Chat). This is
+# stricter than the inherited gpt-oss json_schema-only rule (it also refuses
+# json_object), so it replaces rather than extends the inherited set. Consulted
+# by chat_f and chat_stream_realtime_f.
+sub model_capability_exclusions {
+  return (
+    qr// => \&_exclude_tools_with_any_response_format,
+  );
+}
+
+sub _exclude_tools_with_any_response_format {
+  my ( $self, %request ) = @_;
+  my $rf   = $request{response_format};
   my $type = ( ref $rf eq 'HASH' ) ? ( $rf->{type} // '' ) : '';
-  return unless $args{has_tools}
+  return unless $request{has_tools}
     && ( $type eq 'json_object' || $type eq 'json_schema' );
   croak "".(ref $self)." cannot combine tools and response_format in one "
     ."request: the Cerebras API rejects this combination with HTTP 400. Send "
