@@ -106,8 +106,10 @@ Revision history for Langertha
       per-request before the engine attribute. Engine::Anthropic (first-party
       Claude Messages API) takes a `json_schema` structured output natively as
       `output_config.format`, normalizing the schema to a closed one
-      (additionalProperties:false on every object) since the validator rejects
-      an open schema, merging with output_config.effort rather than clobbering
+      (additionalProperties:false on every object that does not close itself,
+      while an additionalProperties that is itself a schema — a map value type —
+      is kept and recursed rather than clobbered to false) since the validator
+      rejects an open schema, merging with output_config.effort rather than clobbering
       it, and emitting `strict:true`; this also makes json_schema stream. A
       bare `json_object` has no closed native form, so it routes through a
       synthesized tool with a forced tool_choice (an open, non-strict tool

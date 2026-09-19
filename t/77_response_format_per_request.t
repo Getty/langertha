@@ -41,6 +41,41 @@ my $OTHER_SCHEMA = {
 my $CLOSED_SCHEMA       = { %$SCHEMA,       additionalProperties => JSON->false };
 my $CLOSED_OTHER_SCHEMA = { %$OTHER_SCHEMA, additionalProperties => JSON->false };
 
+# k183: additionalProperties may be a SCHEMA (a dictionary/map value type), not a
+# boolean. Closing the schema must keep it as a subschema and recurse into it,
+# never clobber it to false (that would destroy map semantics). `labels` is a
+# map<string,string>; `configs` is a map<string,object> whose value object is
+# itself closed on the way down; the enclosing object, which omits
+# additionalProperties, is still closed to false.
+my $MAP_SCHEMA = {
+  type       => 'object',
+  properties => {
+    labels  => { type => 'object', additionalProperties => { type => 'string' } },
+    configs => {
+      type                 => 'object',
+      additionalProperties => {
+        type       => 'object',
+        properties => { enabled => { type => 'boolean' } },
+      },
+    },
+  },
+};
+my $CLOSED_MAP_SCHEMA = {
+  type                 => 'object',
+  additionalProperties => JSON->false,
+  properties           => {
+    labels  => { type => 'object', additionalProperties => { type => 'string' } },
+    configs => {
+      type                 => 'object',
+      additionalProperties => {
+        type                 => 'object',
+        additionalProperties => JSON->false,
+        properties           => { enabled => { type => 'boolean' } },
+      },
+    },
+  },
+};
+
 sub anthropic {
   return Langertha::Engine::Anthropic->new(
     api_key       => 'apikey',
@@ -197,6 +232,24 @@ for my $model (qw( claude-fable-5-1 claude-mythos-5-1 )) {
     'Anthropic: an already-closed json_schema stays native and unchanged' );
   ok( !exists $data->{tools} && !exists $data->{tool_choice},
     'Anthropic: a closed json_schema needs no synthesized tool' );
+}
+
+# --- Anthropic: additionalProperties-as-schema (map) is preserved, recursed --
+# k183: an additionalProperties that is a schema HashRef (a dictionary/map value
+# type) must survive closing as a subschema, not be clobbered to false. The map's
+# value schema is recursed (a map<string,object> value object gets closed too),
+# while an enclosing object that omits additionalProperties is still closed.
+# Sabotage check: revert _close_schema to `$out{additionalProperties} = false if
+# !exists || $out{additionalProperties}` and the map's additionalProperties turns
+# to false, turning this red.
+{
+  my $data = wire( anthropic(), response_format => {
+    type        => 'json_schema',
+    json_schema => { name => 'extract', schema => $MAP_SCHEMA },
+  });
+
+  is_deeply( $data->{output_config}{format}, { type => 'json_schema', schema => $CLOSED_MAP_SCHEMA },
+    'Anthropic: additionalProperties-as-schema (map) is kept and recursed, not clobbered to false' );
 }
 
 # --- Anthropic: the native structured payload arrives as Response.content -
