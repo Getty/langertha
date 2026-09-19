@@ -20,7 +20,7 @@ B<accepted vocabulary + native control type> (which levels the wire takes,
 effort/budget/boolean) and the B<provider-enforced numeric bounds & magic
 values> (Gemini 2.5's budget floor/ceiling, C<0>=off, C<-1>=dynamic). The
 invented level-to-token interpolation (category c) is deliberately absent — it
-belongs in a later C<BudgetPolicy>, clamped to this object's bounds.
+lives in L<Langertha::Reasoning::BudgetPolicy>, clamped to this object's bounds.
 
 L</for_model> resolves an id to its profile most-specific-first (exact id →
 family regex → provider default), replacing the scattered per-model hashes and
@@ -374,6 +374,13 @@ my $GEMINI3_SRC = 'ai.google.dev/gemini-api/docs/thinking; k140 2026-09-01, 3.8-
 # ai.google.dev/gemini-api/docs/thinking budget table (2.5), advisor-verified
 # 2026-09-16 (karr k173).
 my $GEMINI25_SRC = 'ai.google.dev/gemini-api/docs/thinking budget table; k173 2026-09-16';
+# Self-hosted Qwen3.x reasoning family: the loaded model's chat template — NOT
+# the vLLM/SGLang/llama.cpp server — fixes the accepted reasoning_effort
+# vocabulary. Live-probed 2026-09-17 on a cortex vLLM server (karr k79/k180):
+# Qwen/Qwen3.8-27B-FP8 400s on reasoning_effort=high ("Unexpected reasoning
+# effort high. Supported types are xhigh (default), medium, and low."), accepting
+# only none/low/medium/xhigh.
+my $QWEN_SELFHOSTED_SRC = 'live-probed 2026-09-17 cortex vLLM Qwen/Qwen3.8-27B-FP8: reasoning_effort high->400, accepts none/low/medium/xhigh (k79/k180)';
 
 # karr k176: 'max' is Responses-only for the gpt-6 and gpt-5.6 generations. The
 # gpt-5.6 split is live-confirmed (2026-09-16 on gpt-5.6-terra): Chat Completions
@@ -468,6 +475,26 @@ sub _ensure_registry {
       source => $OPENAI_K174_DOC, disable_form => 'explicit_none' ),
     _openai_profile( qr/\Agpt-5(?![.\d])/,
       [qw( minimal low medium high )], disable_form => 'absent' ),
+
+    # Self-hosted Qwen3.x reasoning family (vLLM / SGLang / llama.cpp), matched
+    # with or without its HuggingFace org prefix (served ids look like
+    # "Qwen/Qwen3.8-27B-FP8"). The loaded chat template — not the server —
+    # dictates the vocabulary: this family accepts none|low|medium|xhigh and
+    # REJECTS high|minimal (live-probed, k79/k180). Only the openai (Chat
+    # Completions) wire is restricted — the sole wire these engines speak — so the
+    # two rejected efforts drop before they can 400 the server. Unknown
+    # self-hosted models are deliberately NOT listed: they fall through to the
+    # passthrough default and keep going raw (correct for an unknown chat
+    # template, k180).
+    __PACKAGE__->new(
+      model_match    => qr{(?:\A|/)qwen3\.\d}i,
+      control        => 'effort',
+      wire_format    => 'openai',
+      levels         => [qw( none low medium xhigh )],
+      levels_by_wire => { openai => [qw( none low medium xhigh )] },
+      disable_form   => 'explicit_none',
+      source         => $QWEN_SELFHOSTED_SRC,
+    ),
 
     # Gemini 2.5: integer thinkingBudget (no level vocabulary). Category (b)
     # bounds carried but not enforced in Phase 1 (the value passes through).
@@ -589,6 +616,8 @@ __PACKAGE__->meta->make_immutable;
 =over
 
 =item * L<Langertha::Reasoning> - The value object that resolves and consumes profiles
+
+=item * L<Langertha::Reasoning::BudgetPolicy> - The category-(c) convention clamped to this object's (b) bounds
 
 =item * L<Langertha::Role::ReasoningEffort> - The composed role dispatching to L<Langertha::Reasoning>
 
