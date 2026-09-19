@@ -68,8 +68,9 @@ Revision history for Langertha
       ordered per-model `model_capability_exclusions` table (keyed on the chat
       model, each rule a coderef): the shared gpt-oss rule refuses tools
       alongside a json_schema response_format, Cerebras refuses tools alongside
-      response_format of either type, and Groq refuses tools, or streaming,
-      alongside json_schema output only (json_object stays allowed with tools).
+      response_format of either type, and Groq refuses tools alongside a JSON
+      response_format of either type as well (json_object and json_schema both
+      400 with tools) while its streaming restriction stays json_schema-only.
       chat_f no longer trips the guard on an empty `tools => []`, and no longer
       attaches a false-success empty-argument synthetic tool_call when a
       forced-tool rewrite returns valid but non-object JSON — it leaves
