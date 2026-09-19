@@ -470,16 +470,87 @@ sub _warn_control_message_args {
   return;
 }
 
-# karr #142: a couple of OpenAI-compatible providers reject a request that
-# combines tools and a structured-output response_format (Cerebras, Groq) with
-# an opaque HTTP 400 and no body. No boolean capability flag can express a
-# mutual exclusion between two capabilities, so chat_f/chat_stream_realtime_f
-# consult this per-engine hook and let the engine convert the known provider
-# 400 into a clear local croak that names the two conflicting fields. The base
-# is a deliberate no-op; only Langertha::Engine::Cerebras and
-# Langertha::Engine::Groq override it. This is intentionally narrow — the
-# model-scoped generalization is deferred to the maintainer (karr #142).
-sub _check_capability_exclusions { return }
+# karr #148: a couple of OpenAI-compatible providers reject a request that
+# combines tools and a structured-output response_format with an opaque HTTP
+# 400 and no body. No boolean capability flag can express a mutual exclusion
+# between two capabilities in one request (ADR 0021), AND the constraint is a
+# property of the MODEL (gpt-oss-120b and similar constrained-decoding stacks),
+# not of the engine — so it must travel with the model and fire wherever the
+# model is served: the Cerebras direct route, the TSystems / AKIOpenAI
+# defaults, and aggregator routes (OpenRouter / HuggingFace / Replicate) that
+# resolve to the same backend id.
+#
+# The seam mirrors ADR 0019's model_capability_corrections: an ORDERED list of
+# ( $matcher => $rule ) pairs keyed on chat_model. $matcher is an exact
+# model-id string (matched with eq) or a qr// regex (matched against
+# chat_model). $rule is a CODEREF — the concrete seam, deliberately NOT a
+# declarative constraint DSL (karr #148) — invoked as $self->$rule(%request)
+# with has_tools / response_format / streaming; it croaks when the request hits
+# the combination the model/endpoint rejects. The default is an empty list, so
+# engines that constrain nothing pay nothing; the shared model-intrinsic rules
+# live on the wire-dialect bases (e.g. Langertha::Engine::OpenAIBase) so every
+# engine of that dialect inherits them, and an engine narrows or replaces them
+# by overriding model_capability_exclusions.
+sub model_capability_exclusions { return () }
+
+# Consulted by chat_f (streaming => 0) and chat_stream_realtime_f
+# (streaming => 1) after the effective post-rewrite request is built (ADR 0021),
+# so an ADR 0005 rewrite that already collapsed the body to a single path
+# pre-empts it. Walks the per-model exclusion table for the selected chat_model
+# and lets each matching rule convert a known provider 400 into a clear local
+# croak. A no-op when the table is empty or no matcher hits.
+sub _check_capability_exclusions {
+  my ( $self, %request ) = @_;
+  my @rules = $self->model_capability_exclusions;
+  return unless @rules;
+  # chat_model is the model that actually carries tools / response_format on the
+  # wire; guard for the rare consumer that has no model surface at all.
+  my $model = $self->can('chat_model') ? $self->chat_model : undef;
+  return unless defined $model && length $model;
+  while ( @rules >= 2 ) {
+    my ( $matcher, $rule ) = splice @rules, 0, 2;
+    my $hit = ref $matcher eq 'Regexp' ? ( $model =~ $matcher )
+            :                            ( $model eq $matcher );
+    next unless $hit;
+    $self->$rule(%request);
+  }
+  return;
+}
+
+=method model_capability_exclusions
+
+    sub model_capability_exclusions {
+      return (
+        qr/gpt-oss/   => \&_exclude_tools_with_json_schema,  # a model family
+        'zai-glm-4.7' => \&_exclude_tools_with_json_schema,  # an exact model id
+      );
+    }
+
+The per-model capability-exclusion seam (karr #148), consulted at the
+C<chat_f> / C<chat_stream_realtime_f> layer above the boolean registry. A
+boolean capability flag asserts I<the wire accepts field X>; this seam
+expresses a I<mutual exclusion between two fields in one request> — combining
+C<tools> with a structured-output C<response_format> — which a flag cannot spell
+(L<ADR 0021|docs/adr/0021-pairwise-capability-exclusions-as-per-engine-guard.md>).
+
+Returns an B<ordered> list of C<< ( $matcher => $rule ) >> pairs, keyed on
+C<chat_model> exactly as L<Langertha::Role::Capabilities/model_capability_corrections>
+is. C<$matcher> is an exact model-id string (matched with C<eq>) or a C<qr//>
+regex (matched against C<chat_model>) — model ids come in families and, through
+aggregators, carry a C<provider/> prefix, so a regex catches the routed backend
+id too. C<$rule> is a B<coderef> (the concrete seam — deliberately not a
+constraint DSL) invoked as C<< $self->$rule(%request) >> with C<has_tools>,
+C<response_format> and C<streaming>; it C<croak>s when the request hits the
+combination the model rejects.
+
+Because the constraint is a property of the model, the shared rules live on the
+wire-dialect base (L<Langertha::Engine::OpenAIBase>) and every engine of that
+dialect inherits them — so a constrained model reached through a passthrough
+aggregator is caught without per-engine plumbing. An engine narrows, replaces
+or extends the inherited set by overriding this method; the default is an empty
+list.
+
+=cut
 
 # True when the request asks for tools — either a tools array or a
 # forced named tool_choice. Used to feed the capability-exclusion hook.
@@ -535,10 +606,10 @@ async sub chat_f {
     }
   }
 
-  # Provider mutual-exclusion guard (karr #142). Consulted after the
+  # Provider mutual-exclusion guard (karr #148). Consulted after the
   # forced-tool fallback (which may have set response_format) so it sees the
-  # effective request. Default no-op; Cerebras/Groq croak on the combinations
-  # their APIs reject with an opaque 400.
+  # effective request; walks the per-model exclusion table for the selected
+  # chat_model and croaks on a combination the model rejects with an opaque 400.
   $self->_check_capability_exclusions(
     has_tools       => $self->_chat_tools_requested(\%opts),
     response_format => $opts{response_format},
@@ -701,8 +772,8 @@ async sub chat_stream_realtime_f {
   croak "".(ref $self)." does not support streaming"
     unless $self->can('chat_stream_request');
 
-  # Provider mutual-exclusion guard (karr #142) — streaming path. Same hook as
-  # chat_f; the streaming flag lets an engine refuse a combination that is
+  # Provider mutual-exclusion guard (karr #148) — streaming path. Same per-model
+  # seam as chat_f; the streaming flag lets a rule refuse a combination that is
   # rejected only when streaming (e.g. Groq structured outputs, which do not
   # support streaming at all).
   $self->_check_capability_exclusions(

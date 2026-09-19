@@ -64,24 +64,33 @@ sub _build_supported_operations {[qw(
   createTranscription
 )]}
 
-# karr #142: Groq's Structured Outputs (response_format type json_schema) are
+# karr #148: Groq's Structured Outputs (response_format type json_schema) are
 # mutually exclusive with both tool use and streaming, and its API rejects
 # either combination with an opaque HTTP 400. json_object mode is a separate
-# feature that IS allowed alongside tools, so this guard is mode-aware and only
-# fires for json_schema. Consulted by Langertha::Role::Chat from chat_f
+# feature that IS allowed alongside tools, so this rule is mode-aware and only
+# fires for json_schema. This is a Groq-platform property that holds across the
+# models it serves, so an all-models matcher (qr//) expresses it on the
+# model-scoped exclusion seam (Langertha::Role::Chat); it subsumes the inherited
+# gpt-oss json_schema rule for Groq's own gpt-oss route. Consulted by chat_f
 # (streaming => 0) and chat_stream_realtime_f (streaming => 1).
-sub _check_capability_exclusions {
-  my ( $self, %args ) = @_;
-  my $rf   = $args{response_format};
+sub model_capability_exclusions {
+  return (
+    qr// => \&_exclude_json_schema_with_tools_or_streaming,
+  );
+}
+
+sub _exclude_json_schema_with_tools_or_streaming {
+  my ( $self, %request ) = @_;
+  my $rf   = $request{response_format};
   my $type = ( ref $rf eq 'HASH' ) ? ( $rf->{type} // '' ) : '';
   return unless $type eq 'json_schema';
-  if ( $args{streaming} ) {
+  if ( $request{streaming} ) {
     croak "".(ref $self)." cannot combine response_format json_schema with "
       ."streaming: Groq Structured Outputs do not support streaming and the "
       ."API rejects this with HTTP 400. Use the non-streaming chat_f for "
       ."json_schema output.";
   }
-  if ( $args{has_tools} ) {
+  if ( $request{has_tools} ) {
     croak "".(ref $self)." cannot combine tools and response_format json_schema "
       ."in one request: Groq Structured Outputs do not support tool use and the "
       ."API rejects this with HTTP 400. Send tools or json_schema, not both "
