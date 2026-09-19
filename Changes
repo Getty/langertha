@@ -2,1072 +2,623 @@ Revision history for Langertha
 
 {{$NEXT}}
 
-    - Hetzner Inference model catalog now lists Qwen/Qwen3.6-35B-A3B-FP8 and
-      Qwen3.8-27B only (karr k154): the retired DeepSeek-V4-Flash-0731,
-      GLM-5.2-NVFP4 and Kimi-K2.7-Code checkpoints are dropped, and both
-      remaining models are text + image. Doc-sourced (Hetzner blog + docs
-      catalog, 2026-09-17); the live t/88_live_hetzner.t drift check confirms.
-      Default model unchanged.
+    - Tool wire-translation is a single source of truth in the Langertha::Tool
+      / ToolCall / ToolResult / ToolChoice value objects, keyed by a per-engine
+      `tool_wire_format` tag (openai | anthropic | gemini | ollama | responses
+      | hermes). Engines no longer carry per-format format_tools /
+      response_tool_calls / extract_tool_call / response_text_content /
+      format_tool_results copies — Langertha::Role::Tools delegates to the
+      value objects via the tag. ToolCall->extract is now strictly the
+      format-pinned extract($fmt, $data), the one canonical inbound entry
+      point (per-format response-walking lives only in locate()); the legacy
+      self-sniffing single-arg form survives only behind the
+      Langertha::Output::Tools back-compat facade as extract_sniff($data).
+      ToolChoice gained the same unified to($fmt) dispatch the other value
+      objects already had. Two related compatibility-shim exposures are fixed
+      in the same seam: ToolCall::from_gemini and ::from_anthropic now decode a
+      JSON-string args/input payload — Vertex-style proxies, OpenRouter, LM
+      Studio re-encoding one dialect inside another, and the AKI.IO
+      /anthropic shim all send tool arguments as a string rather than an
+      object — instead of silently reducing them to an empty hash. New
+      Langertha::ToolResult value object for tool execution results.
+      Non-ASCII tool arguments are UTF-8-safe on the Response.tool_calls path.
+      (ADR 0001 / 0003.)
 
-    - Open-Responses streaming now surfaces the prefix-cache read count and cost
-      on the final chunk (karr k160): a streamed response.completed lifts
-      cached_tokens (via Langertha::Usage->from_hash, the same value object the
-      non-streaming k159 path uses) onto Stream::Chunk->cached_tokens, and carries
-      input_tokens_details and the Perplexity usage.cost block through the chunk
-      usage — closing the streaming/non-streaming asymmetry.
+    - The assistant echo Role::Tools::format_tool_results builds for a tool
+      loop's next turn now carries the reasoning fields back (reasoning_content,
+      reasoning and reasoning_details on the openai dialect; message.thinking
+      on the ollama branch) when the provider sent them, and nothing else
+      otherwise. DeepSeek answers HTTP 400 on a tool loop's second iteration
+      when reasoning_content is missing while tools are present, so
+      Engine::DeepSeek plus chat_with_tools_f / Chat / Raider failed outright;
+      Moonshot, OpenRouter, Mistral and xAI carry the same obligation in
+      softer forms.
 
-    - Responses finish_reason is now tool_calls whenever the response carries
-      tool calls, regardless of a coexisting completed assistant message or the
-      output[] ordering (karr k171) — previously a completed message alongside a
-      tool call reported stop. And a usage payload without output_tokens_details
-      no longer autovivifies an empty block into $response->raw->usage (karr k168).
+    - The synchronous tool-calling loop now decodes the wire body the same
+      way the async paths do (parse_response). It previously fed the
+      already-flattened Langertha::Response back into response_tool_calls /
+      response_text_content / format_tool_results — which walk the provider's
+      structured block list, the very thing the Response had flattened to a
+      string — so a sync simple_chat_with_tools mis-parsed the model's tool
+      calls and, as a side effect, decoded the body (and ran
+      _update_rate_limit) twice per turn.
 
-    - Streaming (async path): the final unterminated SSE/NDJSON event is no
-      longer dropped (karr k166) — a provider that sends its last chunk (with
-      finish_reason / usage) and closes without a trailing blank line now has
-      that event parsed, matching the sync path; event/line splitting is also
-      CRLF-tolerant now, like the sync path.
+    - The Open-Responses tool-result envelope is wire-correct end to end, so
+      an OpenAIResponses tool loop survives past its first turn. format_tool_results
+      returned an arrayref for the `responses` format and a plain list on
+      every other wire, so the one bogus element landed on the conversation
+      and turn two died with "Not a HASH reference"; the responses branch now
+      returns a list too, echoes the model's output items ahead of the
+      results, and hoists a function_call out of the legacy
+      nested-in-a-message shape (the API only pairs a function_call_output
+      with a top-level function_call). ToolResult->to_responses now emits the
+      Responses input item { type: function_call_output, call_id, output }
+      instead of an { role: tool, ... } chat message.
 
-    - chat_f no longer trips the Cerebras/Groq tools+response_format croak on an
-      empty tools => [] (karr k169), and no longer attaches a false-success
-      empty-argument synthetic tool_call when a forced-tool rewrite returns valid
-      but non-object JSON — it leaves tool_calls unset so the caller sees the gap
-      (karr k170).
+    - Cerebras and Groq raise a clear local error instead of an opaque
+      provider HTTP 400 when a single request combines `tools` with a
+      structured-output `response_format` — no boolean capability flag can
+      express a mutual exclusion between two capabilities, so chat_f and
+      chat_stream_realtime_f consult a per-engine guard instead (Cerebras
+      refuses tools alongside response_format of either type; Groq refuses
+      tools, or streaming, alongside json_schema output only — json_object
+      stays allowed with tools). chat_f no longer trips that guard on an empty
+      `tools => []`, and no longer attaches a false-success empty-argument
+      synthetic tool_call when a forced-tool rewrite returns valid but
+      non-object JSON — it leaves tool_calls unset so the caller sees the gap.
+      (ADR 0021.)
 
-    - Anthropic streaming now delivers finish_reason and usage on the is_final
-      chunk (karr k167): Anthropic splits them across message_delta (metadata,
-      not final) and message_stop (final, empty), so the documented
-      `if ($chunk->is_final) { ...$chunk->finish_reason... }` consumer previously
-      got nothing on Anthropic; the message_delta metadata is now replayed onto
-      the is_final message_stop chunk, matching every other dialect.
+    - Engine capabilities are now model-scoped on the tool /
+      structured-output axis: supports() used to answer from one identical
+      flag row shared across the whole OpenAI-dialect fleet — often wrong —
+      so chat_f's auto-rewrite decided on a constant, and several engines
+      silently ignored a tool_choice the caller believed was forced.
+      engine_capabilities gained a per-model correction layer (an ordered
+      model-id/regex -> {cap => 0|1} table) on top of the engine-wide
+      correction: Moonshot's kimi-k3 drops tool_choice_named (thinking
+      forbids a forced tool) while its K2.x siblings drop tool_choice_any;
+      DeepSeek drops response_format_json_schema; MiniMax, Ollama's /v1
+      endpoint, llama.cpp, SGLang, Scaleway and Hetzner each clear the
+      tool_choice / response_format / parallel_tool_use flags their wire
+      does not honour. No public API change — supports() and chat_f simply
+      tell the truth per model now. (ADR 0019, amends ADR 0002.)
 
-    - Response parsers fail gracefully on a malformed 200 body (karr k171):
-      AnthropicCompatible chat_response defaults a missing content array to empty
-      instead of dereferencing @{undef}, and OpenAICompatible embedding_response
-      croaks a readable "missing 'data' array" message (with any payload error)
-      instead of a raw deref crash.
+    - Hermes tool calling no longer crashes a raid on a valid-but-non-object
+      <tool_call> payload: only a hash carrying a non-empty name reaches the
+      tool loop now, so an arrayref, a bare scalar or a nameless object is
+      skipped instead of dying with a raw deref / "Tool '' not found" error.
+      Affects the Hermes-dialect engines (NousResearch, AKI).
 
-    - Raider: a raid paused by an interactive self-tool (raider_ask_user etc.)
-      in a parallel-tool batch no longer re-runs the tool calls that already
-      completed before it, and no longer drops the self-tools queued after it
-      (karr k162). The continuation now carries only the calls after the pausing
-      one and respond_f's resume loop mirrors the main loop, so side effects fire
-      once and every tool_use ends with exactly one tool_result — the earlier
-      behaviour produced duplicate side effects and a duplicate tool_result per
-      id, which strict providers (Anthropic) reject with a 400.
+    - Structured output (`response_format`) now takes the wire-correct path
+      per dialect instead of falling through to a generic body-spread: a
+      per-request value passed to chat_f was previously ignored by Anthropic,
+      Ollama and Gemini (all three read only the engine attribute), so
+      Anthropic answered 400 and Ollama/Gemini carried the format as dead
+      weight while the structure itself went missing — all three now resolve
+      per-request before the engine attribute. Engine::Anthropic (first-party
+      Claude Messages API) now takes structured output natively as
+      `output_config.format` rather than through the synthesized-tool-plus-
+      forced-tool_choice rewrite the legacy /anthropic shim engines still use;
+      this also makes structured output stream, merges with
+      output_config.effort rather than clobbering it, and emits `strict:true`
+      for a closed schema. Fable 5.1 and Mythos 5.1 400 on forced tool use, so
+      those models clear tool_choice_named/tool_choice_any and chat_f
+      auto-routes a forced named tool through the native structured-output
+      path there instead. Gemini now emits `responseJsonSchema` (which
+      accepts an OpenAI-shaped JSON Schema directly) instead of the
+      deprecated `responseSchema` (which wanted Google's own Schema proto
+      dialect and could translate a JSON-Schema-keyword schema wrong).
+      Engine::OpenAIResponses sends structured output under `text.format`
+      (the Responses API has no response_format parameter, and the
+      json_schema object is flat rather than nested) and no longer
+      advertises `streaming` — it had inherited the flag from Role::Streaming
+      while stream_format was undef, so a caller routing on
+      supports('streaming') reached a chat-completions stream path that
+      doesn't exist for this engine. A per-request response_format is now
+      honoured on the streaming path (chat_stream_realtime_f /
+      chat_stream_request), not only on chat_request: per-request beats the
+      engine attribute and the key is stripped from the wire extras, closing
+      an earlier gap where a streamed format was silently dropped and a
+      leaked top-level field made Anthropic answer 400. Gemini streams it as
+      generationConfig.responseJsonSchema + responseMimeType, Ollama as the
+      `format` parameter, and first-party Anthropic through the native
+      output_config.format path; the legacy /anthropic shim engines instead
+      croak on a streamed response_format, since they can't synthesize a
+      forced tool mid-stream. (Amends ADR 0005.)
 
-    - Raider: corrected the misleading "fire-and-forget" comment on the
-      per-message session-history embedding — it is a blocking, synchronous
-      LWP call run inline in the async raid loop (karr k165; moving it off the
-      loop-critical path is tracked as k172).
+    - Anthropic temperature/top_p/top_k are deprecated on the Messages API
+      and 400 on a non-default value for Opus 4.7+, Opus 4.8 and the whole
+      5-series (Opus 5, Sonnet 5, Fable 5/5.1, Mythos 5/5.1); Engine::Anthropic
+      now clears the temperature capability for those models and keeps the
+      field off the wire whenever the selected model rejects it (Opus 4.6,
+      Sonnet 4.6, Haiku 4.5 and older still send it). thinking.display now
+      defaults to "omitted" on current models (leaving $response->thinking
+      empty); a new thinking_display knob (attribute + chat_f control) can
+      ask for "summarized" instead. Prompt-caching POD now also records that
+      a successful request proves nothing about caching — only
+      usage.cache_read_input_tokens does, since the minimum cacheable prefix
+      is model-dependent and short prompts silently skip the cache.
 
-    - decode_loose_json is now UTF-8-safe and can no longer hang (karr k161): it
-      encode_utf8's each candidate before the utf8 decode_json, so a structured
-      result containing any non-ASCII character (e.g. a Perplexity search answer
-      with an umlaut or emoji) parses instead of dying with "Wide character in
-      subroutine entry" and being silently dropped; and its brace-trim loop now
-      bails when the candidate stops shrinking, so unbalanced JSON such as
-      `{{"a":1}` returns undef instead of spinning forever and wedging the async
-      event loop.
+    - New request-side `reasoning_effort` control normalized across engines
+      (vocabulary none|minimal|low|medium|high|xhigh|max, emitted
+      predicate-gated), serialized per-wire by a new Langertha::Reasoning
+      value object: openai flat `reasoning_effort`; responses nested
+      `reasoning:{effort}`; anthropic `output_config.effort` plus
+      `thinking:{type:adaptive}` (skipped on always-on Fable/Mythos models);
+      gemini `generationConfig.thinkingConfig.thinkingLevel`. Composed on
+      OpenAIBase, AnthropicBase and Gemini, part of the request-side-controls
+      quartet (ADR 0009). DeepSeek shapes it model-gated (V4 generation:
+      flat reasoning_effort none|low|high|max uniformly, including
+      deepseek-v4-pro and unknown V4 ids; legacy V3.2:
+      `thinking:{type:enabled}`); MiniMax (OpenAI endpoint) and Perplexity
+      clear the capability and never emit it. Moonshot's OpenAI endpoint
+      controls reasoning via a Kimi-specific `thinking` object rather than
+      reasoning_effort, so that engine clears the capability too — route
+      reasoning through MoonshotAnthropic instead, where kimi-k3's
+      server-side default is documented as 'max' (deliberately not wired as
+      a role default). Ollama's GPT-OSS family takes graded level strings
+      (low|medium|high|max, with none/minimal floored to low — GPT-OSS
+      always reasons, there's no "off") on the top-level `think` field, not
+      the nested `options.think`, which Ollama silently ignores.
 
-    - Runtime metrics: the synchronous poll_metrics / export_otlp now return the
-      records ArrayRef / HTTP::Response they document, not the underlying Future
-      (karr k164). IO::Async::Loop->await returns the future itself, so the
-      wrappers were missing ->get and the documented for(@$records) died on "Not
-      an ARRAY reference"; the runtime-metrics live test now drives the sync
-      public API so a real server run confirms the fix.
+      Gemini's reasoning control is split by generation and enforced with a
+      croak on any ambiguous combination: Gemini 2.5-* takes
+      `thinking_budget` (an integer budget with a per-model floor/ceiling),
+      Gemini 3 (the default, up from gemini-2.5-flash) takes
+      `reasoning_effort` — never both, never the wrong one for the model.
+      Per-model clamps on the accepted effort vocabulary: gemini-3.7-flash,
+      gemini-3.8-flash and gemini-3.1-pro all drop `minimal` (low|medium|high
+      only, so none/minimal clamp to low); gemini-3-pro is binary (low|high
+      only); every other Gemini 3 id keeps the full minimal..high set.
 
-    - Hermes tool calling no longer crashes the raid on a valid-but-non-object
-      <tool_call> payload (karr k163): response_tool_calls guards the decoded
-      JSON the way Langertha::ToolCall->extract_hermes_from_text does — only a
-      hash carrying a non-empty name reaches the tool loop, so an arrayref, a
-      bare scalar, or a nameless object is skipped instead of dying with "Not a
-      HASH reference" / "Tool '' not found". Affects Hermes engines (NousResearch,
-      AKI).
+      The reasoning wire-truth for every model — accepted vocabulary,
+      per-wire divergence, and numeric bounds — now lives in one typed
+      Langertha::Reasoning::Profile value object (resolved most-specific-first
+      by model id), replacing the scattered per-model hashes and regexes that
+      used to live inline in Langertha::Reasoning. On OpenAI: gpt-6-astra
+      (new to the model list — 1.05M context, 128K max output, text+image)
+      and gpt-5.6-*/gpt-5.5-* both drop `minimal`, and both deliberately
+      diverge by wire for `max` — accepted on the Responses API but rejected
+      (HTTP 400) on Chat Completions for these two generations; gpt-5.1 drops
+      minimal/xhigh/max entirely (none|low|medium|high), with a
+      gpt-5.1-codex-max carve-out that re-adds xhigh on both wires; legacy
+      gpt-5 keeps minimal|low|medium|high; unlisted ids keep the full
+      vocabulary. On Anthropic, Claude 4.6 (Opus/Sonnet) drops `xhigh` from
+      the effort vocabulary that 4.7+ and the 5-series accept. Those same
+      OpenAI reasoning-model families (gpt-5.x, gpt-6) also get
+      `max_completion_tokens` instead of `max_tokens` for response_size and
+      the per-request max_tokens control, since they reject max_tokens
+      outright with HTTP 400 — gpt-4.x/gpt-4o still accept it. (ADR 0023.)
 
-    - Engine::Perplexity streaming no longer drops citations: a streamed
-      search-augmented reply lifts the search_results block from the terminal
-      response.completed frame onto the final Langertha::Stream::Chunk, reachable
-      as $chunk->citations and, off the iterator, as $stream->citations — the
-      streaming counterpart to $response->citations (karr k158).
+      Model reasoning (the "thinking" output, as opposed to the
+      reasoning_effort input control above) is now surfaced consistently on
+      both the non-streaming and streaming paths. Non-streaming: the shared
+      OpenAI-compatible chat_response reads the bare `reasoning` key (vLLM,
+      Groq, Cerebras, OpenRouter, AKI) as well as `reasoning_content` —
+      whichever spelling carries the thought wins, so an empty
+      `reasoning_content` stub can't mask a filled `reasoning` (vLLM renamed
+      the field and warns about exactly this); Gemini's stream parser walks
+      every content part so a leading thought no longer hides the answer;
+      Ollama's native chat_response reads message.thinking. Streaming: each
+      Stream::Chunk carries a `thinking` delta, chat_stream_realtime_f
+      returns the aggregated thinking as an additive trailing element, and
+      simple_chat_stream returns it in list context, matching
+      $response->thinking on the non-streaming path.
 
-    - Open-Responses engines (Engine::Perplexity, Engine::OpenAIResponses) now
-      surface the automatic prompt-cache counts the Agent / Responses wire nests
-      under usage.input_tokens_details: $response->usage->cached_tokens (read)
-      and $response->usage->cache_write_tokens (write) are populated the same way
-      they already are for the OpenAI and Anthropic wires, and $response->cached_tokens
-      reflects the read count (karr k159). Langertha::Usage->from_hash learned the
-      input_tokens_details spelling; the Perplexity per-call usage.cost block is
-      passed through under $response->usage->{cost}.
+    - Engine::Anthropic's inference_geo POD documented an 'eu' value as an
+      EU-data-residency guarantee; Anthropic's first-party API actually only
+      accepts 'global' (default) and 'us'. The POD now states the real value
+      set, notes the Claude-4.6+ requirement and the 1.1x 'us' billing, and
+      points EU-residency-sensitive users at Langertha's EU-hosted engines
+      instead. No behaviour change — the attribute itself is unchanged, only
+      the documentation was wrong.
 
-    - DeepSeek: the default model is now deepseek-flash (DeepSeek-V4.1-Flash,
-      native multimodal vision, 1M context), the stable id that supersedes the
-      retired deepseek-v4-flash — which DeepSeek only temporarily routes to
-      V4.1-Flash (karr k150). reasoning_effort on the V4 generation now accepts
-      none|low|high|max with no per-model difference: deepseek-v4-pro (which
-      continues as its own model with unchanged billing) and unknown V4 ids pass
-      low through instead of dropping it, and none disables thinking.
+    - New request-side prompt-caching controls, composed only on the two
+      engine families with a real request-side knob: AnthropicBase gets
+      `prompt_cache` (bool) plus optional `prompt_cache_ttl` (5m|1h), emitted
+      as the top-level auto-place `cache_control:{type:ephemeral[,ttl]}`
+      form; OpenAIBase gets `prompt_cache_key` (OpenAI's own caching is
+      otherwise automatic), emitted flat. Two distinct capability flags
+      reflect the asymmetry, and each base clears the flag its wire doesn't
+      accept (Gemini/DeepSeek/others cache implicitly with no parameter;
+      Perplexity's classic Sonar path takes no request knobs either).
+      (ADR 0009.)
 
-    - XAI default model is now grok-4.6, the current xAI flagship (500K
-      context); grok-4.3 (1M context) became a cheaper mid-tier and grok-4.5
-      (500K) also joined the line, both still selectable via `model` (karr
-      k152). The engine POD is corrected accordingly — the old "grok-4.3
-      flagship, 1M context" description described a model that is no longer the
-      default.
+      Prompt-cache token accounting is now normalized end-to-end:
+      $response->usage->cache_write_tokens reads OpenAI's
+      prompt_tokens_details.cache_write_tokens or Anthropic's
+      cache_creation_input_tokens; the cache-read count (Usage->cached_tokens,
+      and the back-compat $response->cached_tokens alias) now also reads the
+      Anthropic wire's usage.cache_read_input_tokens, not only the OpenAI
+      spelling; and the streaming path carries cached_tokens on the final
+      chunk the same way the non-streaming path always has. The Open-Responses
+      engines (Perplexity, OpenAIResponses) surface the same automatic
+      prompt-cache counts the Agent/Responses wire nests under
+      usage.input_tokens_details — on both the non-streaming response and,
+      now, the final streamed chunk — plus the Perplexity per-call
+      usage.cost block, passed through under $response->usage->{cost}.
 
-    - gemini-3.8-flash now clamps thinkingLevel=minimal (and none) down to low
-      like gemini-3.7-flash — the 3.8 Flash level set is low|medium|high with no
-      minimal, so an unclamped minimal would 400 (karr k153). The Gemini engine
-      POD gains the stable gemini-3.8-flash / gemini-3.7-flash Flash line;
-      gemini-3-flash-preview stays the default (still the Gemini 3 model that
-      accepts minimal).
+    - New Langertha::CachedContent value object and Langertha::Role::
+      CachedContent lifecycle wrapper for Gemini's explicit cachedContent
+      resource (async + sync create/get/list/update/delete over
+      /v1beta/cachedContents, with TTL/expiration). Engine::Gemini emits
+      cachedContent as a sibling body field on chat and streaming requests
+      when set; the cached_content capability is registered for Gemini 2.5+
+      and Gemini 3, and usageMetadata.cachedContentTokenCount surfaces as
+      Response.usage.cached_content_token_count. list_cached_contents no
+      longer dies while following the pagination token.
 
-    - Engine::Perplexity (Agent API) is confirmed working end-to-end against the
-      live wire and is no longer marked "work in progress" (karr k147, de-risking
-      k139): search-augmented chat returns content plus citations, a top-level
-      response_format=json_schema is honored with strict enforced, and the
-      typed-SSE stream parses. A preset is a routing label, not a fixed model —
-      read the actual model off $response->model (fast/low/medium all resolved to
-      openai/gpt-5.6-luna). json_object is rejected (the response_format type enum
-      is json_schema/text) and reasoning_effort is accepted on every preset.
-      Adds a gated live test (t/85_live_perplexity.t) and offline regression
-      fixtures captured from the real wire.
+    - Langertha::Response gained ttft_seconds and total_seconds accessors
+      (plus has_ttft/has_total predicates) on the timing hash. Role::Chat
+      measures total_seconds around a sync request and both ttft_seconds and
+      total_seconds as streaming chunks arrive, under a first-write-wins
+      policy: a provider-supplied duration (e.g. Ollama's server-side
+      total_seconds, which excludes network jitter and is the better signal
+      for model-latency observability) always trumps the client wall-clock
+      measurement. Role::Langfuse's around simple_chat anchors its
+      end_time/completion_start_time to this response-side timing instead of
+      client-side clock reads, so a generation event spans the real call
+      window; negative deltas from clock skew are clamped. clone_with now
+      iterates the Moose metaclass instead of a hand-rolled attribute list,
+      so probes/raw/timing survive any clone chain and newly added
+      attributes are picked up automatically — this closed a bug where a
+      sequential clone_with(timing => ...) then clone_with(rate_limit => ...)
+      silently dropped the timing hash on the second clone. (ADR 0011.)
 
-    - Real OpenAI and Anthropic response captures back the rate-limit tests
-      (karr k137). t/data carries one verbatim 200 per wire family with its
-      response headers, taken through the engines themselves, and
-      t/12_rate_limit.t parses those instead of hand-written header sets: the
-      six x-ratelimit-* headers OpenAI sends (a sub-second `12ms` reset and a
-      literal `0s` among them) and the twelve anthropic-ratelimit-* headers
-      Anthropic sends, four of which reach only `raw`. Account identifiers in
-      the captures carry placeholder values.
+    - Response->usage is now coerced to a Langertha::Usage object in
+      BUILDARGS (engines still pass the raw provider usage HashRef; the
+      constructor upgrades it via Usage->from_hash), so the normalized
+      accessors (input_tokens/output_tokens/total_tokens) and the
+      to_openai_format/to_anthropic_format/to_ollama_format serializers are
+      reachable from every real engine response; a %{} overload backed by a
+      Hash::Util::FieldHash keeps $response->usage->{prompt_tokens}-style
+      hash access working for callers who relied on the raw shape (a naive
+      overload isn't possible on a Moose class — it hijacks the accessors'
+      internal derefs). Response gained a bounded TO_JSON (delegating to a
+      new to_hash: content plus whichever metadata fields are present — id,
+      model, finish_reason, usage, timing, created, thinking, rate_limit,
+      tool_calls — deliberately excluding raw and probes, which can be
+      unboundedly large) so every JSON::MaybeXS backend encodes a bare
+      Response identically instead of the previous backend-dependent
+      behaviour (Cpanel::JSON::XS silently fell back to the string overload;
+      JSON::XS/JSON::PP threw). Usage, ToolCall, ToolChoice, Tool, Cost and
+      UsageRecord all gained a matching plain-delegator TO_JSON so they're
+      transparent to any encoder configured with convert_blessed — which the
+      shared $engine->json encoder now enables by default, rather than
+      croaking on the distribution's own value objects. RateLimit's TO_JSON
+      deliberately omits `raw` (the full provider header dump) even though
+      its to_hash includes it, since TO_JSON fires implicitly and the caller
+      can't see what it contributed.
 
-    - simple_chat / chat now carp when a message argument exactly matches a
-      chat_f control name (karr k122) — e.g. `simple_chat($prompt,
-      reasoning_effort => 'high')`, which silently sent the control name and its
-      value as extra user turns. Diagnostic only: the strings are still sent as
-      messages, and a control word used as real message text (a substring, or a
-      hashref's content) does not warn.
+    - Response.created is now a Langertha::Moment value object (a Time::Moment
+      subclass) rather than a raw provider scalar: it numifies to the Unix
+      epoch (0 + $response->created) and stringifies to the full ISO-8601
+      instant with sub-seconds, so both a numeric and a formatted read work
+      off the one field. Engines hand the provider's wire value to the
+      lenient Moment->from_wire inbound door, which never dies — an
+      unparseable stamp simply drops the field — and this replaced the
+      earlier engine-side epoch conversion (e.g. Ollama's created_at
+      normalization), which now lives once in the value object. Deliberately
+      not a Moose class (the one documented exception, since Time::Moment is
+      an XS type that blesses from inside its constructors). (ADR 0017.)
 
-    - RateLimit reset is now typed per bucket (karr k121): requests_reset_at /
-      tokens_reset_at (Langertha::Moment, "when") and requests_reset_after /
-      tokens_reset_after (seconds, "in how long"), reconciled against a new
-      `received` stamp. The parser fills whichever half the wire spoke — OpenAI's
-      Go-duration reset headers become *_reset_after, Anthropic's RFC 3339 become
-      *_reset_at — and derives the other lazily; both stay undef when a provider
-      sends no reset header. The untyped requests_reset / tokens_reset strings
-      are kept verbatim for back-compatibility. `raw` now collects the full
-      rate-limit header superset (anthropic-priority-*, per-window buckets,
-      Mistral's -minute names) instead of only the normalized subset.
+    - Langertha::Response and Langertha::Result (and Raider::Result through
+      @ISA) are now always true in boolean context (overload bool => 1).
+      Both classes previously overloaded only `""` with fallback => 1, so
+      Perl derived boolean from the content string — an object whose content
+      was empty or the literal '0' evaluated false. That silently dropped
+      every tool-call-only Response and, worse, every Raider question, pause
+      and abort Result (their message lives in content, not text), so
+      `if (my $r = $raider->raid(...))` discarded exactly the results a
+      caller must handle. The `""` contract is untouched — stringify, eq and
+      concat behave exactly as before.
 
-    - Usage exposes the prompt-cache write count as
-      `$response->usage->cache_write_tokens` (karr k130), parsed from OpenAI's
-      `prompt_tokens_details.cache_write_tokens` or Anthropic's
-      `cache_creation_input_tokens`. The cache-read count moved to the same home
-      (`Usage->cached_tokens`, parsed from both wire spellings); the public
-      `$response->cached_tokens` is unchanged, now a back-compat alias lifted
-      from the Usage object rather than hand-parsed in Response.
+    - Several streaming and response-parsing edge cases are now handled
+      instead of dying or silently losing data: the async SSE/NDJSON reader
+      no longer drops a final event that arrives without a trailing blank
+      line (a provider that sends its last chunk, with finish_reason/usage,
+      and closes the connection immediately) — event/line splitting is also
+      CRLF-tolerant now, matching the sync path. Anthropic streaming now
+      delivers finish_reason and usage on the is_final chunk: Anthropic
+      splits them across message_delta (metadata, not final) and
+      message_stop (final, but empty), so the documented
+      `if ($chunk->is_final) { ...$chunk->finish_reason... }` pattern
+      previously got nothing on Anthropic; the message_delta metadata is now
+      replayed onto the is_final message_stop chunk, matching every other
+      dialect. The Open-Responses finish_reason is now `tool_calls`
+      whenever the response actually carries tool calls, regardless of a
+      coexisting completed assistant message or output[] ordering (a
+      completed message alongside a tool call previously reported `stop`),
+      and a usage payload missing output_tokens_details no longer
+      autovivifies an empty block onto $response->raw->usage.
+      AnthropicCompatible's chat_response now defaults a missing content
+      array to empty instead of dereferencing undef, and OpenAICompatible's
+      embedding_response croaks a readable "missing 'data' array" message
+      instead of a raw deref crash on a malformed 200 body.
 
-    - Cerebras and Groq raise a clear local error instead of an opaque provider
-      HTTP 400 when a single request combines tools with a structured-output
-      response_format (karr k142). No boolean capability flag can express a
-      mutual exclusion between two capabilities, so chat_f and
-      chat_stream_realtime_f consult a per-engine hook: Cerebras refuses tools
-      alongside response_format of either type; Groq refuses tools, or
-      streaming, alongside json_schema output only (json_object stays allowed
-      with tools). Every other engine keeps the no-op default and is unaffected.
-
-    - Model reasoning is surfaced on both the non-streaming and streaming paths
-      (karr k129, k79). Non-streaming: the shared OpenAI-compatible chat_response
-      reads the bare `reasoning` key (vLLM, Groq, Cerebras, OpenRouter, AKI) as
-      well as `reasoning_content`, so $response->thinking is no longer empty on
-      those engines; whichever of the two spellings carries the thought wins, so
-      an empty `reasoning_content` stub cannot mask a filled `reasoning` (vLLM
-      renamed the field in 0.16 and warns about exactly that); Gemini's stream
-      parser walks every content part, so a leading thought no longer hides the
-      answer; Ollama's native chat_response reads message.thinking. Streaming:
-      each Stream::Chunk carries a `thinking` delta (filled per dialect and
-      delivered to the real-time callback),
-      chat_stream_realtime_f returns the aggregated thinking as an additive
-      trailing element, and simple_chat_stream returns it in list context —
-      matching $response->thinking on the non-streaming path.
-
-    - Gemini structured output uses responseJsonSchema, not the deprecated
-      responseSchema (karr k140). chat_f hands Gemini an OpenAI-shaped JSON
-      Schema, which the current responseJsonSchema field accepts directly; the
-      deprecated responseSchema wanted Google's own Schema proto dialect, so a
-      schema using JSON-Schema keywords could translate wrong. Both chat_request
-      and chat_stream_request now emit responseJsonSchema alongside the
-      still-required responseMimeType.
-
-    - Reasoning-effort value clamps are model-gated, not wire-gated (karr k140,
-      k151). The OpenAI clamp dropped `max` — a value the current ReasoningEffort
-      schema accepts — while passing `minimal` to gpt-5.6 / gpt-5.5 models that
-      reject it, and to_responses clamped nothing, so one engine honoured `max`
-      on the Chat Completions wire but dropped it on the Responses wire.
-      Langertha::Reasoning now gates the accepted effort set per model generation
-      (gpt-6 astra: low|medium|high|xhigh|max, no none/minimal; gpt-5.6-* /
-      gpt-5.5-*: none|low|medium|high|xhigh(|max), no minimal; legacy gpt-5:
-      minimal|low|medium|high) through one gate shared by both OpenAI wires, so
-      they can never diverge; unlisted model ids keep the full enum. gpt-6-astra
-      also joins the Engine::OpenAI model list (1.05M context, 128K max output,
-      text+image, cutoff 2026-04-30). On Gemini, gemini-3.7-flash dropped
-      `minimal` from its thinkingLevel set, so none / minimal now clamp to low
-      there.
-
-    - Engine capabilities are model-scoped on the tool / structured-output axis
-      (karr k138). supports() used to answer from one identical flag row shared
-      across the whole OpenAI-dialect fleet — many of them wrong — so chat_f's
-      auto-rewrite decided on a constant, and several engines silently ignored a
-      tool_choice the caller believed was forced. engine_capabilities now adds a
-      per-model correction layer (Role::Capabilities::model_capability_corrections,
-      an ordered model-id/regex -> {cap => 0|1} table) on top of the engine-wide
-      `around engine_capabilities` escape hatch: Moonshot's kimi-k3 drops
-      tool_choice_named (thinking forbids a forced tool) while its K2.x siblings
-      drop tool_choice_any; DeepSeek drops response_format_json_schema; and
-      MiniMax, Ollama's /v1 endpoint, llama.cpp, SGLang, Scaleway and the
-      experimental Hetzner engine each clear the tool_choice / response_format /
-      parallel_tool_use flags their wire does not honour. No public API change —
-      supports() and chat_f simply tell the truth per model now. An ADR 0002
-      amendment.
-
-    - Engine::Anthropic uses native structured output (karr k133). The
-      first-party Claude Messages API now takes structured output as
-      output_config.format, so response_format is emitted there directly instead
-      of through the synthesized-tool + forced-tool_choice rewrite (which the
-      legacy /anthropic shim engines still use). This also makes structured
-      output stream, and merges with output_config.effort rather than clobbering
-      it. Forced tool use (tool_choice `any` / a named `tool`) 400s on Fable 5.1
-      and Mythos 5.1, so those models clear tool_choice_named / tool_choice_any
-      (k138 per-model correction) and chat_f auto-routes a forced named tool
-      through the native path there. Langertha::Tool->to_anthropic now also
-      emits strict:true for a closed schema (additionalProperties:false plus a
-      non-empty required list). Amends ADR 0005.
-
-    - Anthropic temperature and thinking.display wire drift (karr k135).
-      temperature / top_p / top_k are deprecated on the Messages API and 400 on
-      a non-default value on Opus 4.7, Opus 4.8 and the whole 5-series (Opus 5,
-      Sonnet 5, Fable 5/5.1, Mythos 5/5.1); Engine::Anthropic clears the
-      temperature capability for those models and AnthropicCompatible keeps the
-      field off the wire whenever the selected model rejects it — Opus 4.6,
-      Sonnet 4.6, Haiku 4.5 and older still send it. thinking.display now
-      defaults to "omitted" on current models, leaving $response->thinking empty;
-      a new thinking_display knob (attribute + chat_f control) emits
-      thinking.display so a caller can ask for "summarized". Prompt-caching POD
-      records that the top-level cache_control form is correct and that a
-      successful request proves nothing about caching — only
-      usage.cache_read_input_tokens does (the minimum cacheable prefix is
-      model-dependent and short prompts silently skip the cache).
-    - Engine::Perplexity migrated to the Agent API (k139). Sonar Chat Completions
-      reached end of life 2026-09-27; the engine now speaks the Agent API
-      (POST /v1/agent), the Open-Responses wire envelope (input / instructions /
-      typed output[] / input_tokens usage), not /chat/completions. It is a lean
-      engine on Engine::Remote composing Role::ResponsesCompatible, so it advertises
-      only the capabilities it really has rather than inheriting the OpenAI
-      dialect's. The four model ids (sonar, sonar-pro, sonar-reasoning-pro,
-      sonar-deep-research) stay as the selector and map to Agent presets
-      (fast/low/medium/high), which bundle web search and citations. Responses
-      carry sources on Response.citations, lifted from the Agent search_results
-      block (the classic top-level citations[] is gone). Structured output goes
-      top-level as response_format=json_schema; reasoning_effort is accepted (wire
-      reasoning.effort); json_object mode and prompt_cache_key are gone. Bearer auth
-      and LANGERTHA_PERPLEXITY_API_KEY are unchanged. Perplexity remains the
-      exemplar of the ADR 0005 forced-tool -> response_format rewrite. Several wire
-      details (typed input requirement, response_format slot, exact preset models,
-      citation marker format, streaming SSE framing) are annotated LIVE-CONFIRM in
-      the code pending a live call.
-
-    - Response gains a citations attribute (ArrayRef of source hashrefs) for
-      search-augmented engines; undef where the provider reports none.
-
-    - The Open-Responses wire envelope is now a role,
-      Langertha::Role::ResponsesCompatible (k139), parallel to
-      Role::OpenAICompatible / Role::AnthropicCompatible. It owns the input builder,
-      the output[] walker, usage normalization and the typed-SSE stream parser;
-      Engine::OpenAIResponses composes it and is unchanged in behaviour (it still
-      opts out of streaming). Engine::OpenAIResponses now also surfaces
-      Response.created from the response created_at stamp.
-    - Engine::AKI native default model is now MiniMax M3, replacing the EOL
-      llama3_8b_chat (karr k132). AKI.IO marks llama3_8b_chat end-of-life
-      2026-09-30, so the native engine now defaults to `minimax_m3`
-      (MiniMax M3 428B), AKI's current-generation MiniMax on the native
-      /api/endpoints listing. MiniMax is a per-account gated endpoint — a key
-      without the entitlement is answered with "Client not authorized for
-      endpoint minimax_m3!" instead of a silent fallback, so check
-      $response->model. The OpenAI- and Anthropic-compatible AKI engines
-      (Engine::AKIOpenAI, Engine::AKIAnthropic) now default to `gpt-oss-120b`, a
-      current-generation non-MiniMax model AKI.IO rates "Supported": AKI exposes
-      MiniMax M3 only on the native endpoint, and the shims' sole MiniMax id
-      (minimax-m2.5-230b) is the older generation. Both shim defaults were
-      verified live to answer gpt-oss-120b and echo it back as $response->model.
-
-    - Engine::Anthropic inference_geo documents only the values the first-party
-      API offers (karr #134). The =attr POD and SYNOPSIS promised
-      inference_geo => 'eu' as an EU data-residency guarantee, but Anthropic's
-      first-party API accepts only 'global' (the default) and 'us' — so the 'eu'
-      value was a false compliance assurance copy-pasteable straight out of the
-      docs. The POD now states the real value set, notes the Claude-4.6+
-      requirement and the 1.1x 'us' billing, and points EU users at the
-      EU-hosted engines Langertha already ships. No behaviour change; the
-      attribute is unchanged.
-
-    - Engine::OpenAIResponses emits structured output under text.format and no
-      longer advertises streaming (karr #141). The Responses API has no
-      response_format parameter — structured output goes under text.format, with
-      the json_schema object flat rather than nested — so the engine was sending
-      a body field the API does not define; it now translates the
-      Chat-Completions response_format into text.format. The engine also
-      inherited Role::Streaming's `streaming` capability while stream_format is
-      undef, so supports('streaming') answered true and a caller routing on it
-      reached an inherited chat-completions stream path; an around
-      engine_capabilities now clears the flag.
-
-    - ToolCall::from_gemini decodes a JSON-string args object (karr k131).
-      A Gemini functionCall whose `args` arrive as a JSON string — Vertex-style
-      proxies, OpenRouter or LM Studio re-encoding one dialect inside another —
-      was silently reduced to {}, so the model called the tool and it ran with
-      no arguments and no warning. from_gemini now routes args through the same
-      _decode_args door the other four inbound constructors use, symmetric with
-      the k124 fix for from_anthropic. Google-native (args as an object) is
-      unaffected; this is a compatibility-shim exposure.
-
-    - The assistant echo in a tool loop carries the reasoning fields back
-      (karr k136). Role::Tools::format_tool_results rebuilt the echo for the
-      openai dialect (~20 engines) from role/content/tool_calls only, dropping
-      reasoning_content, reasoning and reasoning_details; the ollama branch
-      dropped message.thinking the same way. DeepSeek answers HTTP 400 on the
-      second iteration of a tool loop when reasoning_content is missing while
-      tools are present, so Engine::DeepSeek plus chat_with_tools_f, Chat or
-      Raider failed outright; Moonshot, OpenRouter, Mistral and xAI carry the
-      same obligation in softer forms. Those keys are now echoed when the
-      provider sends them, and nothing else: a response without them produces
-      exactly the message it produced before.
-
-    - Engine::AKIOpenAI does native OpenAI tool calling (karr #102). The engine
-      no longer composes Role::HermesTools and no longer forces
-      tool_wire_format 'hermes': tools go out as the native `tools` array and
-      come back as a `tool_calls` block, which drops the XML prompt scaffold
-      and the prompt tokens it cost. Live-verified on llama3-chat-8b, the
-      default model and the weakest case in AKI's own support table.
-      Engine::AKIAnthropic's POD now says that tools work on /anthropic too,
-      undocumented by AKI and with tool_use `input` arriving as a JSON string.
-
-    - Real AKI.IO server captures back the response tests (karr #101). t/data
-      carries five verbatim response bodies and their response headers, taken
-      through the engines themselves, and t/28_aki_fixtures.t replays them
-      through the shipped chat_response paths of Engine::AKI, AKIOpenAI and
-      AKIAnthropic. Role::OpenAICompatible::chat_response — the path ~25
-      engines share — is covered by a real payload for the first time.
-
-    - Engine::AKIOpenAI surfaces the model reasoning field (karr #127).
-      AKI.IO ships chain-of-thought under the bare `reasoning` key that the
-      shared OpenAI-compatible path (reasoning_content only) drops; AKIOpenAI
-      now lifts it onto Response.thinking, AKI-scoped so the shared role is not
-      widened. POD on AKIOpenAI and AKIAnthropic now warns that AKI returns some
-      caller-side errors (e.g. too small a token budget to finish a tool call)
-      as HTTP 529 overloaded_error, which is deterministic, not transient.
-
-    - Role::JSON's engine encoder enables convert_blessed (karr #120). The
-      shared $engine->json now serializes the distribution's value objects
-      through their TO_JSON instead of croaking, making the "house default"
-      those objects' POD names true on the encoder every engine builds, not
-      only on Plugin::Langfuse. Plain request bodies are unaffected.
-
-    - Engine::AKI native chat_response fills id, usage, and timing (karr #126).
-      job_id becomes Response.id; prompt_length / num_generated_tokens become
-      usage; num_cached_tokens becomes cached_tokens. Timing now emits the
-      engine-agnostic total_seconds plus a native compute_seconds (both already
-      in seconds) and no longer emits a raw total_duration key, which collided
-      with Engine::Ollama's nanosecond total_duration.
-
-    - Response.cached_tokens now reads the Anthropic wire too (karr #125).
-      The BUILDARGS lift learns the Anthropic spelling
-      usage.cache_read_input_tokens alongside the OpenAI
-      usage.prompt_tokens_details.cached_tokens, so all five Anthropic-family
-      engines surface the prefix-cache read-back on the engine-agnostic
-      accessor. The write count cache_creation_input_tokens is not folded in.
-
-    - Engine::AKI native chat_response emits Response.tool_calls (karr #123).
-      The engine composes Role::HermesTools, so a <tool_call> block in the
-      native `text` field is parsed onto Response.tool_calls (ADR 0003) and
-      the tag is stripped from content, instead of being left buried as raw
-      text.
-
-    - ToolCall::from_anthropic decodes a JSON-string tool input (karr #124).
-      The AKI.IO /anthropic shim returns tool_use `input` as a JSON string
-      rather than an object; from_anthropic now routes input through the same
-      decoder from_openai uses, so tool arguments are recovered instead of
-      being silently dropped to an empty hash.
-
-    - ADR 0014 (karr #67, #68): canonical role-composition patterns. The
-      `with map { 'Langertha::Role::'.$_ } qw(...)` idiom used by both
-      Engine::OpenAIBase and Engine::AnthropicBase is captured as the
-      "-excludes canon" — the explicit list resolves collisions on
-      _build_*_wire_format / content_format / stream_format and makes
-      the intentional role inventory visible. The per-family
-      engine_capabilities correction is captured as a direction-pair
-      (OpenAI keeps prompt_cache_key and deletes prompt_cache; Anthropic
-      keeps prompt_cache and deletes prompt_cache_key — each is the
-      inapplicable flag for its family). The RuntimeKnobs asymmetry
-      (Role::OpenAICompatible aggregates knobs; Anthropic side inlines
-      them) is recorded as a deliberate dialect split because
-      dialect-aware knobs (response_format -> synth tool, parallel_tool_use
-      -> tool_choice fold, inference_geo, anthropic-version) require
-      the wire envelope in scope. CONTEXT.md gains a "Request-side
-      knobs" sibling-seam entry; CLAUDE.md picks up the -excludes
-      pattern + ADR 0014 in the architecture-decisions list.
-
-    - vLLM, SGLang, LMStudioOpenAI POD pass (karr #71, #74). vLLM now composes
-      Langertha::Role::Embedding (karr #70) — _build_supported_operations gains
-      createEmbedding and default_embedding_model returns 'default' — matching
-      what /v1/embeddings serves today (BAAI/bge-*, intfloat/e5-*, ...).
-      SYNOPSIS lifted to LlamaCpp / Hetzner parity: simple_chat, streaming,
-      chat_with_tools_f, multimodal Langertha::Content::Image input, embeddings,
-      poll_metrics_f (Runtime::MetricsPoll), reasoning models
-      (reasoning_effort for Qwen3 / DeepSeek-R1 / QwQ / Gemma 4 / Granite 3.2
-      when the server is started with the matching --reasoning-parser flag —
-      karr #77), and a VLLMHook sub-engine pointer. New =head1 REASONING MODELS
-      section documents the wire reality and the chat_template_kwargs escape
-      hatch for reasoning knobs that do not map cleanly to reasoning_effort.
-      SGLang SYNOPSIS adds the tool-calling + poll_metrics_f examples it was
-      missing (both roles are composed); LMStudioOpenAI SYNOPSIS adds the
-      embedding + tool-calling examples and explicitly notes that LM Studio
-      does not expose Prometheus /metrics, so Runtime::MetricsPoll is not
-      composed. Engine capabilities section added to all three. Offending
-      "B<THIS API IS WORK IN PROGRESS>" banners dropped on vLLM and SGLang
-      (live tests, sub-engine, MetricsPoll role exist now); kept on
-      LMStudioOpenAI pending further maturity.
-
-    - Engine-Doku-Drift fixes (karr #73). Langertha::Engine::OpenAIBase
-      "concrete engines" POD list gains the three missing cloud providers
-      (Hetzner / Moonshot / XAI) and is reordered cloud-first to match the
-      actual extends graph; Langertha::Role::OpenAICompatible "Engines using
-      this role" POD list is now grouped cloud / self-hosted like OpenAIBase
-      and complete (adds Cerebras, Hetzner, LlamaCpp, LMStudioOpenAI, MiniMax,
-      Moonshot, OpenRouter, Replicate, Scaleway, SGLang, TSystems, XAI).
-
-    - README updates (karr #72). Provider table: vLLM row now marks
-      Embeddings and Models API as supported (matches what the
-      OpenAI-compatible server actually serves); "Self-hosted with vLLM"
-      section expanded to cover streaming, MCP tool calling, /v1/embeddings,
-      and Prometheus /metrics scraping.
-
-    - Tests: t/10_engine_hierarchy.t vLLM section asserts Embedding role
-      composition, Runtime::MetricsPoll composition, createEmbedding in
-      _build_supported_operations, and default_embedding_model = 'default'.
-      t/65_tool_calling_vllm.t adds the same Embedding assertions alongside
-      the existing tool-calling suite. New t/65b_vllm_embeddings.t is an
-      11-test offline file pinning the embedding request envelope:
-      POST /v1/embeddings, body { model: 'default', input: '...' }, and the
-      explicit embedding_model override path. New t/65c_vllm_reasoning.t
-      (karr #77) is a 10-test offline file pinning reasoning_effort wire
-      dispatch: default_model, reasoning_wire_format=openai, capability flag,
-      flat low/medium/high emission, no-leakage when unset, no thinking_budget
-      on the openai wire, and the VLLMHook chat_template_kwargs escape hatch.
-
-    - Perl::Critic enforcement via .perlcriticrc (naming + always-on policies),
-      wired into dzil test via Dist::Zilla::Plugin::Test::Perl::Critic. The vLLM
-      brand capitalization and Moose lifecycle methods (BUILD, FOREIGNBUILDARGS,
-      DEMOLISH, ...) are exempt. Run `perlcritic --profile .perlcriticrc lib/ bin/
-      maint/` locally. Renamed $operationId/$opId to $operation_id/$op_id in
-      Langertha::Role::OpenAPI.
-
-    - Streaming path now surfaces cached_tokens (karr #61). karr #31 shipped
-      Langertha::Response->cached_tokens populated only on the non-streaming
-      OpenAI-compatible path; the streaming path carries usage on the final
-      chunk but never lifted usage.prompt_tokens_details.cached_tokens, so a
-      streamed response lost the prefix-cache read-back even when the server
-      reported it (SGLang return_cached_tokens_details, llama.cpp). Fix:
-      Langertha::Stream::Chunk gains a cached_tokens attribute (predicate
-      has_cached_tokens), Role::OpenAICompatible::parse_stream_chunk lifts it
-      from the usage block exactly like chat_response, and
-      Langertha::Response::BUILDARGS now lifts cached_tokens from the usage
-      hash so any Response assembled from a streamed final chunk's usage
-      carries it (explicit cached_tokens still wins). The knob itself was
-      never affected — only the read-back.
-
-    - MCP tool calling speaks the current protocol revision (Rev-2026-07-28)
-      via the new Langertha::MCP::Client, a temporary subclass of
-      Net::Async::MCP (karr #60). Net::Async::MCP 0.003 hardcodes the obsolete
-      top-level protocolVersion '2025-11-25' initialize form and sends no
-      _meta on any request; current MCP servers (MCP::Server 0.15,
-      SUPPORTED_VERSIONS = ['2026-07-28']) require the
-      io.modelcontextprotocol/protocolVersion + clientCapabilities _meta on
-      EVERY request and no longer implement initialize at all (the handshake
-      is server/discover; initialize survives only in the legacy shim, which
-      the in-process transport never engages). The subclass therefore sends
-      server/discover with _meta from initialize (server_info is read from the
-      response _meta) and carries _meta on list_tools / call_tool /
-      list_prompts / get_prompt / list_resources / read_resource / ping. All
-      MCP instantiation sites (Role::Tools, Raider inline MCP, t/64, t/66, and
-      the live tests) construct Langertha::MCP::Client instead of
-      Net::Async::MCP. Revert the call sites once upstream ships a fixed
-      client.
+    - decode_loose_json is UTF-8-safe and can no longer hang: it
+      encode_utf8's each candidate before the utf8 decode_json, so a
+      structured result containing any non-ASCII character (e.g. a
+      Perplexity search answer with an umlaut or emoji) parses instead of
+      dying with a wide-character error and being silently dropped; its
+      brace-trim loop also now bails when a candidate stops shrinking, so
+      unbalanced JSON such as `{{"a":1}` returns undef instead of spinning
+      forever and wedging the async event loop. simple_chat/chat now carp
+      when a message argument exactly matches a chat_f control name — e.g.
+      `simple_chat($prompt, reasoning_effort => 'high')`, which used to
+      silently send the control name and its value as extra user turns — as
+      a diagnostic only; the strings are still sent as messages.
 
     - Self-hosted runtime knobs for the OpenAI-compatible engines vLLM,
-      SGLang and llama.cpp (karr #31). The only genuinely per-request knobs
-      on these servers are prefix-cache isolation/reuse controls; they now
-      serialize as top-level request-body fields via the new value object
-      Langertha::Runtime::Knobs (dispatched by each engine's knob_wire_format,
-      ADR 0004 — no raw extra_body side-channel), exactly like
-      reasoning_kwargs_for / prompt_cache_kwargs_for. vLLM emits cache_salt
-      (vLLM v1.x+), SGLang cache_salt/extra_key/priority/
-      return_cached_tokens_details, llama.cpp cache_prompt/n_cache_reuse/
-      id_slot. The new Langertha::Role::RuntimeKnobs exposes the seven knob
-      attributes plus knobs_kwargs_for(%args) (per-request controls beat
-      attributes per-key, chat_f karr #46) and a knob_wire_format that croaks
-      when an engine forgets its tag — there is no shared 'openai' knob
-      dialect. The capability prefix_caching is registered (ADR 0002) meaning
-      "the wire accepts prefix-cache isolation/reuse controls", not that
-      caching is on (that is server-launch state). Langertha::Response gains a
-      cached_tokens attribute populated from
-      usage.prompt_tokens_details.cached_tokens on the OpenAI-compatible wire.
-      Speculative decoding is deliberately NOT modeled as a per-request knob —
-      it is restart-only server-launch config on all three engines
-      (--speculative-config / --speculative-* / --spec-draft-*).
+      SGLang and llama.cpp: the genuinely per-request knobs on these servers
+      are prefix-cache isolation/reuse controls, now serialized as top-level
+      request-body fields via a new Langertha::Runtime::Knobs value object
+      (no raw extra_body side-channel) — vLLM emits cache_salt, SGLang
+      cache_salt/extra_key/priority/return_cached_tokens_details, llama.cpp
+      cache_prompt/n_cache_reuse/id_slot. A per-request control beats a
+      configured attribute per-key. Speculative decoding is deliberately not
+      modeled as a per-request knob — it's restart-only server-launch
+      config on all three engines. (ADR 0012.)
 
-    - OpenAI gpt-5.x and gpt-6 reasoning models now get max_completion_tokens
-      instead of max_tokens for response_size and the per-request max_tokens
-      control (karr k55, k157). Those lines dropped max_tokens entirely —
-      gpt-5.1 / gpt-5.6-terra reject it with HTTP 400 ("Use
-      'max_completion_tokens' instead"), and gpt-6-astra is a reasoning model
-      that does the same (max_tokens is deprecated and not compatible with the
-      o-series / gpt-5 / gpt-6 reasoning family per the Chat Completions API
-      reference) — while gpt-4.x / gpt-4o still accept it.
-      Role::OpenAICompatible's completion-length body key is now
-      engine-overridable via _max_tokens_key (default 'max_tokens');
-      Engine::OpenAI overrides it for the gpt-5 and gpt-6 families by anchored
-      prefix, so gpt-5, gpt-5.1, gpt-5.6-*, gpt-6-astra all hit the new key and
-      unknown future ids keep the safe default. Verified live: the
-      reasoning_effort live test against gpt-5.x now passes.
+      Self-hosted runtime metrics scraping: Langertha::Runtime::Metrics
+      parses the Prometheus text format into an ArrayRef of {name, type,
+      value, labels} records (malformed lines are skipped, never fatal), and
+      Role::Runtime::MetricsPoll (async poll_metrics_f + sync poll_metrics
+      wrapper) is composed onto vLLM, SGLang and LlamaCpp, deriving the
+      /metrics URL by stripping the trailing /v1 from the engine's url.
+      Ollama is deliberately not composed — its /api/ps surface is JSON, not
+      Prometheus. (ADR 0014.) A new OTLP serializer (export_otlp_f/
+      export_otlp) turns those records into an OTLP/HTTP JSON metrics
+      payload and POSTs it to any OTLP receiver (OpenTelemetry Collector,
+      Prometheus OTLP receiver, Grafana) — Langfuse is deliberately not a
+      target, since its ingestion is traces-only. The synchronous
+      poll_metrics/export_otlp wrappers now actually return the records
+      ArrayRef/HTTP::Response they document instead of the underlying Future
+      (IO::Async::Loop->await returns the future itself, so the wrappers
+      were missing ->get and died on "Not an ARRAY reference").
 
-    - Langertha::Engine::Hetzner now defaults to
-      https://inference.hetzner.com/api/v1 instead of the dead
-      https://inference.hetzner.com/v1 (karr #39). The old path answered
-      HTTP 200 with the literal string "inference" for every request
-      (models, chat, with or without auth), so simple_chat and tool
-      calling both failed to parse the response. Verified live against
-      the Inference API: /api/v1/models returns exactly the four catalog
-      models (Qwen/Qwen3.6-35B-A3B-FP8, DeepSeek-V4-Flash-0731,
-      GLM-5.2-NVFP4, Kimi-K2.7-Code) and tool calling against the Qwen
-      model succeeds. The live test t/88 was also fixed to compile when a
-      Hetzner API key is present (async sub requires Future::AsyncAwait
-      loaded via `use` at compile time, not a runtime require).
+    - MCP tool calling now speaks the current protocol revision
+      (2026-07-28) via a new Langertha::MCP::Client, a temporary subclass of
+      Net::Async::MCP: the upstream module hardcodes the obsolete initialize
+      handshake and sends no _meta, while current MCP servers require
+      protocolVersion + clientCapabilities _meta on every request and no
+      longer implement initialize at all. The subclass sends server/discover
+      with the right _meta and carries it on every subsequent call. Every
+      MCP instantiation site in the distribution uses it; revert once
+      upstream ships a fix.
 
-    - chat_f now normalizes a canonical set of per-request controls
-      instead of spreading them as raw target-wire kwargs (karr #46).
-      Previously only messages/tools/tool_choice were normalized; every
-      other option was passed through verbatim, so the same call was
-      correct, ineffective, or a 400 depending on engine family
-      (temperature/max_tokens/seed silently lost on Ollama — they belong
-      under options — response_format a 400 on Anthropic, parallel_tool_use
-      only honored where the engine happened to advertise it). chat_f and
+    - Raider: a raid paused by an interactive self-tool (raider_ask_user
+      etc.) mid-way through a parallel-tool batch no longer re-runs the tool
+      calls that already completed before it, and no longer drops the
+      self-tools queued after it. The continuation now carries only the
+      calls after the pausing one, and respond_f's resume loop mirrors the
+      main loop, so side effects fire exactly once and every tool_use ends
+      with exactly one tool_result — the previous behaviour produced
+      duplicate side effects and a duplicate tool_result per id, which
+      strict providers (Anthropic) reject with a 400.
+
+    - Raider session history now renders per wire shape instead of assuming
+      every entry is a scalar: a tool_call / tool_result turn carries its
+      structured block through the archive, so history replayed into a later
+      raid (and the embedding text derived from it) no longer stringifies or
+      drops those turns. A new clear_session_history method empties
+      session_history and the parallel _session_embeddings array together,
+      preserving their 1:1 invariant that a bare reset left stale; the
+      embedding-search path guards on a length match and falls back safely if
+      the two ever drift.
+
+    - chat_f now normalizes a canonical set of per-request controls instead
+      of spreading them as raw target-wire kwargs: previously only
+      messages/tools/tool_choice were normalized, so temperature/max_tokens/
+      seed were silently lost on Ollama (they belong under `options`),
+      response_format 400'd on Anthropic, and parallel_tool_use was honored
+      only where the engine happened to advertise it. chat_f and
       chat_stream_realtime_f now extract temperature, max_tokens,
       response_format, seed, parallel_tool_use, reasoning_effort,
       thinking_budget, prompt_cache, prompt_cache_ttl and prompt_cache_key
-      into a `controls` hash that each engine's chat_request /
-      chat_stream_request consumes and places on its own wire via the same
-      value objects the engine attributes use (Langertha::Reasoning /
-      Langertha::PromptCache, or the engine's own placement logic: Ollama
-      options, Gemini generationConfig). A per-request control beats the
-      configured engine attribute on a per-key basis; unknown keys still
-      pass straight through as the escape hatch. Engines without a native
-      knob for a control consume it without emitting it — the "not
-      accidentally correct" behavior the ticket asked for. The
-      reasoning_kwargs / prompt_cache_kwargs attribute serializers
-      delegate to new *_for(%args) variants that accept per-request
-      overrides, so the per-request path and the attribute path share one
-      serializer. This unblocks the Knarr per-request control surface
-      (karr #4, #9).
+      into a `controls` hash each engine places on its own wire via the
+      same value objects its attributes use; a per-request control beats the
+      configured attribute per-key, and unknown keys still pass straight
+      through. chat_stream_realtime_f(%opts) is the streaming counterpart to
+      chat_f proper — simple_chat_stream_realtime_f only ever took
+      ($chunk_callback, @messages) and never forwarded tools/tool_choice/
+      response_format/temperature/max_tokens to the streaming request; it's
+      now a thin wrapper over the new method. Two independent drift sites in
+      Gemini's chat_stream_request are now aligned with chat_request: a
+      thinking_budget-only engine (gemini-2.5-*) had lost its budget when
+      streaming, and the branch for already-Gemini-shaped messages (e.g.
+      from format_tool_results) existed only on the non-streaming path.
 
-    - chat_stream_realtime_f(%opts) is the new streaming counterpart to
-      chat_f (karr #42). simple_chat_stream_realtime_f only took
-      ($chunk_callback, @messages) and called chat_stream_request without
-      %opts, so tools, tool_choice, response_format, temperature and
-      max_tokens never reached the streaming request. The new method pulls
-      messages and chunk_callback out of %opts and forwards everything
-      else to chat_stream_request (which already accepted %extra);
-      simple_chat_stream_realtime_f is now a thin wrapper, so existing
-      callers run unchanged. Role::ThinkTag's around moves to
-      chat_stream_realtime_f — the wrapper delegates, so one around covers
-      both entry points (otherwise the new method would bypass think-tag
-      filtering, and keeping both arounds would double-filter). The
-      forced-tool fallback from chat_f is deliberately not applied on the
-      streaming path; synthesizing a tool_calls entry from accumulated
-      stream text is a separate follow-up.
-
-    - Gemini chat_stream_request is aligned with chat_request (karr #53).
-      Two drift sites, both unintentional: a cachedContent refactor
-      (c8c80c4) reverted the reasoning gate to has_reasoning_effort in the
-      same hunk it touched, so a thinking_budget-only engine (gemini-2.5-*)
-      lost its budget when streaming; and the elsif branch for already
-      Gemini-shaped messages (message->{parts}, e.g. from
-      format_tool_results) was added only to chat_request. Both are now
-      aligned. The response_format drift of the same family is tracked
-      separately as karr #52.
-
-    - Response now carries a bounded TO_JSON (delegating to a new to_hash)
-      so every JSON::MaybeXS backend encodes a bare Response identically
-      with convert_blessed (karr #50). Previously Cpanel::JSON::XS fell
-      back to the string overload and emitted the content string while
-      JSON::XS and JSON::PP threw — the same application behaved
-      differently on two machines. The shape is content plus the metadata
-      fields that are present (id, model, finish_reason, usage, timing,
-      created, thinking, rate_limit, tool_calls); raw and probes are
-      deliberately excluded (raw duplicates the whole provider payload,
-      probes can hold megabytes of tensor data). The string overload is
-      unchanged. Decided after karr #43 fixed the permanent shape of the
-      class; the Cpanel behavior was never a contract.
-
-    - Response->usage is now coerced to a Langertha::Usage object in
-      BUILDARGS, symmetric to tool_calls (karr #43). Engines keep passing
-      the raw provider usage HashRef; the constructor upgrades it via
-      Usage->from_hash, so the normalized accessors (input_tokens /
-      output_tokens / total_tokens) and the to_openai_format /
-      to_anthropic_format / to_ollama_format serializers are reachable
-      from every real engine response. The three convenience readers on
-      Response (prompt_tokens / completion_tokens / total_tokens) now
-      read the object's normalized attributes instead of hash keys.
-
-      Backward compatibility is preserved via a %{} overload on Usage
-      backed by a Hash::Util::FieldHash: a naive overload is impossible
-      on a Moose class (it hijacks the $self->{attr} derefs Moose's
-      generated accessors use internally — verified: infinite recursion /
-      SEGV), so the accessors and the overload both route through the
-      field hash. When the object was built from a provider hash, the
-      overload returns that hash verbatim (stored in the new raw
-      attribute), so $response->usage->{prompt_tokens} and provider
-      extras (Anthropic cache tokens, OpenAI token details) keep working
-      exactly as before; exists checks behave identically.
+    - RateLimit reset is now typed per bucket: requests_reset_at/
+      tokens_reset_at (a Langertha::Moment instant — "when") and
+      requests_reset_after/tokens_reset_after (seconds — "in how long"),
+      reconciled against a `received` stamp. The parser fills whichever half
+      the wire spoke — OpenAI's Go-duration reset headers become
+      *_reset_after, Anthropic's RFC 3339 become *_reset_at — and derives
+      the other lazily; both stay undef when a provider sends no reset
+      header. The untyped requests_reset/tokens_reset strings are kept
+      verbatim for back-compatibility, and `raw` now collects the full
+      rate-limit header superset (anthropic-priority-*, per-window buckets,
+      Mistral's -minute names) instead of only the normalized subset.
+      (ADR 0022.)
 
     - Engines now expose their API-key environment variable name via a
-      class method api_key_env, analogous to default_model (karr #44).
-      Derived by default as LANGERTHA_<UC(NAME)>_API_KEY from the class
-      name; engines that share a vendor key override it (AKIOpenAI ->
-      LANGERTHA_AKI_API_KEY, MiniMaxAnthropic -> LANGERTHA_MINIMAX_API_KEY,
-      MoonshotAnthropic -> LANGERTHA_MOONSHOT_API_KEY, OpenAIResponses ->
-      LANGERTHA_OPENAI_API_KEY) and engines that need no credentials at
-      all (Ollama, vLLM, SGLang, LlamaCpp, LMStudio family, Whisper)
-      return undef. Consumers that discover engines dynamically (e.g.
-      Langertha::Knarr) no longer need a hand-maintained table that
-      drifts.
+      class method, api_key_env, analogous to default_model — derived by
+      default as LANGERTHA_<NAME>_API_KEY, overridden by engines that share
+      a vendor key (AKIOpenAI, MiniMaxAnthropic, MoonshotAnthropic,
+      OpenAIResponses). A separate api_key_required predicate says whether a
+      key is mandatory, kept distinct from whether one is named: the
+      self-hosted / local engines (Ollama, OllamaOpenAI, vLLM, SGLang,
+      llama.cpp) still name their optional LANGERTHA_<X>_API_KEY — a secured
+      or cloud-hosted server (e.g. Ollama Cloud) can use a bearer token — but
+      return api_key_required 0 and send no Authorization header when it is
+      unset, so a bare local server needs no credentials; only a truly
+      keyless engine (Whisper) returns undef from api_key_env. Consumers that
+      discover engines dynamically (e.g. Langertha::Knarr) no longer need a
+      hand-maintained table that drifts.
 
-    - Tool, Cost and UsageRecord gained TO_JSON as plain delegators to
-      their to_hash, completing the #47 convention (karr #51). Each
-      class's to_hash was checked to be the complete and safe
-      representation first — unlike RateLimit, none of them carries a
-      raw provider payload, so the plain delegator is correct. ToolCall
-      now always carries synthetic => 0/1 in to_hash (and therefore
-      TO_JSON): a serialized trace can tell a synthesized call (forced-
-      tool fallback in chat_f, response_format rewrite in AnthropicBase)
-      apart from a native one — without it a synthetic call looks exactly
-      like a call the model decided to make. No existing to_hash caller
-      asserts the full shape, so nothing breaks.
+    - New Langertha::Role::KeepAlive for Ollama's native model-residency
+      control: keep_alive sets how long the server keeps the model loaded
+      after a request ('5m', '-1' to keep it forever), no_keep_alive unloads
+      it immediately after each request (the explicit form of keep_alive
+      '0'). Composed on the Ollama engines; the keep_alive capability is
+      registered so supports() reports it.
 
-    - New Langertha::Runtime::Metrics::OTLP serializer plus
-      export_otlp_f / export_otlp on Role::Runtime::MetricsPoll
-      (karr #41). Parsed Prometheus records ({ name, type, value, labels })
-      serialize into an OTLP/HTTP JSON metrics payload (resourceMetrics /
-      scopeMetrics / metric) and POST to any OTLP metrics receiver —
-      OpenTelemetry Collector, Prometheus OTLP receiver, Grafana. Type
-      mapping: gauge/untyped -> gauge (asDouble), counter -> monotonic
-      cumulative sum, histogram _bucket/_sum/_count series re-grouped
-      into one histogram (buckets sorted by le, +Inf last, explicitBounds
-      as numeric doubles), summary series into one summary with sorted
-      quantileValues. Langfuse deliberately NOT targeted: it does not
-      ingest OTLP metrics (its /api/public/otel endpoint is traces-only;
-      /api/public/metrics is a read-only query API) — documented in the
-      POD with sources, so the exporter points at a real metrics backend.
+    - New Langertha::Engine::Hetzner for Hetzner's OpenAI-compatible
+      Inference API — Bearer auth via LANGERTHA_HETZNER_API_KEY, chat/
+      streaming/tool-calling/structured-output/vision support (no embeddings
+      or transcription). The default base URL was corrected shortly after
+      from the dead https://inference.hetzner.com/v1 (which answered HTTP
+      200 with the literal string "inference" for every request) to
+      .../api/v1. The model catalog has since been pared down to
+      Qwen/Qwen3.6-35B-A3B-FP8 (still the default) and Qwen3.8-27B, retiring
+      DeepSeek-V4-Flash-0731, GLM-5.2-NVFP4 and Kimi-K2.7-Code; a live
+      drift-check test now flags future catalog changes.
 
-    - Fixed: a per-request response_format passed to chat_f was ignored
-      by Anthropic, Ollama and Gemini (karr #45, #48). All three read
-      only the engine attribute and never looked at the %extra the call
-      forwards, so the value fell through to the generic spread at the
-      end of the request body: Anthropic answered 400 (the Messages API
-      has no such field), Ollama and Gemini carried it as dead weight
-      while the format itself went missing. All three now resolve
-      per-request before engine attribute and delete the key from the
-      extras. Both engines advertise the response_format capabilities,
-      so a caller-side supports() gate could not catch this.
+      New Langertha::Engine::XAI for xAI Grok via the OpenAI-compatible
+      endpoint (LANGERTHA_XAI_API_KEY) — default model is now grok-4.6
+      (500K context), the current flagship; grok-4.3 (1M context, the
+      original default) became a cheaper mid-tier and grok-4.5 (500K) also
+      joined the line-up, both still selectable via `model`.
 
-      AnthropicBase needed a second half: it is the rewrite branch of
-      ADR 0005 — response_format becomes a synthesized tool plus a
-      forced tool_choice, and the structured payload has to be lifted
-      back out of the tool_use block into Response.content, or the two
-      rewrite directions converge on different shapes. That lift was
-      conditional on the engine attribute; _translate_response_format
-      now returns the synthesized tool name and chat_request threads it
-      into chat_response, which still falls back to the attribute when
-      called directly. Gemini needs no counterpart: it stays on the
-      native branch (generationConfig.responseSchema), the model emits
-      an ordinary text part, and chat_response already joins those into
-      content — convergence holds there without extra code.
+      New Langertha::Engine::Moonshot and ::MoonshotAnthropic for Moonshot
+      AI Kimi, mirroring the MiniMax dual-engine pair — Moonshot on the
+      native OpenAI endpoint, MoonshotAnthropic on the Anthropic shim, both
+      LANGERTHA_MOONSHOT_API_KEY, default kimi-k3.
 
-      Not covered: the chat_stream_request side of all three engines
-      ignores response_format entirely (karr #52). An engine-level
-      format is silently dropped when streaming today; the per-request
-      leak only becomes reachable once chat_stream_realtime_f forwards
-      extras (karr #42).
+      New Langertha::Engine::VLLMHook (a sub-engine of vLLM) for the IBM
+      vLLM-Hook plugin: it arms attention/hidden-state/steering probes via a
+      top-level `vllm_xargs` request field and lifts the captured tensors
+      into a new Response `probes` attribute. Langertha::VLLMHook::Config
+      loads vLLM-Hook model_configs JSON into vllm_xargs. (The underlying
+      seam — provider-specific wire extras extend the request body and
+      Response directly, no extra_body passthrough — is ADR 0004.)
 
-    - Langertha::Usage, ToolCall and ToolChoice gained TO_JSON, so they
-      are transparent to any encoder configured with convert_blessed
-      (karr #47). These objects turn up nested inside structures a
-      caller assembled — Response.tool_calls, a trace payload, a log
-      line — and never announce themselves as objects, so the encode
-      died deep in the call stack, far from where the object came from.
-      Plain delegators to the existing to_hash; TO_JSON must not become
-      a second, divergent shape.
+    - Engine::Perplexity has migrated from the retired Sonar Chat
+      Completions API to the Agent API (POST /v1/agent), speaking the
+      Open-Responses wire envelope (input/instructions/typed output[]/
+      input_tokens usage) instead of /chat/completions; it's now a lean
+      engine on Engine::Remote composing the new Langertha::Role::
+      ResponsesCompatible role (parallel to OpenAICompatible/
+      AnthropicCompatible, and shared with Engine::OpenAIResponses), so it
+      advertises only the capabilities it really has. The four model ids
+      (sonar, sonar-pro, sonar-reasoning-pro, sonar-deep-research) map to
+      Agent presets (fast/low/medium/high) that bundle web search and
+      citations — a preset is a routing label, not a fixed model, so read
+      the actual model off $response->model. Structured output goes
+      top-level as response_format=json_schema (json_object is rejected);
+      reasoning_effort is accepted on every preset. Response gained a
+      citations attribute (ArrayRef of source hashrefs, undef where a
+      provider reports none) for search-augmented engines generally;
+      Perplexity's streaming path lifts citations onto the final
+      Stream::Chunk too, not only the non-streaming response. The migration
+      is confirmed working end-to-end against the live wire, including the
+      typed-SSE stream. (ADR 0020.)
 
-      RateLimit's TO_JSON deliberately differs from its to_hash: it
-      omits raw. TO_JSON fires implicitly from wherever the surrounding
-      structure is encoded, and the caller cannot see what it
-      contributed, so the implicit path carries only normalized fields.
-      A caller who wants the provider's rate-limit headers asks for them
-      via to_hash or raw.
+    - New Langertha::Engine::AKIAnthropic (AKI.IO's /anthropic-compatible
+      shim, x-api-key auth, LANGERTHA_AKI_API_KEY) completes the AKI trio
+      alongside the native AKI and OpenAI-compatible AKIOpenAI faces;
+      Engine::AKI gained an ->anthropic shortcut mirroring ->openai (returns
+      an AKIAnthropic sharing the key — the native model name is not
+      auto-mapped, so it falls back to the AKIAnthropic default with a carp).
+      The AKI.IO family also gets several fixes and a default-model change.
+      Engine::AKI's native default model is now minimax_m3 (MiniMax
+      M3), replacing the now-EOL llama3_8b_chat; MiniMax is a per-account
+      gated endpoint on AKI's native API, so a key without the entitlement
+      gets "Client not authorized for endpoint minimax_m3!" rather than a
+      silent fallback — check $response->model. The OpenAI- and
+      Anthropic-compatible AKI engines (AKIOpenAI, AKIAnthropic) default to
+      gpt-oss-120b instead, since AKI exposes MiniMax M3 only on the native
+      endpoint (the shims' MiniMax id is the older minimax-m2.5-230b
+      generation). AKIOpenAI's base URL is corrected to
+      https://aki.io/openai/v1 (the path AKI.IO's own docs use since their
+      relaunch). AKIOpenAI now does native OpenAI tool calling instead of
+      composing Role::HermesTools under a forced hermes wire format,
+      dropping the XML prompt scaffold and its token cost; AKIAnthropic's
+      /anthropic shim also does tool calling, undocumented by AKI, with
+      tool_use input arriving as a JSON string (now decoded correctly — see
+      the tool wire-translation fixes above). Engine::AKI's native
+      chat_response gained parity with the shared OpenAI-compatible path:
+      job_id becomes Response.id, prompt_length/num_generated_tokens become
+      usage, num_cached_tokens becomes cached_tokens, and a <tool_call>
+      block in the native `text` field is now parsed onto
+      Response.tool_calls and stripped from content instead of being left
+      as raw text. AKIOpenAI/AKIAnthropic POD also now warns that AKI
+      returns some caller-side errors (e.g. too small a token budget to
+      finish a tool call) as HTTP 529 overloaded_error, which is
+      deterministic, not transient.
 
-      Langertha::Response deliberately gained no TO_JSON, and the POD
-      now says why at length so it does not get "fixed" later: raw
-      duplicates the whole provider payload, probes can be megabytes,
-      content is unbounded, and returning just content would freeze a
-      lossy projection as the class's permanent JSON contract. Note its
-      behaviour is currently backend-dependent — Cpanel::JSON::XS falls
-      back to the string overload, JSON::XS and JSON::PP throw
-      (karr #50).
+    - Provider default-model refresh, live-verified against each provider's
+      current API/docs. OpenAI default_model is now gpt-5.6-terra (up from
+      the legacy gpt-4o-mini tier); Anthropic default_model is
+      claude-sonnet-5 (a dateless pinned id); both engines' POD model lists
+      cover the GPT-5.6/gpt-6/Sonnet 5/Opus 5/Fable 5/Mythos 5/Haiku 4.5
+      families now. DeepSeek default_model is deepseek-flash
+      (DeepSeek-V4.1-Flash, native multimodal vision, 1M context) — the
+      stable id superseding the retired deepseek-chat/deepseek-reasoner
+      aliases; the previous default deepseek-v4-flash still resolves
+      (DeepSeek temporarily routes it to V4.1-Flash) but is deprecated.
+      Gemini default_model is gemini-3-flash-preview (up from
+      gemini-2.5-flash) — the current Gemini 3 model that still accepts
+      thinkingLevel=minimal. MiniMax and MiniMaxAnthropic default to
+      MiniMax-M3 (the latest M-series; the earlier "1M context" note on
+      M2.5 was inaccurate — that only applies to the M2.5 Lightning
+      variant, standard context is ~200K). Cerebras default_model is
+      gpt-oss-120b, replacing the now-deprecated-and-delisted llama3.1-8b.
+      T-Systems' gpt-oss-120b/text-embedding-bge-m3 and the EU-hosted
+      frontier models (GPT-5.2, Claude Sonnet 4.6, Gemini 3 Pro/Flash) are
+      confirmed current.
 
-    - Fixed: dzil build aborted on a missing PODNAME in
-      Langertha/Runtime/Metrics/EngineContract.pod (karr #49), the only
-      standalone .pod under lib/ and therefore the only file where
-      Pod::Weaver cannot derive the name from a package statement.
-      Present since the runtime-metrics work; it does not show up in
-      prove, so dzil build and dzil release were both broken while the
-      test suite stayed green. Added PODNAME and ABSTRACT.
+    - Fixed Langertha::Engine::MiniMaxAnthropic sending every request to a
+      doubled path (.../anthropic/v1/v1/messages, HTTP 404 for every
+      model): the url default was already .../anthropic/v1 and
+      AnthropicBase appends /v1/messages on top. Corrected the default to
+      .../anthropic so the composed endpoint is a single
+      .../anthropic/v1/messages (live-verified).
 
-    - Hetzner catalog drift tracking (karr #40). t/88_live_hetzner.t
-      gains a SKIP-gated subtest that GETs /v1/models and compares
-      the response against _build_static_models, diagging any diff
-      (Hetzner may legitimately add models) and warning when a
-      hardcoded model is missing from the live list; Langertha::Engine::Hetzner
-      gains a short =head1 REFRESHING THE MODEL CATALOG POD section
-      pointing at the same subtest as the regression coverage.
+    - Langertha::Metrics is now marked DEPRECATED, scheduled for removal in
+      0.504 (not deleted yet, to preserve back-compat for external
+      consumers) — POD documents a per-method migration map to
+      Langertha::Usage/Pricing/Cost/UsageRecord. Note for anyone relying on
+      it: Response.usage is a plain Maybe[HashRef] of raw provider data
+      internally and does not use the Usage value object (Metrics.pm is
+      currently its only internal caller), and this distribution ships no
+      per-model pricing tables — Langertha::Pricing's rules default to
+      empty, with all prices caller-supplied.
 
-    - New Langertha::Engine::Hetzner for Hetzner's experimental
-      OpenAI-compatible Inference API at https://inference.hetzner.com/v1
-      (karr #38). Bearer auth via LANGERTHA_HETZNER_API_KEY; default
-      model Qwen/Qwen3.6-35B-A3B-FP8 (smallest MoE of the four, Apache
-      2.0, text + image, 262K context). Composes StaticModels (hardcoded
-      four-model catalog: Qwen/Qwen3.6-35B-A3B-FP8, DeepSeek-V4-Flash-0731,
-      GLM-5.2-NVFP4, Kimi-K2.7-Code) and Tools. Supports chat, streaming,
-      tool calling (advertised per OpenAI-compatible wire; POD notes
-      Hetzner docs do not explicitly confirm server-side tool support),
-      structured output (json_schema / json_object), and image_url
-      vision input on the multimodal models. Embeddings and transcription
-      are not exposed. No ADR: vanilla OpenAI-compatible cloud engine,
-      no architectural decision beyond what ADR 0001/0002/0003 already
-      cover. Offline regression tests in t/48_hetzner.t lock the request
-      envelope (URI, Authorization, body shape for chat / multi-turn /
-      vision / structured-output / tools / tool_choice); live test
-      t/88_live_hetzner.t gated on TEST_LANGERTHA_HETZNER_API_KEY with
-      optional image + tools subtests (TEST_LANGERTHA_HETZNER_IMAGE_URL,
-      TEST_LANGERTHA_HETZNER_TEST_TOOLS).
+    - vLLM now composes Langertha::Role::Embedding, matching what its
+      /v1/embeddings endpoint already serves (BAAI/bge-*, intfloat/e5-*,
+      ...). vLLM, SGLang and LMStudioOpenAI POD is brought to parity with
+      LlamaCpp/Hetzner (streaming, tool calling, multimodal input,
+      embeddings, poll_metrics_f, and — for vLLM/SGLang — reasoning models
+      via reasoning_effort when the server is started with the matching
+      --reasoning-parser flag, plus the chat_template_kwargs escape hatch
+      for knobs that don't map cleanly). The "WORK IN PROGRESS" banners are
+      dropped from vLLM and SGLang's POD; kept on LMStudioOpenAI pending
+      further maturity.
 
-    - Provider default-model migrations (karr #23, #24, #25). OpenAI
-      default_model gpt-5.6-terra (mini price-tier successor; gpt-5.6-luna
-      is the nano tier — corrected from earlier audit claim); Anthropic
-      default_model claude-sonnet-5 (dateless pinned id per
-      platform.claude.com/models overview); both engines' POD model lists
-      refreshed to the GPT-5.6 / Sonnet 5 / Opus 5 / Fable 5 / Mythos 5 /
-      Haiku 4.5 families. Moonshot + MoonshotAnthropic default_model
-      kimi-k3; static model lists drop sunset kimi-k2.5 and moonshot-v1-*
-      (sunset 2026-08-31), keep kimi-k2.6 and kimi-k2.7-code as legacy
-      rows; kimi-k3 server-side reasoning_effort default 'max' documented
-      in POD (deliberately NOT wired as a role default — would be an
-      architecture break; engine still emits no reasoning field on
-      kimi-k3, so the server-side max applies). DeepSeek default_model
-      deepseek-v4-flash (aliases deepseek-chat / deepseek-reasoner were
-      retired 2026-07-24); reasoning_kwargs now model-gated per
-      api-docs.deepseek.com/api/create-chat-completion — v4-flash accepts
-      low|high|max (server default high); v4-pro + unknown ids drop low
-      engine-side (server would silently remap low->high). t/47 is a new
-      16-test file for DeepSeek reasoning (new default, gate boundaries,
-      V3.2 legacy path); t/10, t/50 updated for the new defaults; live-
-      test ids in t/80, t/82, t/83, t/86 refreshed.
+    - Perl::Critic enforcement is now wired into `dzil test` via
+      Dist::Zilla::Plugin::Test::Perl::Critic (naming + always-on policies),
+      with the vLLM brand capitalization and Moose lifecycle methods (BUILD,
+      FOREIGNBUILDARGS, DEMOLISH, ...) exempt. Run `perlcritic --profile
+      .perlcriticrc lib/ bin/ maint/` locally.
 
-    - Gemini reasoning-effort model-gating (karr #20, #26; ADR 0009
-      revision). Langertha::Reasoning loses the global 'thinking_budget'
-      cap from %ROLE_TO_CAPS; cap is now engine-gated via
-      Langertha::Engine::Gemini's around engine_capabilities (Gemini 2.5-*
-      shows thinking_budget + clears reasoning_effort; Gemini 3 / default
-      shows reasoning_effort + clears thinking_budget). Langertha::Reasoning
-      simplified to optional Moose attrs with normal predicates
-      (has_effort / has_thinking_budget); no Maybe[..., default undef],
-      no hand-written predicate. BUILD now croaks on EVERY ambiguous
-      combination: effort+thinking_budget together (any model /
-      generation), thinking_budget on non-Gemini-2.5, and reasoning_effort
-      on Gemini 2.5. 'Exactly one native control per generation' is
-      enforced. Default model migrates gemini-3.5-flash ->
-      gemini-3-flash-preview (per ai.google.dev/gemini-api/docs/gemini-3
-      fetched 2026-08-10); to_gemini_level maps minimal|low|medium|high
-      with model-family down-clamps (3.1-pro no minimal, 3-pro low|high
-      only, non-Gemini-3 binary fallback). DeepSeek V3 sniff trimmed to
-      a minimal family rule (deepseek-v3 / deepseek-v3.2 / deepseek-v3.x-y)
-      — dropped speculative aliases. t/46_gemini_requests.t gains 21 new
-      mapping tests + BUILD-gate fail-loud subtests; t/47_deepseek_reasoning.t
-      is a new 16-test file; t/86_live_reasoning_effort.t updated for
-      the new model-gating path. Live verification (gemini-2.5-pro +
-      gemini-3-flash-preview) deferred to karr #36.
+    - The `with map { 'Langertha::Role::'.$_ } qw(...)` role-composition
+      idiom used by Engine::OpenAIBase and Engine::AnthropicBase, and the
+      per-family engine_capabilities correction it enables, are captured as
+      canonical patterns in ADR 0015.
 
-    - Response timing first-write-wins policy documented (karr #32).
-      Langertha::Response POD gains explicit documentation of the first-
-      write-wins merge policy in Role::Chat::_merge_timing_field
-      (provider-supplied total_seconds trump client wall-clock
-      measurement); server-vs-client distinction: Ollama total_seconds
-      is server-side model latency (excludes network jitter), not
-      wall-clock RTT — the better signal for model-latency observability.
-      Response.timing / Response.total_seconds POD reference ADR 0011
-      for the rationale. t/90_response_timing.t gains 3 subtests
-      exercising ttft_seconds / total_seconds arithmetic in the
-      streaming path (Role::Chat::simple_chat_stream_realtime_f lines
-      ~558-585): TTFT set on first chunk + not overwritten by subsequent
-      chunks (regression-locks the 'unless defined' guard) + buffer-tail
-      pass also sets TTFT. t/72_langfuse.t gains 26 subtests for
-      _langfuse_iso_after covering zero / sub-second / sub-millisecond
-      positive deltas, whole-second rollover (60s, 86400s, 31-day month
-      roll), us_start + delta overflow into whole seconds, negative-
-      delta clock-skew clamp, and negative-delta with non-zero us_start
-      preserving us_start.
+    - Fixed: `dzil build` (and therefore `dzil release`) aborted on a
+      missing PODNAME in the one standalone .pod file under lib/
+      (Runtime::Metrics::EngineContract, where Pod::Weaver can't derive the
+      name from a package statement); the test suite stayed green
+      throughout since `prove` doesn't build a dist.
 
-
-    - Gemini explicit cachedContent lifecycle (karr #22). New
-      Langertha::CachedContent value object (resource metadata,
-      TTL/expiration, request serialization, response parsing) and
-      Langertha::Role::CachedContent lifecycle wrapper (async + sync
-      create / get / list / update / delete over /v1beta/cachedContents).
-      Langertha::Engine::Gemini emits cachedContent as a sibling body
-      field on chat and streaming requests when set; the
-      cached_content capability flag is registered for Gemini 2.5+ and
-      Gemini 3. usageMetadata.cachedContentTokenCount surfaces as
-      Response.usage.{cached_content_token_count}. t/47_gemini_cached_content.t
-      (473 lines) covers serialization, lifecycle URLs/bodies,
-      capability gating, request injection, expiry behaviour, and
-      telemetry. Live tests deferred until TEST_LANGERTHA_GEMINI_API_KEY
-      is exported.
-
-    - Langertha::Metrics deprecation + usage / cost regression suite
-      (karr #28). Langertha::Metrics marked DEPRECATED (scheduled for
-      removal in 0.504) — ABSTRACT rewritten, $DEPRECATED flag set,
-      =head1 DEPRECATION POD added with a per-method migration map to
-      Langertha::Usage / Pricing / Cost / UsageRecord; module NOT
-      deleted to preserve back-compat for external consumers
-      (Skeid / Knarr). Two ticket premises refuted: Response.usage does
-      NOT use Langertha::Usage (it is a plain Maybe[HashRef] of raw
-      provider data; the value-object lane is currently unwired and has
-      exactly one internal caller, Metrics.pm), and there are no
-      per-model pricing tables in this distribution (Langertha::Pricing
-      ships rules => {}, all prices caller-supplied). Gap inventory
-      written into karr #28 body as candidate separate tickets:
-      Gemini stream-vs-chat usage shape divergence, OpenAIResponses
-      drops input_tokens_details wholesale (cached_tokens never
-      reaches Response->usage), no normalized cache-tokens accessor,
-      and Pricing->cost_for ignores cache tokens entirely. t/91_response_usage.t
-      (391 lines, 12 subtests / 75 assertions) locks: raw usage
-      passthrough per wire family, accessor normalization as the real
-      cross-provider contract, cache-token survival, Usage->Pricing->Cost
-      roundtrip incl. default_rule fallback + no-rule path, and the
-      empty-Pricing-rules invariant (trips if anyone hardcodes prices).
-
-    - Self-hosted runtime metrics scraping (karr #29).
-      Langertha::Runtime::Metrics (Prometheus text-format parser returning
-      ArrayRef of { name, type, value, labels } records; histogram /
-      summary bucket/sum/count series inherit the base name's declared
-      type via a progressive-left-to-right lookup; malformed lines are
-      skipped, never fatal; filter_prefix / parse_and_filter for engine
-      allowlists) and Langertha::Role::Runtime::MetricsPoll (async
-      poll_metrics_f via Net::Async::HTTP + sync poll_metrics wrapper;
-      derives the /metrics URL by stripping a trailing /v1 from the
-      engine's url attribute). Composed onto Langertha::Engine::vLLM,
-      Langertha::Engine::SGLang, and Langertha::Engine::LlamaCpp;
-      Langertha::Engine::Ollama deliberately omitted — its /api/ps
-      surface is JSON, not Prometheus, and the JSON-to-Prometheus
-      adapter is tracked as the karr #41 follow-up. The new
-      runtime_metrics capability flag is registered in
-      Langertha::Role::Capabilities::%ROLE_TO_CAPS so callers can gate
-      on ->supports('runtime_metrics'). Per-engine wire contract
-      (allowlist prefixes, URL paths, payload examples) lives in the
-      pure-POD Langertha::Runtime::Metrics::EngineContract. No new
-      ADR — the role follows the established Langfuse / observability
-      pattern. t/49_runtime_metrics.t (offline, 34 subtests) and
-      t/89_runtime_metrics_live.t (live, gated on
-      TEST_LANGERTHA_{VLLM,SGLANG,LLAMACPP}_URL) cover the surface.
-
-    - Response timing observability (karr #5). Langertha::Response gains
-      ttft_seconds and total_seconds accessors (Float, seconds) plus
-      has_ttft / has_total predicates on the timing HashRef. Role::Chat
-      measures total_seconds around the request (sync) and both
-      ttft_seconds and total_seconds as streaming chunks arrive (async),
-      layered onto the timing hash via a new _merge_timing_field
-      helper that uses first-write-wins so provider-supplied durations
-      (e.g. Ollama's total_seconds) trump the client measurement.
-      Role::HTTP::execute_streaming_request returns ($chunks, $timing);
-      sync LWP streaming only reports total_seconds because LWP
-      buffers the body before parsing. Engine::Ollama derives
-      *_seconds from its native *_duration (ns) values while
-      preserving the original keys for back-compat. Role::Langfuse
-      around simple_chat anchors end_time and completion_start_time
-      to response-side timing so the generation event spans the real
-      call window instead of drifting into the future, with
-      _langfuse_iso_after clamping negative deltas (clock-skew safety).
-
-    - Langertha::Response::clone_with refactor (karr #5 regression
-      gate). Iterates the Moose metaclass instead of a hand-rolled
-      attribute list, so probes / raw / timing survive any clone
-      chain and new attributes added later are picked up automatically.
-      Locks the previous bug where sequential clone_with(timing => ...)
-      then clone_with(rate_limit => ...) dropped the timing hash on
-      the second clone. t/70_response.t gains three regression
-      subtests (probes / raw / timing-then-tool_calls); t/90_response_timing.t
-      is a new 299-line file locking the timing surface, the streaming
-      return-shape contract, the 3-step clone chain, and the
-      first-write-wins merge contract.
-
-    - Tool wire-translation value-object symmetry (karr #1, #2; ADR 0001/0003).
-      Reconciled the two inbound tool-call entry points ADR 0001 flagged as
-      unsettled: Langertha::ToolCall->extract is now strictly the format-pinned
-      extract($fmt, $data) (locate + from_fmt) — the one canonical inbound entry,
-      with the per-format response-walking living only in locate(). The legacy
-      self-sniffing single-arg form is gone from every engine chat_response (each
-      now passes its tool_wire_format; the OpenAI-compatible envelope is pinned to
-      'openai' since hermes engines carry calls in text and Perplexity composes no
-      Tools role) and survives only behind the Langertha::Output::Tools back-compat
-      facade as the explicit extract_sniff($data) (sniff_format + extract). Also
-      gave Langertha::ToolChoice the unified to($fmt) dispatch the other value
-      objects already had (openai/anthropic/gemini/responses), and migrated the
-      engine tool_choice call sites to it. Behaviour-preserving refactor; the
-      OpenAI Responses dual-shape (top-level + nested function_call) still parses
-      via locate('responses').
-
-    - New engines. Langertha::Engine::XAI — xAI Grok via the OpenAI-compatible
-      endpoint (https://api.x.ai/v1, LANGERTHA_XAI_API_KEY, default grok-4.3),
-      modeled on the Groq/DeepSeek cloud engines with Tools. Langertha::Engine::Moonshot
-      and Langertha::Engine::MoonshotAnthropic — Moonshot AI Kimi, mirroring the
-      MiniMax dual-engine pair: Moonshot on the native OpenAI endpoint
-      (https://api.moonshot.ai/v1) and MoonshotAnthropic on the Anthropic shim
-      (https://api.moonshot.ai/anthropic), both LANGERTHA_MOONSHOT_API_KEY,
-      default kimi-k2.6. Moonshot's OpenAI endpoint controls reasoning via a
-      Kimi-specific `thinking` object rather than the openai-wire reasoning_effort
-      field, so that engine clears the capability and never emits it (route
-      reasoning via MoonshotAnthropic). Endpoints and model ids doc-verified
-      2026-06-26 against the xAI and Kimi docs; not yet live-tested (no keys).
-
-    - Fix Langertha::Engine::MiniMaxAnthropic double-/v1 -> 404 (karr #18). The
-      url default was https://api.minimax.io/anthropic/v1, and AnthropicBase
-      appends /v1/messages, producing .../anthropic/v1/v1/messages -> HTTP 404
-      for every model. Corrected the default to https://api.minimax.io/anthropic
-      so the composed endpoint is a single .../anthropic/v1/messages
-      (live-verified HTTP 200 on MiniMax-M3). Added a request-URI unit assert and
-      a gated live chat assert. Also fixed a stale live assert in
-      t/83_live_minimax.t (karr #19): it expected MiniMax->list_models to throw,
-      but MiniMax composes StaticModels since the #11 refresh, so it now verifies
-      the static list (incl. MiniMax-M3) instead.
-
-    - Prompt caching: new request-side caching controls (karr #16 slice 2).
-      New Langertha::Role::PromptCache and Langertha::PromptCache value object,
-      serializing per-wire via a `cache_wire_format` tag. Only the two providers
-      with a real request-side knob compose the role: Anthropic gets
-      `prompt_cache` (bool) + optional `prompt_cache_ttl` (5m|1h), emitted as the
-      top-level auto-place `cache_control:{type:ephemeral[,ttl]}` form; OpenAI
-      gets `prompt_cache_key` (its caching is otherwise automatic), emitted flat.
-      Composed on OpenAIBase and AnthropicBase only (Gemini/DeepSeek/others cache
-      implicitly with no parameter). Two distinct capability flags reflect the
-      asymmetry — `prompt_cache` (Anthropic enable) and `prompt_cache_key` (OpenAI
-      routing); each base clears the one its wire does not accept, and Perplexity
-      clears `prompt_cache_key` (its classic Sonar path takes no request knobs).
-      Live-verified on claude-opus-4-8: a second identical request reads from the
-      prompt cache (cache_read_input_tokens > 0).
-
-    - Reasoning effort: new request-side `reasoning_effort` control normalized
-      across engines (karr #16 slice 1). New Langertha::Role::ReasoningEffort
-      (normalized vocabulary none|minimal|low|medium|high|xhigh|max, emitted
-      predicate-gated) and Langertha::Reasoning value object that serializes
-      per-wire via a `reasoning_wire_format` tag (openai flat `reasoning_effort`;
-      responses nested `reasoning:{effort}`; anthropic `output_config.effort` +
-      `thinking:{type:adaptive}`, with the `thinking` field skipped on always-on
-      Fable-class models; gemini `generationConfig.thinkingConfig.thinkingLevel`
-      low|high). Composed on OpenAIBase, AnthropicBase, and Gemini; registered in
-      the capability registry (`supports('reasoning_effort')`). DeepSeek shapes it
-      model-gated (V4 flat reasoning_effort high|max vs legacy V3.2
-      `thinking:{type:enabled}`); MiniMax (OpenAI endpoint) and Perplexity clear
-      the capability and never emit it. Fixes a latent AnthropicBase bug: the
-      `effort` attribute was emitted as a dead top-level body key the Messages API
-      ignores — it is now a back-compat alias of `reasoning_effort` and lands on
-      the correct nested shape (live-verified accepted on claude-opus-4-8).
-      Adjacent fix: OpenAIResponses now sends `max_output_tokens` (not the
-      Responses-API-invalid `max_tokens`).
-
-    - Engine model refresh, live-verified 2026-06-26 against each provider's
-      API/docs. OpenAI default_model `gpt-4o-mini` -> `gpt-5.4-mini` (the
-      4o-mini tier is legacy; POD drops the retired o1 / o3-mini mentions).
-      Gemini default_model `gemini-2.5-flash` -> `gemini-3.5-flash` (2.5 is now
-      previous-generation). MiniMax and MiniMaxAnthropic add `MiniMax-M3` (now
-      the latest M-series) and default to it; the inaccurate "1M context" note
-      on M2.5 is corrected (~200K standard context; 1M applies only to the M2.5
-      Lightning variant). Perplexity static_models drop the deprecated
-      `sonar-reasoning` and add `sonar-deep-research`; tool calling stays
-      disabled because the classic /chat/completions Sonar path still rejects a
-      `tools` array (live: HTTP 400 "Tool calling is not supported for this
-      model") — Perplexity function calling lives only on its separate Agent
-      API. DeepSeek POD now documents the explicit V4 ids (`deepseek-v4-flash`
-      / `deepseek-v4-pro`) that /models returns, with `deepseek-chat` /
-      `deepseek-reasoner` kept as stable aliases. T-Systems `gpt-oss-120b` and
-      `text-embedding-bge-m3` confirmed correct; POD now surfaces the EU-hosted
-      frontier models (GPT-5.2, Claude Sonnet 4.6, Gemini 3 Pro/Flash).
-      AnthropicBase SYNOPSIS refreshed to `claude-opus-4-8`.
-
-    - Engine::Cerebras: default_model is now `gpt-oss-120b`, the current
-      production model on Cerebras's public endpoint. The previous default
-      `llama3.1-8b` was deprecated (2026-05-27) and dropped from the public
-      catalog, so the default chat call would fail. POD model mentions
-      refreshed to the live catalog (`gpt-oss-120b` production, `zai-glm-4.7`
-      preview).
-
-    - Engine::AKIOpenAI: base URL corrected from `https://aki.io/v1` to
-      `https://aki.io/openai/v1`, the path used by every working example in
-      AKI.IO's OpenAI-compatibility docs after the Feb 2026 relaunch (the old
-      form now survives only in that page's prose).
-
-    - New engine Langertha::Engine::VLLMHook (a sub-engine of vLLM) for the
-      IBM vLLM-Hook plugin: it arms the attention / hidden-state / steering
-      probes by injecting a top-level `vllm_xargs` field into the chat
-      request, and lifts the captured tensors from the response into a new
-      Langertha::Response `probes` attribute. Langertha::VLLMHook::Config
-      loads vLLM-Hook model_configs JSON (qk / hidden_states / steer) into
-      vllm_xargs. ADR 0004 records the underlying seam: provider-specific
-      wire extras extend the request body and Langertha::Response directly,
-      not a (nonexistent) extra_body passthrough.
-
-    - Tool wire-translation is now a single source of truth in the
-      Langertha::Tool / ToolCall / ToolResult value objects, keyed by a new
-      per-engine `tool_wire_format` tag (openai | anthropic | gemini | ollama |
-      responses | hermes). Engines no longer carry per-format format_tools /
-      response_tool_calls / extract_tool_call / response_text_content /
-      format_tool_results copies — the defaults in Langertha::Role::Tools
-      delegate to the value objects via the tag. New Langertha::ToolResult
-      value object for tool execution results; Langertha::Tool->to/format_list,
-      Langertha::ToolCall->from_fmt/locate and a two-arg
-      ToolCall->extract($fmt,$data). Hermes folds into tool_wire_format=hermes
-      (Role::HermesTools is now config-only). Also fixes non-ASCII tool
-      arguments on the Response.tool_calls path (ToolCall arg decoding now
-      UTF-8-safe).
-
-    - Developer tooling (not shipped behaviour): add Claude Code agent / skill
-      infrastructure under .claude/ — house rules (.claude/rules), the
-      langertha-worker, langertha-adr-auditor and langertha-llm-advisor agents,
-      the langertha-adr and langertha-github-issues skills, and the karr board.
-      Seed Architecture Decision Records in docs/adr/ for the tool
-      wire-translation lane: 0001 value-object wire-translation keyed by
-      tool_wire_format, 0002 capability registry derived from the role
-      inventory, 0003 Response.tool_calls as the single source of truth.
-      Streamline CLAUDE.md (rules referenced, delegation + ADR map) and
-      normalize .gitignore.
+    - Developer tooling (not shipped behaviour): added Claude Code agent/
+      skill infrastructure under .claude/ (house rules, the
+      langertha-worker/langertha-adr-auditor/langertha-llm-advisor agents,
+      and the karr board) and seeded the first Architecture Decision Records
+      in docs/adr/ for the tool wire-translation lane.
 
 0.502     2026-05-15 23:02:10Z
 
