@@ -1,0 +1,53 @@
+---
+claimed_at: 2026-09-19T06:00:41Z
+claimed_by: worker-tempgate
+class: standard
+completed: 2026-09-19T06:00:41Z
+created: 2026-09-14T18:38:30Z
+id: 155
+priority: low
+started: 2026-09-19T05:12:32Z
+status: done
+tags:
+- openai
+- reasoning
+- temperature
+- llm
+title: OpenAI-seitiges reasoning-model temperature-Gate (symmetrisch zu Anthropic
+  k135/k138)
+updated: 2026-09-19T06:00:41Z
+---
+
+Aus k151-Worker-Finding (2026-09-14). Anthropic-Seite gated temperature bei aktivem Reasoning via supports(temperature) + Engine::Anthropic-Clearing (k135/k138). OpenAI-Seite hat KEIN symmetrisches Gate. Langertha sendet zwar KEINE Default-temperature (Role::Temperature ohne Default; OpenAICompatible + ResponsesCompatible emittieren nur bei has_temperature) -> kein unbedingter 400. ABER: ein explizit vom Caller gesetztes temperature auf einem Reasoning-Modell (gpt-6-astra / gpt-5.6 / gpt-5.5) koennte 400en. OpenAI-Reasoning-Guide sagt remove temperature/top_p/top_logprobs fuer Astra auf CC — advisory, nicht 400-vs-silently-ignored gepinnt. ENTSCHEIDUNG offen: drop-vs-carp bei temperature auf Reasoning-Modell; 400-vs-ignored vorher live verifizieren. Niedrig, caller-getrieben, kein Default-Bug. Quelle: k151-Handoff.
+
+ADVISOR-ANALYSE (2026-09-17): TICKET-PRAEMISSE FALSCH - NICHT nur Anthropic-Tabelle spiegeln. ZWEI Showstopper: (1) OpenAI-Wire-Pfade haben GAR KEINEN temperature-Gate (anders als AnthropicCompatible::_temperature_kwargs mit supports(temperature)-Check). OpenAICompatible (:340,:475) + ResponsesCompatible (:165,:451) emittieren temperature ungated -> model_capability_corrections-Regexe waeren INERT. Fix braucht ZUERST Portierung des supports(temperature)-Gates in beide Rollen (4 Sites, shared _temperature_kwargs-Helper). (2) OpenAI-temperature-Akzeptanz ist BEDINGT durch reasoning_effort, NICHT flat per-Modell: temperature nur bei effort=none akzeptiert. Immer-ablehnend (flat-regex ok): o-series (qr/\Ao[0-9]/), gpt-5-base ausser gpt-5-chat (qr/\Agpt-5(?:-(?!chat)|\z)/), gpt-6 (qr/\Agpt-6/). ABER gpt-5.1-5.6: temperature nur bei effort=none -> flat-gate wuerde den validen none+temperature-Pfad killen; Default gpt-5.6-terra defaultet medium -> temperature 400 auf Default-Pfad (der eigentliche Bug). Braucht EFFORT-AWARE-Gating (im temperature-Helper resolved-effort != none pruefen), co-design mit der Profile-Effort-Tabelle (k174/k176/k177).
+
+Getty 2026-09-17: Entscheidung getroffen - (1) Erst Live-Verifikation des effort-abhaengigen 400-Verhaltens gegen echtes OpenAI (gpt-5.6 + effort=medium + temperature gesetzt), dann erst Gate implementieren. (2) Gate-Verhalten bei effort!=none + gesetztem temperature: droppen + carp-Warnung an den Caller (nicht stillschweigend wie Anthropic-Seite). Braucht weiterhin Owner-Design-Review vor Umsetzung (effort-aware Logik, Co-Design mit Profile-Effort-Tabelle k174/k176/k177).
+
+2026-09-17 18:21 LIVE-VERIFIKATION ABGESCHLOSSEN (2026-09-17, echtes OpenAI /v1/chat/completions, Langertha::Engine::OpenAI, TEST_LANGERTHA_OPENAI_API_KEY). Getty-Freigabe vom selben Tag, nur der Verifikations-Call - KEINE Code-Aenderung, Worktree clean.
+
+BEFUND: Der 400 ist REAL und tritt SCHON AUF DEM DEFAULT-PFAD auf. Exakte Fehlerantwort (identisch in allen ablehnenden Faellen):
+  HTTP 400 Bad Request
+  {"error":{"message":"Unsupported value: 'temperature' does not support 0.7 with this model. Only the default (1) value is supported.","type":"invalid_request_error","param":"temperature","code":"unsupported_value"}}
+
+MATRIX (jeweils messages=[{role:user,content:'Say OK.'}], max_completion_tokens=256, stream=false):
+  A) model=gpt-5.6-terra, reasoning_effort=medium, temperature=0.7 -> 400 unsupported_value
+  B) model=gpt-5.6-terra, reasoning_effort=none,   temperature=0.7 -> 200 OK (KONTROLLFALL BESTAETIGT, content 'OK', finish_reason stop)
+  G) model=gpt-5.6-terra, reasoning_effort=low,    temperature=0.7 -> 400 unsupported_value
+  E) model=gpt-5.6-terra, KEIN reasoning_effort im Body, temperature=0.7 -> 400 unsupported_value
+  F) model=gpt-5.6-terra, reasoning_effort=medium, temperature=1   -> 200 OK
+  D) model=gpt-5.6 (frontier), reasoning_effort=medium, temperature=0.7 -> 400 unsupported_value
+
+ADVISOR-ANALYSE BESTAETIGT, mit zwei Praezisierungen fuer das Gate-Design:
+  (1) EFFORT-AWARE bestaetigt: Ablehnung ist nicht flat-per-Modell. effort=none akzeptiert temperature!=1, low/medium lehnen ab -> Praedikat ist 'resolved effort != none', nicht 'low..max'. G schliesst aus, dass nur medium+ betroffen ist.
+  (2) DEFAULT-PFAD-BUG bestaetigt (E): OHNE reasoning_effort im Body 400t derselbe Call. Der Modell-Default-Effort (medium) greift serverseitig -> ein Gate, das nur auf ein EXPLIZIT gesetztes reasoning_effort schaut, laesst genau den Default-Pfad (den eigentlichen Bug) durch. Das Gate muss den RESOLVED Effort kennen, inkl. Modell-Default -> Co-Design mit der Profile-Effort-Tabelle (k174/k176/k177) ist damit zwingend, nicht optional.
+  (3) NEU, war nicht in der Analyse: die Ablehnung ist zusaetzlich WERT-abhaengig. temperature=1 (der Wire-Default) wird auch bei effort=medium mit 200 akzeptiert (F). Ein Gate 'temperature immer droppen wenn effort!=none' wuerde also auch den validen Pass-through von temperature=1 wegwerfen und dabei carpen - reine Noise-Warnung, da der Wert serverseitig ohnehin der Default ist. Design-Frage fuer das Owner-Review: droppen+carp nur bei temperature != 1, oder pauschal? (Anthropic-Seite hat diese Asymmetrie nicht, dort ist das Feld bei aktivem Reasoning generell verboten.)
+  (4) Family-weit, nicht tier-spezifisch: gpt-5.6 (Sol, frontier) verhaelt sich identisch zu gpt-5.6-terra (A vs D).
+
+NEBENBEFUND (eigenes Ticket, siehe Board): Langertha::Role::HTTP::parse_response croakt nur mit der Status-Line ('request failed: 400 Bad Request') und verwirft den Provider-Error-Body. Die obige exakte Message war nur durch manuelles Absetzen desselben Requests ueber $engine->user_agent sichtbar. Fuer Caller ist ein temperature-400 damit praktisch nicht diagnostizierbar.
+
+STATUS UNVERAENDERT (backlog/blocked): Die Gate-Implementierung (supports(temperature)-Portierung in OpenAICompatible+ResponsesCompatible, effort-aware Logik, drop+carp) ist NICHT freigegeben und wurde NICHT angefasst. Wartet weiter auf Owner-Design-Review.
+
+Getty-Freigabe zur Umsetzung, Diff wird eng reviewt. drop+carp, effort-aware (resolved effort != none), supports(temperature)-Gate portieren.
+
+Integriert & gemerged in main (--no-ff, kein Push); volle Suite gruen (113 Dateien, 4120 Tests), perlcritic sauber. Changes-Eintrag zentral gepflegt. ADR-Aufzeichnung laeuft via adr-auditor.
