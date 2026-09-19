@@ -1715,6 +1715,11 @@ async sub _run_raid_loop {
     for my $plugin (@{$self->_plugin_instances}) {
       $conversation = await $plugin->plugin_before_llm_call($conversation, $iteration);
     }
+    # A plugin may return a fresh arrayref. Keep the continuation state pointing
+    # at whatever the loop now works with, because respond_f resumes from
+    # $state->{conversation}: without this write-back a paused raid reverts to
+    # the pre-plugin array and drops every message accumulated after divergence.
+    $state->{conversation} = $conversation;
 
     my $iter_t0 = $langfuse ? $engine->_langfuse_timestamp : undef;
 
