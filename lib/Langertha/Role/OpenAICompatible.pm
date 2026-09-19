@@ -3,7 +3,7 @@ package Langertha::Role::OpenAICompatible;
 our $VERSION = '0.503';
 use Moose::Role;
 use File::ShareDir::ProjectDistDir qw( :all );
-use Carp qw( croak );
+use Carp qw( croak carp );
 use JSON::MaybeXS;
 use Langertha::ToolChoice;
 use Langertha::Response;
@@ -298,6 +298,37 @@ sub chat_operation_id { 'createChatCompletion' }
 # every other OpenAI-compatible engine keeps max_tokens.
 sub _max_tokens_key { 'max_tokens' }
 
+# OpenAI reasoning models (gpt-5.x / gpt-6 / o-series) 400 on a non-default
+# temperature whenever reasoning is active -- only the wire default (1) is
+# accepted (karr k155, live-verified 2026-09-17 against /v1/chat/completions).
+# This gate mirrors AnthropicCompatible::_temperature_kwargs (the
+# supports('temperature') check + control-beats-attribute resolution) and adds
+# the OpenAI EFFORT-AWARE drop. The per-model, resolved-effort predicate lives on
+# the engine (Engine::OpenAI::_temperature_rejected_by_reasoning, inherited by
+# OpenAIResponses); every other OpenAI-compatible engine never defines it, so the
+# can() guard leaves their temperature untouched. The drop fires only for a
+# non-default value under active reasoning: temperature=1 passes through silently
+# (dropping the wire default would be a pure-noise warning), and a caller who
+# disables reasoning (reasoning_effort => 'none', where the model accepts it)
+# keeps its temperature.
+sub _temperature_kwargs {
+  my ( $self, $controls ) = @_;
+  return () unless $self->supports('temperature');
+  my $temp = exists $controls->{temperature} ? $controls->{temperature}
+           : $self->has_temperature          ? $self->temperature
+           :                                    undef;
+  return () unless defined $temp;
+  if ( $temp != 1
+    && $self->can('_temperature_rejected_by_reasoning')
+    && $self->_temperature_rejected_by_reasoning($controls) ) {
+    carp "".( ref $self ).": dropping temperature=$temp -- this reasoning model "
+      . "rejects a non-default temperature while reasoning is active (only the "
+      . "wire default 1 is accepted); pass reasoning_effort => 'none' to keep it";
+    return ();
+  }
+  return ( temperature => $temp );
+}
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
@@ -337,9 +368,7 @@ sub chat_request {
     exists $controls->{response_format}
       ? ( response_format => $controls->{response_format} )
       : ( ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : () ),
-    exists $controls->{temperature}
-      ? ( temperature => $controls->{temperature} )
-      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    $self->_temperature_kwargs($controls),
     exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
     $self->generation_kwargs_for(%$controls),
     ( $self->can('knobs_kwargs_for') ? $self->knobs_kwargs_for(%$controls) : () ),
@@ -475,9 +504,7 @@ sub chat_stream_request {
     exists $controls->{response_format}
       ? ( response_format => $controls->{response_format} )
       : ( ($self->can('has_response_format') && $self->has_response_format) ? ( response_format => $self->response_format ) : () ),
-    exists $controls->{temperature}
-      ? ( temperature => $controls->{temperature} )
-      : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+    $self->_temperature_kwargs($controls),
     exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
     $self->generation_kwargs_for(%$controls),
     ( $self->can('knobs_kwargs_for') ? $self->knobs_kwargs_for(%$controls) : () ),
