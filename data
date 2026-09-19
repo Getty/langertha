@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-09-19T06:01:07Z
+claimed_by: worker-reasoning
+class: standard
+completed: 2026-09-19T06:01:07Z
+created: 2026-09-17T18:09:38Z
+id: 180
+priority: low
+started: 2026-09-19T05:12:00Z
+status: done
+tags:
+- reasoning
+- vllm
+- self-hosted
+- adr-0023
+title: Self-hosted Reasoning-Effort-Vokabel (xhigh/medium/low) als Reasoning::Profile-Eintrag
+updated: 2026-09-19T06:01:07Z
+---
+
+Nebenbefund aus k79 Live-Lauf (2026-09-17): Der auf cl-cortex geladene Qwen3.8-27B-FP8-Server akzeptiert als reasoning_effort NUR xhigh/medium/low/none, lehnt high/minimal explizit ab ('Unexpected reasoning effort high. Supported types are xhigh (default), medium, and low.'). Das kommt vom Chat-Template des jeweils geladenen Modells, NICHT von vLLM selbst -- bei self-hosted Engines (vLLM/SGLang/LlamaCpp) kann beliebig jedes Modell geladen sein.
+
+Getty-Entscheidung 2026-09-17: JA, als Reasoning::Profile-Eintrag (ADR 0023) aufnehmen -- vermutlich per Modell-Namensmuster (analog for_model($id) Aufloesung), damit Langertha die richtige Vokabel fuer bekannte self-hosted Modellfamilien kennt statt dem Caller die Werte roh durchzureichen und einen 400 zu riskieren.
+
+Offene Ausgestaltung (Owner-Design noch zu klaeren): wie granular (pro Modellname vs. pro Modellfamilie/Praefix), Fallback-Verhalten fuer unbekannte self-hosted Modelle (aktuell: Werte flach durchreichen, das bleibt fuer unbekannte Modelle vermutlich weiterhin richtig), Bezug zu k178 (BudgetPolicy Phase 2, gerade vorgezogen).
+
+Quelle: k79-Worker-Bericht 2026-09-17 (Live-Test-Diagnose, Commit ddeae33).
+
+Gebuendelt mit #178.
+
+DONE & reviewed. Profile.pm Qwen3.x self-hosted row (model_match qr{(?:\A|/)qwen3\.\d}i, accepts none/low/medium/xhigh, rejects high/minimal), source-receipted (live k79 cortex). Matches with/without HF org prefix. Unknown self-hosted still passthrough (not gated). DESIGN FORK (needs Getty confirm): worker used the established openai-wire DROP mechanism (unaccepted effort omitted -> server default xhigh) NOT a bespoke clamp-DOWN-to-medium (no clamp-down infra exists on openai wire, unlike Gemini). Net: requesting high on Qwen3.x omits the field, model uses default xhigh. Avoids the 400 either way. t/48_reasoning_profile.t +33. Held for integration.
+
+Integriert & gemerged in main (--no-ff, kein Push); volle Suite gruen (113 Dateien, 4120 Tests), perlcritic sauber. Changes-Eintrag zentral gepflegt. ADR-Aufzeichnung laeuft via adr-auditor.
