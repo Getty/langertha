@@ -150,9 +150,10 @@ refactor:
 
 Deferred beyond Phase 1.5:
 
-- **Phase 2 — `Langertha::Reasoning::BudgetPolicy`** (category (c) + the inbound budget↔level
-  bijection), consumer-driven, shipped only when a downstream consumer (spec §3, `knarr` #13)
-  needs it; every numeric output clamped to the owning Profile's (b) bounds.
+- ~~**Phase 2 — `Langertha::Reasoning::BudgetPolicy`**~~ **— realized (k178).** See the closing
+  Update. Category (c) + the inbound budget↔level bijection now ship as a real class; still
+  consumer-driven and not default-shipped; every numeric output clamped to the owning Profile's (b)
+  bounds (the firewall, enforced in code).
 - **Gemini capability-layer consolidation** — migrate `Engine::Gemini`'s inline model-regex
   `around` into the declarative form. A candidate, not a defect; kin to the Gemini consolidation
   bullet in ADR 0019's *Future work*.
@@ -174,3 +175,48 @@ Deferred beyond Phase 1.5:
   `docs/superpowers/specs/2026-09-16-reasoning-profile-design.md`; Phase 1 commit `c312baf`;
   karr k173 (this decision). `CONTEXT.md`'s `reasoning_wire_format` / `Langertha::Reasoning` entry
   carries the vocabulary this ADR builds on (not restated here).
+
+## Update (k178 — Phase 2 `BudgetPolicy` realized; the firewall is now enforced in code)
+
+The deferred **Phase 2** category-(c) layer now exists as `Langertha::Reasoning::BudgetPolicy`
+(`lib/Langertha/Reasoning/BudgetPolicy.pm`, k178) — the invented level↔token-budget interpolation and
+its inbound inverse, with **the (a)/(b)-vs-(c) firewall enforced in code**, not merely asserted in the
+design:
+
+- **The firewall is a real clamp.** `_clamp` (`BudgetPolicy.pm:205`) pins every number to the owning
+  Profile's category-(b) bounds (`profile->budget_min` / `budget_max`), and both directions run
+  through it: `budget_for($level)` (`:250`) clamps its **output**, and `level_for($budget)` (`:299`)
+  clamps its **input** before mapping it back to a level (a budget equal to the Profile's `off_value`
+  maps to `none`). So category (c) may *read* the (b) bounds but can never emit a value the API
+  rejects — the single most important correction this ADR made, now structural.
+- **It is not a capability and is not default-shipped.** Nothing in Langertha wires it in; it exists
+  only where a downstream consumer needs budget↔level conversion and constructs it explicitly
+  (`for_model($id, %opts)` `:343`, mirroring the Profile constructor). It offers both an `explicit`
+  form (curated `points` anchors) and a `range` form (a `linear`/`log` curve across the Profile's (b)
+  bounds); the `source` receipt defaults to a string that says the numbers are **library convention,
+  not wire-truth**. Category (a)/(b) stay in the Profile (its `levels` is empty for a budget control,
+  keeping it pure wire-truth); the convention anchors live on the policy.
+- This closes the ADR-0023 Phase-2 Future-work item; it does **not** change the Profile, the capability
+  layer, or the ADR 0009 quartet. Verified offline: `t/48_reasoning_budget_policy.t` (firewall +
+  bijection coverage).
+
+## Update (k180 — self-hosted reasoning vocabulary is a Profile registry dimension)
+
+Self-hosted engines (`vLLM` / `SGLang` / `llama.cpp`) get their accepted `reasoning_effort`
+vocabulary from the **loaded model's chat template, not the server** — so the vocabulary is keyed
+**per model-family**, exactly the category-(a) fact the Profile registry already types. k180 registers
+the first such family without touching any code path:
+
+- **Qwen3.x** is a declarative Profile row (`Profile.pm:490`, matcher `qr{(?:\A|/)qwen3\.\d}i` — with
+  or without the HuggingFace `org/` prefix, since served ids look like `Qwen/Qwen3.8-27B-FP8`),
+  `control => 'effort'`, `wire_format => 'openai'` (the sole wire these engines speak), accepting
+  **`none|low|medium|xhigh`** and **dropping `high` and `minimal`** — live-probed 2026-09-17 on a
+  cortex vLLM server (`Qwen/Qwen3.8-27B-FP8` 400s on `reasoning_effort=high`), receipt in
+  `$QWEN_SELFHOSTED_SRC` (`Profile.pm:383`). The two rejected efforts drop before they can 400 the
+  server.
+- **Unknown self-hosted ids are deliberately *not* listed.** They fall through to the passthrough
+  default and keep going **raw** — the correct posture for an unknown chat template ("correct the wire
+  reality you can verify; don't invent one you can't"), consistent with the whole ADR-0023 stance.
+- This is a new *dimension* of the same category-(a) registry, not a new mechanism: no capability
+  wiring, no serializer change. Verified offline: `t/48_reasoning_profile.t` (the Qwen self-hosted
+  matrix).

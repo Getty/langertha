@@ -3,6 +3,10 @@
 - Status: accepted
 - Date: 2026-09-14
 - Tags: capabilities, tools, structured-output, chat_f, streaming, model-scoped
+- Superseded-in-part-by: **ADR 0024** — the *mechanism* moved from a per-engine hook to the
+  model-scoped `model_capability_exclusions` table (k148). The premise below (a runtime guard, not a
+  boolean flag, not an auto-rewrite) is reaffirmed there, not overturned; only the placement changed.
+  See the closing Update.
 
 ## Context
 
@@ -145,3 +149,18 @@ See ADR 0002 (the boolean registry this sits above), ADR 0019 (the model-scoped 
 reserved this exact problem as Future work), and ADR 0005 (the unify-and-rewrite premise this
 nuances — its single-path rewrites are unaffected). `CONTEXT.md` carries the capability-axis and
 `model_capability_corrections` vocabulary this decision deliberately does **not** extend.
+
+## Update (k148 — the mechanism is now model-scoped; see ADR 0024)
+
+The **first Future-work item above — "Model-scoped generalization" — is now realized** (k148). The
+per-engine `_check_capability_exclusions` override this ADR shipped is **superseded** by an ordered,
+`chat_model`-keyed `model_capability_exclusions` table on `Role::Chat`, mirroring ADR 0019's
+`model_capability_corrections` with a coderef rule payload. The shared `gpt-oss` rule now lives on
+`Engine::OpenAIBase`, so the constraint travels with the model to the TSystems / AKIOpenAI defaults
+and the OpenRouter / HuggingFace / Replicate aggregator routes (the second and third Future-work
+items) — not just the direct Cerebras route; Cerebras and Groq keep their exact croak messages as
+per-engine overrides on the new seam. The DSL (third Future-work item) was **weighed again and
+declined** — the rule payload stays a coderef. Everything in this ADR's *Context / Decision /
+Rationale* about **why** the guard is a runtime check above the boolean registry (no boolean spelling
+for a pair; auto-rewrite is lossy; the croak is the fail-loud minimum) stands unchanged; only the
+scope and home of the check moved. Full record: **ADR 0024**.

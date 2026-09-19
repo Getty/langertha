@@ -148,3 +148,47 @@ the engine layer rewrites between forms on a capability gap — stands entirely.
 native capability, moving one engine from the rewrite branch to the native branch, which is the
 behavior Decision 4 already specified. Contrast ADR 0006 → ADR 0013, where the thing itself
 moved axes and a new number was right.
+
+## Update (k182 — first-party Anthropic `json_object` routing corrects the k133 Update)
+
+The k133 Update above described the first-party native branch as: `_response_format_to_output_config`
+turns the `response_format` into `output_config.format`, and *"a bare `json_object` maps onto an
+open-object `json_schema`."* **That last clause was wrong — it was the bug.** The first-party
+`output_config.format` validator **rejects an open schema** (it requires `additionalProperties:false`
+on every object), so an open-object stand-in 400s. Live-confirmed and fixed in k182/k149. The
+corrected reality on `Role::AnthropicCompatible` (line refs against the integrated tree):
+
+- **A `json_schema` goes native, but its schema is normalized CLOSED first.** `_rf_is_native_schema`
+  (`AnthropicCompatible.pm:293`) is the gate — true only for a `json_schema` carrying an actual
+  `schema` object. `_response_format_to_output_config` (`:307`) then runs that schema through
+  `_close_schema` (`:323`), which recursively sets `additionalProperties:false` on every object
+  (walking `properties`, `items`, `anyOf`/`allOf`/`oneOf`, `$defs`/`definitions`) **without mutating
+  the caller's schema**, before placing it on `output_config.format`. This is the house
+  "normalize the wire quirk, don't gatekeep" stance: the caller's open schema is closed *for* them,
+  not refused.
+- **A bare `json_object` has no closed native form, so it routes through the synthesized-tool
+  path** — the exact ADR 0005 Decision 2 mechanism the legacy `/anthropic` shims use, now shared.
+  `_response_format_via_tool` (`:404`, extracted from `_translate_response_format` `:385`) builds a
+  tool with an open, **non-strict** `input_schema` (`{ type => object, additionalProperties => true }`)
+  and forces it. `chat_request` (`:176`) branches on `_rf_is_native_schema`: native for a schema,
+  `_response_format_via_tool` for everything else — so `json_object` gets free-form JSON via the
+  non-strict tool exactly where the native validator would 400.
+- **On `claude-fable-5-1` / `claude-mythos-5-1` the forced tool degrades to `tool_choice auto`.**
+  Those models reject forced tool use; `Engine::Anthropic::model_capability_corrections`
+  (`Anthropic.pm:73-74`) clears their `tool_choice_named` / `tool_choice_any` flags (ADR 0019), so
+  `_response_format_via_tool` emits `{ type => 'auto' }` instead of `{ type => 'tool', name => … }`.
+  Under `auto`, `chat_response` lifts the tool_use only if the model chose to emit it — so free-form
+  `json_object` has **no guaranteed** structured path on those two models (recorded, not defended).
+- **Streaming: a `json_schema` streams native; a `json_object` croaks.** `chat_stream_request`
+  (`:548`) streams a closed `json_schema` as ordinary text deltas, but the synthesized-tool fallback
+  has no streaming lift, so a `json_object` on the streaming path croaks loudly (`:575`) rather than
+  400 on the wire or stream unstructured text — the same fail-loud posture the shim branch already
+  had (karr #52).
+- `Engine::Anthropic::_native_structured_output` stays `1` (`Anthropic.pm:47`); the shims stay `0`
+  and keep the full Decision 2 rewrite for both `json_schema` and `json_object`.
+
+This **nuances, does not overturn**, the k133 Update: first-party Anthropic still has native
+structured output, but only for a schema (normalized closed), while a schemaless `json_object` falls
+back to the same rewrite the shims use — so `json_object` is a *capability gap* on this wire after
+all, exactly the case Decision 4 anticipated. The unify-and-rewrite core stands. (Verified offline:
+`t/77_response_format_per_request.t`, `t/77_response_format_streaming.t`, `t/78_chat_f_controls.t`.)
