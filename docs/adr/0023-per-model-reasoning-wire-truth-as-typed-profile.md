@@ -220,3 +220,30 @@ the first such family without touching any code path:
 - This is a new *dimension* of the same category-(a) registry, not a new mechanism: no capability
   wiring, no serializer change. Verified offline: `t/48_reasoning_profile.t` (the Qwen self-hosted
   matrix).
+
+## Update (k185 — `default_reasoning_off`: the server-side default reasoning state is a category-(a) signal)
+
+The Profile grew one more category-(a) wire-truth field beyond the
+`control` / `levels` / `levels_by_wire` / `can_disable` / `disable_form` set §Decision enumerated:
+**`default_reasoning_off`** (`Profile.pm:169`, `Bool`, default `0`). It records whether a model's
+**server-side default effort** — the one that applies when *no* `reasoning_effort` is sent — leaves
+reasoning **off**. Default `0` (the common case) means a bare request already reasons; `1` marks the
+models whose no-effort default is non-reasoning: the **gpt-5.1 / gpt-5.2 / gpt-5.4** line returns
+`reasoning_tokens=0` with no effort (live-verified 2026-09-19), set on those Profile rows
+(`Profile.pm:495`, `:499`, `:511`).
+
+- **It is category (a), not (b) or (c).** It is a fact about which state the wire presents by default
+  — accepted vocabulary + native control type, non-overridable wire-truth — so it lives in the Profile
+  alongside the other (a) fields, never in `BudgetPolicy`. It carries no numeric budget and cannot
+  cross the firewall.
+- **Distinct from `can_disable`.** `can_disable` answers *"does an explicit `none` effort turn
+  reasoning off at all?"* (the disable **path**); `default_reasoning_off` answers *"is reasoning off on
+  the **no-effort** path?"* (the default **state**). The two are separate facts queried at different
+  points of the consuming gate, and a model can be one without the other.
+- **Consumed read-only, by one gate.** `Engine::OpenAI::_temperature_rejected_by_reasoning` (ADR 0025)
+  reads it on its no-effort branch to tell "reasoning active on the default path" apart from "no effort
+  set" — the same read-only-consult-the-Profile discipline ADR 0025 already uses for
+  `effort_accepted_on`. No serializer, no `for_model` resolution, and the deliberately-untouched
+  capability layer all stay as recorded; this is a new declarative dimension of the same category-(a)
+  registry, kin to the k180 self-hosted-vocabulary Update. Verified offline:
+  `t/79_openai_temperature_reasoning_gate.t`.

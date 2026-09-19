@@ -103,3 +103,31 @@ Condition `temperature`'s wire emission on the resolved reasoning effort, in two
 - **Contrast ADR 0021** — same "a relationship a boolean can't spell, resolved above the registry"
   shape, but drop-and-warn here vs. croak there, because temperature is recoverable where the
   ADR 0021 pair is not.
+
+## Update (k185 — the no-effort path is per-model: `default_reasoning_off` replaces the blanket "no effort ⇒ reasoning on")
+
+§Context's second bullet stated the gate *"fires on the no-effort path too, because when the caller
+sets no effort the model's server-side default effort (medium) applies — reasoning is on."* That
+blanket assumption is **false per model.** Live-verified 2026-09-19: the **gpt-5.1 / gpt-5.2 /
+gpt-5.4** line defaults to reasoning **OFF** with no effort (`reasoning_tokens=0`), so a non-default
+`temperature` is accepted there (HTTP 200) — dropping it would be wrong.
+
+- **The gate now resolves the no-effort default per model, via ADR 0023.**
+  `_temperature_rejected_by_reasoning` (`OpenAI.pm:130`), on its no-effort branch (`!defined $effort`,
+  `:149`), consults the Profile's new **`default_reasoning_off`** signal (ADR 0023's k185 Update):
+  `return 0` (temperature honored) where the model's default is reasoning-off, `return 1` otherwise.
+  So gpt-5.1/5.2/5.4 keep a non-default temperature at no effort, while gpt-5.5/5.6, gpt-6, the
+  o-series and legacy gpt-5 still drop it (their default *is* a reasoning level).
+- **Everything else in the Decision is unchanged.** The reasoning-model regex gate (§Decision.2a), the
+  control-beats-attribute effort resolution (2b), and the explicit-`effort=none` branch (2c) are
+  exactly as recorded — `none` still disables only where `effort_accepted_on($wire,'none')` is true,
+  so gpt-6 (not disablable) still keeps its temperature dropped. The single change is that the
+  no-effort path no longer assumes reasoning-on universally; it reads the Profile.
+- **This sharpens, does not overturn, the ADR.** The control-on-control shape — one concern's emission
+  gated by another's *resolved* value including a server-side default (§Consequences) — stands; the
+  resolution simply became honest that the default is model-specific, not a flat "medium." The
+  ADR 0023 dependency (§Cross-links "Consumes ADR 0023") now spans two Profile reads —
+  `effort_accepted_on` *and* `default_reasoning_off`. Verified offline:
+  `t/79_openai_temperature_reasoning_gate.t` (the live matrix: 5.1/5.2/5.4 keep temp at no effort;
+  o4-mini / gpt-5 / gpt-5.5 / gpt-5.6 / gpt-6-astra drop it; an explicit effort re-enables the drop;
+  `effort=none` keeps temp where accepted).
