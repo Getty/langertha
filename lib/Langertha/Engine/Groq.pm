@@ -71,9 +71,9 @@ sub _build_supported_operations {[qw(
 # json_object + streaming is not disproven and is left through. This is a
 # Groq-platform property that holds across the models it serves, so an all-models
 # matcher (qr//) expresses it on the model-scoped exclusion seam
-# (Langertha::Role::Chat); it subsumes the inherited gpt-oss json_schema rule for
-# Groq's own gpt-oss route. Consulted by chat_f (streaming => 0) and
-# chat_stream_realtime_f (streaming => 1).
+# (Langertha::Role::Chat). There is no shared gpt-oss base rule (removed k184),
+# so this all-models rule is the only exclusion on Groq's own gpt-oss route.
+# Consulted by chat_f (streaming => 0) and chat_stream_realtime_f (streaming => 1).
 sub model_capability_exclusions {
   return (
     qr// => \&_exclude_json_schema_with_tools_or_streaming,

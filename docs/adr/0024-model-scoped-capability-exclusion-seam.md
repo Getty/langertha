@@ -158,3 +158,42 @@ A Getty-approved live probe (2026-09-19, raw `/chat/completions`, `gpt-oss-120b`
   live-unverified inference"): that probe has now run — the Groq half is resolved, the gpt-oss half is
   karr #184. Verified offline: `t/78_model_capability_exclusions.t` and `t/78_capability_exclusions.t`
   now assert Groq `json_object` + tools croaks (and `json_object` without tools still passes).
+
+## Update (k184 Option C — the shared `gpt-oss` rule is removed from `OpenAIBase`; the parked scope question is RESOLVED)
+
+The previous Update left one item **PARKED**: whether the shared `qr/gpt-oss/` rule stays homed on
+`Engine::OpenAIBase` or moves off the pure-model axis, pending a TSystems confirmation that could only
+come from documentation (no developer key). Getty resolved it on **2026-09-19 (Option C, karr #184;
+code in commit `de5efa3`)**: **remove the shared rule.** That PARKED item — and the "keep the shared
+rule and its placement pending TSystems" guidance inside it — is therefore now **RESOLVED**; the state
+below is live, so no earlier "keep it / doc-based reconciliation" reading stands.
+
+- **§Decision.1 is reversed.** `Engine::OpenAIBase` no longer overrides `model_capability_exclusions`;
+  the override and its `_exclude_tools_with_json_schema` helper are deleted, and the base inherits the
+  `Langertha::Role::Chat` no-op. No OpenAI-dialect engine inherits a `gpt-oss` exclusion any more.
+
+- **The "model-intrinsic" premise (§Context, §Rationale's third bullet) is retired.** The AKI-200
+  evidence the previous Update recorded is now the ruling fact, not a parked one: AKI
+  (`aki.io/openai/v1`, SGLang backend) serves `gpt-oss-120b` + `tools` + a `json_schema`
+  `response_format` at **HTTP 200**. The conflict is a property of the **serving stack**, not of the
+  gpt-oss model — Groq and Cerebras enforce it platform-wide (each via its own all-models override),
+  AKI does not.
+
+- **§Consequences is corrected.** The headline *"the gpt-oss 400 is now caught wherever gpt-oss is
+  served"* no longer holds and is **withdrawn**. The aggregator/default transitivity (TSystems /
+  AKIOpenAI `gpt-oss` defaults; OpenRouter / HuggingFace / Replicate `.../gpt-oss-` routes) is
+  **deliberately no longer caught** — those routes now send `tools` + `json_schema` together on the
+  wire. A stack that *does* enforce the conflict on such a route (a possible but not live-testable
+  TSystems / aggregator gpt-oss backend) now returns an **opaque provider 400** instead of a local
+  croak. This is an **accepted trade-off** (Getty, Option C), **reversible** by adding a per-engine
+  (per-stack) override once a live-confirmed or documented enforcing stack is found.
+  `t/78_model_capability_exclusions.t` now asserts the no-croak / both-fields-on-the-wire behavior for
+  those routes.
+
+- **The seam and the Groq/Cerebras rules are untouched.**
+  `Langertha::Role::Chat::model_capability_exclusions`, its ordered `( $matcher => $rule )` coderef
+  contract, and the two engine overrides (`Engine::Groq`, `Engine::Cerebras`, both all-models `qr//`
+  rules) stand exactly as shipped. This Update reverses the shared-rule **homing** only — §Decision's
+  seam mechanism, and ADR 0021's reaffirmed premise, are unchanged.
+
+karr #184 is closed by this decision.

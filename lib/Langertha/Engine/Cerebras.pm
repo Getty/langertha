@@ -61,9 +61,9 @@ sub _build_supported_operations {[qw(
 # with an opaque HTTP 400. Its docs make this per-model, but every model this
 # engine currently serves (gpt-oss-120b default, zai-glm-4.7) rejects the
 # combination, so an all-models matcher (qr//) expresses the platform-wide
-# reality on the model-scoped exclusion seam (Langertha::Role::Chat). This is
-# stricter than the inherited gpt-oss json_schema-only rule (it also refuses
-# json_object), so it replaces rather than extends the inherited set. Consulted
+# reality on the model-scoped exclusion seam (Langertha::Role::Chat). There is no
+# shared gpt-oss base rule (removed k184); this all-models rule is Cerebras's only
+# exclusion and refuses both json_object and json_schema alongside tools. Consulted
 # by chat_f and chat_stream_realtime_f.
 sub model_capability_exclusions {
   return (

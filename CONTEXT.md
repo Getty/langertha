@@ -232,13 +232,15 @@ is the payload: a **coderef**, not a `{ cap => 0|1 }` hash — because it expres
 a *relationship between two* request fields (combining `tools` with a
 structured-output `response_format` in one body) that a boolean flag cannot
 spell, and the rule croaks on the combination its model rejects with an opaque
-400. The shared rules live on the wire-dialect base (e.g. `Engine::OpenAIBase`'s
-`gpt-oss` rule) on the premise the constraint is model-intrinsic, so it travels
-with the model to aggregator routes and provider defaults; an engine narrows or
-replaces the inherited set. (That premise is under live reconciliation: a
-2026-09-19 probe found the `gpt-oss` conflict to be a *serving-stack* property,
-not purely a model one — AKI serves it, Groq/Cerebras enforce it stack-wide —
-without changing the placement; see ADR 0024's k184 Update / karr #184.)
+400. The conflict is a property of the serving **stack**, not of the model:
+Groq and Cerebras reject `tools` + a structured-output `response_format` across
+every model they serve (each declaring its own all-models `qr//` rule), while AKI
+serves `gpt-oss-120b` + `tools` + a `json_schema` `response_format` at HTTP 200.
+So the rule lives **on the affected engines**; there is no shared wire-dialect-base
+rule — the earlier `Engine::OpenAIBase` `gpt-oss` rule was removed (2026-09-19,
+karr #184 Option C) as a false-positive on the AKIOpenAI / TSystems defaults and
+the aggregator routes, which now send both fields on the wire. An engine that
+constrains nothing composes no rule.
 → **ADR 0024**, **ADR 0021**, **ADR 0019**.
 _Avoid_: "capability_exclusions DSL" (the payload is a coderef, deliberately not
 a declarative constraint language); "the exclusion capability" (it is not a flag)
