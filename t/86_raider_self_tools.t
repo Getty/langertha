@@ -886,4 +886,151 @@ subtest 'respond_f re-pauses on a second interactive self-tool in the batch' => 
   ok(!(grep { $_ != 1 } values %$counts), 'each question answered exactly once');
 };
 
+# --- Test: plugin_before_llm_call conversation must not diverge from the
+#          continuation state across a pause / respond_f (karr #171) ---
+#
+# plugin_before_llm_call($conversation, $iteration) -> $conversation is
+# documented to return the (possibly transformed) conversation the loop then
+# proceeds with. A plugin that returns a FRESH arrayref — the normal transform
+# contract — used to leave $state->{conversation} pointing at the pre-plugin
+# array. On a pause, respond_f resumes from $state->{conversation}, so the
+# resumed raid reverted to that stale array and dropped every assistant /
+# tool_result message accumulated in earlier iterations. This drives the real
+# raid_f -> respond_f loop offline and proves the earlier tool result survives
+# the resume.
+
+{
+  package ConvReplacePlugin;
+  use Moose;
+  use Future::AsyncAwait;
+  extends 'Langertha::Plugin';
+
+  # Snapshot of the conversation handed to us on each call, newest last.
+  has seen => (is => 'ro', default => sub { [] });
+
+  async sub plugin_before_llm_call {
+    my ( $self, $conversation, $iteration ) = @_;
+    push @{$self->seen}, [ @$conversation ];
+    # Return a fresh arrayref, exactly as a transforming plugin would.
+    return [ @$conversation ];
+  }
+
+  __PACKAGE__->meta->make_immutable;
+}
+
+# Scripted engine that records the conversation it is asked to send on every
+# LLM turn, so a test can prove what the loop actually forwarded.
+{
+  package ConvCaptureEngine;
+  use Moose;
+  with 'Langertha::Role::Tools';
+
+  has chat_model     => (is => 'ro', default => 'cap-model');
+  has '+mcp_servers' => (default => sub { [] });
+  has turns          => (is => 'ro', default => sub { [] });
+  has _turn_idx      => (is => 'rw', default => 0);
+  has sent           => (is => 'ro', default => sub { [] });
+  has _http          => (is => 'ro', lazy => 1, default => sub { SeqHTTP->new });
+
+  sub _async_http { return $_[0]->_http }
+
+  sub format_tools          { return $_[1] }
+  sub response_tool_calls   { return $_[1]->{tool_calls} // [] }
+  sub response_text_content { return $_[1]->{text} // 'final answer' }
+  sub extract_tool_call     { return ($_[1]->{name}, $_[1]->{input}) }
+  sub think_tag_filter      { 0 }
+
+  sub build_tool_chat_request {
+    my ( $self, $conversation, $tools ) = @_;
+    push @{$self->sent}, [ @$conversation ];
+    return { request => 1 };
+  }
+
+  sub parse_response {
+    my ( $self ) = @_;
+    my $idx = $self->_turn_idx;
+    $self->_turn_idx($idx + 1);
+    return $self->turns->[$idx] // { tool_calls => [] };
+  }
+
+  # Realistic echo: an assistant message carrying the calls, then one tool
+  # message per result, both tagged with the tool_use id.
+  sub format_tool_results {
+    my ( $self, $data, $results ) = @_;
+    my @msgs = ({
+      role       => 'assistant',
+      content    => '',
+      tool_calls => [ map {
+        { id => ($_->{tool_call}{id} // ''), name => $_->{tool_call}{name} }
+      } @$results ],
+    });
+    push @msgs, map {
+      { role => 'tool', tool_call_id => ($_->{tool_call}{id} // ''),
+        content => 'ran ' . $_->{tool_call}{name} }
+    } @$results;
+    return @msgs;
+  }
+
+  __PACKAGE__->meta->make_immutable;
+}
+
+# True if any message in $conversation references tool_use id $id, either as an
+# assistant echo entry or as a tool_result.
+sub conv_carries_id {
+  my ( $conversation, $id ) = @_;
+  for my $msg (@$conversation) {
+    next unless ref $msg eq 'HASH';
+    return 1 if ($msg->{tool_call_id} // '') eq $id;
+    if (ref $msg->{tool_calls} eq 'ARRAY') {
+      return 1 if grep { ($_->{id} // '') eq $id } @{$msg->{tool_calls}};
+    }
+  }
+  return 0;
+}
+
+subtest 'plugin_before_llm_call conversation survives a pause and respond_f' => sub {
+  my $mcp = SeqMCP->new(tools => [{ name => 'record' }]);
+  my $engine = ConvCaptureEngine->new(
+    mcp_servers => [$mcp],
+    turns => [
+      # iteration 1: run a normal MCP tool — its result must outlive the pause
+      { tool_calls => [
+        { name => 'record', input => { note => 'first' }, id => 'tc_rec' } ] },
+      # iteration 2: ask the user — pauses the raid
+      { tool_calls => [
+        { name => 'raider_ask_user', input => { question => 'Proceed?' }, id => 'tc_ask' } ] },
+      # iteration 3 (after respond_f): done
+      { tool_calls => [], text => 'all done' },
+    ],
+  );
+  my $raider = Langertha::Raider->new(
+    engine     => $engine,
+    raider_mcp => 1,
+    plugins    => ['ConvReplacePlugin'],
+  );
+
+  my $r1 = $raider->raid('record, then ask me');
+  ok($r1->is_question, 'the raid pauses on raider_ask_user at iteration 2');
+  ok(conv_carries_id($engine->sent->[1], 'tc_rec'),
+    'iteration 2 already forwards the record result (loop-local state is fine pre-pause)');
+
+  my $r2 = $raider->respond('yes, continue');
+  ok($r2->is_final, 'respond_f resumes to a final answer');
+  is("$r2", 'all done', 'final text is the third turn');
+
+  # The conversation forwarded to the LLM after the resume must still carry the
+  # iteration-1 record result. Under the divergence it reverted to the stale
+  # pre-plugin array and dropped it.
+  ok(conv_carries_id($engine->sent->[-1], 'tc_rec'),
+    'the post-resume LLM conversation still contains the iteration-1 record result');
+  ok(conv_carries_id($engine->sent->[-1], 'tc_ask'),
+    'and it contains the answered ask_user turn');
+
+  # The plugin and the loop share one conversation: the plugin's view on the
+  # resumed iteration is the same complete conversation the loop proceeds with.
+  my $plugin = $raider->_plugin_instances->[0];
+  ok(conv_carries_id($plugin->seen->[-1], 'tc_rec'),
+    'plugin_before_llm_call sees the record result on the resumed iteration');
+};
+
 done_testing;
