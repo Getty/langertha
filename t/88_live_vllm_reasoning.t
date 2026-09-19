@@ -9,7 +9,7 @@ use Test2::Bundle::More;
 # Needs a vLLM server serving a reasoning model (Qwen3 / DeepSeek-R1 / QwQ /
 # Gemma 4 / Granite 3.2) that was started with a matching --reasoning-parser.
 # The parser flag is server-side and cannot be asserted from here, so the
-# reasoning_content checks below diagnose instead of failing. The wire itself
+# chain-of-thought checks below diagnose instead of failing. The wire itself
 # (reasoning_effort on the request body) is covered offline by
 # t/65c_vllm_reasoning.t - this file only exercises the round trip.
 BEGIN {
@@ -123,7 +123,7 @@ subtest 'reasoning_effort=none' => sub {
       'reasoning_effort=none suppressed the thinking that high produced');
   }
   elsif ($saw_thinking_high) {
-    diag "server still emitted reasoning_content for reasoning_effort=none - "
+    diag "server still emitted a chain-of-thought (reasoning) for reasoning_effort=none - "
       . "some vLLM builds do not map 'none' onto enable_thinking=false "
       . "(see the note in t/65c_vllm_reasoning.t)";
     pass 'non-thinking path exercised (server did not honour none)';

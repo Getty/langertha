@@ -131,6 +131,11 @@ vLLM translates the value into C<enable_thinking> via the chat template:
     reasoning_effort none              ->  enable_thinking = false
     (unset)                            ->  enable_thinking not injected
 
+The thought itself comes back in the C<reasoning> response field — mainline
+vLLM renamed it from C<reasoning_content> to C<reasoning> in v0.16.0, and
+both spellings are read — surfaced on C<< $response->thinking >>. It is only
+populated when the server was started with the matching C<--reasoning-parser>.
+
 Supported reasoning-model families (vLLM's own table — verify against
 L<https://docs.vllm.ai/en/latest/features/reasoning_outputs/> for the
 exact list as new models land):

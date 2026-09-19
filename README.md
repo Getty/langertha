@@ -538,6 +538,7 @@ say $r->has_thinking;    # check if thinking was produced
 | Anthropic | `thinking` content blocks | claude with extended thinking |
 | Gemini | `thought` parts | gemini-2.5-flash/pro |
 | OpenAI | `reasoning_content` | o1, o3, o4-mini |
+| vLLM | `reasoning` (≥ v0.16.0; earlier `reasoning_content`) | Qwen3, DeepSeek-R1, QwQ (self-hosted) |
 
 **Think tag filtering** handles open-source reasoning models that embed `<think>...</think>` tags inline (DeepSeek R1 via Ollama/vLLM, QwQ, Hermes with reasoning). The filter is enabled by default on all engines and strips tags automatically. Handles both closed and unclosed tags (when models stop mid-thought).
 
