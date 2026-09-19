@@ -1,0 +1,53 @@
+---
+claimed_at: 2026-09-19T06:01:20Z
+claimed_by: worker-anthropic
+class: standard
+completed: 2026-09-19T06:01:20Z
+created: 2026-09-17T18:30:51Z
+id: 182
+priority: high
+started: 2026-09-19T05:12:19Z
+status: done
+tags:
+- anthropic
+- structured-output
+- bug
+- live-confirmed
+title: 'Anthropic json_object liefert HTTP 400: output_config.format akzeptiert kein
+  offenes Schema (k149 live widerlegt)'
+updated: 2026-09-19T06:01:20Z
+---
+
+Live widerlegt in k149 (2026-09-17, Getty-Freigabe): response_format => {type=>"json_object"} gegen die First-Party-Claude-API ist ein garantierter HTTP 400.
+
+WAS PASSIERT
+Role::AnthropicCompatible::_response_format_to_output_config (lib/Langertha/Role/AnthropicCompatible.pm:261-279) uebersetzt json_object auf ein offenes json_schema:
+  output_config.format = { type => "json_schema", schema => { type => "object", additionalProperties => JSON->true } }
+Das ist genau die k133-Extrapolation. Die API lehnt sie ab:
+  HTTP 400 invalid_request_error
+  "output_config.format.schema: For \"object\" type, \"additionalProperties: true\" is not supported. Please set \"additionalProperties\" to false"
+Verifiziert mit Engine::Anthropic, claude-haiku-4-5-20251001, max_tokens 128.
+
+WARUM DAS NICHT TRIVIAL ZU FIXEN IST
+Anthropics Structured Outputs verlangen GESCHLOSSENE Schemas. Ein "freies JSON-Objekt" hat auf output_config.format kein natives Gegenstueck:
+ (a) additionalProperties:false naiv einsetzen ist semantisch falsch — ein object ohne properties und mit additionalProperties:false erlaubt nur noch {}. Das ist nicht json_object-Semantik, sondern ein leeres Objekt.
+ (b) Option: json_object auf der First-Party-Anthropic wieder ueber den Legacy-Pfad der /anthropic-Shims routen (synthetisiertes Tool + forced tool_choice, _native_structured_output-Zweig in chat_request). Tool-input_schema ist nicht strict, ein offenes Schema sollte dort durchgehen — nicht verifiziert. Achtung: tool_choice type=tool 400t auf claude-fable-5-1/mythos-5-1 (model_capability_corrections, k133 Punkt 2).
+ (c) Option: croaken. Widerspricht der Hausregel "Wire-Quirks normalisieren, nicht gatekeepen".
+Praeferenz nach aktuellem Stand: (b).
+
+ANGRENZENDER BEFUND, NICHT VERIFIZIERT
+Derselbe Validator trifft auch response_format => {type=>"json_schema"}, wenn der Aufrufer ein OFFENES Schema uebergibt: _response_format_to_output_config reicht json_schema.schema unveraendert durch. k133 setzt strict:true nur bei Tool-Definitionen mit geschlossenem Schema (Tool->to_anthropic), nicht auf output_config.format. Ein Nutzer-Schema ohne additionalProperties:false bzw. ohne required duerfte denselben 400 ausloesen. Sollte beim Fix mitgeprueft werden.
+
+BETROFFEN IST NUR DIE FIRST-PARTY-API
+Die /anthropic-Shims (MiniMax, Moonshot, AKI, LMStudio) haben _native_structured_output=0 und nutzen weiter den synthetisierten Tool-Rewrite — sie sind von diesem 400 nicht betroffen.
+
+TESTS DIE DIE HEUTIGE (KAPUTTE) SHAPE FESTSCHREIBEN
+t/77_response_format_per_request.t:90-101 ("json_object maps onto an open-object native json_schema"), plus die json_object-Zweige in t/77_response_format_streaming.t und Role::AnthropicCompatible.pm:332-334 (Shim-Pfad). Die muessen mit dem Fix mitwandern.
+
+BRAUCHT: einen freigegebenen Live-Call zur Bestaetigung des gewaehlten Fixes (MEMORY.md: Live-Calls Freigabe-gated). Ggf. ADR 0005 erneut amendieren.
+
+Live-Anthropic-Bestaetigung freigegeben. Fix-Praeferenz (b): First-Party json_object ueber synth-tool + forced tool_choice.
+
+DONE & LIVE-VERIFIED (branch worktree-agent-a069d0ea64fb51ae8, UNCOMMITTED). Fix in Role::AnthropicCompatible: json_schema -> native output_config.format with schema normalized CLOSED via recursive _close_schema (additionalProperties:false on every object; handles the adjacent open-json_schema 400 too); json_object -> synth-tool + forced tool_choice (_response_format_via_tool helper, shared with shims); Fable/Mythos-5.1 degrade to tool_choice auto (they clear tool_choice_named); streaming json_object croaks (no native free-form, no synth-tool stream lift). Did NOT touch Role::Chat.pm (no #148 collision). LIVE (claude-haiku-4-5, 3 calls, Getty-approved): json_object->200 (was guaranteed 400), json_schema closed->200, json_schema open->200 (normalized). prove -lr gruen (3938), perlcritic clean. ADR 0005 amend: the k133 'bare json_object maps onto open-object json_schema' parenthetical is now FALSE (was the bug). FOLLOW-UPS: (1) _close_schema does not add 'required' - if validator demands it (live test C had required), unverified; (2) additionalProperties-as-schema dict would be forced false (edge). Held for integration.
+
+Integriert & gemerged in main (--no-ff, kein Push); volle Suite gruen (113 Dateien, 4120 Tests), perlcritic sauber. Changes-Eintrag zentral gepflegt. ADR-Aufzeichnung laeuft via adr-auditor.
