@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-19T06:01:32Z
+claimed_by: worker-httperr
+class: standard
+completed: 2026-09-19T06:01:32Z
+created: 2026-09-17T18:21:54Z
+id: 181
+priority: low
+started: 2026-09-19T05:45:47Z
+status: done
+tags:
+- http
+- errors
+- dx
+title: parse_response verwirft Provider-Error-Body (nur Status-Line im croak)
+updated: 2026-09-19T06:01:32Z
+---
+
+Gefunden bei der k155-Live-Verifikation. Langertha::Role::HTTP::parse_response (lib/Langertha/Role/HTTP.pm:114-123) croakt bei !is_success mit "<Engine> request failed: <status_line>" und wirft den JSON-Error-Body des Providers weg. Beispiel k155: OpenAI antwortet auf temperature+reasoning mit {"error":{"message":"Unsupported value: temperature does not support 0.7 with this model. Only the default (1) value is supported.","type":"invalid_request_error","param":"temperature","code":"unsupported_value"}} - der Caller sieht nur "400 Bad Request". Die eigentliche Ursache war nur durch manuelles Absetzen desselben Requests ueber $engine->user_agent sichtbar. Betrifft alle Engines (die Rolle ist universell) und auch execute_streaming_request (:195). Offene Design-Fragen fuer Owner: Body an die croak-Message anhaengen (getrimmt/laengenbegrenzt?), oder ein typisiertes Error-Objekt (Langertha::Error mit type/param/code) statt String-croak - letzteres waere ein API-Bruch fuer bestehende eval/$@-Konsumenten und braucht eigene Entscheidung. Kein Bug im Wire-Verhalten, reine Diagnostizierbarkeit/DX.
+
+Getty-Freigabe: sichere Variante (Provider-Error-Body an croak-Message anhaengen, laengenbegrenzt, non-breaking). Kein typisiertes Langertha::Error (deferred). parse_response + execute_streaming_request.
+
+Integriert & gemerged in main (--no-ff, kein Push); volle Suite gruen (113 Dateien, 4120 Tests), perlcritic sauber. Changes-Eintrag zentral gepflegt. ADR-Aufzeichnung laeuft via adr-auditor.
