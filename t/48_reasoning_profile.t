@@ -231,6 +231,46 @@ is_deeply( kw( 'gemini', thinking_budget => 512, model => 'gemini-2.5-flash' ),
 }
 
 # ---------------------------------------------------------------------------
+# Self-hosted Qwen3.x reasoning family on the openai (Chat Completions) wire
+# (karr k79/k180). The loaded model's chat template — not the vLLM/SGLang/
+# llama.cpp server — fixes the vocabulary: Qwen3.x reasoning accepts
+# none|low|medium|xhigh and REJECTS high|minimal, so those two efforts DROP
+# before they can 400 the server. Live-probed 2026-09-17 on a cortex vLLM
+# server: Qwen/Qwen3.8-27B-FP8 -> "Unexpected reasoning effort high. Supported
+# types are xhigh (default), medium, and low." Matched with or without the
+# HuggingFace org prefix.
+# ---------------------------------------------------------------------------
+{
+  my %QWEN = ( none => 'none', minimal => undef, low => 'low',
+    medium => 'medium', high => undef, xhigh => 'xhigh', max => undef );
+  for my $model (qw( Qwen/Qwen3.8-27B-FP8 qwen3.8-27b-fp8 Qwen/Qwen3.5-32B )) {
+    for my $effort ( @EFFORTS ) {
+      my $want = $QWEN{$effort};
+      my $got  = kw( 'openai', effort => $effort, model => $model );
+      if ( defined $want ) {
+        is_deeply( $got, { reasoning_effort => $want },
+          "openai: $model + $effort -> reasoning_effort=$want (Qwen3.x self-hosted)" );
+      }
+      else {
+        is_deeply( $got, {},
+          "openai: $model + $effort -> DROP (Qwen3.x rejects high|minimal)" );
+      }
+    }
+  }
+
+  # Unknown self-hosted models are NOT gated — every effort is forwarded raw so
+  # an unknown chat template is never second-guessed (k180). Qwen3-32B (no dot)
+  # is deliberately outside the Qwen3.x family match and stays a passthrough.
+  for my $model (qw( Qwen/Qwen3-32B some-random-vllm-model mistral-7b-instruct )) {
+    for my $effort (qw( minimal high max )) {
+      is_deeply( kw( 'openai', effort => $effort, model => $model ),
+        { reasoning_effort => $effort },
+        "openai: $model + $effort -> passthrough (unknown self-hosted, raw)" );
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
 # BUILD wire-truth gates: exactly one native control per generation.
 # ---------------------------------------------------------------------------
 like( eval { Langertha::Reasoning->new( effort => 'high', thinking_budget => 2048, model => 'gemini-3.5-flash' ); 1 } ? '' : $@,
