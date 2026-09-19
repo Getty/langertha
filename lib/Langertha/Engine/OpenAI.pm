@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 use Langertha::Engine::TranscriptionBase;
+use Langertha::Reasoning::Profile;
 
 extends 'Langertha::Engine::OpenAIBase';
 
@@ -106,6 +107,46 @@ sub _max_tokens_key {
   my ( $self ) = @_;
   my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
   return $model =~ /\Agpt-[56]/ ? 'max_completion_tokens' : 'max_tokens';
+}
+
+# k155: OpenAI reasoning models 400 on a non-default temperature while reasoning
+# is active -- "Unsupported value: 'temperature' does not support 0.7 with this
+# model. Only the default (1) value is supported." (live-verified 2026-09-17
+# against /v1/chat/completions on gpt-5.6-terra + gpt-5.6). The rejection is
+# EFFORT-AWARE, not a flat per-model capability clear: at reasoning_effort=none
+# (where the model accepts it) the same call returns 200, so clearing the
+# temperature capability wholesale would wrongly drop the valid effort=none path.
+# It also fires on the NO-EFFORT path, because the model's server-side default
+# effort (medium) applies -- so this predicate resolves the effort INCLUDING that
+# default. It is consumed READ-ONLY by the shared _temperature_kwargs gate in
+# Role::OpenAICompatible / Role::ResponsesCompatible; OpenAIResponses inherits it
+# and runs on the 'responses' wire. Non-reasoning OpenAI models (gpt-4o,
+# gpt-5-chat) and every other OpenAI-compatible engine never reach this predicate
+# (they do not define it), so they keep their temperature.
+sub _temperature_rejected_by_reasoning {
+  my ( $self, $controls ) = @_;
+  my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
+  # Which OpenAI models HAVE reasoning (and thus reject temperature when it is
+  # on): the o-series, the gpt-5 line except the non-reasoning gpt-5-chat, and
+  # gpt-6. This is the per-engine model list (ADR 0019); the effort-awareness
+  # below, not this regex, is what keeps the gate honest.
+  return 0 unless $model =~ /\A(?:o\d|gpt-5(?!-chat)|gpt-6)/;
+  # Resolved reasoning effort: a per-request control (chat_f, karr #46) beats the
+  # engine attribute; neither set means the model's server-side default (a
+  # reasoning level) applies -> reasoning is on.
+  my $effort = exists $controls->{reasoning_effort} ? $controls->{reasoning_effort}
+             : $self->has_reasoning_effort          ? $self->reasoning_effort
+             :                                         undef;
+  # Reasoning is off (and temperature accepted) only when 'none' is asked for AND
+  # this model's wire actually accepts 'none' as the disable value -- a read-only
+  # consult of the same Langertha::Reasoning::Profile effort table the serializer
+  # uses (ADR 0023). A model that cannot be disabled (gpt-6) drops a 'none' effort
+  # server-side and keeps reasoning on, so temperature stays rejected there.
+  if ( defined $effort && $effort eq 'none' ) {
+    return 0 if Langertha::Reasoning::Profile->for_model($model)
+      ->effort_accepted_on( $self->reasoning_wire_format, 'none' );
+  }
+  return 1;
 }
 
 has whisper => (

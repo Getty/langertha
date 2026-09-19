@@ -2,7 +2,7 @@ package Langertha::Role::ResponsesCompatible;
 # ABSTRACT: Role for the Open-Responses wire envelope (input/instructions/output[])
 our $VERSION = '0.503';
 use Moose::Role;
-use Carp qw( croak );
+use Carp qw( croak carp );
 use JSON::MaybeXS;
 use Langertha::ToolCall;
 use Langertha::ToolChoice;
@@ -96,6 +96,35 @@ sub _build_reasoning_wire_format { 'responses' }
 # overrides _responses_dispatch to POST /v1/agent directly.
 sub chat_operation_id { 'createResponse' }
 
+# OpenAI reasoning models 400 on a non-default temperature whenever reasoning is
+# active -- only the wire default (1) is accepted (karr k155). Identical gate to
+# Role::OpenAICompatible::_temperature_kwargs, on the Responses wire: the
+# supports('temperature') check + control-beats-attribute resolution mirror
+# AnthropicCompatible::_temperature_kwargs, and the EFFORT-AWARE drop delegates to
+# the per-model, resolved-effort predicate on the engine
+# (Engine::OpenAI::_temperature_rejected_by_reasoning, inherited by
+# OpenAIResponses via the 'responses' reasoning wire). Perplexity, the other
+# Responses consumer, never defines that predicate, so the can() guard leaves its
+# temperature untouched. temperature=1 passes through silently.
+sub _temperature_kwargs {
+    my ( $self, $controls ) = @_;
+    return () unless $self->supports('temperature');
+    my $temp = exists $controls->{temperature} ? $controls->{temperature}
+             : $self->has_temperature          ? $self->temperature
+             :                                    undef;
+    return () unless defined $temp;
+    if ( $temp != 1
+      && $self->can('_temperature_rejected_by_reasoning')
+      && $self->_temperature_rejected_by_reasoning($controls) ) {
+        carp "".( ref $self ).": dropping temperature=$temp -- this reasoning "
+          . "model rejects a non-default temperature while reasoning is active "
+          . "(only the wire default 1 is accepted); pass reasoning_effort => "
+          . "'none' to keep it";
+        return ();
+    }
+    return ( temperature => $temp );
+}
+
 sub chat_request {
     my ( $self, $messages, %extra ) = @_;
 
@@ -162,9 +191,7 @@ sub chat_request {
         defined $response_format
             ? $self->_responses_format_kwargs($response_format)
             : (),
-        exists $controls->{temperature}
-            ? ( temperature => $controls->{temperature} )
-            : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+        $self->_temperature_kwargs($controls),
         exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
         ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
         stream => JSON->false,
@@ -448,9 +475,7 @@ sub chat_stream_request {
         defined $response_format
             ? $self->_responses_format_kwargs($response_format)
             : (),
-        exists $controls->{temperature}
-            ? ( temperature => $controls->{temperature} )
-            : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),
+        $self->_temperature_kwargs($controls),
         exists $controls->{seed} ? ( seed => $controls->{seed} ) : (),
         ( $self->can('reasoning_kwargs_for') ? $self->reasoning_kwargs_for(%$controls) : () ),
         stream => JSON->true,

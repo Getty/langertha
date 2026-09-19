@@ -128,17 +128,23 @@ subtest 'chat_request - with tool_choice (Responses format)' => sub {
 };
 
 subtest 'chat_request - temperature and max_tokens' => sub {
+    # A gpt-5.x reasoning model 400s on a non-default temperature while reasoning
+    # is active (karr k155), so temperature only reaches the wire once reasoning
+    # is turned off. gpt-5.5-pro accepts reasoning_effort=none, which is exactly
+    # that escape; the temperature gate is exercised in full in
+    # t/79_openai_temperature_reasoning_gate.t.
     my $engine = Langertha::Engine::OpenAIResponses->new(
-        api_key       => 'test-key',
-        model         => 'gpt-5.5-pro',
-        temperature   => 0.7,
-        response_size => 1024,
+        api_key          => 'test-key',
+        model            => 'gpt-5.5-pro',
+        temperature      => 0.7,
+        reasoning_effort => 'none',
+        response_size    => 1024,
     );
     my $request = $engine->chat_request([
         { role => 'user', content => 'Hello' },
     ]);
     my $body = $json->decode( $request->content );
-    is( $body->{temperature}, 0.7, 'temperature in body' );
+    is( $body->{temperature}, 0.7, 'temperature in body (reasoning disabled)' );
     is( $body->{max_output_tokens}, 1024, 'Responses API uses max_output_tokens' );
     ok( !exists $body->{max_tokens}, 'no legacy max_tokens key (Responses wants max_output_tokens)' );
 };
