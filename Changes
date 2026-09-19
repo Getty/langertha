@@ -387,8 +387,8 @@ Revision history for Langertha
       Perplexity search answer with an umlaut or emoji) parses instead of
       dying with a wide-character error and being silently dropped; its
       brace-trim loop also now bails when a candidate stops shrinking, so
-      unbalanced JSON such as `{{"a":1}` returns undef instead of spinning
-      forever and wedging the async event loop. simple_chat/chat now carp
+      unbalanced JSON with a surplus opening brace returns undef instead of
+      spinning forever and wedging the async event loop. simple_chat/chat now carp
       when a message argument exactly matches a chat_f control name — e.g.
       `simple_chat($prompt, reasoning_effort => 'high')`, which used to
       silently send the control name and its value as extra user turns — as
