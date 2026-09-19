@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-09-19T16:47:14Z
+claimed_by: worker-183edge
+class: standard
+completed: 2026-09-19T16:47:14Z
+created: 2026-09-19T06:02:08Z
+id: 183
+priority: low
+started: 2026-09-19T16:07:39Z
+status: done
+tags:
+- anthropic
+- structured-output
+- followup
+title: 'Anthropic structured output: closed-schema required-keys + additionalProperties-as-schema
+  edges'
+updated: 2026-09-19T16:47:14Z
+---
+
+Follow-up aus k182. (1) _close_schema (Role::AnthropicCompatible) setzt additionalProperties:false rekursiv, aber NICHT 'required'. Live-Test C (k182) hatte 'required' im Schema und ging 200 durch - unverifiziert, ob der First-Party-Validator 'required' auf allen Keys verlangt, wenn es fehlt. Falls ja, muss _close_schema es mitfuellen. Braucht freigegebenen Live-Call (offenes json_schema OHNE required). (2) additionalProperties-als-Schema (Dictionary/Map-Schema, wo additionalProperties selbst ein Schema-HashRef ist) wird von _close_schema faelschlich auf false gezwungen - Edge, betrifft nur Nutzer mit Map-Schemas gegen First-Party-Anthropic; solche wuerden ohnehin 400en, also json_object als Ausweg. Niedrig.
+
+Live-verify Runde queued (Getty freigegeben 2026-09-19). Probe: First-Party-Anthropic json_schema mit properties OHNE required (= was _close_schema heute erzeugt) -> 400 oder 200?
+
+2026-09-19 14:04 LIVE 2026-09-19 (advisor). Engine::Anthropic claude-sonnet-5, raw POST /v1/messages, output_config.format genau wie _close_schema es baut.
+Probe A (unter Test): schema {type:object, properties:{foo:{type:string}}, additionalProperties:false} OHNE required -> HTTP 200, content {"foo":"bar"}.
+Probe B (Kontrolle, k182 Test C repro): dasselbe MIT required:[foo] -> HTTP 200.
+VERDIKT #183 Hauptfrage: First-Party output_config.format-Validator verlangt KEIN required auf einer closed schema. _close_schema (setzt rekursiv additionalProperties:false, aber NICHT required) ist KORREKT -> keine Aenderung noetig.
+Punkt 2 (code-read, low, bestaetigt): _close_schema Z.327-329 zwingt additionalProperties auf false auch wenn additionalProperties ein Schema-HashRef ist (Dictionary/Map: additionalProperties:{type:string}). Bedingung "!exists $out{additionalProperties} || $out{additionalProperties}" ist bei truthy HashRef wahr -> clobbert Map auf false. Zerstoert Map/Dictionary-Semantik; Caller kann keine offene-Key Map als structured output ausdruecken; ausserdem wird nicht in das additionalProperties-Subschema rekursiert. Impact: medium fuer Dictionary-Structured-Outputs, niedrige Frequenz. Empfehlung: additionalProperties nur auf false setzen wenn es NICHT bereits ein HashRef-Schema ist (und ggf. in das Subschema rekursieren). Raw-Logs: scratchpad 183_*.log
+
+Getty-Entscheidung 2026-09-19: Hauptfrage LIVE geklaert -> First-Party-Anthropic verlangt KEIN required auf closed schema (200 ohne/mit). _close_schema bleibt. NUR Punkt 2 umsetzen: _close_schema (AnthropicCompatible.pm:327-329) darf additionalProperties NICHT auf false klobbern, wenn es bereits ein Schema-HashRef ist (Dictionary/Map) -> Map-Semantik erhalten + in das Subschema rekursieren. + Test.
+
+DONE & merged in local main (7980072, --no-ff, kein Push). Hauptfrage live geklaert (First-Party-Anthropic verlangt KEIN required auf closed schema) -> _close_schema unveraendert. Umgesetzt: _close_schema klobbert additionalProperties-als-Schema (Map/Dictionary) nicht mehr auf false, rekursiert stattdessen. t/77 +Map-Case, sabotage-geprueft. Suite 4155 gruen (offline), perlcritic clean, dzil build OK. ADR-0005-Reconcile via adr-auditor.
