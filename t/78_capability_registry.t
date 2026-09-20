@@ -33,8 +33,7 @@ my %NOT_A_CAPABILITY = (
   'Langertha::Role::Models'              => 'model discovery, composed by every engine base — a constant-true flag carries no information',
   'Langertha::Role::StaticModels'        => 'implementation swap for list_models, same feature surface as Role::Models',
   'Langertha::Role::ThinkTag'            => 'client-side response post-processing (composed by Role::Chat), never a wire field',
-  'Langertha::Role::PluginHost'          => 'host-side plugin pipeline, also composed by non-engines (Chat, Raider, Embedder, ImageGen)',
-  'Langertha::Role::Runnable'            => 'interface marker (requires run_f), composed by Langertha::Raid, not by engines',
+  'Langertha::Role::PluginHost'          => 'host-side plugin pipeline, also composed by non-engines (Chat, Embedder, ImageGen)',
   'Langertha::Role::Langfuse'            => 'engine-level observability composed by Role::Chat — constant-true for chat engines, so it carries no capability information',
 );
 

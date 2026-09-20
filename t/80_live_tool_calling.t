@@ -33,60 +33,53 @@ BEGIN {
   eval {
     require IO::Async::Loop;
     require Future::AsyncAwait;
-    require Net::Async::MCP;
-    require MCP::Server;
-    require MCP::Tool;
     1;
-  } or plan skip_all => 'Requires IO::Async, Net::Async::MCP, and MCP modules';
+  } or plan skip_all => 'Requires IO::Async and Future::AsyncAwait';
 }
 
+use lib 't/lib';
 use IO::Async::Loop;
 use Future::AsyncAwait;
-use Langertha::MCP::Client;
-use MCP::Server;
-use MCP::Tool;
+use Test::MockMCP;
 
-# --- Build a test MCP server with deterministic tools ---
+# --- Build a duck-typed MCP server (Test::MockMCP) with deterministic tools ---
 
-my $server = MCP::Server->new(name => 'test', version => '1.0');
-
-$server->tool(
-  name        => 'add',
-  description => 'Add two numbers together and return the result',
-  input_schema => {
-    type       => 'object',
-    properties => {
-      a => { type => 'number', description => 'First number' },
-      b => { type => 'number', description => 'Second number' },
+my $mcp = Test::MockMCP->new(
+  tools => [
+    {
+      name        => 'add',
+      description => 'Add two numbers together and return the result',
+      input_schema => {
+        type       => 'object',
+        properties => {
+          a => { type => 'number', description => 'First number' },
+          b => { type => 'number', description => 'Second number' },
+        },
+        required => ['a', 'b'],
+      },
+      code => sub {
+        my ($self, $args) = @_;
+        my $result = $args->{a} + $args->{b};
+        return $self->text_result("$result");
+      },
     },
-    required => ['a', 'b'],
-  },
-  code => sub {
-    my ($self, $args) = @_;
-    my $result = $args->{a} + $args->{b};
-    return $self->text_result("$result");
-  },
-);
-
-$server->tool(
-  name        => 'get_secret_code',
-  description => 'Returns the secret code for the given room name. You MUST call this tool to get the code, do not guess.',
-  input_schema => {
-    type       => 'object',
-    properties => {
-      room => { type => 'string', description => 'The room name to look up' },
+    {
+      name        => 'get_secret_code',
+      description => 'Returns the secret code for the given room name. You MUST call this tool to get the code, do not guess.',
+      input_schema => {
+        type       => 'object',
+        properties => {
+          room => { type => 'string', description => 'The room name to look up' },
+        },
+        required => ['room'],
+      },
+      code => sub {
+        my ($self, $args) = @_;
+        return $self->text_result("XYLOPHONE-42");
+      },
     },
-    required => ['room'],
-  },
-  code => sub {
-    my ($self, $args) = @_;
-    return $self->text_result("XYLOPHONE-42");
-  },
+  ],
 );
-
-my $loop = IO::Async::Loop->new;
-my $mcp = Langertha::MCP::Client->new(server => $server);
-$loop->add($mcp);
 
 my $prompt = 'What is 7 plus 15? Use the add tool to calculate this. Answer with just the number.';
 my $secret_prompt = 'What is the secret code for room "lobby"? Use the get_secret_code tool. Reply with just the code.';

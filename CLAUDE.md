@@ -2,7 +2,8 @@
 
 Canonical instruction file for the Langertha repo. Langertha is a Perl LLM framework supporting
 ~25 engines via composable Moose roles: chat, tool calling (MCP), streaming, embeddings,
-transcription, structured output, and an autonomous agent (Raider).
+transcription, and structured output. The autonomous agent (Raider) lives in the
+sibling distribution langertha-raider (`Langertha::Raider`, `requires 'Langertha'`).
 
 This distribution ships its own agent skills (`.claude/skills/`), agents (`.claude/agents/`),
 and house rules (`.claude/rules/`). The engineering discipline, delegation, coordination,
@@ -215,8 +216,8 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **StaticModels** — hardcoded model list for engines without a usable `/models` endpoint
   (Perplexity, NousResearch, MiniMaxAnthropic, MoonshotAnthropic, AKIAnthropic). **KeepAlive** — Ollama native
   `keep_alive` (model residency duration).
-- **PluginHost** (Raider, Engine::Remote) · **Runnable** (Raider + Raid nodes async contract) — infrastructure
-  roles, not capabilities.
+- **PluginHost** (Chat, Embedder, ImageGen, Engine::Remote) — infrastructure role, not a
+  capability. (**Runnable** + the Raid orchestration nodes moved to langertha-raider.)
 
 ### Core classes
 
@@ -236,7 +237,9 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **Langertha::Stream / Stream::Chunk** — streaming iteration; `Stream::Chunk` carries
   `tool_calls`, aggregated by `Role::Chat::aggregate_tool_calls`.
 - **Langertha::Content::Image** — provider-agnostic vision input.
-- **Langertha::Raider / Raider::Result** — autonomous agent (below).
+- **Langertha::Result** / **Langertha::MCP::Client** — reserved-namespace stubs; the
+  implementations moved to `Langertha::Raider::Result` / `Langertha::Raider::MCP` in
+  langertha-raider, the stubs stay only for CPAN index continuity.
 
 ### Tool & structured-output flow
 
@@ -250,39 +253,26 @@ decision matrix, the per-provider wire payloads, and the resolved vocabulary (Re
 Assistant echo) live in **`CONTEXT.md`** and **ADRs 0001–0003, 0005** — read those before changing
 the seam, and reconcile any drift (open karr tickets #1, #2).
 
-## Raider (autonomous agent)
+## Raider (autonomous agent) → sibling distribution langertha-raider
 
-`Langertha::Raider` wraps an engine with conversation history, MCP tools, and a multi-turn
-tool-calling loop.
+The autonomous agent (`Langertha::Raider`, `Raider::Result`), the Raid orchestration layer
+(`Langertha::Raid`, `Raid::Loop/Parallel/Sequential`, `RunContext`, `Role::Runnable`) and the
+async MCP client (moved there as `Langertha::Raider::MCP`) no longer ship in core. They live in
+**langertha-raider** (`requires 'Langertha'`, never the reverse — same pattern as
+langertha-knarr/skeid). ADRs 0007/0008 record Raider decisions and stay here as history.
 
-- **History** — conversation history (user + final assistant) persisted across raids; **session
-  history** (full archive incl. tool calls) never compressed; **auto-compression** summarizes
-  when a token threshold is exceeded; **embedding search** over session history (cosine).
-- **Metrics** (raids, iterations, tool calls, timing) · **Langfuse** traces/spans/generations.
-- **Hermes tool calling** for models without native support.
-- **Mid-raid injection** — `inject()` and `on_iteration` callback.
-- **Self-tools** (virtual, `raider_mcp => 1`): `raider_ask_user`, `raider_pause`,
-  `raider_abort`, `raider_wait`, `raider_wait_for`, `raider_session_history`,
-  `raider_manage_mcps`, `raider_switch_engine`.
-- **Inline tools** (`tools => [...]`) · **MCP catalog** (`mcp_catalog`) · **Engine catalog**
-  (`engine_catalog`, runtime engine switching).
-- **Result objects** — `raid_f` returns `Langertha::Raider::Result` (stringifies for back-compat);
-  `respond_f` resumes after a question/pause.
-
-```perl
-my $result = await $raider->raid_f(@messages);   # Result (sync wrapper: ->raid)
-if ($result->is_question) { my $next = await $raider->respond_f($answer); }
-
-$raider->switch_engine('smart');     # programmatic engine switch (NOT LLM-controlled)
-$raider->reset_engine;               # back to default
-my $info = $raider->engine_info;     # { name, class, model }
-```
+Core keeps the seams they build on: `Role::Tools` / `chat_with_tools_f` (with a duck-typed
+`mcp_servers` ArrayRef of any Net::Async::MCP-compatible client), `Role::PluginHost`,
+`Langertha::Plugin`. `Langertha::Result` and `Langertha::MCP::Client` remain as reserved-namespace
+stubs (their code moved to `Langertha::Raider::Result` / `Langertha::Raider::MCP`). The lazy `use Langertha qw( Raider )` sugar in
+`Langertha.pm` and the `->isa('Langertha::Raider')` check in `Plugin.pm` stay and light up once
+langertha-raider is installed.
 
 ## Skills map
 
 | Need | Skill |
 |---|---|
-| Engine creation, Raider, MCP, plugin pipeline (architecture) | `perl-ai-langertha` |
+| Engine creation, MCP, plugin pipeline (architecture); Raider usage (sibling dist langertha-raider) | `perl-ai-langertha` |
 | Moose patterns (attributes, roles, BUILD, immutability) | `getty-perl-moose` |
 | Async (IO::Async, Future, Future::AsyncAwait lifecycle) | `perl-io-async-future` |
 | dist.ini / `[@Author::GETTY]` bundle, POD conventions, next-version | `getty-perl-release-author-getty`, `perl-release-dist-ini` |

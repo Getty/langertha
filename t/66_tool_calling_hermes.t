@@ -496,47 +496,39 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 my $has_async_deps;
 BEGIN {
   $has_async_deps = eval {
-    require IO::Async::Loop;
     require Future::AsyncAwait;
-    require Net::Async::MCP;
-    require MCP::Server;
     1;
   };
 }
 
 SKIP: {
-  skip 'Requires IO::Async, Future::AsyncAwait, Net::Async::MCP, and MCP modules', 15
+  skip 'Requires Future::AsyncAwait', 15
     unless $has_async_deps;
 
-  # Must import async/await at compile time, so we loaded in BEGIN above
-  Future::AsyncAwait->import;
   require Test::MockAsyncHTTP;
-  # The MCP client subclass pulls in Net::Async::MCP itself
-  require Langertha::MCP::Client;
+  require Test::MockMCP;
 
-  my $server = MCP::Server->new(name => 'test', version => '1.0');
-
-  $server->tool(
-    name        => 'add',
-    description => 'Add two numbers together and return the result',
-    input_schema => {
-      type       => 'object',
-      properties => {
-        a => { type => 'number', description => 'First number' },
-        b => { type => 'number', description => 'Second number' },
+  my $mcp = Test::MockMCP->new(
+    tools => [
+      {
+        name        => 'add',
+        description => 'Add two numbers together and return the result',
+        input_schema => {
+          type       => 'object',
+          properties => {
+            a => { type => 'number', description => 'First number' },
+            b => { type => 'number', description => 'Second number' },
+          },
+          required => ['a', 'b'],
+        },
+        code => sub {
+          my ($self, $args) = @_;
+          my $result = $args->{a} + $args->{b};
+          return $self->text_result("$result");
+        },
       },
-      required => ['a', 'b'],
-    },
-    code => sub {
-      my ($self, $args) = @_;
-      my $result = $args->{a} + $args->{b};
-      return $self->text_result("$result");
-    },
+    ],
   );
-
-  my $loop = IO::Async::Loop->new;
-  my $mcp = Langertha::MCP::Client->new(server => $server);
-  $loop->add($mcp);
 
   # Hermes-style responses: text with <tool_call> tags
   my $tool_call_response = Test::MockAsyncHTTP->mock_json_response({

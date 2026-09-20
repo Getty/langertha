@@ -105,7 +105,10 @@ temperature.
 
 =attr mcp_servers
 
-ArrayRef of L<Langertha::MCP::Client> instances for tool calling.
+ArrayRef of MCP client objects for tool calling — any
+L<Net::Async::MCP>-compatible client (for example the C<Langertha::Raider::MCP>
+client from the langertha-raider distribution). Each must respond to
+C<list_tools> and C<call_tool>.
 
 =attr tool_max_iterations
 

@@ -200,9 +200,11 @@ B<THIS API IS WORK IN PROGRESS.>
 
 =item * B<Chat, streaming, embeddings, transcription, image generation>
 
-=item * B<MCP tool calling> -- automatic multi-round tool loops via L<Langertha::MCP::Client>
+=item * B<MCP tool calling> -- automatic multi-round tool loops over any
+L<Net::Async::MCP>-compatible client (see L<Langertha::Role::Tools>)
 
-=item * B<Raider> -- autonomous agent with history, compression, and plugins
+=item * B<Raider> -- autonomous agent with history, compression, and plugins,
+shipped separately in the L<langertha-raider|Langertha::Raider> distribution
 
 =item * B<Response metadata> -- token usage, model, timing, rate limits
 
@@ -214,7 +216,7 @@ B<THIS API IS WORK IN PROGRESS.>
 
 =item * B<Chain-of-thought> -- native extraction and C<E<lt>thinkE<gt>> tag filtering
 
-=item * B<Plugin system> for extending Raider, Chat, Embedder, and ImageGen
+=item * B<Plugin system> for extending Chat, Embedder, ImageGen, and Raider
 
 =back
 
@@ -250,7 +252,9 @@ Langertha can set up your package as a Raider subclass or Plugin role:
 
 C<use Langertha qw( Raider )> imports L<Moose> and L<Future::AsyncAwait>,
 sets L<Langertha::Raider> as superclass, and provides the C<plugin>
-function for applying plugins by short name.
+function for applying plugins by short name. L<Langertha::Raider> ships in
+the separate C<langertha-raider> distribution, which must be installed for
+this sugar to load.
 
 C<use Langertha qw( Plugin )> imports L<Moose> and
 L<Future::AsyncAwait>, and sets L<Langertha::Plugin> as superclass.
@@ -379,8 +383,7 @@ transcription server (extends TranscriptionBase)
 
 =head2 Roles
 
-Roles provide composable functionality to engines, and - where noted - to the
-Raider/Raid layer:
+Roles provide composable functionality to engines and to the wrapper classes:
 
 =over 4
 
@@ -452,10 +455,8 @@ for self-hosted engines
 =item * L<Langertha::Role::Runtime::MetricsPoll> - Async Prometheus C</metrics>
 scraper for self-hosted engines
 
-=item * L<Langertha::Role::PluginHost> - Plugin system for wrapper classes and Raider
-
-=item * L<Langertha::Role::Runnable> - Common async execution contract, composed by
-L<Langertha::Raider> and L<Langertha::Raid> rather than by engines
+=item * L<Langertha::Role::PluginHost> - Plugin system for the wrapper classes
+(and for L<Langertha::Raider> from the langertha-raider distribution)
 
 =item * L<Langertha::Role::Langfuse> - Engine-level Langfuse observability,
 composed by L<Langertha::Role::Chat>
@@ -521,10 +522,6 @@ sub-seconds and numifies to the Unix epoch
 
 =item * L<Langertha::Stream::Chunk> - A single chunk from a streaming
 response (with optional C<tool_calls> for engines that emit them mid-stream)
-
-=item * L<Langertha::Raider> - Autonomous agent with history and tool calling
-
-=item * L<Langertha::Raider::Result> - Typed raid result (final, question, pause, abort)
 
 =item * L<Langertha::Request::HTTP> - Internal HTTP request object
 
@@ -640,8 +637,9 @@ Supported: OpenAI, Groq, Cerebras, OpenRouter, Replicate, HuggingFace
 
 =head2 MCP Tool Calling
 
-Integrates with L<Langertha::MCP::Client> (a L<Net::Async::MCP> subclass)
-for automatic multi-round tool calling:
+Integrates with any L<Net::Async::MCP>-compatible client (for example the
+C<Langertha::Raider::MCP> client shipped with the C<langertha-raider>
+distribution) for automatic multi-round tool calling:
 
     my $engine = Langertha::Engine::OpenAI->new(
         api_key     => $ENV{OPENAI_API_KEY},
@@ -655,7 +653,9 @@ Works with all engines that support tool calling. See L<Langertha::Role::Tools>.
 =head2 Raider (Autonomous Agent)
 
 L<Langertha::Raider> is a stateful agent with conversation history, MCP tool
-calling, context compression, session history, and a plugin system:
+calling, context compression, session history, and a plugin system. It ships
+in the separate C<langertha-raider> distribution; install it to use the agent
+and the C<use Langertha qw( Raider )> sugar:
 
     my $raider = Langertha::Raider->new(
         engine  => $engine,

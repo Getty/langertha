@@ -34,13 +34,15 @@ use Future::AsyncAwait;
 =head1 DESCRIPTION
 
 Base class for Langertha plugins. Plugins are Moose classes that extend
-C<Langertha::Plugin> and override hook methods. Plugins can be attached
-to any plugin host — L<Langertha::Raider> or an engine class that
-consumes L<Langertha::Role::PluginHost>.
+C<Langertha::Plugin> and override hook methods. Plugins can be attached to
+any plugin host — a wrapper class such as L<Langertha::Chat>,
+L<Langertha::Embedder> or L<Langertha::ImageGen>, an engine that consumes
+L<Langertha::Role::PluginHost>, or L<Langertha::Raider> from the
+C<langertha-raider> distribution.
 
 Plugins are registered via the C<plugins> attribute on the host:
 
-    my $raider = Langertha::Raider->new(
+    my $chat = Langertha::Chat->new(
         engine  => $engine,
         plugins => ['Langfuse', 'MyPlugin'],
     );

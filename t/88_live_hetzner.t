@@ -12,6 +12,7 @@ BEGIN {
   }
 }
 
+use lib 't/lib';
 use Langertha::Engine::Hetzner;
 # `async` is a compile-time keyword installed by Future::AsyncAwait's import.
 # A runtime `require` (below) cannot register it, so it must be loaded via
@@ -139,29 +140,25 @@ SKIP: {
   skip 'tool calling: set TEST_LANGERTHA_HETZNER_TEST_TOOLS=1 to exercise native tools', 1
     unless $ENV{TEST_LANGERTHA_HETZNER_TEST_TOOLS};
 
-  require MCP::Server;
-  require Net::Async::MCP;
-  require Langertha::MCP::Client;
-  require IO::Async::Loop;
+  require Test::MockMCP;
 
-  my $server = MCP::Server->new(name => 'hetzner-tools', version => '1.0');
-  $server->tool(
-    name        => 'echo',
-    description => 'Echo back the input text',
-    input_schema => {
-      type       => 'object',
-      properties => { message => { type => 'string' } },
-      required   => ['message'],
-    },
-    code => sub {
-      my ($self, $args) = @_;
-      return $self->text_result($args->{message} // '');
-    },
+  my $mcp = Test::MockMCP->new(
+    tools => [
+      {
+        name        => 'echo',
+        description => 'Echo back the input text',
+        input_schema => {
+          type       => 'object',
+          properties => { message => { type => 'string' } },
+          required   => ['message'],
+        },
+        code => sub {
+          my ($self, $args) = @_;
+          return $self->text_result($args->{message} // '');
+        },
+      },
+    ],
   );
-
-  my $loop = IO::Async::Loop->new;
-  my $mcp  = Langertha::MCP::Client->new(server => $server);
-  $loop->add($mcp);
 
   async sub test_tools {
     await $mcp->initialize;

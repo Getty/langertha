@@ -3,6 +3,7 @@ requires 'File::ShareDir::ProjectDistDir';
 requires 'Future';
 requires 'Future::AsyncAwait', '>= 0.66';
 requires 'Import::Into';
+requires 'IO::Async';
 requires 'JSON::MaybeXS';
 requires 'JSON::PP';
 requires 'JSON::Schema::Modern', '>= 0.617';
@@ -13,6 +14,7 @@ requires 'Module::Runtime';
 requires 'Module::Pluggable';
 requires 'Moose';
 requires 'MooseX::NonMoose';
+requires 'Net::Async::HTTP';
 requires 'OpenAPI::Modern', '>= 0.089';  # needs v0.089+ for updated evaluator handling
 requires 'Path::Tiny';
 requires 'Time::HiRes';
@@ -20,8 +22,6 @@ requires 'Time::Moment';
 requires 'URI';
 requires 'YAML::PP';
 requires 'YAML::XS';
-
-requires 'Net::Async::MCP';
 
 recommends 'IO::Async::SSL';
 

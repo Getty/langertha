@@ -15,13 +15,13 @@ with 'Langertha::Role::ParallelToolUse';
 =head1 SYNOPSIS
 
     use IO::Async::Loop;
-    use Langertha::MCP::Client;
     use Future::AsyncAwait;
 
     my $loop = IO::Async::Loop->new;
 
-    # Set up an MCP server with tools
-    my $mcp = Langertha::MCP::Client->new(server => $my_mcp_server);
+    # Set up any Net::Async::MCP-compatible client (e.g. the
+    # Langertha::Raider::MCP client from the langertha-raider distribution)
+    my $mcp = SomeMCPClient->new(server => $my_mcp_server);
     $loop->add($mcp);
     await $mcp->initialize;
 
@@ -84,9 +84,11 @@ has mcp_servers => (
 
     mcp_servers => [$mcp1, $mcp2]
 
-ArrayRef of L<Langertha::MCP::Client> instances to use as tool providers.
-Defaults to an empty ArrayRef. At least one server must be configured before
-calling L</chat_with_tools_f>.
+ArrayRef of MCP client objects to use as tool providers — any
+L<Net::Async::MCP>-compatible client (for example the C<Langertha::Raider::MCP>
+client from the langertha-raider distribution). Each entry must respond to
+C<list_tools> and C<call_tool>. Defaults to an empty ArrayRef. At least one
+server must be configured before calling L</chat_with_tools_f>.
 
 =cut
 
@@ -518,9 +520,10 @@ exceeded. Returns a L<Future> that resolves to the final text response.
 
 =item * L<Langertha::Role::Chat> - Chat role this is built on top of
 
-=item * L<Langertha::Raider> - Autonomous agent with persistent history using tools
+=item * L<Langertha::Raider> - Autonomous agent with persistent history using
+tools (in the langertha-raider distribution)
 
-=item * L<Langertha::MCP::Client> - MCP client used as tool provider
+=item * L<Net::Async::MCP> - Base for the MCP clients used as tool providers
 
 =item * L<Langertha::Engine::Anthropic> - Engine with native tool support
 
