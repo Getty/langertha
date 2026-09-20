@@ -2,15 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
-    - Raider extracted to the sibling distribution langertha-raider. The
-      autonomous agent (Langertha::Raider), its result (Langertha::Raider::Result),
-      the Raid orchestration layer (Langertha::Raid, Raid::Loop/Parallel/Sequential,
-      Langertha::RunContext) and Langertha::Role::Runnable no longer ship in core —
-      they keep their names in langertha-raider. Two renamed packages stay behind as
-      reserved-namespace stubs so CPAN keeps indexing them under Langertha:
-      Langertha::MCP::Client (implementation moved and renamed to
-      Langertha::Raider::MCP) and Langertha::Result (implementation folded into the
-      now self-contained Langertha::Raider::Result). Core keeps the seams Raider
+    - Raider extracted to the sibling distribution langertha-raider. The autonomous
+      agent (Langertha::Raider, Raider::Result) and the Raid orchestration layer
+      (Langertha::Raid, Raid::Loop/Parallel/Sequential) move there under their own
+      names. Langertha::Result stays as a reserved-namespace stub — its implementation
+      folded into the self-contained Langertha::Raider::Result — so CPAN keeps indexing
+      it under Langertha. Langertha::RunContext and Langertha::Role::Runnable stay in
+      core as dependency-free generic primitives (a structured run context and the
+      run_f execution contract), decoupled from Raider. Core keeps the seams Raider
       builds on (Role::Tools, Role::PluginHost, Langertha::Plugin) and the lazy
       `use Langertha qw( Raider )` sugar, which loads Langertha::Raider once
       langertha-raider is installed. mcp_servers is now documented as a duck-typed

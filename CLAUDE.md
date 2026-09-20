@@ -67,7 +67,7 @@ refactors:
 - **0023** — per-model reasoning wire-truth is a typed `Langertha::Reasoning::Profile` value object, resolved most-specific-first via `for_model($id)` and consumed by `Langertha::Reasoning`'s `to_*`/`BUILD` (replaces the inline `%OPENAI_MODEL_EFFORT`/`%ANTHROPIC_EFFORT`/`%GEMINI3_LEVEL` hashes + `_is_gemini_25`/`_is_fable_class`/`_openai_effort_ok` regexes); three-category taxonomy with a firewall — accepted vocabulary+control (a) and provider-enforced numeric bounds (b) are Profile wire-truth, invented level↔budget interpolation (c) is a deferred `BudgetPolicy` clamped to (b); `levels_by_wire` seam for the live-confirmed chat/responses `max` divergence (Phase 1 behavior-preserving, capability layer untouched); amends 0009, nuances 0019, relates 0002
 - **0024** — pairwise capability exclusions become model-scoped: the `model_capability_exclusions` table on `Role::Chat` (ordered `matcher => coderef`, keyed on `chat_model`); the `tools` + structured-output `response_format` conflict is a serving-stack property, so the rule is engine-scoped on `Groq`/`Cerebras` — the shared `gpt-oss` rule on `Engine::OpenAIBase` was removed (k184 Option C: AKI serves gpt-oss + tools + json_schema at HTTP 200; see the ADR's Option-C Update); supersedes the per-engine mechanism of 0021 (premise reaffirmed), extends 0019, sits above 0002
 - **0025** — `temperature`'s wire emission is conditioned on the resolved reasoning effort (incl. the model's server-side default) for OpenAI reasoning models: a shared `_temperature_kwargs` gate in the OpenAI wire roles + an effort-aware, model-aware `_temperature_rejected_by_reasoning` predicate on `Engine::OpenAI`; drop+carp a non-default temperature under active reasoning, `temperature=1` passes; a runtime predicate not a static capability clear; extends 0009 (control-on-control), consumes 0023, relates 0019/0002
-- **0026** — Raider/Raid extracted to the sibling distribution `langertha-raider` (agent depends on framework, never the reverse — like langertha-knarr/skeid): packages migrating 1:1 (`Langertha::Raider`, `Raider::Result`, `Langertha::Raid*`, `RunContext`, `Role::Runnable`) are removed from core; packages renamed on the way over (`MCP::Client`→`Langertha::Raider::MCP`, `Result` folded into a self-contained `Raider::Result`) keep a reserved-namespace stub in core under the old name for CPAN index continuity; core keeps the seams (Role::Tools/`chat_with_tools_f` with duck-typed `mcp_servers`, PluginHost, Plugin) + the lazy `use Langertha 'Raider'` sugar; `Net::Async::MCP` dropped, `IO::Async`+`Net::Async::HTTP` added explicitly (were only transitive); breaking (`feat!:`); ADRs 0007/0008 stay as history
+- **0026** — Raider/Raid extracted to the sibling distribution `langertha-raider` (agent depends on framework, never the reverse — like langertha-knarr/skeid): names migrating 1:1 (`Langertha::Raider`, `Raider::Result`, `Langertha::Raid*`) are removed from core; a *renamed + previously-published* name keeps a reserved stub under the old name (`Langertha::Result`, folded into a self-contained `Raider::Result`), a *renamed + never-published* name is just dropped (`MCP::Client`→`Langertha::Raider::MCP`); dependency-free generic primitives stay in core (`RunContext`, `Role::Runnable`); core keeps the seams (Role::Tools/`chat_with_tools_f` with duck-typed `mcp_servers`, PluginHost, Plugin) + the lazy `use Langertha 'Raider'` sugar; `Net::Async::MCP` dropped, `IO::Async`+`Net::Async::HTTP` added explicitly (were only transitive); breaking (`feat!:`); ADRs 0007/0008 stay as history
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
@@ -217,8 +217,9 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **StaticModels** — hardcoded model list for engines without a usable `/models` endpoint
   (Perplexity, NousResearch, MiniMaxAnthropic, MoonshotAnthropic, AKIAnthropic). **KeepAlive** — Ollama native
   `keep_alive` (model residency duration).
-- **PluginHost** (Chat, Embedder, ImageGen, Engine::Remote) — infrastructure role, not a
-  capability. (**Runnable** + the Raid orchestration nodes moved to langertha-raider.)
+- **PluginHost** (Chat, Embedder, ImageGen, Engine::Remote) · **Runnable** (dependency-free
+  `run_f` execution contract, generic) — infrastructure roles, not capabilities. (The Raid
+  orchestration nodes that consumed Runnable moved to langertha-raider.)
 
 ### Core classes
 
@@ -238,9 +239,10 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **Langertha::Stream / Stream::Chunk** — streaming iteration; `Stream::Chunk` carries
   `tool_calls`, aggregated by `Role::Chat::aggregate_tool_calls`.
 - **Langertha::Content::Image** — provider-agnostic vision input.
-- **Langertha::Result** / **Langertha::MCP::Client** — reserved-namespace stubs; the
-  implementations moved to `Langertha::Raider::Result` / `Langertha::Raider::MCP` in
-  langertha-raider, the stubs stay only for CPAN index continuity.
+- **Langertha::Result** — reserved-namespace stub; the result value object moved to
+  `Langertha::Raider::Result` in langertha-raider, the stub stays for CPAN index continuity.
+- **Langertha::RunContext** — dependency-free structured execution context (input/state/branch/
+  merge) for runnable nodes; a generic core primitive, decoupled from Raider.
 
 ### Tool & structured-output flow
 
@@ -257,15 +259,17 @@ the seam, and reconcile any drift (open karr tickets #1, #2).
 ## Raider (autonomous agent) → sibling distribution langertha-raider
 
 The autonomous agent (`Langertha::Raider`, `Raider::Result`), the Raid orchestration layer
-(`Langertha::Raid`, `Raid::Loop/Parallel/Sequential`, `RunContext`, `Role::Runnable`) and the
-async MCP client (moved there as `Langertha::Raider::MCP`) no longer ship in core. They live in
-**langertha-raider** (`requires 'Langertha'`, never the reverse — same pattern as
-langertha-knarr/skeid). ADRs 0007/0008 record Raider decisions and stay here as history.
+(`Langertha::Raid`, `Raid::Loop/Parallel/Sequential`) and the async MCP client (moved there as
+`Langertha::Raider::MCP`) no longer ship in core. They live in **langertha-raider**
+(`requires 'Langertha'`, never the reverse — same pattern as langertha-knarr/skeid).
+`Langertha::RunContext` and `Langertha::Role::Runnable` (the run context + `run_f` contract those
+nodes use) stay in core as dependency-free generic primitives. ADRs 0007/0008 record Raider
+decisions and stay here as history.
 
 Core keeps the seams they build on: `Role::Tools` / `chat_with_tools_f` (with a duck-typed
 `mcp_servers` ArrayRef of any Net::Async::MCP-compatible client), `Role::PluginHost`,
-`Langertha::Plugin`. `Langertha::Result` and `Langertha::MCP::Client` remain as reserved-namespace
-stubs (their code moved to `Langertha::Raider::Result` / `Langertha::Raider::MCP`). The lazy `use Langertha qw( Raider )` sugar in
+`Langertha::Plugin`. `Langertha::Result` remains a reserved-namespace stub (its code moved to
+`Langertha::Raider::Result`; `Langertha::MCP::Client` was never released, so it is simply gone). The lazy `use Langertha qw( Raider )` sugar in
 `Langertha.pm` and the `->isa('Langertha::Raider')` check in `Plugin.pm` stay and light up once
 langertha-raider is installed.
 

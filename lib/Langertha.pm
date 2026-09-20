@@ -458,6 +458,10 @@ scraper for self-hosted engines
 =item * L<Langertha::Role::PluginHost> - Plugin system for the wrapper classes
 (and for L<Langertha::Raider> from the langertha-raider distribution)
 
+=item * L<Langertha::Role::Runnable> - Generic C<run_f($ctx)> execution contract,
+a dependency-free core primitive (consumed by the Raid/Raider nodes in the
+langertha-raider distribution)
+
 =item * L<Langertha::Role::Langfuse> - Engine-level Langfuse observability,
 composed by L<Langertha::Role::Chat>
 

@@ -28,15 +28,24 @@ Extract the agent/orchestration layer from core into the `langertha-raider` sibl
 partitioning every affected package by one rule:
 
 - **Migrates 1:1 (same name in the sibling) → removed from core.** `Langertha::Raider`,
-  `Langertha::Raider::Result`, `Langertha::Raid`, `Raid::Loop/Parallel/Sequential`,
-  `Langertha::RunContext` and `Langertha::Role::Runnable` keep their names in `langertha-raider`,
-  so the name lives on there and core simply drops them.
-- **Renamed on the way over → a reserved-namespace stub stays in core under the old name.**
-  `Langertha::MCP::Client` becomes `Langertha::Raider::MCP` (a self-contained `Net::Async::MCP`
-  subclass); `Langertha::Result` is folded into a now self-contained `Langertha::Raider::Result`.
-  Because the sibling does **not** ship those old core-namespace names, core keeps a minimal
-  `package …; 1;` stub for each (`lib/Langertha/Result.pm`, `lib/Langertha/MCP/Client.pm`) whose
-  only job is to keep the name indexed to the `Langertha` distribution on PAUSE.
+  `Langertha::Raider::Result`, `Langertha::Raid` and `Raid::Loop/Parallel/Sequential` keep their
+  names in `langertha-raider`, so the name lives on there and core simply drops them.
+- **Renamed on the way over, and previously published → a reserved-namespace stub stays in core
+  under the old name.** `Langertha::Result` is folded into a now self-contained
+  `Langertha::Raider::Result`; because the sibling no longer ships the `Langertha::Result` name and
+  that name was published up to 0.502, core keeps a minimal `package Langertha::Result; 1;` stub
+  (`lib/Langertha/Result.pm`) whose only job is to keep the name indexed to the `Langertha`
+  distribution on PAUSE.
+- **Renamed on the way over, but never published → simply dropped, no stub.** `Langertha::MCP::Client`
+  becomes `Langertha::Raider::MCP` (a self-contained `Net::Async::MCP` subclass). It was added after
+  0.502 and never released, so there is no PAUSE index entry to preserve and a stub would reserve
+  nothing — core just removes it.
+- **Dependency-free generic primitive → kept in core, not moved.** `Langertha::RunContext` (a
+  structured run context) and `Langertha::Role::Runnable` (the `run_f` contract) pull nothing beyond
+  Moose + the Perl core and carry no Raider coupling in their code (only POD mentions). They are
+  generic primitives, so they stay in core as real modules with their POD generalised;
+  `langertha-raider`'s Raid/Raider consume them cross-dist via `requires 'Langertha'`. A generic,
+  dependency-free primitive is better kept in core than pushed into a sibling and depended back on.
 
 Core deliberately **keeps** the seams the agent was built on, because they are used without it
 (plain `Langertha::Chat` tool calling, the plugin system): `Langertha::Role::Tools` /
@@ -57,26 +66,30 @@ path (`Role::Chat` `_build__async_loop` / `_build__async_http`, `Role::Runtime::
 
 ## Rationale
 
-The stub-vs-remove split keeps the CPAN namespace tidy in both directions: `Langertha::*`
-core-namespace names remain indexed to the `Langertha` distribution rather than being served by a
-sibling dist, while `langertha-raider` publishes only `Langertha::Raider::*`. A 1:1-migrated name
-needs no stub — it is still published, just from the sibling. A renamed name would otherwise vanish
-from the index entirely, so the stub preserves continuity for anyone who had it and reserves the
-namespace for future core use.
+The rule keeps CPAN tidy without over-stubbing. A 1:1-migrated name needs no stub — it is still
+published, just from the sibling (`langertha-raider` owns the `Langertha::Raider::*` subtree plus
+the `Langertha::Raid*` names it took along; `Langertha::Raid` under a sibling is untidy but
+harmless). A stub is spent only where it buys something: a *published* name being renamed away
+would otherwise vanish from the index, so a stub preserves continuity and reserves the name for
+future core use; a name that was never published has no index entry to preserve, so it is dropped
+outright. And a genuinely generic, dependency-free primitive is better kept in core than pushed
+into a sibling and depended back on.
 
 ## Consequences
 
 - **Breaking for the core distribution** (`feat!:`). Installing `Langertha` alone no longer gives
-  you `Langertha::Raider` et al.; install `langertha-raider`. `Langertha::Result` and
-  `Langertha::MCP::Client` still load but are empty — code that called their methods must move to
-  `Langertha::Raider::Result` / `Langertha::Raider::MCP`.
+  you `Langertha::Raider`, `Langertha::Raid` et al.; install `langertha-raider`. `Langertha::Result`
+  still loads but is an empty stub, and `Langertha::MCP::Client` is gone entirely — code that used
+  either must move to `Langertha::Raider::Result` / `Langertha::Raider::MCP`. `Langertha::RunContext`
+  and `Langertha::Role::Runnable` remain available in core, unchanged.
 - Core's async and tool-calling features are unchanged and still first-class; the extraction does
   not touch core's hard dependency graph beyond the declared-dependency correction above.
 - ADR 0007 (Raider session archive) and ADR 0008 (Raider self-tools) describe decisions whose code
   now lives in `langertha-raider`; they stay here as historical record of how Raider reached this
   shape. This ADR does not supersede them.
-- The reserved-stub pattern is reusable: any future `Langertha::*` package that is renamed as it
-  moves to a sibling should leave a stub behind; one that keeps its name should not.
+- Reusable partitioning rule for future extractions: a name that migrates 1:1 is removed (it lives
+  on in the sibling); a renamed name leaves a stub only if it was already published; a name that was
+  never published is dropped; a dependency-free generic primitive stays in core rather than moving.
 
 ## Future work
 
