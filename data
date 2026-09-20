@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-09-20T04:30:10Z
+claimed_by: opus
+class: standard
+completed: 2026-09-20T15:14:16Z
+created: 2026-09-20T04:30:00Z
+id: 187
+priority: high
+started: 2026-09-20T04:30:10Z
+status: done
+tags:
+- raider
+- extraction
+- langertha-raider
+- cpanfile
+title: 'Raider-Extraktion: Core-Seite (entfernen + Integrität + requirements + Doku)'
+updated: 2026-09-20T15:14:16Z
+---
+
+Raider/Raid/RunContext/Runnable/MCP::Client verlassen den Core in die Sibling-Dist langertha-raider (Muster wie langertha-knarr/skeid). Quelldateien wurden roh nach ~/dev/langertha-raider/ kopiert (aus HEAD bca4d0b) + MIGRATION-FROM-LANGERTHA.md. Diese Session macht NUR die Core-Seite; der Dist-Aufbau/Rename (MCP::Client->Langertha::Raider::MCP, App::Raider::*->Langertha::Raider::*) ist das raider-Team (raider-Board #1-#6).
+
+CORE-ARBEIT (langertha-worker, isolierter Worktree):
+- Loeschen: lib/Langertha/{Raider.pm,Raider/Result.pm,Raid.pm,Raid/{Loop,Parallel,Sequential}.pm,RunContext.pm,Role/Runnable.pm,MCP/Client.pm} + Raider-dedizierte Tests (71,82,85,86,87,88_clear,96).
+- Tests im Core behalten+reparieren (Mock-MCP/skip-guards): 64,66,80,83,88_live_hetzner,89_sugar,91_plugin_config,(78).
+- cpanfile: Net::Async::MCP RAUS; IO::Async + Net::Async::HTTP explizit REIN (kamen bisher nur transitiv ueber Net::Async::MCP, Core nutzt beide direkt -> sonst bricht Core-Async bei sauberer Installation). Math::Vector::Similarity + MooseX::NonMoose BLEIBEN (Nicht-Raider-Konsumenten).
+- KEEP: lazy `use Langertha "Raider"`-Zucker in Langertha.pm, `->isa("Langertha::Raider")` in Plugin.pm. POD-Prosa auf Sibling-Dist umstellen.
+- Doku: CLAUDE.md Raider-Abschnitt eindampfen, Changes-Eintrag.
+- Verify: prove -lr t/ (gruen ohne langertha-raider), dzil build, perlcritic.
+
+FOLLOW-UP: ADR fuer die Extraktion (langertha-adr-auditor). karr #172 (Raider session-history embeddings) sollte nach Merge auf das langertha-raider-Board wandern.
+
+Erledigt & gelandet auf main (linear, kein Push): d326f95 (feat!: Extraktion) + 9ea606a (docs: ADR 0026). Core: 1:1-Pakete entfernt (Raider/Raid/RunContext/Runnable), umbenannte als reserved-namespace Stubs (Langertha::Result, Langertha::MCP::Client) fuer CPAN-Index. cpanfile: Net::Async::MCP raus, IO::Async+Net::Async::HTTP explizit rein (waren nur transitiv). Tests via t/lib/Test/MockMCP.pm repariert. Verify: prove -lr t/ = 106 Dateien/3974 Tests PASS; Ohne-langertha-raider-Pfad (t/64/t/89) gegengecheckt; dzil build (Langertha-0.503) + perlcritic exit 0. Quellen nach ~/dev/langertha-raider kopiert (inkl. Basis-Result.pm) + MIGRATION-FROM-LANGERTHA.md mit Stub-Regel. HINWEIS: isolation-Worktree forkte von origin/main (32 Commits stale) -> vor Merge per rebase --onto main korrigiert.
