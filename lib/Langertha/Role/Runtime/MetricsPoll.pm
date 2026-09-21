@@ -93,31 +93,12 @@ sub _croak {
   croak($msg);
 }
 
-# Private IO::Async loop + Net::Async::HTTP for the async path. Same
-# pattern as Langertha::Role::Chat: lazy-loaded on first call, lives
-# on the engine instance, attached to a private loop.
-has _async_loop => (
-  is => 'ro',
-  lazy_build => 1,
-);
-
-sub _build__async_loop {
-  require IO::Async::Loop;
-  return IO::Async::Loop->new;
-}
-
-has _async_http => (
-  is => 'ro',
-  lazy_build => 1,
-);
-
-sub _build__async_http {
-  my ($self) = @_;
-  require Net::Async::HTTP;
-  my $http = Net::Async::HTTP->new;
-  $self->_async_loop->add($http);
-  return $http;
-}
+# The _async_http backend (and its _async_loop) come from
+# Langertha::Role::AsyncHTTP (composed below): injected client >
+# Net::Async::HTTP > synchronous LWP fallback. The sync wrappers
+# (poll_metrics / export_otlp) only spin _async_loop when the future is
+# not already ready, so the sync fallback never creates an event loop.
+with 'Langertha::Role::AsyncHTTP';
 
 async sub poll_metrics_f {
   my ( $self, @prefixes ) = @_;
@@ -159,13 +140,13 @@ Croaks on a non-success HTTP response.
 
 sub poll_metrics {
   my ( $self, @prefixes ) = @_;
-  # Synchronous variant. Spins up a private IO::Async loop on the
-  # same Net::Async::HTTP client as the async path and blocks until
-  # the response is parsed. LWP would be simpler but introduces a
-  # second transport just for this method.
-  my $loop = $self->_async_loop;
+  # Synchronous variant. On the async backend poll_metrics_f returns a
+  # pending future, so drive it on the IO::Async loop. On the sync
+  # fallback (Langertha::Request::SyncHTTP) the future is already
+  # complete, so return its result without touching _async_loop — that
+  # keeps IO::Async out of the sync path entirely.
   my $f = $self->poll_metrics_f(@prefixes);
-  $loop->await($f);
+  $self->_async_loop->await($f) unless $f->is_ready;
   return $f->get;
 }
 
@@ -173,9 +154,11 @@ sub poll_metrics {
 
     my $records = $engine->poll_metrics;
 
-Synchronous scrape. Drives L</poll_metrics_f> on a private
-L<IO::Async::Loop> and blocks until the response is parsed.
-Returns the ArrayRef of records or croaks on HTTP failure.
+Synchronous scrape. Returns the ArrayRef of records or croaks on HTTP
+failure. On the L<Net::Async::HTTP> backend it drives L</poll_metrics_f>
+on the L<IO::Async::Loop> and blocks until parsed; on the synchronous
+L<Langertha::Request::SyncHTTP> fallback the future is already complete,
+so no event loop is created (L<Langertha::Role::AsyncHTTP>).
 
 Use this only when no event loop is already running. Inside an
 async context prefer L</poll_metrics_f>.
@@ -255,10 +238,12 @@ L<https://github.com/orgs/langfuse/discussions/10686>.
 
 sub export_otlp {
   my ( $self, $records, %opts ) = @_;
-  # Synchronous variant, same private-loop pattern as poll_metrics.
-  my $loop = $self->_async_loop;
+  # Synchronous variant, same loop-guard pattern as poll_metrics: drive
+  # the loop only when the future is pending (async backend); the sync
+  # fallback returns an already-complete future and never touches
+  # _async_loop.
   my $f = $self->export_otlp_f($records, %opts);
-  $loop->await($f);
+  $self->_async_loop->await($f) unless $f->is_ready;
   return $f->get;
 }
 
@@ -266,9 +251,11 @@ sub export_otlp {
 
     my $response = $engine->export_otlp($records, endpoint => '...');
 
-Synchronous export. Drives L</export_otlp_f> on a private
-L<IO::Async::Loop> and blocks until the response is received.
-Returns the L<HTTP::Response> or croaks on HTTP failure.
+Synchronous export. Returns the L<HTTP::Response> or croaks on HTTP
+failure. On the L<Net::Async::HTTP> backend it drives L</export_otlp_f>
+on the L<IO::Async::Loop> and blocks until received; on the synchronous
+L<Langertha::Request::SyncHTTP> fallback the future is already complete,
+so no event loop is created (L<Langertha::Role::AsyncHTTP>).
 
 Use this only when no event loop is already running. Inside an
 async context prefer L</export_otlp_f>.
