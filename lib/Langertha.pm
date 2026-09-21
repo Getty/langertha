@@ -400,6 +400,8 @@ filtering for reasoning models, composed by L<Langertha::Role::Chat>
 
 =item * L<Langertha::Role::HTTP> - HTTP request/response handling
 
+=item * L<Langertha::Role::AsyncHTTP> - Async HTTP backend selection (injected client / Net::Async::HTTP / synchronous LWP fallback), composed by L<Langertha::Role::Chat> and L<Langertha::Role::Runtime::MetricsPoll>
+
 =item * L<Langertha::Role::Streaming> - Streaming response processing
 
 =item * L<Langertha::Role::JSON> - JSON encode/decode

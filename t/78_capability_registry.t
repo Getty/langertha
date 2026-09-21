@@ -28,6 +28,7 @@ my %NOT_A_CAPABILITY = (
   'Langertha::Role::AnthropicCompatible' => 'wire envelope (dialect axis, ADR 0013/0016)',
   'Langertha::Role::ResponsesCompatible' => 'wire envelope (dialect axis, ADR 0013/0016)',
   'Langertha::Role::HTTP'                => 'transport, not a provider feature',
+  'Langertha::Role::AsyncHTTP'           => 'async HTTP transport backend selection (injected / Net::Async::HTTP / sync LWP fallback), not a provider feature',
   'Langertha::Role::JSON'                => 'serializer infrastructure',
   'Langertha::Role::OpenAPI'             => 'request generation / spec validation infrastructure',
   'Langertha::Role::Models'              => 'model discovery, composed by every engine base — a constant-true flag carries no information',

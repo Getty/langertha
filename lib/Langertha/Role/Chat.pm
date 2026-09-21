@@ -141,9 +141,18 @@ with 'Langertha::Role::Capabilities';
 This role provides chat functionality for LLM engines. It includes both
 synchronous and asynchronous (L<Future>-based) methods for chat and streaming.
 
-The Future-based C<_f> methods are implemented using L<Future::AsyncAwait> and
-L<Net::Async::HTTP>. These modules are loaded lazily only when you call a C<_f>
-method, so synchronous-only usage does not require them.
+The Future-based C<_f> methods are implemented using L<Future::AsyncAwait>. The
+HTTP backend is selected by L<Langertha::Role::AsyncHTTP>: an injected
+C<_async_http> client wins, else L<Net::Async::HTTP> if it can be loaded, else a
+synchronous L<LWP::UserAgent> fallback (L<Langertha::Request::SyncHTTP>). These
+async modules are loaded lazily only on the async path, so synchronous-only
+usage — and the sync fallback — does not require them.
+
+When the sync fallback is used the C<_f> methods still return a L<Future> and
+keep working, but they run B<synchronously and sequentially> (blocking, no
+concurrency): the future is already complete when returned, so several C<_f>
+calls awaited "in parallel" run one after another. Install L<Net::Async::HTTP>
++ L<IO::Async> (or inject your own C<_async_http> client) for real concurrency.
 
 =cut
 
@@ -361,30 +370,9 @@ in order.
 
 =cut
 
-# Future-based async methods
-
-has _async_loop => (
-  is => 'ro',
-  lazy_build => 1,
-);
-
-sub _build__async_loop {
-  require IO::Async::Loop;
-  return IO::Async::Loop->new;
-}
-
-has _async_http => (
-  is => 'ro',
-  lazy_build => 1,
-);
-
-sub _build__async_http {
-  my ($self) = @_;
-  require Net::Async::HTTP;
-  my $http = Net::Async::HTTP->new;
-  $self->_async_loop->add($http);
-  return $http;
-}
+# Future-based async methods. The _async_http backend (and its _async_loop)
+# come from Langertha::Role::AsyncHTTP (composed below): injected client >
+# Net::Async::HTTP > synchronous LWP fallback.
 
 async sub simple_chat_f {
   my ( $self, @messages ) = @_;
@@ -1024,7 +1012,7 @@ sub _process_stream_buffer {
   return \@chunks;
 }
 
-with 'Langertha::Role::ThinkTag', 'Langertha::Role::Langfuse';
+with 'Langertha::Role::ThinkTag', 'Langertha::Role::Langfuse', 'Langertha::Role::AsyncHTTP';
 
 =seealso
 
