@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - The async _f methods gained a synchronous LWP fallback: when
+      Net::Async::HTTP is not installed (and no client is injected), HTTP runs
+      synchronously and returns an already-complete Future, so the _f methods
+      keep working (sequentially, blocking) without an event loop. IO::Async and
+      Net::Async::HTTP are now recommends, not requires — a clean install is
+      sync-capable and async users add the two recommends (or cpanm
+      --with-recommends). Backend selection (injected > Net::Async::HTTP > sync)
+      lives in Langertha::Role::AsyncHTTP, composed by Role::Chat and
+      Role::Runtime::MetricsPoll; the synchronous client is
+      Langertha::Request::SyncHTTP, streaming included. Bring your own async
+      client by injecting _async_http at construction. (ADR 0027.)
+
     - Raider extracted to the sibling distribution langertha-raider. The autonomous
       agent (Langertha::Raider, Raider::Result) and the Raid orchestration layer
       (Langertha::Raid, Raid::Loop/Parallel/Sequential) move there under their own
@@ -14,8 +26,7 @@ Revision history for Langertha
       `use Langertha qw( Raider )` sugar, which loads Langertha::Raider once
       langertha-raider is installed. mcp_servers is now documented as a duck-typed
       ArrayRef of Net::Async::MCP-compatible clients. Requirements: Net::Async::MCP
-      dropped; IO::Async and Net::Async::HTTP added explicitly (core uses both
-      directly; they previously came in only transitively via Net::Async::MCP).
+      dropped.
 
     - Tool wire-translation is a single source of truth in the Langertha::Tool
       / ToolCall / ToolResult / ToolChoice value objects, keyed by a per-engine

@@ -3,18 +3,17 @@ requires 'File::ShareDir::ProjectDistDir';
 requires 'Future';
 requires 'Future::AsyncAwait', '>= 0.66';
 requires 'Import::Into';
-requires 'IO::Async';
 requires 'JSON::MaybeXS';
 requires 'JSON::PP';
 requires 'JSON::Schema::Modern', '>= 0.617';
 requires 'LWP::Protocol::https';
+requires 'LWP::UserAgent';
 requires 'MIME::Base64';
 requires 'Log::Any';
 requires 'Module::Runtime';
 requires 'Module::Pluggable';
 requires 'Moose';
 requires 'MooseX::NonMoose';
-requires 'Net::Async::HTTP';
 requires 'OpenAPI::Modern', '>= 0.089';  # needs v0.089+ for updated evaluator handling
 requires 'Path::Tiny';
 requires 'Time::HiRes';
@@ -23,7 +22,13 @@ requires 'URI';
 requires 'YAML::PP';
 requires 'YAML::XS';
 
+# The async _f transport is optional: without these Langertha falls back to a
+# synchronous LWP client (Langertha::Role::AsyncHTTP -> Langertha::Request::SyncHTTP),
+# so the _f methods keep working sequentially. Install them (or `cpanm
+# --with-recommends`) for real async concurrency. See ADR 0027.
+recommends 'IO::Async';
 recommends 'IO::Async::SSL';
+recommends 'Net::Async::HTTP';
 
 on test => sub {
   requires 'Test2::Suite';
