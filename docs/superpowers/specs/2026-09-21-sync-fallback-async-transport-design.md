@@ -1,6 +1,6 @@
 # Design Spec — Sync-fallback async transport (karr #188)
 
-- Status: **draft for owner review**
+- Status: **approved (2026-09-21); ready for implementation plan**
 - Date: 2026-09-21
 - karr: #188 (this)
 - ADRs touched: revisits **0026**'s dependency decision (it added `IO::Async` + `Net::Async::HTTP`
@@ -119,13 +119,12 @@ Mirror the extraction's `@INC`-block technique to prove the sync path needs neit
 - **Warn-once:** only one warning per process across multiple sync `_f` calls.
 - MetricsPoll: `poll_metrics`/`poll_metrics_f` work over the sync shim with the async stack blocked.
 
-## 11. Open decisions (owner)
+## 11. Resolved decisions (owner-approved 2026-09-21)
 
-1. **MetricsPoll in scope** — recommended **yes** (shared helper). Confirm or defer.
-2. **Attribute surface** — document the existing `_async_http`/`_async_loop` as the injection
-   contract, or add public aliases (`http_client`)? Recommend: document the existing names +
-   contract, no rename (surgical). Decide.
-3. **Warn scope** — once per process (recommended) vs per instance.
+1. **MetricsPoll is in scope** — the same shared backend-selection helper as `Role::Chat`.
+2. **Attribute surface:** document the existing `_async_http`/`_async_loop` as the injection
+   contract; no rename, no public alias (surgical).
+3. **Warning:** once per process.
 
 ## 12. Out of scope / future
 
