@@ -20,11 +20,14 @@ and lane are in the house rules. Agents in this repo:
 | Task | Agent |
 |---|---|
 | Implement / refactor / debug / test behavior-relevant code | `langertha-worker` (default) |
+| Async & transport: Future/IO::Async semantics, HTTP backend seam, streaming, MetricsPoll, hangs | `langertha-async-worker` |
+| Review a diff / branch / fix wave (read-only, severity-ranked findings + verdict) | `langertha-reviewer` |
 | Backfill & record architecture decisions in `docs/adr/` | `langertha-adr-auditor` |
 | Validate / red-team a plan against LLM-provider reality; market & provider Sonderheiten | `langertha-llm-advisor` |
 
 The natural chain: orchestrator plans → `langertha-llm-advisor` validates it against provider
-reality → `langertha-worker` implements → `langertha-adr-auditor` records the decision.
+reality → `langertha-worker` (or `langertha-async-worker`) implements → `langertha-reviewer`
+reviews → `langertha-adr-auditor` records the decision.
 
 The agents carry their skills via `briefing.skills` (see `.claude/agents/`); the main agent
 delegates rather than loading them. Skill sources live under `.claude/skills/`.
