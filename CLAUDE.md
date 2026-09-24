@@ -22,6 +22,8 @@ and lane are in the house rules. Agents in this repo:
 | Implement / refactor / debug / test behavior-relevant code | `langertha-worker` (default) |
 | Async & transport: Future/IO::Async semantics, HTTP backend seam, streaming, MetricsPoll, hangs | `langertha-async-worker` |
 | Review a diff / branch / fix wave (read-only, severity-ranked findings + verdict) | `langertha-reviewer` |
+| Write / extend tests (regression, TDD red phase, fixtures, transport tests) | `langertha-test-writer` |
+| User-facing POD, `lib/Langertha.pm` catalogues, `Changes` entries | `langertha-pod-writer` |
 | Backfill & record architecture decisions in `docs/adr/` | `langertha-adr-auditor` |
 | Validate / red-team a plan against LLM-provider reality; market & provider Sonderheiten | `langertha-llm-advisor` |
 
@@ -104,7 +106,7 @@ Test framework: `Test2::Bundle::More`. `dzil release` is forbidden without expli
 - **`Future::AsyncAwait`** (>= 0.66) for all async methods; **IO::Async** event loop.
 - **MCP**: `Net::Async::MCP` (client), `MCP::Server` (tool definitions, `inputSchema` camelCase).
 - **POD**: `@Author::GETTY` PodWeaver. `# ABSTRACT:` required on every `.pm`; inline `=attr`,
-  `=method`, `=seealso`. Use the `pod-writer` agent for documentation.
+  `=method`, `=seealso`. Use the `langertha-pod-writer` agent for documentation.
 - **Naming** (enforced by `.perlcriticrc` on every `dzil test`): packages are
   `CamelCase` (`vLLM` brand exempt), subroutines and variables are `snake_case`.
   Moose lifecycle methods (`BUILD`, `DEMOLISH`, `FOREIGNBUILDARGS`, …) and tied-method
