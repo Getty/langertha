@@ -61,7 +61,9 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
    `_async_loop` attributes and the backend choice, ending the duplication: an injected
    `_async_http` wins verbatim (bring-your-own-client is now a supported feature, not an accident of
    private attributes); else `Net::Async::HTTP` if `eval { require }` succeeds (build `_async_loop`,
-   add the client — today's behaviour); else the `SyncHTTP` shim plus one `carp` per process.
+   add the client — today's behaviour); else the `SyncHTTP` shim plus one warning per process
+   (reported at the caller's `_f` call site; a `Net::Async::HTTP` that is installed but fails to
+   load is reported with its load error rather than as "not available").
    `_async_loop` is built **only** on the `Net::Async::HTTP` path; the sync path never creates an
    event loop.
 
