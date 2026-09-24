@@ -35,11 +35,27 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
    so the whole `_f` chain runs sync and the caller's `->get` returns immediately. Its streaming
    branch bridges LWP's per-chunk content callback (`($data, $response, $protocol)`, live-verified
    against LWP::UserAgent 6.83) to the `on_header`→chunk-sub contract, ending with the `undef`
-   end-of-body signal — so `_process_stream_buffer` and the chunk callbacks fire exactly as on the
-   async path (blocking, not truly incremental). Error parity is automatic: LWP accumulates error
-   bodies on the response and the future resolves with it, matching `Net::Async::HTTP`
-   (`fail_on_error` defaults false — also live-verified, at 0.50) and the existing
-   `Role::HTTP` error-body handling.
+   end-of-body signal — so `_process_stream_buffer` and the chunk callbacks fire as on the async
+   path: incrementally (LWP calls back per socket read, so TTFT is real) but blocking. On the
+   non-streaming path error parity is automatic: LWP accumulates error bodies on the response and
+   the future resolves with it, matching `Net::Async::HTTP` (`fail_on_error` defaults false — also
+   live-verified, at 0.50) and the existing `Role::HTTP` error-body handling.
+
+   On the streaming path parity is **not** automatic and the shim enforces it explicitly (amended
+   after the k188 final review, which reproduced both gaps against a local `HTTP::Daemon`):
+   - LWP runs the content callback only for a success response (`LWP::Protocol::collect`), and
+     never for its internal error responses (connection refused, DNS, timeout) or an empty body.
+     `Net::Async::HTTP` calls `on_header` for every response and feeds it the body, error bodies
+     included. So after the request the shim calls `on_header` once if LWP never did, hands the
+     chunk-sub the accumulated body, then `undef` — the caller's `is_success` check then croaks
+     `streaming request failed: <status line>` identically on both backends.
+   - LWP catches a die in the content callback (and a mid-body read failure) and records it as
+     `X-Died` on a response that still looks successful. The shim captures the original exception
+     (or the `X-Died` text) and **fails** the future with it, sending no `undef` end signal —
+     a truncated stream is never resolved as success, matching `Net::Async::HTTP`, where the die
+     propagates.
+   Both are covered by `t/45_sync_http_real_lwp.t`, a real LWP (and `Net::Async::HTTP`) against a
+   forked local daemon, including sync/async parity on a 4xx with a body.
 
 2. **One shared selection seam** — `Langertha::Role::AsyncHTTP` — owns the `_async_http` /
    `_async_loop` attributes and the backend choice, ending the duplication: an injected

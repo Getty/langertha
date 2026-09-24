@@ -24,13 +24,51 @@ sub do_request {
   my $on_header = $args{on_header};
 
   if ($on_header) {
-    my $chunk_handler;
+    my ( $chunk_handler, $header_seen, $callback_error );
     my $response = $self->user_agent->request($request, sub {
-      my ( $data, $resp ) = @_;
-      $chunk_handler ||= $on_header->($resp);
-      $chunk_handler->($data) if $chunk_handler;
+      my ( $data, $header_response ) = @_;
+      my $ok = eval {
+        unless ($header_seen) {
+          $header_seen   = 1;
+          $chunk_handler = $on_header->($header_response);
+        }
+        $chunk_handler->($data) if $chunk_handler;
+        1;
+      };
+      return if $ok;
+      # Remember the original exception (objects survive), then die again so
+      # LWP stops reading the body.
+      $callback_error = $@ || "streaming callback died\n";
+      die $callback_error;
     });
-    $chunk_handler->(undef) if $chunk_handler;   # match the async end-of-body signal
+
+    # LWP catches a die in the content callback (and a mid-body read failure)
+    # and records it as X-Died on an otherwise successful-looking response.
+    # Fail like Net::Async::HTTP does instead of resolving a truncated stream.
+    return Future->fail( $callback_error, http => $response, $request )
+      if defined $callback_error;
+    if ( defined( my $died = $response->header('X-Died') ) ) {
+      $died .= "\n" unless $died =~ /\n\z/;
+      return Future->fail( $died, http => $response, $request );
+    }
+
+    # LWP never runs the content callback for a non-success response (the
+    # body is accumulated on the response instead), nor for an internal error
+    # (connection refused, DNS, timeout) or an empty body. Net::Async::HTTP
+    # calls on_header for every response and hands it the body, so do the
+    # same here once the request is done.
+    my $ok = eval {
+      unless ($header_seen) {
+        $header_seen   = 1;
+        $chunk_handler = $on_header->($response);
+        my $body = $response->content;
+        $chunk_handler->($body) if $chunk_handler && defined $body && length $body;
+      }
+      $chunk_handler->(undef) if $chunk_handler;   # the async end-of-body signal
+      1;
+    };
+    return Future->fail( $@ || "streaming callback died\n", http => $response, $request )
+      unless $ok;
     return Future->done($response);
   }
 
@@ -59,10 +97,23 @@ synchronously and sequentially.
 When an C<on_header> callback is given the request streams: L<LWP::UserAgent>'s
 per-chunk content callback is bridged to the contract — C<on_header> is called
 once with the L<HTTP::Response> (headers) and returns a chunk-sub, which then
-receives each body chunk as LWP reads it and finally C<undef> once to signal
-end-of-body. LWP buffers before parsing, so delivery is sequential and blocking
-rather than truly incremental, but each chunk still reaches the caller's
-chunk-sub.
+receives each body chunk as LWP reads it from the socket and finally C<undef>
+once to signal end-of-body. Delivery is incremental (the first chunk reaches
+the caller before the body has finished arriving, so time-to-first-token is
+real) but blocking: the calling thread waits inside the request until the
+stream ends.
+
+LWP runs the content callback only for a successful response. For a
+non-success status, and for an LWP-internal error response (connection
+refused, DNS failure, timeout), the shim still calls C<on_header> once with
+the response and hands the chunk-sub the accumulated body, then C<undef> —
+the same sequence L<Net::Async::HTTP> produces, so the caller's
+C<< $response->is_success >> check fires the same way on both backends.
+
+If the chunk-sub (or C<on_header>) dies, or LWP aborts reading the body
+mid-stream (recorded in its C<X-Died> header), the returned future B<fails>
+with that exception and no C<undef> end signal is sent: a truncated stream is
+never resolved as a success.
 
 This is the drop-in fallback backend for the async C<do_request> contract
 (L<Langertha::Role::AsyncHTTP>): HTTP error statuses (4xx/5xx) B<resolve>

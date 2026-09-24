@@ -36,6 +36,9 @@ on test => sub {
   requires 'Math::Vector::Similarity';
   requires 'Perl::Critic', '>= 1.156';
   requires 'Test::Perl::Critic';
+  # t/45_sync_http_real_lwp.t runs a real LWP (and Net::Async::HTTP, when
+  # installed) against a local forked daemon.
+  requires 'HTTP::Daemon';
 
   # t/93_to_json.t compares every JSON::MaybeXS backend; JSON::XS is the one
   # that is not pulled in transitively, so it is wanted but not required.

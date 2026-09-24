@@ -11,8 +11,9 @@ Revision history for Langertha
       --with-recommends). Backend selection (injected > Net::Async::HTTP > sync)
       lives in Langertha::Role::AsyncHTTP, composed by Role::Chat and
       Role::Runtime::MetricsPoll; the synchronous client is
-      Langertha::Request::SyncHTTP, streaming included. Bring your own async
-      client by injecting _async_http at construction. (ADR 0027.)
+      Langertha::Request::SyncHTTP, which streams incrementally and reports
+      HTTP errors and aborted streams the same way Net::Async::HTTP does. Bring
+      your own async client by injecting _async_http at construction. (ADR 0027.)
 
     - Raider extracted to the sibling distribution langertha-raider. The autonomous
       agent (Langertha::Raider, Raider::Result) and the Raid orchestration layer
