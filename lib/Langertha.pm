@@ -584,8 +584,12 @@ B<Async with Future::AsyncAwait (recommended):>
     chat_with_ai($engine)->get;
     stream_chat($engine)->get;
 
-The C<_f> methods use L<IO::Async> and L<Net::Async::HTTP> internally, loaded
-lazily only when you call them. See C<examples/async_await_example.pl> for
+The C<_f> methods pick their HTTP backend through L<Langertha::Role::AsyncHTTP>:
+an injected C<_async_http> client, else L<Net::Async::HTTP> on an L<IO::Async>
+loop (both loaded lazily only when you call them), else a synchronous
+L<LWP::UserAgent> fallback. The fallback keeps every C<_f> method working and
+returning a L<Future>, but blocking and sequential, with no concurrency; install
+L<Net::Async::HTTP> + L<IO::Async> for real async. See C<examples/async_await_example.pl> for
 complete working examples.
 
 B<Using with Mojolicious:>

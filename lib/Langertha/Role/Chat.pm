@@ -672,7 +672,10 @@ async sub chat_f {
     }
 
 Async version of L</simple_chat>. Returns a L<Future> that resolves to the
-response text. Uses L<Net::Async::HTTP> internally; loaded lazily on first call.
+response text. The HTTP backend comes from L<Langertha::Role::AsyncHTTP>:
+L<Net::Async::HTTP> when installed (loaded lazily on first call), otherwise a
+synchronous L<LWP::UserAgent> fallback under which the call blocks and several
+C<_f> calls run one after another rather than concurrently.
 
 For requests that need named arguments (tools, tool_choice,
 response_format, etc.) use L</chat_f>; C<simple_chat_f> delegates to it.

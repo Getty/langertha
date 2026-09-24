@@ -223,12 +223,13 @@ sub execute_streaming_request {
   my $chunks = $self->process_stream_data($response->content, $chunk_callback);
   my $total_seconds = tv_interval($t0);
 
-  # Synchronous HTTP via LWP buffers the entire stream before
+  # This path reads the whole stream with one blocking LWP request before
   # process_stream_data runs, so a true TTFT (time to first token) is
-  # not observable in this path; only end-to-end wall-clock. Consumers
-  # that need TTFT should switch to the async path
-  # (L<Langertha::Role::Chat/simple_chat_stream_realtime_f>) where
-  # IO::Async delivers chunks incrementally.
+  # not observable here; only end-to-end wall-clock. Consumers that need
+  # TTFT should use L<Langertha::Role::Chat/simple_chat_stream_realtime_f>,
+  # which delivers chunks as they arrive on either backend of
+  # L<Langertha::Role::AsyncHTTP> (Net::Async::HTTP, or LWP's content
+  # callback on the synchronous fallback).
   return ($chunks, { total_seconds => $total_seconds });
 }
 
@@ -244,9 +245,11 @@ non-success response croaks with the HTTP status line and the provider's
 response body appended (whitespace-collapsed and length-limited), mirroring
 L</parse_response>. Returns an
 ArrayRef of L<Langertha::Stream::Chunk> objects and a timing HashRef with
-C<total_seconds> (Float, seconds). C<ttft_seconds> is omitted because
-L<LWP::UserAgent> buffers the body before parsing — switch to the async path
-for true TTFT. If C<$chunk_callback> is provided it is called with each chunk
+C<total_seconds> (Float, seconds). C<ttft_seconds> is omitted because this
+method reads the whole body before parsing — use
+L<Langertha::Role::Chat/chat_stream_realtime_f> for true TTFT (it streams
+incrementally on both backends of L<Langertha::Role::AsyncHTTP>, including the
+synchronous LWP fallback). If C<$chunk_callback> is provided it is called with each chunk
 as it is parsed.
 
 =cut
