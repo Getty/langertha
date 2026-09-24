@@ -96,8 +96,9 @@ sub _croak {
 # The _async_http backend (and its _async_loop) come from
 # Langertha::Role::AsyncHTTP (composed below): injected client >
 # Net::Async::HTTP > synchronous LWP fallback. The sync wrappers
-# (poll_metrics / export_otlp) only spin _async_loop when the future is
-# not already ready, so the sync fallback never creates an event loop.
+# (poll_metrics / export_otlp) block with ->get, which drives the pending
+# future's own loop and never creates one, so the sync fallback runs
+# without an event loop.
 with 'Langertha::Role::AsyncHTTP';
 
 async sub poll_metrics_f {
@@ -140,14 +141,13 @@ Croaks on a non-success HTTP response.
 
 sub poll_metrics {
   my ( $self, @prefixes ) = @_;
-  # Synchronous variant. On the async backend poll_metrics_f returns a
-  # pending future, so drive it on the IO::Async loop. On the sync
-  # fallback (Langertha::Request::SyncHTTP) the future is already
-  # complete, so return its result without touching _async_loop — that
-  # keeps IO::Async out of the sync path entirely.
-  my $f = $self->poll_metrics_f(@prefixes);
-  $self->_async_loop->await($f) unless $f->is_ready;
-  return $f->get;
+  # Synchronous variant. ->get is loop-agnostic: a pending future from
+  # Net::Async::HTTP (or an injected client on the caller's own loop) is an
+  # IO::Async::Future — or whatever Future subclass that client uses — and
+  # its await() drives the loop it belongs to; Future::AsyncAwait builds
+  # the returned future from the first pending one it awaited. On the sync
+  # fallback the future is already complete. No private loop is created.
+  return $self->poll_metrics_f(@prefixes)->get;
 }
 
 =method poll_metrics
@@ -155,10 +155,12 @@ sub poll_metrics {
     my $records = $engine->poll_metrics;
 
 Synchronous scrape. Returns the ArrayRef of records or croaks on HTTP
-failure. On the L<Net::Async::HTTP> backend it drives L</poll_metrics_f>
-on the L<IO::Async::Loop> and blocks until parsed; on the synchronous
-L<Langertha::Request::SyncHTTP> fallback the future is already complete,
-so no event loop is created (L<Langertha::Role::AsyncHTTP>).
+failure. It blocks on L</poll_metrics_f> with C<< ->get >>, which drives
+the loop the pending future belongs to: the engine's L<IO::Async::Loop> on
+the L<Net::Async::HTTP> backend, or the loop of an injected C<_async_http>
+client. On the synchronous L<Langertha::Request::SyncHTTP> fallback the
+future is already complete, so no event loop is created
+(L<Langertha::Role::AsyncHTTP>).
 
 Use this only when no event loop is already running. Inside an
 async context prefer L</poll_metrics_f>.
@@ -238,13 +240,9 @@ L<https://github.com/orgs/langfuse/discussions/10686>.
 
 sub export_otlp {
   my ( $self, $records, %opts ) = @_;
-  # Synchronous variant, same loop-guard pattern as poll_metrics: drive
-  # the loop only when the future is pending (async backend); the sync
-  # fallback returns an already-complete future and never touches
-  # _async_loop.
-  my $f = $self->export_otlp_f($records, %opts);
-  $self->_async_loop->await($f) unless $f->is_ready;
-  return $f->get;
+  # Synchronous variant; ->get drives the future's own loop (see
+  # poll_metrics).
+  return $self->export_otlp_f($records, %opts)->get;
 }
 
 =method export_otlp
@@ -252,8 +250,8 @@ sub export_otlp {
     my $response = $engine->export_otlp($records, endpoint => '...');
 
 Synchronous export. Returns the L<HTTP::Response> or croaks on HTTP
-failure. On the L<Net::Async::HTTP> backend it drives L</export_otlp_f>
-on the L<IO::Async::Loop> and blocks until received; on the synchronous
+failure. Like L</poll_metrics> it blocks on L</export_otlp_f> with
+C<< ->get >>, driving the pending future's own loop; on the synchronous
 L<Langertha::Request::SyncHTTP> fallback the future is already complete,
 so no event loop is created (L<Langertha::Role::AsyncHTTP>).
 

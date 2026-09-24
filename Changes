@@ -13,7 +13,8 @@ Revision history for Langertha
       Role::Runtime::MetricsPoll; the synchronous client is
       Langertha::Request::SyncHTTP, which streams incrementally and reports
       HTTP errors and aborted streams the same way Net::Async::HTTP does. Bring
-      your own async client by injecting _async_http at construction. (ADR 0027.)
+      your own async client by injecting _async_http at construction; the
+      poll_metrics/export_otlp sync wrappers drive its loop. (ADR 0027.)
 
     - Raider extracted to the sibling distribution langertha-raider. The autonomous
       agent (Langertha::Raider, Raider::Result) and the Raid orchestration layer

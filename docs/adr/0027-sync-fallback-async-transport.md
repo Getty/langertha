@@ -69,9 +69,11 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
 
 3. **Both consumers compose the role.** `Role::Chat` and `Role::Runtime::MetricsPoll` drop their
    local builders and `with 'Langertha::Role::AsyncHTTP'`. MetricsPoll's synchronous wrappers
-   (`poll_metrics`, `export_otlp`) now drive `_async_loop->await` **only when the future is
-   pending**; on the sync fallback the future is already ready, so they return its result without
-   touching `_async_loop` — keeping IO::Async out of the sync path there too.
+   (`poll_metrics`, `export_otlp`) block with `$future->get` alone, which drives the loop the
+   pending future belongs to (an `IO::Async::Future` awaits its own loop; Future::AsyncAwait builds
+   the returned future from the first pending one it awaited) — so an injected client on the
+   caller's own loop works too, and no private loop is ever created. On the sync fallback the
+   future is already ready, keeping IO::Async out of the sync path there too.
 
 4. **Dependencies.** `IO::Async` and `Net::Async::HTTP` (and `IO::Async::SSL`) become
    `recommends`; `LWP::UserAgent` and `LWP::Protocol::https` are explicit `requires` (the sync
@@ -101,8 +103,9 @@ loop-adapter layer would build on.
   `SyncHTTP` POD.
 - The private `_async_http` / `_async_loop` attributes are now a documented, supported injection
   point (their names are unchanged — surgical, no rename, no public alias).
-- `Role::Runtime::MetricsPoll`'s sync wrappers no longer unconditionally spin an IO::Async loop;
-  on the async backend behaviour is unchanged, on the sync backend they create no loop.
+- `Role::Runtime::MetricsPoll`'s sync wrappers no longer spin a private IO::Async loop; they
+  block with `->get` on whatever loop the pending future belongs to, and create none on the sync
+  backend.
 - Reverses ADR 0026's `requires` on `IO::Async` + `Net::Async::HTTP` (relates to 0026); the
   `do_request` resolve-on-error contract is unchanged and now honoured by two backends.
 
