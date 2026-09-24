@@ -48,12 +48,16 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
      `Net::Async::HTTP` calls `on_header` for every response and feeds it the body, error bodies
      included. So after the request the shim calls `on_header` once if LWP never did, hands the
      chunk-sub the accumulated body, then `undef` — the caller's `is_success` check then croaks
-     `streaming request failed: <status line>` identically on both backends.
+     `streaming request failed: <status line>` identically on both backends. This parity covers
+     HTTP error *statuses*; a transport-level failure (e.g. connection refused) still words
+     differently — LWP synthesizes `500 Can't connect …`, `Net::Async::HTTP` fails with the socket
+     error. Both fail loudly; only the text differs.
    - LWP catches a die in the content callback (and a mid-body read failure) and records it as
      `X-Died` on a response that still looks successful. The shim captures the original exception
      (or the `X-Died` text) and **fails** the future with it, sending no `undef` end signal —
-     a truncated stream is never resolved as success, matching `Net::Async::HTTP`, where the die
-     propagates.
+     a truncated stream is never resolved as success. On `Net::Async::HTTP` the die propagates
+     too, but out of the event loop rather than as that request's failed future — a pre-existing
+     async-side gap tracked separately (karr #194).
    Both are covered by `t/45_sync_http_real_lwp.t`, a real LWP (and `Net::Async::HTTP`) against a
    forked local daemon, including sync/async parity on a 4xx with a body.
 
