@@ -87,9 +87,9 @@ every provider. What `chat_f` does per wire:
 | You pass | Engine | Result |
 |---|---|---|
 | `tools` | `tools_native` | native tools on the wire |
-| `tools` | only `tools_hermes` | use `chat_with_tools_f` (XML in the prompt) |
+| `tools` | only `tools_hermes` (NousResearch, AKI native) | tools rendered into the system prompt, `<tool_call>` blocks lifted onto `tool_calls`; `tool_choice => 'none'` withholds them |
 | forced `tool_choice` | `tool_choice_named` | native forced tool |
-| forced `tool_choice` | no `tool_choice_named`, has `response_format_json_schema` (Perplexity, some models) | rewritten to `json_schema`; `ToolCall` with `synthetic => 1` |
+| forced `tool_choice` | no `tool_choice_named`, has `response_format_json_schema` (Perplexity, NousResearch, some models) | rewritten to `json_schema`; `ToolCall` with `synthetic => 1` |
 | `response_format` | first-party Anthropic | native `output_config.format` |
 | `response_format` | `/anthropic` shim engines | synth tool + forced choice, lifted into `content` (no streaming) |
 | `response_format` | Gemini / Ollama native | `responseJsonSchema` / `format` |
