@@ -225,3 +225,28 @@ open-object marker. Clobbering it to `false` would silently drop the map's value
 Verified offline: `t/77_response_format_per_request.t` (the map-schema matrix: `map<string,string>`
 kept, `map<string,object>` value object recursively closed, an enclosing object without
 `additionalProperties` still closed to `false`).
+
+## Update (k218 — native structured output per model: MoonshotAnthropic `kimi-k3`)
+
+Kimi's Messages API (`/anthropic/v1/messages`, platform.kimi.ai `docs/api/messages.md`,
+advisor-verified 2026-09-25) documents `output_config.format {type: json_schema, schema}` for
+`kimi-k3`, next to `output_config.effort`. `Engine::MoonshotAnthropic` used the shim rewrite on
+every model: a synthetic tool plus a forced named `tool_choice`, and no streaming. That is the
+worse path on K3, because on Kimi's chat face a forced named tool conflicts with K3's always-on
+thinking. `kimi-k3` now takes the first-party native path from the k133/k182 Updates. A
+`json_schema` goes out as `output_config.format` with the schema closed, merged with any
+`output_config.effort`, and it streams. A bare `json_object` still goes through the synthetic
+tool, as it does on first-party Anthropic (the native format is `json_schema` only). The K2.x
+line has no documented format on this face and keeps the shim rewrite.
+
+The switch is per model, so the predicate is split in two. `_native_structured_output` still
+describes the **endpoint**: first-party native, or a shim. `Langertha::Manifest::Builder` reads it
+for the dialect (ADR 0029), so `MoonshotAnthropic` stays `anthropic-compat`. The endpoint is still
+a shim, and a dialect that flipped with the configured model would misdescribe the other models
+on the same endpoint. The request builders (`chat_request`, `chat_stream_request`) now ask
+`_native_structured_output_for_model`, which defaults to the endpoint predicate.
+`MoonshotAnthropic` overrides it to true for `qr/\Akimi-k3(?!\d)/`. It is a method rather than an
+ADR 0019 capability row because it picks a wire path, not a flag that a caller would query.
+Documentation only, not live-verified. The closed-schema normalization (k182) was written for the
+first-party validator and is assumed acceptable to Kimi. Pinned by
+`t/77_response_format_moonshot_native.t`.

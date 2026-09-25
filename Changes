@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - MoonshotAnthropic on kimi-k3 sends a json_schema response_format
+      natively as output_config.format, like first-party Anthropic, instead
+      of a synthetic tool with a forced tool_choice; it can now be streamed.
+      json_object and the K2.x models keep the synthetic tool. Provider
+      manifests still list the endpoint as anthropic-compat. Taken from
+      Moonshot's documentation, not verified against the live API.
+
     - MoonshotAnthropic on kimi-k2.6 and kimi-k2.7-code no longer sends
       output_config.effort or thinking {type: adaptive}, which Kimi documents
       for kimi-k3 only. reasoning_effort now sends thinking {type: enabled};

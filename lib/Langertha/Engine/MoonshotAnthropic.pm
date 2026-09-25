@@ -46,6 +46,11 @@ Every level gives the same depth. No C<budget_tokens> is sent with
 C<enabled>; whether Kimi requires one there has not been verified against the
 live API. Other K2 ids take no reasoning control on this endpoint.
 
+On C<kimi-k3> a C<json_schema> C<response_format> goes out natively as
+C<output_config.format> (with the schema closed, as on first-party Anthropic),
+so it also streams; a C<json_object>, and every C<response_format> on the K2.x
+models, still use the synthesized-tool rewrite of the C</anthropic> shims.
+
 Kimi fixes C<temperature> server-side on every current model, so none is sent;
 a C<temperature> other than C<1> is dropped with a warning.
 
@@ -100,6 +105,18 @@ sub model_capability_corrections {
     qr/\Akimi-k2(?!\d)/ => { temperature => 0, reasoning_effort => 0 },
     qr/\Akimi-k2\.(?:6|7-code(?:-highspeed)?)\z/ => { reasoning_effort => 1 },
   );
+}
+
+# Kimi's Messages API documents native output_config.format {type: json_schema,
+# schema} for kimi-k3 (docs/api/messages.md, advisor 2026-09-25, docs only;
+# karr k218), so K3 takes the first-party native path (ADR 0005 k218 Update)
+# instead of the shim's synthetic tool + forced named tool_choice. K2.x is
+# undocumented on this face and keeps the synthetic tool. Per model, so the
+# endpoint predicate _native_structured_output stays 0: this is still a shim,
+# and its manifest dialect stays anthropic-compat.
+sub _native_structured_output_for_model {
+  my ( $self ) = @_;
+  return ( $self->chat_model // '' ) =~ /\Akimi-k3(?!\d)/ ? 1 : 0;
 }
 
 __PACKAGE__->meta->make_immutable;

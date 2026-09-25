@@ -188,7 +188,7 @@ sub chat_request {
   # tool_use input chat_response lifts back into content.
   my $rf_routed = 0;
   my $output_config_format;
-  if ( $self->_native_structured_output ) {
+  if ( $self->_native_structured_output_for_model ) {
     my $rf = $self->_take_response_format(\%extra, $controls);
     # A schema-bearing response_format goes native (output_config.format); the
     # first-party validator rejects an open schema, so it is normalized to a
@@ -269,7 +269,28 @@ Internal predicate. True when the engine's wire supports native structured
 output via C<output_config.format> (the first-party Claude Messages API); false
 (the default) for the legacy C</anthropic> shim engines, which fall back to the
 ADR 0005 synthesized-tool rewrite. L<Langertha::Engine::Anthropic> overrides it
-to a true value.
+to a true value. It describes the B<endpoint> and so decides the manifest
+dialect (C<anthropic> vs C<anthropic-compat>, L<Langertha::Manifest::Builder>);
+the request builders ask L</_native_structured_output_for_model> instead.
+
+=cut
+
+# Whether THIS request's chat_model takes native output_config.format. Defaults
+# to the endpoint predicate above; a shim whose endpoint documents the native
+# form for some models only overrides this one (MoonshotAnthropic: kimi-k3,
+# karr k218), so the endpoint -- and its manifest dialect -- stays a shim.
+sub _native_structured_output_for_model {
+  my ( $self ) = @_;
+  return $self->_native_structured_output;
+}
+
+=method _native_structured_output_for_model
+
+Internal predicate the request builders use to pick the structured-output path
+for the current C<chat_model>: native C<output_config.format> when true, the
+ADR 0005 synthesized-tool rewrite when false. Defaults to
+L</_native_structured_output>; L<Langertha::Engine::MoonshotAnthropic>
+overrides it to be true on C<kimi-k3> only.
 
 =cut
 
@@ -585,7 +606,7 @@ sub chat_stream_request {
   # refuse loudly.
   my $rf = $self->_take_response_format(\%extra, $controls);
   my $output_config_format;
-  if ( $self->_native_structured_output ) {
+  if ( $self->_native_structured_output_for_model ) {
     # A json_schema streams as native output_config.format (normalized closed).
     # A bare json_object has no native free-form form and the synthesized-tool
     # fallback has no streaming lift, so -- like the shims below -- consume the
