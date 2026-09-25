@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-09-25T07:04:09Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:04:09Z
+created: 2026-09-25T06:28:20Z
+depends_on:
+- 241
+id: 242
+priority: low
+started: 2026-09-25T06:53:13Z
+status: done
+tags:
+- llm
+- risk
+- capabilities
+title: Audit parallel_tool_calls acceptance on flag-on OpenAI-compatible engines
+updated: 2026-09-25T07:04:09Z
+---
+
+From the k241 advisor note (2026-09-25). parallel_tool_use is ON for DeepSeek, Moonshot, TSystems, AKIOpenAI, HuggingFace and Replicate, but no one has checked their docs for parallel_tool_calls. For each engine: is the field documented, honored, ignored, or rejected? Clear it at layer 2 where it is ignored. Docs only; TSystems is docs-only anyway.
+
+llm-advisor 2026-09-25 (public docs only, no live calls). Context: OpenAICompatible only emits parallel_tool_calls when tools are present AND the caller set parallel_tool_use; after k241 a cleared flag drops it with a carp, raw parallel_tool_calls kwarg stays the escape hatch.
+DeepSeek: chat/completions schema (api-docs.deepseek.com/api/create-chat-completion) has no parallel_tool_calls; DeepSeek own Responses guide (api-docs.deepseek.com/guides/responses_api) lists parallel_tool_calls = "Ignored (parallel tool calling is always enabled)" and "Unsupported parameters are silently ignored" (stated for Responses only). -> IGNORED (chat: undocumented, no rejection evidence). CLEAR at layer 2.
+Moonshot/Kimi: chat schema (platform.kimi.ai/docs/api/chat, moved from platform.moonshot.ai) has no parallel field; only the Responses API schema (platform.kimi.ai/docs/api/responses) lists parallel_tool_calls, undescribed. -> UNDOCUMENTED on chat. CLEAR.
+TSystems: public OpenAPI of llm-server.llmhub.t-systems.net/openapi.json (redoc, "T-Systems LLM Server" proxy) ChatCompletionRequest (serves /v1,/v2 chat/completions) explicitly lists parallel_tool_calls: bool|null "Whether to enable parallel function calling during tool use." -> DOCUMENTED/ACCEPTED; honoring depends on upstream model (proxy fronts OpenAI/Google/Anthropic + T-Cloud OSS). KEEP. Guides pages (chat-completions, function-calling) do not mention it.
+AKIOpenAI: aki.io/docs/compatibility/openai-api-compatibility documents only model/messages/temperature/max_tokens/stream/stop; tools themselves undocumented (live-verified k102). -> UNKNOWN. CLEAR (conservative); optional follow-up: AKI is exempt from the live-call approval rule, a single probe with parallel_tool_calls=false + two independent tools would settle it.
+HuggingFace router: API spec (huggingface.co/docs/inference-providers/tasks/chat-completion) payload lists tools/tool_choice/tool_prompt but NOT parallel_tool_calls. Router forwards to per-model providers (groq, cerebras, together, fireworks, novita, scaleway, ...) whose support varies. -> UNDOCUMENTED at router level, backend-dependent. Recommend CLEAR for honesty (flag = wire accepts field; router spec does not); raw kwarg reaches honoring backends. Low confidence either way.
+Replicate: api.replicate.com/openapi.json (1.0.0-a1) has NO chat/completions path at all (predictions API only); docs llms.txt has no OpenAI-compat page. -> question moot; CLEAR, and see k243 (engine may target a non-existent endpoint).
+VERDICT: keep parallel_tool_use only on TSystems; clear on DeepSeek, Moonshot, AKIOpenAI, HuggingFace, Replicate (layer 2, engine-wide; no per-model split warranted). None documented as rejecting the field, so this is honesty, not a 400 fix.
+
+Merged 1404dc5. AKIOpenAI probe (gpt-oss-120b, parallel_tool_calls:false): HTTP 200, one tool call, finish_reason 'stop' (not tool_calls) -> #248. Flag cleared (accepted != honored). MoonshotAnthropic keeps it (shim maps to disable_parallel_tool_use).
