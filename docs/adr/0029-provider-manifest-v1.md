@@ -129,7 +129,11 @@ Design spec: `docs/superpowers/specs/2026-09-25-provider-manifest-design.md`.
   vocabulary, so the manifest does not carry them:
   - the Groq/Cerebras refusal of `tools` plus a structured-output `response_format` in one
     request (ADR 0024);
-  - OpenAI's temperature gate under active reasoning (ADR 0025).
+  - OpenAI's temperature gate under active reasoning (ADR 0025);
+  - native structured output per model on an `anthropic-compat` shim: `MoonshotAnthropic`
+    sends `output_config.format` on `kimi-k3` only (ADR 0005 k218 Update), but the dialect
+    names the endpoint, so a manifest-driven client still takes the synthetic tool plus a
+    forced named `tool_choice` there.
 
   A client that needs these must still know the engine class.
 - **Relations:**

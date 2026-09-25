@@ -20,7 +20,7 @@ use Langertha::Engine::Anthropic;
 # 400s on it) -- temperature never reaches the wire on a Kimi id. Advisor
 # 2026-09-25, documentation + third-party error reports, not live-verified.
 #
-# The drop used to be silent (it still is on Claude Opus 4.7+, k138). Both
+# The drop used to be silent, on Kimi and on Claude Opus 4.7+ (k138) alike. Both
 # _temperature_kwargs gates now carp when a caller-set, non-default temperature
 # is dropped because the model does not take it; temperature=1 is dropped
 # without a carp (it is every such model's fixed/default value -- noise).
