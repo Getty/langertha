@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T16:55:47Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T16:55:47Z
+created: 2026-09-25T16:36:16Z
+id: 267
+priority: medium
+started: 2026-09-25T16:37:52Z
+status: done
+tags:
+- llm
+- risk
+- vision
+title: 'Content::Image serialization gaps: Responses input, Ollama native images[],
+  LMStudio native, URL-only providers'
+updated: 2026-09-25T16:55:47Z
+---
+
+Found during k266 research (llm-advisor, docs-only, 2026-09-25). Role::Chat::_normalize_content_blocks dispatches on content_format (openai|anthropic|gemini) only. Wrong today:
+1) OpenAIResponses + Perplexity (Role::ResponsesCompatible, content_format defaults to openai): input[].content gets {type:text}/{type:image_url,image_url:{url}}. Responses/Agent API wants {type:input_text,text} / {type:input_image,image_url:"<url-or-data-uri>"} (string, not object). OpenAI 400 "Invalid value: text. Supported values are: input_text, input_image, ..."; Perplexity docs https://docs.perplexity.ai/docs/agent-api/image-attachments. Needs content_format responses + to_responses on Content::Image (and text parts as input_text).
+2) Ollama native /api/chat: message.content is a string, images is a separate base64 array (https://docs.ollama.com/api/chat). Needs an ollama content format that lifts images into images[] (ensure_base64 for URLs).
+3) LMStudio native /api/v1/chat: _extract_text drops images; wire accepts input item {type:image,data_url:<base64 data URL>} (https://lmstudio.ai/docs/developer/rest/chat).
+4) URL images rejected (base64/data-URI only): Ollama /v1 (https://docs.ollama.com/api/openai-compatibility), Cerebras (https://inference-docs.cerebras.ai/capabilities/image-inputs), Moonshot Kimi (base64 or ms:// file id; https://platform.kimi.ai/docs/guide/use-kimi-vision-model), LM Studio native. Proposed: engine-level inline-only hook that calls Content::Image->ensure_base64 before to_openai.
+Blocks claiming image_input (k266) on these engines.
+
+2026-09-25 16:49 Implemented on branch k267-content-image-wires (5ecac44): content_format responses/ollama/lmstudio, Image to_responses/to_ollama/to_lmstudio/data_url, to_openai(inline=>1), _content_inline_images_only on OllamaOpenAI/Cerebras/Moonshot/LMStudio (URL images fetched like to_gemini; failed fetch croaks before request). t/78_content_image_wires.t. ADR 0001 update. Follow-ups k268, k269.
