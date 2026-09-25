@@ -281,3 +281,34 @@ copy of model-family knowledge next to this registry. It is now a read-only Prof
   non-reasoning and dotted-chat ids on both OpenAI engines, the Profile predicate itself, and
   carve-out serialization parity. The pre-k186 table was green except for the dotted-chat rows,
   which were red.
+
+## Update (k196 — multi-digit guard, per-digit chat carve-outs, default built first)
+
+Three leftovers from the k186 review. The mechanism is unchanged; the registry got stricter about
+digits and lost two hand-kept assumptions.
+
+- **Dotted family patterns stop at one digit.** Every dotted pattern ends in `(?!\d)`:
+  `gpt-5\.1`, `gpt-5\.[24]`, `gpt-5\.5`, `gpt-5\.6`, the uncurated `gpt-5\.\d` passthrough, the
+  self-hosted `qwen3\.\d` and the bare `gemini-2\.5`. Before this, `gpt-5.10` resolved to gpt-5.1
+  (reasoning, `default_reasoning_off`, the gated ladder) and `gpt-5.20` to gpt-5.2. A multi-digit
+  id is not curated, so the k186 rule applies: it is an **unknown id**, resolves to the provider
+  default, is non-reasoning (temperature kept) and gets the unlisted-id passthrough on every wire.
+  The same holds for `gpt-5.1x`-style ids (`gpt-5.11` … `gpt-5.19`), `gemini-2.50` and `qwen3.10`.
+  A letter suffix (`gpt-5.1-codex`, `gpt-5.5-pro`) still belongs to its family. Curating a
+  two-digit generation later means adding its own row.
+- **Chat carve-outs are generated per digit.** The hand-written mapping (`gpt-5.[24]-chat` →
+  gpt-5.2, a generic `gpt-5.\d+-chat` row → gpt-5.3) is replaced by `gpt-5-chat` → `gpt-5` plus
+  one `gpt-5.N-chat` → `gpt-5.N` carve-out for each N in 0..9, each cloned from the profile its own
+  family id resolves to. A newly curated gpt-5.N family is picked up by its chat ids without
+  anyone editing the mapping. `gpt-5.10-chat` now matches no carve-out and resolves as an unknown
+  id, which is also non-reasoning and serializes identically to the old generic row.
+- **The provider default is built before the carve-outs.** A carve-out whose family id matches no
+  row copies the default, so removing the `gpt-5\.\d` passthrough row no longer kills the
+  registry at load time; the affected ids just degrade to unknown. Carve-outs resolve against the
+  family rows only (`_match`), and the registry is assigned in one step.
+- Verified offline: `t/48_reasoning_profile_single_digit_pin.t` replays a golden captured before
+  the change (profile attributes plus the kwargs on all five reasoning wires for all seven efforts,
+  for every single-digit gpt-5.N variant and a representative of every other row) and stayed
+  green throughout. The multi-digit rows in `t/79_openai_reasoning_model_classification.t` and the
+  passthrough-removal case in `t/48_reasoning_profile_registry_order.t` were red before the fix.
+  The carve-out parity test now loops over the digits 0–9 on all five wires.
