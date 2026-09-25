@@ -190,13 +190,21 @@ sub _hermes_schema_messages {
 # clears them for every hermes engine (NousResearch, AKI native; ADR 0016: two
 # consumers from different parents, so the rule lives on the role). Kept:
 # tools_hermes, tool_choice_auto (what the prompt says) and tool_choice_none
-# (chat_f withholds the tools, k231). Deleting only, so the order against an
-# engine's own around engine_capabilities or its model corrections does not
-# matter.
+# (chat_f withholds the tools, k231). The rule keys on the resolved tag, not
+# on the composition (karr k251): a tool_wire_format => 'openai' constructor
+# override sends the tools natively, so it keeps the native flags from the
+# role inventory and loses tools_hermes instead. Deleting only, so the order
+# against an engine's own around engine_capabilities or its model corrections
+# does not matter.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
-  delete @{$caps}{qw( tools_native tool_choice_any tool_choice_named parallel_tool_use )};
+  if ( $self->tool_wire_format eq 'hermes' ) {
+    delete @{$caps}{qw( tools_native tool_choice_any tool_choice_named parallel_tool_use )};
+  }
+  else {
+    delete $caps->{tools_hermes};
+  }
   return $caps;
 };
 

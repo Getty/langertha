@@ -8,7 +8,9 @@ Revision history for Langertha
       Response->tool_calls. tool_choice => 'none' withholds the tools, a
       built-in tool croaks there, and chat_stream_realtime_f puts the tools
       in the prompt too. The Hermes engines no longer claim tools_native,
-      tool_choice_any, tool_choice_named or parallel_tool_use. On both, a
+      tool_choice_any, tool_choice_named or parallel_tool_use; created with
+      tool_wire_format => 'openai', they claim the native flags instead of
+      tools_hermes and send tools and tool_choice natively. On both, a
       tool_choice other than auto or none is ignored with a warning, except
       on NousResearch, where a forced tool from the tools list is sent as a
       json_schema response_format and the reply lands as a synthetic tool

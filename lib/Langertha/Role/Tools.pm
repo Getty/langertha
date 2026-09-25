@@ -112,7 +112,30 @@ has tool_wire_format => (
   isa     => 'Str',
   lazy    => 1,
   builder => '_build_tool_wire_format',
+  clearer => '_clear_tool_wire_format',
+  trigger => sub { $_[0]->_set_tool_wire_format_given(1) },
 );
+
+# A lazy slot looks the same whether the constructor filled it or the builder
+# did, but only the builder's value may be dropped when a clone_object copy
+# changes chat_model (Manifest::Builder's per-model probe, karr k251). The
+# trigger fires for a constructor value and never for the builder, so this
+# flag tells the two apart; clone_object copies it along with the tag.
+has _tool_wire_format_given => (
+  is       => 'ro',
+  isa      => 'Bool',
+  init_arg => undef,
+  default  => 0,
+  writer   => '_set_tool_wire_format_given',
+);
+
+# Drops a builder-made tag so the next read resolves it again (for the
+# clone's chat_model); a constructor tag stays.
+sub _reset_derived_tool_wire_format {
+  my ($self) = @_;
+  $self->_clear_tool_wire_format unless $self->_tool_wire_format_given;
+  return $self;
+}
 
 # Defaults to the OpenAI dialect; AnthropicCompatible, HermesTools, and
 # OpenAIResponses override the builder via -excludes, while Engines (Ollama,

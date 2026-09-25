@@ -260,7 +260,7 @@ sub add_engine {
   # Everything lazy is read from a clone, so the caller's engine keeps its
   # unbuilt slots (and a model-less engine with `models` given never runs its
   # croaking default_model).
-  my $probe = $engine->meta->clone_object($engine);
+  my $probe = _probe($engine);
 
   my @model_ids;
   if ( $opt{models} ) {
@@ -476,9 +476,20 @@ sub _capabilities_for {
   # `around engine_capabilities`, e.g. Gemini): evaluate it on an in-memory
   # clone whose chat_model is this model. The caller's engine is not read
   # for its chat_model and not touched.
-  my $probe = $engine->meta->clone_object( $engine, chat_model => $model_id );
+  my $probe = _probe( $engine, chat_model => $model_id );
   my $caps  = $probe->engine_capabilities;
   return { map { $_ => 1 } grep { $caps->{$_} && $MODEL_CAPABILITY{$_} } keys %$caps };
+}
+
+# clone_object copies every slot already set, so a tool_wire_format the
+# builder made for the source engine's chat_model would ride along into a
+# probe for another model (karr k251). The probe drops a builder-made tag and
+# resolves it again for its own chat_model; a constructor tag is kept.
+sub _probe {
+  my ( $engine, %params ) = @_;
+  my $probe = $engine->meta->clone_object( $engine, %params );
+  $probe->_reset_derived_tool_wire_format if $probe->can('_reset_derived_tool_wire_format');
+  return $probe;
 }
 
 __PACKAGE__->meta->make_immutable;

@@ -267,6 +267,41 @@ subtest 'transcription-only engine is not a chat engine' => sub {
   like $@, qr/needs a chat engine/, 'same clear message, not a missing-method error';
 };
 
+# karr k251 (step (e) of the k238 design): the Builder probes per model on a
+# clone_object copy, which copies every slot that is already set -- including
+# a lazy tool_wire_format built for the source engine's chat_model. Once the
+# tag depends on the model, a stale copy would publish one model's tool flags
+# for another. The probe drops a built tag so it is resolved again for the
+# probed model; a tag the caller passed to the constructor is kept.
+{
+  package Test::ModelTagNous;
+  use Moose;
+  extends 'Langertha::Engine::NousResearch';
+  sub _build_tool_wire_format { $_[0]->chat_model =~ /hermes/i ? 'hermes' : 'openai' }
+  __PACKAGE__->meta->make_immutable;
+}
+
+subtest 'probe resolves a model-aware tool_wire_format per model' => sub {
+  my $engine = Test::ModelTagNous->new( api_key => $SENTINEL, model => 'Hermes-4-70B' );
+  is $engine->tool_wire_format, 'hermes', 'the tag is built on the source engine first';
+  my $m = Langertha::Manifest::Builder->from_engine( $engine,
+    models => [ 'Hermes-4-70B', 'anthropic/claude-sonnet-4.6' ] );
+  my ( $hermes, $claude ) = map { caps_of( $m, $_ ) } 0, 1;
+  ok $hermes->{tools_hermes} && !$hermes->{tools_native}, 'Hermes slug: hermes tool flags';
+  ok $claude->{tools_native} && !$claude->{tools_hermes}, 'claude slug: native tool flags, not the stale tag';
+  ok $claude->{tool_choice_named}, 'claude slug: a named tool_choice';
+  is $engine->tool_wire_format, 'hermes', 'the caller engine keeps its tag';
+
+  my $pinned = Test::ModelTagNous->new( api_key => $SENTINEL, model => 'Hermes-4-70B',
+    tool_wire_format => 'openai' );
+  my $mp = Langertha::Manifest::Builder->from_engine( $pinned,
+    models => [ 'Hermes-4-70B', 'anthropic/claude-sonnet-4.6' ] );
+  for my $i ( 0, 1 ) {
+    my $caps = caps_of( $mp, $i );
+    ok $caps->{tools_native} && !$caps->{tools_hermes}, "model $i: the constructor tag is kept";
+  }
+};
+
 subtest 'every engine capability is classified' => sub {
   # Guard: a flag engine_capabilities can report is either published on a
   # model (Builder->model_capabilities) or deliberately engine-level /
