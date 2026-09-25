@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-09-25T21:23:52Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:23:52Z
+created: 2026-09-25T20:22:59Z
+id: 301
+priority: medium
+started: 2026-09-25T21:05:30Z
+status: done
+tags:
+- response
+- wire
+- errors
+- bug
+title: chat_response returns a silent empty Response for 200 bodies with no choices/candidates
+  (error-in-body, Gemini promptFeedback.blockReason); OpenAI message.refusal dropped
+updated: 2026-09-25T21:23:52Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). REPRODUCED offline.
+
+1) lib/Langertha/Role/OpenAICompatible.pm:429 reads $data->{choices}[0] with no check. A 200 body {"error":{"message":"upstream overloaded","code":502}} or {"choices":[]} yields Response content '' with no finish_reason and no error - indistinguishable from a legitimately empty reply. Gateways (OpenRouter and other proxies) are known to return error objects in 200 bodies (provider-reality: confirm with langertha-llm-advisor).
+2) lib/Langertha/Engine/Gemini.pm chat_response: {"promptFeedback":{"blockReason":"SAFETY"}} (no candidates) -> content '' and finish_reason undef; the block reason is only in raw.
+   Precedent: embedding_response already croaks with the error message on a missing data array (karr k171, OpenAICompatible.pm ~268).
+   Fix: croak with the embedded error.message when the body has an error object and no choices; for blocked prompts set finish_reason from blockReason (or croak). Decide which and record it.
+3) OpenAI structured-output refusals: message {content:null, refusal:"I can not help"} -> content '' and the refusal only in raw; Response has no refusal attribute. Per ADR 0004 a new field is a Response attribute: add refusal (Maybe[Str]) and surface it; Anthropic stop_reason refusal already arrives as finish_reason.
+Also noted (declined, design): n>1 choices keep only choices[0] silently.
