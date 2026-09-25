@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T18:02:51Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T18:02:51Z
+created: 2026-09-25T17:48:33Z
+id: 276
+priority: low
+started: 2026-09-25T17:49:21Z
+status: done
+tags:
+- async
+- vision
+- timeouts
+title: Async inline-image fetch has no timeout on Net::Async::HTTP (sync path caps
+  at 30s)
+updated: 2026-09-25T18:02:51Z
+---
+
+From k274: ensure_base64_f uses the backend's timeout; Net::Async::HTTP has none by default, so a hanging image host stalls the request forever. Apply a per-fetch timeout (30s like sync, or engine-configurable) via Future timeout (IO::Async loop->timeout_future) on the async path. Test with a local daemon that never answers.
