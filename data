@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-25T21:01:06Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:01:06Z
+created: 2026-09-25T20:22:23Z
+id: 298
+priority: high
+started: 2026-09-25T20:25:08Z
+status: done
+tags:
+- streaming
+- usage
+- anthropic
+- openai
+- bug
+title: 'Streamed usage lost: Anthropic message_start usage dropped (final chunk reports
+  input_tokens 0), OpenAI usage-only frame (choices: []) and Groq x_groq.usage ignored'
+updated: 2026-09-25T21:01:06Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). REPRODUCED offline (_process_stream_buffer with hand-built SSE; no live capture).
+
+1) Anthropic (lib/Langertha/Role/AnthropicCompatible.pm:742) - message_start returns undef and discards message.usage and message.model. Anthropic documents message_start.message.usage = {input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens:1} and its own streaming example shows message_delta usage = {"output_tokens": 15} only. The terminal chunk therefore carries only output_tokens: Usage->from_hash gives input_tokens=0, cached_tokens=undef. Repro: message_start with usage {input_tokens:25, cache_read_input_tokens:2000} + message_delta usage {output_tokens:15} -> final usage in=0 out=15 cached=undef; no chunk has model. t/43_streaming_parser.t:69 and t/91_usage_shim_cache.t:85 feed message_start WITHOUT usage, so the gap is untested. Streamed cost/Pricing undercounts input and cache reads.
+   Fix: stash message_start usage (and model) in the per-stream state; on message_delta merge it with the delta usage (delta values win key-by-key, since newer API versions send cumulative input counts there too) before _wire_usage; set model on the final chunk.
+
+2) OpenAI dialect (lib/Langertha/Role/OpenAICompatible.pm:578-579) - return undef unless $choice drops the usage-only frame {"choices":[],"usage":{...}} that stream_options.include_usage produces (callers can pass stream_options through %extra; vLLM/SGLang also emit it). Repro: 3 SSE events (content, finish, usage frame) -> 2 chunks, none has_usage.
+   Fix: when choices is empty but usage is present, return a content-less chunk carrying usage/cached_tokens (not is_final, or merge onto the final one).
+
+3) Groq sends streamed usage under x_groq.usage on the final chunk; parse_stream_chunk reads only $data->{usage}. Repro: finish chunk with x_groq.usage -> has_usage false. Fix (ADR 0018 tier 3): Groq around parse_stream_chunk, or accept x_groq.usage when usage is absent. Needs langertha-llm-advisor confirmation of current Groq wire.
