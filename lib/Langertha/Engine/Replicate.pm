@@ -68,6 +68,8 @@ around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete $caps->{parallel_tool_use};
+  # image_input (k266, ADR 0019): a gateway: the model behind it is unknown to the client, so no claim.
+  delete $caps->{image_input};
   return $caps;
 };
 

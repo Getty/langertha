@@ -87,6 +87,16 @@ sub _exclude_tools_with_any_response_format {
     ."structured-output turn).";
 }
 
+# image_input (k266, ADR 0019): no verified vision allowlist for this endpoint
+# yet, so no claim. When one is verified, move this to a layer-3 catch-all
+# (qr/\A/ => 0) plus allowlist rows so a model row can win.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{image_input};
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

@@ -92,6 +92,23 @@ sub _build_api_key {
 
 sub default_model { 'gpt-5.6-terra' }
 
+# image_input (k266, ADR 0019 k266 Update): every modern OpenAI chat model is a
+# vision model (llm-advisor, docs only, 2026-09-25), so the family keeps the
+# role-derived flag and only the text-only legacy / non-chat ids clear it.
+# OpenAIResponses inherits this table.
+sub model_capability_corrections {
+  return (
+    qr/\Agpt-3\.5/                                   => { image_input => 0 },
+    qr/\Agpt-4(?:-32k)?(?:-\d{4})?\z/                => { image_input => 0 },
+    qr/\Agpt-4-(?:\d{4}-preview|turbo-preview)\z/    => { image_input => 0 },
+    qr/\Ao1-(?:mini|preview)/                        => { image_input => 0 },
+    qr/\Ao3-mini/                                    => { image_input => 0 },
+    qr/\Agpt-oss/                                    => { image_input => 0 },
+    qr/-(?:audio|realtime|transcribe|tts)(?:-|\z)/   => { image_input => 0 },
+    qr/\A(?:text-embedding|whisper|tts|dall-e|davinci|babbage)/ => { image_input => 0 },
+  );
+}
+
 # The completion-length body key diverges by OpenAI model within the shared
 # openai wire format: the gpt-5.x and gpt-6 reasoning lines dropped max_tokens
 # entirely — gpt-5.x verified live 2026-08-13 (gpt-5.1 / gpt-5.6-terra reject it

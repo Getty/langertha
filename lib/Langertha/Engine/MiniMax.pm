@@ -147,10 +147,12 @@ around engine_capabilities => sub {
 # flag cleared and Role::ReasoningEffort sends nothing (the k204 gate). The
 # clear is the catch-all first row rather than layer 2, so the M3 row can win
 # over it (ADR 0019 k209 Update).
+# image_input follows the same shape (k266, llm-advisor, docs only,
+# 2026-09-25): MiniMax-M3 takes image input, the M2.x line is text-only.
 sub model_capability_corrections {
   return (
-    qr/\A/                => { reasoning_effort => 0 },
-    qr/\AMiniMax-M3(?!\d)/ => { reasoning_effort => 1 },
+    qr/\A/                => { reasoning_effort => 0, image_input => 0 },
+    qr/\AMiniMax-M3(?!\d)/ => { reasoning_effort => 1, image_input => 1 },
   );
 }
 

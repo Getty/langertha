@@ -146,6 +146,7 @@ my @MODEL_CAPABILITIES = qw(
   system_prompt response_size
   prompt_cache prompt_cache_key
   server_tools
+  image_input
 );
 my %MODEL_CAPABILITY = map { $_ => 1 } @MODEL_CAPABILITIES;
 
@@ -163,15 +164,15 @@ C<parallel_tool_use>), structured output (C<response_format_json_object>,
 C<response_format_json_schema>), reasoning (C<reasoning_effort>,
 C<thinking_budget>), sampling and request controls (C<temperature>,
 C<seed>, C<system_prompt>, C<response_size>) and the
-request-side prompt-cache controls (C<prompt_cache>, C<prompt_cache_key>), and
+request-side prompt-cache controls (C<prompt_cache>, C<prompt_cache_key>),
 C<server_tools> (the wire accepts provider-native server-side tools; I<which>
-types is not published).
+types is not published), and C<image_input> (the model sees an image part;
+model-scoped, see L<Langertha::Role::ImageInput>).
 
 Engine-level and client-side flags are never published on a model:
 C<embedding>, C<transcription>, C<image_generation>, C<runtime_metrics>,
 C<prefix_caching>, C<keep_alive>, C<cached_content>, C<context_size> (Ollama's
-server-side C<num_ctx> allocation, like C<keep_alive>). (The registry has no
-vision/image-input flag yet; one would belong here.)
+server-side C<num_ctx> allocation, like C<keep_alive>).
 
 This filters only what the Builder B<emits>. A parsed manifest accepts any
 capability name (L<Langertha::Manifest::Model/supports>).

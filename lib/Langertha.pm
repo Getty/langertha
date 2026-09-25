@@ -452,6 +452,8 @@ C<E<lt>tool_callE<gt>> XML tags for models without native API tool support
 
 =item * L<Langertha::Role::ImageGeneration> - Image generation
 
+=item * L<Langertha::Role::ImageInput> - Image input (vision), claimed per model
+
 =item * L<Langertha::Role::KeepAlive> - Keep-alive duration for local models
 
 =item * L<Langertha::Role::RuntimeKnobs> - Per-request prefix-cache runtime knobs

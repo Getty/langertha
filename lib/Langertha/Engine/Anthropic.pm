@@ -72,6 +72,11 @@ sub model_capability_corrections {
     # tool_choice_none stay — only `any` and `tool` 400.
     qr/\Aclaude-fable-5-1/  => { tool_choice_named => 0, tool_choice_any => 0 },
     qr/\Aclaude-mythos-5-1/ => { tool_choice_named => 0, tool_choice_any => 0 },
+    # image_input (k266, ADR 0019 k266 Update): every Claude 3+ model on the
+    # first-party Messages API takes image blocks (llm-advisor, docs only,
+    # 2026-09-25), so the family keeps the role-derived flag; only the
+    # text-only pre-3 generation clears it.
+    qr/\Aclaude-(?:2|instant)/ => { image_input => 0 },
   );
 }
 

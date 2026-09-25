@@ -84,6 +84,16 @@ sub _build_api_key {
 
 sub default_model { 'grok-4.7' }
 
+# image_input (k266, ADR 0019 k266 Update): grok-4.7 takes image input
+# (llm-advisor, docs only, 2026-09-25); other ids are unchecked, so the
+# catch-all first row clears the flag.
+sub model_capability_corrections {
+  return (
+    qr/\A/              => { image_input => 0 },
+    qr/\Agrok-4\.7(?!\d)/ => { image_input => 1 },
+  );
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

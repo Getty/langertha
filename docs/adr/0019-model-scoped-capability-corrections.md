@@ -246,3 +246,36 @@ ceiling does not hurt a non-thinking reply. The golden reasoning table (t/47) ch
 `max_tokens` on the Moonshot and MoonshotAnthropic Kimi rows (4096 → 16000); the foreign-engine
 Kimi rows (vLLM, AKIAnthropic) are unchanged; the one full-body kimi-k3 pin in
 `t/48_reasoning_profile_moonshot.t` moved with it. This is documentation only and not live-verified.
+
+## Update (k266 — `image_input` is model-scoped: "the model sees the image", not wire-only)
+
+`image_input` (from `Role::ImageInput`, a capability role per ADR 0016) is the one flag whose
+contract is stronger than *the wire accepts the field*. Composing the role says the engine's
+`content_format` carries a `Langertha::Content::Image` in a shape the endpoint accepts (k267). A
+true flag says **the selected `chat_model` sees the image**. A text-only model on a vision-capable
+wire can accept the part and ignore it, so "the wire accepts it" would be true almost everywhere
+and would tell a caller (knarr `/api/show`, a manifest) nothing.
+
+The flag is resolved with the existing layers, per the llm-advisor table (docs only, 2026-09-25):
+
+- **All-vision families** (OpenAI incl. OpenAIResponses, first-party Anthropic, Gemini, Hetzner)
+  keep the role-derived flag. Layer-3 rows clear it for the text-only exceptions (legacy
+  `gpt-3.5` / `gpt-4`, `o1-mini`, `claude-2`, `gemini-1.0-pro`, embedding and TTS ids).
+- **Other cloud engines with known vision models** (DeepSeek, Mistral, XAI, MiniMax,
+  MiniMaxAnthropic, Moonshot, Perplexity) use the k209 shape: a `qr/\A/ => { image_input => 0 }`
+  catch-all first row, then the documented vision ids re-assert it. An unknown id makes no claim.
+- **No claim engine-wide (layer 2):** gateways (OpenRouter, HuggingFace, Replicate), self-hosted
+  servers (vLLM, VLLMHook, SGLang, LlamaCpp, Ollama, OllamaOpenAI, LMStudio, LMStudioOpenAI),
+  the shims (MoonshotAnthropic, AKIAnthropic, LMStudioAnthropic), AKIOpenAI and NousResearch. The
+  model behind them is not known to the client. Cerebras, Scaleway, TSystems and Groq serve some
+  vision models but have no verified allowlist yet, so they also clear the flag at layer 2; a
+  verified allowlist moves such an engine to the catch-all shape. AKI native does not compose the
+  role: its wire is unverified.
+
+The flag is **advisory**. No gate reads it: an image sent without the claim is serialized and
+sent as usual, and the provider decides. Probing live model metadata (OpenRouter
+`input_modalities`, Ollama `/api/show` capabilities, llama.cpp `/props`, LM Studio
+`capabilities.vision`) would let the no-claim engines answer per model. That is follow-up work,
+not part of this table. The DeepSeek (`deepseek-flash` = V4.1, vision since 2026-09-10) and
+Mistral (`mistral-small-latest` = Small 4) rows rest on facts the advisor flagged as recent; they
+were not re-verified, and the engine comments carry the date.

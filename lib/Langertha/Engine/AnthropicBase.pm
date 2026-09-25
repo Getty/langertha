@@ -18,6 +18,7 @@ with 'Langertha::Role::Models',
      'Langertha::Role::SystemPrompt',
      'Langertha::Role::ResponseFormat',
      'Langertha::Role::Streaming',
+     'Langertha::Role::ImageInput',
      # Role::Tools::_build_tool_wire_format defaults to 'openai'; AnthropicCompatible supplies 'anthropic'.
      'Langertha::Role::Tools' => { -excludes => ['_build_tool_wire_format'] },
      'Langertha::Role::AnthropicCompatible';

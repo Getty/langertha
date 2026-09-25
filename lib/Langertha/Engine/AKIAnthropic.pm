@@ -160,6 +160,14 @@ sub _build_static_models {[
   { id => 'qwen3.6-35b' },
 ]}
 
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  # image_input (k266, ADR 0019): vision is undocumented / unverified on this face, so no claim.
+  delete $caps->{image_input};
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

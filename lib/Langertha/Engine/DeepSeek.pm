@@ -65,6 +65,17 @@ sub _build_api_key {
 
 sub default_model { 'deepseek-flash' }
 
+# image_input (k266, ADR 0019 k266 Update): deepseek-flash (V4.1) takes image
+# input, deepseek-v4-pro does not; other ids are unchecked, so the catch-all
+# first row clears the flag. FRESH FACT, not re-verified: the llm-advisor dated
+# V4.1 vision to its 2026-09-10 release (docs only, read 2026-09-25).
+sub model_capability_corrections {
+  return (
+    qr/\A/           => { image_input => 0 },
+    'deepseek-flash' => { image_input => 1 },
+  );
+}
+
 # DeepSeek's response_format.type enum is [text, json_object] only — there is
 # no json_schema on the standard endpoint (api-docs.deepseek.com, verified
 # 2026-09-01; schema enforcement instead needs a forced tool with strict:true

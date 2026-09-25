@@ -28,6 +28,7 @@ with 'Langertha::Role::Models',
      # Role::Chat::content_format defaults to 'openai'; ResponsesCompatible supplies 'responses'.
      'Langertha::Role::Chat' => { -excludes => ['content_format'] },
      'Langertha::Role::StaticModels',
+     'Langertha::Role::ImageInput',
      'Langertha::Role::ResponsesCompatible';
 
 =head1 SYNOPSIS
@@ -301,6 +302,18 @@ around engine_capabilities => sub {
   );
   return $caps;
 };
+
+# image_input (k266, ADR 0019 k266 Update): the Agent API takes input_image
+# parts (k267), but a sonar id is a preset whose base model is Perplexity's to
+# change, so only an explicit third-party id from an all-vision family claims
+# (llm-advisor, docs only, 2026-09-25). Open-weight gpt-oss is text-only.
+sub model_capability_corrections {
+  return (
+    qr/\A/                              => { image_input => 0 },
+    qr{\A(?:openai|anthropic|google)/}  => { image_input => 1 },
+    qr{\Aopenai/gpt-oss}                => { image_input => 0 },
+  );
+}
 
 __PACKAGE__->meta->make_immutable;
 

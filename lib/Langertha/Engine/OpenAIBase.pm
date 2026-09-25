@@ -19,6 +19,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   ResponseFormat
   Streaming
   Chat
+  ImageInput
 );
 
 sub _build_openapi_operations {

@@ -144,6 +144,14 @@ sub _native_structured_output_for_model {
 # engine that opts in here; the same model id elsewhere keeps its effort wire.
 sub _reasoning_thinking_toggle { 1 }
 
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  # image_input (k266, ADR 0019): vision is undocumented / unverified on this face, so no claim.
+  delete $caps->{image_input};
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

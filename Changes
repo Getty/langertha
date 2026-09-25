@@ -2,6 +2,16 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New capability image_input (Langertha::Role::ImageInput):
+      $engine->supports('image_input') says whether the configured model
+      sees an image part. It is claimed for OpenAI, first-party Anthropic,
+      Gemini and Hetzner models (minus text-only ones such as gpt-3.5,
+      claude-2, gemini-1.0-pro), and for the documented vision models on
+      DeepSeek, Mistral, XAI, MiniMax, Moonshot and third-party ids on
+      Perplexity. Gateways, self-hosted servers and the /anthropic shims
+      make no claim. The flag never blocks sending an image. Manifests
+      built by Langertha::Manifest::Builder publish it per model.
+
     - Langertha::Content::Image reaches more wires intact. OpenAIResponses
       and Perplexity send input_text / input_image parts (image_url as a
       string), Ollama native puts the text in content and the images in

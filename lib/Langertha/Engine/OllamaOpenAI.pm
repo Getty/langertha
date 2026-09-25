@@ -111,6 +111,8 @@ around engine_capabilities => sub {
     tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
     prompt_cache_key parallel_tool_use
   ) };
+  # image_input (k266, ADR 0019): self-hosted: the served model is launch state the client cannot see, so no claim.
+  delete $caps->{image_input};
   return $caps;
 };
 

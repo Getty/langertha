@@ -66,6 +66,19 @@ sub _build_openapi_operations {
 
 sub default_model { 'mistral-small-latest' }
 
+# image_input (k266, ADR 0019 k266 Update): Mistral serves text-only and vision
+# models side by side, so the catch-all first row clears the flag and the
+# vision ids re-assert it: mistral-small-latest (Mistral Small 4) and the
+# Pixtral line. FRESH FACT, not re-verified: the llm-advisor read
+# mistral-small-latest -> Small 4 with vision from the docs on 2026-09-25.
+sub model_capability_corrections {
+  return (
+    qr/\A/                 => { image_input => 0 },
+    'mistral-small-latest' => { image_input => 1 },
+    qr/\Apixtral-/         => { image_input => 1 },
+  );
+}
+
 sub chat_operation_id { 'chat_completion_v1_chat_completions_post' }
 
 sub list_models_path { '/v1/models' }

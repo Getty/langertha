@@ -1,0 +1,65 @@
+package Langertha::Role::ImageInput;
+# ABSTRACT: Role for an engine whose wire can carry image input
+our $VERSION = '0.503';
+use Moose::Role;
+
+=head1 SYNOPSIS
+
+    use Langertha::Content::Image;
+
+    if ( $engine->supports('image_input') ) {
+        my $img = Langertha::Content::Image->from_url('https://example.com/cat.jpg');
+        my $r   = $engine->simple_chat({
+            role => 'user', content => [ 'What is in this image?', $img ],
+        });
+    }
+
+=head1 DESCRIPTION
+
+A capability role (ADR 0016): an engine composes it when its wire can carry
+L<Langertha::Content::Image> parts, i.e. its
+L<Langertha::Role::Chat/content_format> serializes an image into a shape the
+endpoint accepts. Composing it contributes the C<image_input> flag to
+L<Langertha::Role::Capabilities/engine_capabilities>.
+
+C<image_input> is B<model-scoped> and means B<the model sees the image>, not
+merely that the wire accepts the part (ADR 0019, k266 Update). Most providers
+serve text-only and vision models side by side, so an engine that composes
+this role refines the flag per model:
+
+=over
+
+=item * all-vision families (OpenAI, first-party Anthropic, Gemini, Hetzner)
+keep the flag and clear it for the listed text-only models
+(C<model_capability_corrections>);
+
+=item * other cloud engines clear it for every model and re-assert it only for
+the documented vision models;
+
+=item * gateways, self-hosted servers and the C</anthropic> shims clear it
+engine-wide: the model behind them is unknown to the client, so the engine
+makes no claim.
+
+=back
+
+The flag is advisory. Nothing blocks or strips an image when it is false; an
+image sent to an engine without the claim goes out on the wire as usual and the
+provider decides.
+
+This role has no methods or attributes of its own.
+
+=cut
+
+=seealso
+
+=over
+
+=item * L<Langertha::Content::Image> - Provider-agnostic image input
+
+=item * L<Langertha::Role::Capabilities> - The capability registry
+
+=back
+
+=cut
+
+1;

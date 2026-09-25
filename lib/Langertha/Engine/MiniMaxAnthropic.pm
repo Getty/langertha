@@ -103,6 +103,16 @@ around reasoning_kwargs_for => sub {
 # engine that opts in here; the same model id elsewhere keeps its effort wire.
 sub _reasoning_thinking_toggle { 1 }
 
+# image_input (k266, ADR 0019 k266 Update): MiniMax-M3 takes image input, the
+# M2.x line is text-only (llm-advisor, docs only, 2026-09-25) -- the same rows
+# as Engine::MiniMax, the OpenAI face of the same service.
+sub model_capability_corrections {
+  return (
+    qr/\A/                 => { image_input => 0 },
+    qr/\AMiniMax-M3(?!\d)/ => { image_input => 1 },
+  );
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

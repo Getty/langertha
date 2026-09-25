@@ -22,6 +22,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   Streaming
   Tools
   CachedContent
+  ImageInput
 );
 
 sub _build_reasoning_wire_format { 'gemini' }
@@ -66,6 +67,20 @@ around engine_capabilities => sub {
   }
   return $caps;
 };
+
+# image_input (k266, ADR 0019 k266 Update): every Gemini chat model takes
+# inline_data image parts (llm-advisor, docs only, 2026-09-25), so the family
+# keeps the role-derived flag. Cleared: the text-only Gemini 1.0 Pro, TTS and
+# non-chat ids, and the Gemma models the API also serves (vision differs by
+# size there, so no claim).
+sub model_capability_corrections {
+  return (
+    qr/\Agemini-(?:1\.0-)?pro(?:-\d+)?\z/ => { image_input => 0 },
+    qr/-tts(?:-|\z)/                      => { image_input => 0 },
+    qr/embedding/                         => { image_input => 0 },
+    qr/\A(?:imagen|veo|aqa|gemma)/        => { image_input => 0 },
+  );
+}
 
 =head1 SYNOPSIS
 

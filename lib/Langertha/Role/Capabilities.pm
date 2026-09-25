@@ -76,6 +76,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::Runtime::MetricsPoll' => [qw( runtime_metrics )],
   'Langertha::Role::RuntimeKnobs'    => [qw( prefix_caching )],
   'Langertha::Role::ServerTools'      => [qw( server_tools )],
+  'Langertha::Role::ImageInput'       => [qw( image_input )],
 );
 
 sub engine_capabilities {
@@ -173,6 +174,13 @@ provider-native server-side tool entries in C<tools>> (C<web_search>,
 C<file_search>, remote C<mcp>, ...; see L<Langertha::ServerTool>). It is one
 flag on purpose: which tool types a model honors is a fast-moving provider
 vocabulary, not a capability.
+
+C<image_input> (from C<Langertha::Role::ImageInput>) is the exception to the
+wire-only contract: it means B<the selected model sees an image part>
+(L<Langertha::Content::Image>), not merely that the wire accepts one. It is
+resolved per model; engines whose model is unknown to the client (gateways,
+self-hosted servers, shims) make no claim. The flag is advisory: nothing
+blocks an image on an engine or model without it.
 
 =cut
 

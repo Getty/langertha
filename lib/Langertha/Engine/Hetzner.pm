@@ -126,6 +126,11 @@ sub _build_api_key {
 
 sub default_model { 'Qwen/Qwen3.6-35B-A3B-FP8' }
 
+# image_input (k266, ADR 0019 k266 Update): both catalog models take image input
+# (see MODELS), so the engine keeps the flag Role::ImageInput (via OpenAIBase)
+# brings and needs no model rows. A text-only catalog addition gets a layer-3
+# clear row here.
+
 sub default_response_size { 4096 }
 
 # DOC-SOURCED, NOT LIVE-CONFIRMED (Hetzner blog "inference-experiment", reduced

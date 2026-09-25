@@ -54,6 +54,14 @@ sub default_model { 'default' }
 sub api_key_env { 'LANGERTHA_LMSTUDIO_API_KEY' }
 sub api_key_required { 0 }
 
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  # image_input (k266, ADR 0019): self-hosted: the served model is launch state the client cannot see, so no claim.
+  delete $caps->{image_input};
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

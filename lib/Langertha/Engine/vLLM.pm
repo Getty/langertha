@@ -26,6 +26,8 @@ around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete $caps->{prompt_cache_key};
+  # image_input (k266, ADR 0019): self-hosted: the served model is launch state the client cannot see, so no claim.
+  delete $caps->{image_input};
   return $caps;
 };
 

@@ -71,6 +71,10 @@ around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete @{$caps}{ qw( parallel_tool_use response_format_json_object ) };
+  # image_input (k266, ADR 0019): no verified vision allowlist for this
+  # endpoint yet, so no claim. When one is verified, move this to a layer-3
+  # catch-all (qr/\A/ => 0) plus allowlist rows so a model row can win.
+  delete $caps->{image_input};
   return $caps;
 };
 

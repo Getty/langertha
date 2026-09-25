@@ -302,6 +302,22 @@ subtest 'probe resolves a model-aware tool_wire_format per model' => sub {
   }
 };
 
+subtest 'image_input is published per model (k266)' => sub {
+  # knarr/skeid manifests answer "does this model see images" from the model
+  # entry; the flag is model-scoped (ADR 0019 k266 Update), so two models of
+  # one engine must disagree, and a no-claim engine publishes no claim.
+  ok $ALLOWED{image_input}, 'image_input is on the published allowlist';
+  my $openai = Langertha::Engine::OpenAI->new( api_key => $SENTINEL );
+  my $m = Langertha::Manifest::Builder->from_engine( $openai,
+    models => [ 'gpt-4o', 'gpt-3.5-turbo' ] );
+  ok  $m->models->[0]->supports('image_input'), 'gpt-4o entry claims image_input';
+  ok !$m->models->[1]->supports('image_input'), 'gpt-3.5-turbo entry does not';
+
+  my $ollama = Langertha::Engine::Ollama->new( url => 'http://h.example:11434', model => 'llava' );
+  my $mo = Langertha::Manifest::Builder->from_engine($ollama);
+  ok !$mo->models->[0]->supports('image_input'), 'self-hosted Ollama publishes no claim';
+};
+
 subtest 'every engine capability is classified' => sub {
   # Guard: a flag engine_capabilities can report is either published on a
   # model (Builder->model_capabilities) or deliberately engine-level /
