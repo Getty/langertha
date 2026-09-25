@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T17:04:38Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T17:04:38Z
+created: 2026-09-25T16:49:21Z
+id: 269
+priority: low
+started: 2026-09-25T16:56:30Z
+status: done
+tags:
+- gemini
+- wire
+- bug
+title: 'Gemini: a message with native hash parts (no Content object) sends parts:[{text:[...]}]'
+updated: 2026-09-25T17:04:38Z
+---
+
+Found during k267 golden capture. Gemini chat with {role:user, content:[{type:"text",text:"x"}]} (array without a Langertha::Content object) yields contents[].parts = [{text: [ {type:text,text:x} ]}] -- the array is stuffed into text. Pre-existing, unrelated to images; Engine::Gemini message conversion should handle array content.
+
+Fixed in dae254e on branch worktree-agent-a2155dfa80a905edc; array content converted in Role::Chat::_gemini_part
