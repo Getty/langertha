@@ -75,6 +75,12 @@ sub generate_multipart_body {
       # one part per element, in order. -- karr k286
       push @formdata, map { ( $key, _multipart_text($_) ) } @$value;
     }
+    elsif ( ref $value eq 'HASH' && ref $value->{repeated} eq 'ARRAY' ) {
+      # Multi-valued field under the key as given, no [] (Mistral:
+      # timestamp_granularities, context_bias). Explicit marker, because a
+      # plain-key ArrayRef is a file spec. -- karr k315
+      push @formdata, map { ( $key, _multipart_text($_) ) } @{ $value->{repeated} };
+    }
     elsif ( ref $value eq 'ARRAY' ) {
       # File spec, HTTP::Request::Common form_data convention:
       # [ $path, $filename, @headers ] or [ undef, $filename, Content => $bytes ].
@@ -112,7 +118,13 @@ Values are read as follows:
 UTF-8 encoded, the same as a value in a JSON body.
 
 =item * An ArrayRef under a key ending in C<[]> (C<timestamp_granularities[]>,
-C<include[]>) is a multi-valued field: one text part per element.
+C<include[]>) is a multi-valued field: one text part per element, each
+under the C<[]> key (the OpenAI and Groq form).
+
+=item * C<< { repeated => \@values } >> is a multi-valued field sent as one
+text part per element under the key exactly as given, with no C<[]> (the form
+Mistral reads: C<< timestamp_granularities => { repeated => ['segment'] } >>).
+The marker is explicit because an ArrayRef under a plain key is a file part.
 
 =item * Any other ArrayRef is a file part in the L<HTTP::Request::Common>
 C<form_data> form: C<[ $path ]>, C<[ $path, $filename, @headers ]>, or

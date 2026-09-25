@@ -22,7 +22,10 @@ use Langertha::Engine::Mistral;
 # gpt-transcribe is not served there), pass diarize / context_bias /
 # timestamp_granularities through, and send the list-valued ones as one part
 # per element: an ArrayRef under the plain spec name would otherwise be taken
-# for a file spec and its first element opened as a path (k286).
+# for a file spec and its first element opened as a path (k286). Those parts
+# carry the PLAIN name, no [] (k315): Mistral's SDKs (Speakeasy multipart
+# "standard") and its curl docs send repeated timestamp_granularities /
+# context_bias parts, and a name[] key risks being silently dropped.
 #
 # The response fixtures are NOT captures (live calls need the maintainer's
 # approval): mistral_transcription_doc.json is the 200 example of Mistral's
@@ -73,18 +76,20 @@ subtest 'extras: diarize, context_bias, timestamp_granularities' => sub {
     timestamp_granularities => [qw( segment word )],
   );
   is_deeply( [ parts( $req->content ) ], [
-    [ 'context_bias[]'            => 'Langertha' ],
-    [ 'context_bias[]'            => 'Voxtral' ],
-    [ diarize                     => 'true' ],
-    [ file                        => 'testxxxx' ],
-    [ model                       => 'voxtral-mini-latest' ],
-    [ 'timestamp_granularities[]' => 'segment' ],
-    [ 'timestamp_granularities[]' => 'word' ],
-  ], 'ArrayRef extras become one text part per element, never a file part' );
+    [ context_bias            => 'Langertha' ],
+    [ context_bias            => 'Voxtral' ],
+    [ diarize                 => 'true' ],
+    [ file                    => 'testxxxx' ],
+    [ model                   => 'voxtral-mini-latest' ],
+    [ timestamp_granularities => 'segment' ],
+    [ timestamp_granularities => 'word' ],
+  ], 'ArrayRef extras become one text part per element under the plain name (k315)' );
+  unlike( $req->content, qr/name="[^"]*\[\]"/, 'no [] key on the Mistral wire (k315)' );
 
   my $bracket = $mistral->transcription( $file, 'timestamp_granularities[]' => ['segment'] );
-  like( $bracket->content, qr/name="timestamp_granularities\[\]"\r\n\r\nsegment\r\n/,
-    'the [] spelling passes through unchanged' );
+  is_deeply( [ grep { $_->[0] =~ /timestamp/ } parts( $bracket->content ) ],
+    [ [ timestamp_granularities => 'segment' ] ],
+    'the [] spelling is normalized to the plain name Mistral reads (k315)' );
 
   my $scalar = $mistral->transcription( $file, context_bias => 'Langertha' );
   like( $scalar->content, qr/name="context_bias"\r\n\r\nLangertha\r\n/, 'a scalar extra is sent as given' );
@@ -125,7 +130,7 @@ subtest 'simple_transcription_f / simple_transcription_result_f over the async b
   is( scalar @{ $result->{segments} }, 2, 'simple_transcription_result_f keeps segments' );
   my ( undef, $second ) = $mock->requests;
   is( $second->uri->path, '/v1/audio/transcriptions', 'async request on the Mistral path' );
-  like( $second->content, qr/name="timestamp_granularities\[\]"\r\n\r\nsegment\r\n/,
+  like( $second->content, qr/name="timestamp_granularities"\r\n\r\nsegment\r\n/,
     'async request carries the extras' );
 };
 

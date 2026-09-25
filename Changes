@@ -19,6 +19,11 @@ Revision history for Langertha
       usage, the response's rate_limit, the answering model and
       total_seconds. The bare methods are unchanged.
 
+    - Mistral transcription sends timestamp_granularities and context_bias
+      as repeated form parts under the plain name, the form Mistral reads;
+      OpenAI and Groq keep name[]. generate_multipart_body takes
+      { repeated => [...] } for such a plain-name list field.
+
     - Tests cover the OpenAI, Groq and whisper-handle transcription requests
       (endpoint, auth, multipart parts) and image answers on documented
       bodies (several gpt-image b64_json images; a url item with

@@ -129,15 +129,16 @@ sub transcription_operation_id { 'audio_api_v1_transcriptions_post' }
 
 sub default_transcription_model { 'voxtral-mini-latest' }
 
-# Mistral's list-valued form fields go out as one part per element under the
-# `name[]` key, generate_multipart_body's multi-valued convention (k286); an
-# ArrayRef under the plain spec name would be read as a file spec and its
-# first element opened as a path. -- karr k309
+# Mistral reads its list-valued form fields as repeated parts under the plain
+# name, no [] (its SDKs' Speakeasy "standard" multipart format and its curl
+# docs); OpenAI's name[] key (k286) risks a silent no-op there. The [] spelling
+# is accepted and normalized too. -- karr k309, k315
 around transcription_request => sub {
   my ( $orig, $self, $file, %extra ) = @_;
   for my $field (qw( timestamp_granularities context_bias )) {
-    next unless ref $extra{$field} eq 'ARRAY';
-    $extra{"${field}[]"} = delete $extra{$field};
+    my $value = exists $extra{"${field}[]"} ? delete $extra{"${field}[]"} : $extra{$field};
+    next unless ref $value eq 'ARRAY';
+    $extra{$field} = { repeated => $value };
   }
   return $self->$orig( $file, %extra );
 };
@@ -145,7 +146,6 @@ around transcription_request => sub {
 =method transcription_request
 
     my $request = $mistral->transcription_request($audio,
-        language                => 'en',
         timestamp_granularities => ['segment'],
         diarize                 => 'true',
         context_bias            => [qw( Langertha Voxtral )],
@@ -159,7 +159,8 @@ pairs are sent as form fields:
 =over
 
 =item * C<timestamp_granularities> - C<segment> and/or C<word>; the
-C<segments> of the answer then carry C<start> and C<end>.
+C<segments> of the answer then carry C<start> and C<end>. Mistral does not
+accept it together with C<language>.
 
 =item * C<diarize> - C<'true'> labels each segment with a C<speaker_id>. Form
 fields are text, so pass the string rather than a JSON boolean object.
@@ -172,11 +173,11 @@ without commas or whitespace.
 =back
 
 C<timestamp_granularities> and C<context_bias> take an ArrayRef and send one
-part per element under the C<[]> key (C<timestamp_granularities[]>, the
-multi-valued form field convention of
-L<Langertha::Role::HTTP/generate_multipart_body>); passing the C<[]> key
-yourself works too. Get the whole answer (C<text>, C<language>, C<segments>,
-C<usage>) with
+part per element under the plain name, without C<[]>, which is how Mistral
+reads a list field (see the C<repeated> marker of
+L<Langertha::Role::HTTP/generate_multipart_body>); the C<[]> spelling
+(C<timestamp_granularities[]>) is accepted and sent the same way. Get the
+whole answer (C<text>, C<language>, C<segments>, C<usage>) with
 L<Langertha::Role::Transcription/simple_transcription_result>, or the text
 alone with L<Langertha::Role::Transcription/simple_transcription>; both have
 C<_f> variants.

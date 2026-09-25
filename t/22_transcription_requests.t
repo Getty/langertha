@@ -7,6 +7,7 @@ use warnings;
 use Test2::Bundle::More;
 use JSON::MaybeXS;
 use Path::Tiny;
+use HTTP::Request;
 
 use Langertha::Engine::Whisper;
 
@@ -291,6 +292,35 @@ my $multipart = sub {
       [ $lang_field, undef,    'de' ],
       [ 'model',    undef,      $model ],
     ], "$label: file, language (languages[] for gpt-transcribe, k313) and model parts, nothing else");
+  }
+}
+
+# karr k315: some providers read a list field as repeated parts under the
+# PLAIN name (Mistral: timestamp_granularities, context_bias -- no []), while
+# OpenAI and Groq read name[]. generate_multipart_body must take an explicit
+# { repeated => [...] } marker for the plain-name form instead of guessing
+# from the key -- an ArrayRef under a plain key is a file spec -- and the
+# k286 [] convention must stay as it is for OpenAI / Groq.
+{
+  my ($body) = $whisper->generate_multipart_body(HTTP::Request->new(POST => 'http://x/'),
+    timestamp_granularities => { repeated => [qw( segment word )] },
+  );
+  is($body, $multipart->(
+    "Content-Disposition: form-data; name=\"timestamp_granularities\"\r\n\r\nsegment",
+    "Content-Disposition: form-data; name=\"timestamp_granularities\"\r\n\r\nword",
+  ), '{ repeated => [...] } becomes repeated text parts under the plain name');
+
+  require Langertha::Engine::OpenAI;
+  require Langertha::Engine::Groq;
+  for my $case (
+    [ OpenAI => Langertha::Engine::OpenAI->new( api_key => 'k' ) ],
+    [ Groq   => Langertha::Engine::Groq->new( api_key => 'k' ) ],
+  ) {
+    my ( $label, $engine ) = @$case;
+    my $req = $engine->transcription($file, 'timestamp_granularities[]' => [qw( word segment )]);
+    my @names = map { /name="([^"]+)"/ ? $1 : () } map { $_->header('Content-Disposition') } $req->parts;
+    is_deeply([ grep { /timestamp/ } @names ], [ ('timestamp_granularities[]') x 2 ],
+      "$label: list field still goes out as repeated name[] parts (k286)");
   }
 }
 
