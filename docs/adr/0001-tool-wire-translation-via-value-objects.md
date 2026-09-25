@@ -248,3 +248,24 @@ entry is written `functionDeclarations` (k227 review M1). Likewise the inbound d
 `Tool->from_hash` / `from_gemini` reads a declaration's schema from `parameters`,
 `parametersJsonSchema` or `parameters_json_schema`, so converting one to another wire keeps it
 (k227 review M2).
+
+## Update (k231 — `chat_f` on the `hermes` wire is one `chat_with_tools_f` turn)
+
+The k227 path left the list alone on `hermes`, so `chat_f(tools => [...])` on NousResearch or
+AKI native put a `tools` body key the model never sees (in the `to_hash` shape for a `Tool`).
+The `hermes` wire has no tools body key: definitions ride the system prompt. `chat_f` and
+`chat_stream_realtime_f` now take `tools` and `tool_choice` off the request there
+(`Role::Chat::_hermes_prompt_tools`) and build the turn from the pieces the tool loop already
+uses: `format_tools` (`Tool->format_list('hermes', …)`, MCP shape) and the
+`hermes_tool_prompt` system message (`Role::Tools::_hermes_tool_messages`, now shared with
+`build_tool_chat_request`), so a single `chat_f` sends the body a loop turn sends. On the reply,
+`chat_f` lifts `<tool_call>` blocks (honoring `hermes_call_tag`, via the loop's own
+`_hermes_split_text`) onto `Response.tool_calls` and out of `content` (ADR 0003), unless the
+engine's `chat_response` already did (AKI native, k123). The lift runs only when tools were
+sent, so `simple_chat_f` on a hermes engine keeps its content. A streamed turn keeps the tags in
+its text: chunks carry no Hermes call.
+
+The prompt cannot force or forbid a tool, so `tool_choice` other than `auto` is dropped with a
+carp rather than sent. The ADR 0005 forced-tool rewrite does not fire here, because the hermes
+engines still claim `tool_choice_named` (and `tools_native`) through `Role::Tools` in
+`%ROLE_TO_CAPS` — an over-claim for this wire, left for k234, not changed here.
