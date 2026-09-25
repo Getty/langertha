@@ -102,13 +102,32 @@ sub _exclude_json_schema_with_tools_or_streaming {
   return;
 }
 
-# image_input (k266, ADR 0019): no verified vision allowlist for this endpoint
-# yet, so no claim. When one is verified, move this to a layer-3 catch-all
-# (qr/\A/ => 0) plus allowlist rows so a model row can win.
+# image_input (k266, ADR 0019 k266 Update): the only Groq vision model is
+# qwen/qwen3.8-27b (console.groq.com/docs/vision, llm-advisor, docs only,
+# 2026-09-25); the catch-all first row clears the flag for every other id.
+#
+# Groq has no default model: building chat_model croaks, and the layer-3 walk
+# reads chat_model. With no model configured the table is therefore empty (so
+# supports() keeps answering instead of croaking, as it did before k266) and
+# the around below makes no image_input claim in its place.
+sub _has_configured_model {
+  my ( $self ) = @_;
+  return $self->has_chat_model || $self->has_model;
+}
+
+sub model_capability_corrections {
+  my ( $self ) = @_;
+  return () unless $self->_has_configured_model;
+  return (
+    qr/\A/             => { image_input => 0 },
+    'qwen/qwen3.8-27b' => { image_input => 1 },
+  );
+}
+
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
-  delete $caps->{image_input};
+  delete $caps->{image_input} unless $self->_has_configured_model;
   return $caps;
 };
 

@@ -178,18 +178,20 @@ sub _build_static_models {[
 #     1.0, kimi-k2.6 1.0 with thinking and only 0.6 without, anything else is a
 #     400. Not effort-dependent, and 1 is not safe either (k2.6 non-thinking),
 #     so the flag is cleared and the field never goes out (ADR 0025 k214 Update).
-#   * image_input (k266, llm-advisor, docs only, 2026-09-25): kimi-k3 takes
-#     image input (base64 only, Role::Chat inlines URL images here, k267);
-#     other ids are unchecked, so the catch-all first row clears the flag.
+#   * image_input (k266, llm-advisor, docs only, 2026-09-25): the vision models
+#     kimi-k3, kimi-k2.6 and kimi-k2.7-code take image input (platform.kimi.ai
+#     use-kimi-vision-model; base64 only, Role::Chat inlines URL images here,
+#     k267); other ids are unchecked, so the catch-all first row clears the flag.
 # The rows are deliberately distinct per model — that is the discriminating
 # information the flat role-derived row could not carry.
 sub model_capability_corrections {
   return (
     qr/\A/          => { image_input => 0 },
     'kimi-k3'       => { tool_choice_named => 0 },
-    qr/\Akimi-k3(?!\d)/ => { temperature => 0, image_input => 1 },
+    qr/\Akimi-k3(?!\d)/ => { temperature => 0 },
     qr/\Akimi-k2(?!\d)/ => { tool_choice_any => 0, reasoning_effort => 0, temperature => 0 },
     'kimi-k2.6'     => { reasoning_effort => 1 },
+    qr/\Akimi-k(?:3|2\.6|2\.7-code)(?!\d)/ => { image_input => 1 },
   );
 }
 

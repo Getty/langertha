@@ -54,11 +54,12 @@ my %DEFAULT = (
   Moonshot          => 1,  # kimi-k3
   # allowlisted, default is a preset -> no claim
   Perplexity        => 0,  # sonar
-  # cloud, no verified allowlist yet
-  Cerebras          => 0,
-  Scaleway          => 0,
-  TSystems          => 0,
-  Groq              => 0,
+  # allowlisted cloud engines, default model is text-only (Groq has none)
+  Cerebras          => 0,  # gpt-oss-120b
+  Scaleway          => 0,  # llama-3.1-8b-instruct
+  TSystems          => 0,  # gpt-oss-120b
+  Groq              => 0,  # probed with a neutral id
+  # cloud, no claim
   AKIOpenAI         => 0,
   NousResearch      => 0,
   # shims
@@ -132,6 +133,16 @@ my @ROWS = (
   [ OpenAI          => 'o3-mini'                     => 0 ],
   [ OpenAI          => 'gpt-4o-audio-preview'        => 0 ],
   [ OpenAI          => 'text-embedding-3-large'      => 0 ],
+  [ OpenAI          => 'gpt-4-0314'                  => 0 ],
+  [ OpenAI          => 'gpt-4-32k-0613'              => 0 ],
+  [ OpenAI          => 'o1-preview'                  => 0 ],
+  [ OpenAI          => 'gpt-image-1'                 => 0 ],
+  [ OpenAI          => 'gpt-realtime'                => 0 ],
+  [ OpenAI          => 'gpt-audio'                   => 0 ],
+  [ OpenAI          => 'gpt-4o-mini-transcribe'      => 0 ],
+  [ OpenAI          => 'tts-1-hd'                    => 0 ],
+  [ OpenAI          => 'gpt-4-turbo-2024-04-09'      => 1 ],
+  [ OpenAI          => 'gpt-4.1'                     => 1 ],
   [ OpenAIResponses => 'gpt-5.5-pro'                 => 1 ],
   [ OpenAIResponses => 'gpt-3.5-turbo'               => 0 ],
   [ Anthropic       => 'claude-3-haiku-20240307'     => 1 ],
@@ -143,18 +154,67 @@ my @ROWS = (
   [ Gemini          => 'gemini-1.0-pro'              => 0 ],
   [ Gemini          => 'gemini-2.5-flash-preview-tts'=> 0 ],
   [ Gemini          => 'text-embedding-004'          => 0 ],
-  [ Gemini          => 'gemma-3-27b-it'              => 0 ],
+  [ Gemini          => 'gemma-3-27b-it'              => 1 ],  # Gemma 3+ multimodal
+  [ Gemini          => 'gemma-4-31b-it'              => 1 ],
+  [ Gemini          => 'gemma-2-9b-it'               => 0 ],
+  [ Gemini          => 'gemma-3-1b-it'               => 0 ],
+  [ Gemini          => 'gemini-2.5-flash-native-audio-dialog' => 0 ],
+  [ Gemini          => 'gemini-live-2.5-flash'       => 0 ],
+  [ Gemini          => 'lyria-realtime-exp'          => 0 ],
   [ Hetzner         => 'Qwen3.8-27B'                 => 1 ],
   [ DeepSeek        => 'deepseek-v4-pro'             => 0 ],
   [ DeepSeek        => 'deepseek-chat'               => 0 ],
   [ Mistral         => 'pixtral-large-latest'        => 1 ],
   [ Mistral         => 'codestral-latest'            => 0 ],
+  [ Mistral         => 'mistral-medium-latest'       => 1 ],
+  [ Mistral         => 'mistral-large-latest'        => 1 ],
+  [ Mistral         => 'mistral-small-2503'          => 1 ],
+  [ Mistral         => 'mistral-small-2603'          => 1 ],
+  [ Mistral         => 'mistral-medium-2508'         => 1 ],
+  [ Mistral         => 'mistral-large-2512'          => 1 ],
+  [ Mistral         => 'ministral-8b-2512'           => 1 ],
+  [ Mistral         => 'mistral-small-2501'          => 0 ],
+  [ Mistral         => 'mistral-small-2409'          => 0 ],
+  [ Mistral         => 'mistral-large-2411'          => 0 ],
+  [ Mistral         => 'mistral-large-2407'          => 0 ],
+  [ Mistral         => 'ministral-8b-2410'           => 0 ],
+  [ Mistral         => 'open-mistral-nemo'           => 0 ],
   [ XAI             => 'grok-4.7-fast'               => 1 ],
   [ XAI             => 'grok-3'                      => 0 ],
   [ XAI             => 'grok-4.75'                   => 0 ],  # multi-digit guard
   [ MiniMax         => 'MiniMax-M2.7'                => 0 ],
   [ MiniMaxAnthropic=> 'MiniMax-M2.5'                => 0 ],
-  [ Moonshot        => 'kimi-k2.6'                   => 0 ],
+  [ Moonshot        => 'kimi-k2.6'                   => 1 ],
+  [ Moonshot        => 'kimi-k2.7-code'              => 1 ],
+  [ Moonshot        => 'kimi-k2.7-code-highspeed'    => 1 ],
+  [ Moonshot        => 'kimi-k2.5'                   => 0 ],
+  [ Moonshot        => 'kimi-k30'                    => 0 ],  # multi-digit guard
+  [ Cerebras        => 'qwen-3.8-27b'                => 1 ],
+  [ Cerebras        => 'gemma-4-31b'                 => 1 ],
+  [ Cerebras        => 'kimi-k2.7-code'              => 1 ],
+  [ Cerebras        => 'zai-glm-4.7'                 => 0 ],
+  [ Scaleway        => 'pixtral-12b-2409'            => 1 ],
+  [ Scaleway        => 'mistral-small-3.2-24b-instruct-2506' => 1 ],
+  [ Scaleway        => 'gemma-3-27b-it'              => 1 ],
+  [ Scaleway        => 'qwen3.5-35b-a3b'             => 1 ],
+  [ Scaleway        => 'holo2-30b-a3b'               => 1 ],
+  [ Scaleway        => 'llama-3.3-70b-instruct'      => 0 ],
+  [ Scaleway        => 'mistral-small-3.0'           => 0 ],
+  [ TSystems        => 'qwen-3.6-35b-fp8'            => 1 ],
+  [ TSystems        => 'Qwen3.6-35B-A3B-FP8'         => 1 ],  # case + dash variant
+  [ TSystems        => 'Gemma-4-31B'                 => 1 ],
+  [ TSystems        => 'glm-5.3-flash'               => 1 ],
+  [ TSystems        => 'Mistral-Small-4'             => 1 ],
+  [ TSystems        => 'mistral-medium-3'            => 1 ],
+  [ TSystems        => 'gpt-5.6-terra'               => 1 ],
+  [ TSystems        => 'claude-sonnet-4.5'           => 1 ],
+  [ TSystems        => 'Claude-4.6-Opus'             => 1 ],
+  [ TSystems        => 'gemini-3-flash'              => 1 ],
+  [ TSystems        => 'Llama-3.3-70B-Instruct'      => 0 ],
+  [ TSystems        => 'claude-sonnet-4'             => 0 ],
+  [ TSystems        => 'qwen-3.65'                   => 0 ],  # multi-digit guard
+  [ Groq            => 'qwen/qwen3.8-27b'            => 1 ],
+  [ Groq            => 'llama-3.3-70b-versatile'     => 0 ],
   [ Perplexity      => 'openai/gpt-5.6-luna'         => 1 ],
   [ Perplexity      => 'anthropic/claude-sonnet-5'   => 1 ],
   [ Perplexity      => 'google/gemini-3-flash'       => 1 ],
@@ -165,7 +225,6 @@ my @ROWS = (
   [ vLLM            => 'Qwen/Qwen2.5-VL-7B-Instruct' => 0 ],
   [ Ollama          => 'llava'                       => 0 ],
   [ MoonshotAnthropic => 'kimi-k3'                   => 0 ],
-  [ Groq            => 'meta-llama/llama-4-scout-17b-16e-instruct' => 0 ],
 );
 for my $row (@ROWS) {
   my ( $name, $model, $want ) = @$row;
@@ -181,6 +240,16 @@ isnt claims( MiniMax => 'MiniMax-M3' ), claims( MiniMax => 'MiniMax-M2.7' ),
 
 # The catch-all row also holds for an empty model id (ADR 0019 k209 Update).
 is claims( DeepSeek => '' ), 0, 'DeepSeek with an empty model makes no claim';
+
+# Groq has no default model: supports() must still answer (no croak) and make
+# no claim, as the per-model table cannot run without a model.
+{
+  my $groq = Langertha::Engine::Groq->new( api_key => 'k' );
+  my $claim = eval { $groq->supports('image_input') ? 1 : 0 };
+  is $claim, 0, 'Groq without a model: supports(image_input) answers 0, no croak'
+    or diag $@;
+  ok eval { $groq->supports('streaming'); 1 }, 'Groq without a model: other flags still answer';
+}
 
 # ---------------------------------------------------------------------------
 # 4. Advisory: no claim never blocks. An image on a no-claim engine/model is

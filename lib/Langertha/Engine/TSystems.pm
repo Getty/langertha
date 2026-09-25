@@ -69,15 +69,25 @@ sub _build_supported_operations {[qw(
   createEmbedding
 )]}
 
-# image_input (k266, ADR 0019): no verified vision allowlist for this endpoint
-# yet, so no claim. When one is verified, move this to a layer-3 catch-all
-# (qr/\A/ => 0) plus allowlist rows so a model row can win.
-around engine_capabilities => sub {
-  my ( $orig, $self, @rest ) = @_;
-  my $caps = $self->$orig(@rest);
-  delete $caps->{image_input};
-  return $caps;
-};
+# image_input (k266, ADR 0019 k266 Update): DOCS ONLY, no key exists
+# (docs.llmhub.t-systems.net/models/vision/, llm-advisor 2026-09-25). The
+# catch-all first row clears the flag (the default gpt-oss-120b makes no
+# claim); the listed vision models re-assert it. The docs spell ids
+# inconsistently (qwen-3.6-35b-fp8 vs Qwen3.6-35B-A3B-FP8), so every row is
+# case-insensitive and tolerates a missing dash before the version.
+sub model_capability_corrections {
+  return (
+    qr/\A/                                   => { image_input => 0 },
+    qr/\Agemma-?4(?!\d)/i                    => { image_input => 1 },
+    qr/\Aglm-?5\.3-flash/i                   => { image_input => 1 },
+    qr/\Amistral-small-?4(?!\d)/i            => { image_input => 1 },
+    qr/\Amistral-medium-?3(?!\d)/i           => { image_input => 1 },
+    qr/\Aqwen-?3\.[68](?!\d)/i               => { image_input => 1 },
+    qr/\Agpt-5/i                             => { image_input => 1 },
+    qr/\Aclaude-(?:[a-z]+-)?4[.-][56](?!\d)/i => { image_input => 1 },
+    qr/\Agemini-?3/i                         => { image_input => 1 },
+  );
+}
 
 __PACKAGE__->meta->make_immutable;
 

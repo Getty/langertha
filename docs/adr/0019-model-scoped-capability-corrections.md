@@ -262,15 +262,18 @@ The flag is resolved with the existing layers, per the llm-advisor table (docs o
   keep the role-derived flag. Layer-3 rows clear it for the text-only exceptions (legacy
   `gpt-3.5` / `gpt-4`, `o1-mini`, `claude-2`, `gemini-1.0-pro`, embedding and TTS ids).
 - **Other cloud engines with known vision models** (DeepSeek, Mistral, XAI, MiniMax,
-  MiniMaxAnthropic, Moonshot, Perplexity) use the k209 shape: a `qr/\A/ => { image_input => 0 }`
-  catch-all first row, then the documented vision ids re-assert it. An unknown id makes no claim.
+  MiniMaxAnthropic, Moonshot, Perplexity, Cerebras, Scaleway, TSystems, Groq) use the k209 shape:
+  a `qr/\A/ => { image_input => 0 }` catch-all first row, then the documented vision ids
+  re-assert it. An unknown id makes no claim. TSystems' rows match case-insensitively because its
+  docs spell one model two ways (`qwen-3.6-35b-fp8`, `Qwen3.6-35B-A3B-FP8`). Groq has no default
+  model and building its `chat_model` croaks, so its table is empty when no model is configured
+  and an engine `around` clears the flag in its place. `supports()` keeps answering without a
+  model, as it did before.
 - **No claim engine-wide (layer 2):** gateways (OpenRouter, HuggingFace, Replicate), self-hosted
   servers (vLLM, VLLMHook, SGLang, LlamaCpp, Ollama, OllamaOpenAI, LMStudio, LMStudioOpenAI),
   the shims (MoonshotAnthropic, AKIAnthropic, LMStudioAnthropic), AKIOpenAI and NousResearch. The
-  model behind them is not known to the client. Cerebras, Scaleway, TSystems and Groq serve some
-  vision models but have no verified allowlist yet, so they also clear the flag at layer 2; a
-  verified allowlist moves such an engine to the catch-all shape. AKI native does not compose the
-  role: its wire is unverified.
+  model behind them is not known to the client. AKI native does not compose the role: its wire is
+  unverified.
 
 The flag is **advisory**. No gate reads it: an image sent without the claim is serialized and
 sent as usual, and the provider decides. Probing live model metadata (OpenRouter

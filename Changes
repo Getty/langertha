@@ -7,8 +7,9 @@ Revision history for Langertha
       sees an image part. It is claimed for OpenAI, first-party Anthropic,
       Gemini and Hetzner models (minus text-only ones such as gpt-3.5,
       claude-2, gemini-1.0-pro), and for the documented vision models on
-      DeepSeek, Mistral, XAI, MiniMax, Moonshot and third-party ids on
-      Perplexity. Gateways, self-hosted servers and the /anthropic shims
+      DeepSeek, Mistral, XAI, MiniMax, Moonshot, Groq, Cerebras, Scaleway,
+      TSystems and third-party ids on Perplexity. Gateways, self-hosted
+      servers and the /anthropic shims
       make no claim. The flag never blocks sending an image. Manifests
       built by Langertha::Manifest::Builder publish it per model.
 

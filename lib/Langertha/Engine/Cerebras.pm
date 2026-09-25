@@ -87,15 +87,17 @@ sub _exclude_tools_with_any_response_format {
     ."structured-output turn).";
 }
 
-# image_input (k266, ADR 0019): no verified vision allowlist for this endpoint
-# yet, so no claim. When one is verified, move this to a layer-3 catch-all
-# (qr/\A/ => 0) plus allowlist rows so a model row can win.
-around engine_capabilities => sub {
-  my ( $orig, $self, @rest ) = @_;
-  my $caps = $self->$orig(@rest);
-  delete $caps->{image_input};
-  return $caps;
-};
+# image_input (k266, ADR 0019 k266 Update): only the vision models take image
+# input (inference-docs.cerebras.ai/capabilities/image-inputs, public preview,
+# base64 PNG/JPEG only -- URL images are inlined by _content_inline_images_only;
+# llm-advisor, docs only, 2026-09-25). The catch-all first row clears the flag,
+# so the default gpt-oss-120b and unknown ids make no claim.
+sub model_capability_corrections {
+  return (
+    qr/\A/                                          => { image_input => 0 },
+    qr/\A(?:qwen-3\.8-27b|gemma-4-31b|kimi-k2\.7-code)/ => { image_input => 1 },
+  );
+}
 
 __PACKAGE__->meta->make_immutable;
 

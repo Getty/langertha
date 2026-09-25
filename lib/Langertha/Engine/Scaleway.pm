@@ -71,12 +71,20 @@ around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete @{$caps}{ qw( parallel_tool_use response_format_json_object ) };
-  # image_input (k266, ADR 0019): no verified vision allowlist for this
-  # endpoint yet, so no claim. When one is verified, move this to a layer-3
-  # catch-all (qr/\A/ => 0) plus allowlist rows so a model row can win.
-  delete $caps->{image_input};
   return $caps;
 };
+
+# image_input (k266, ADR 0019 k266 Update): Scaleway serves text-only and
+# vision models side by side (llm-advisor, docs only, 2026-09-25). The
+# catch-all first row clears the flag (the default llama-3.1-8b-instruct makes
+# no claim); the vision families re-assert it.
+sub model_capability_corrections {
+  return (
+    qr/\A/ => { image_input => 0 },
+    qr/\A(?:pixtral-|mistral-small-3\.[12]|mistral-large-3|gemma-3-27b|gemma-4|qwen3\.[56]-|holo2|molmo)/
+      => { image_input => 1 },
+  );
+}
 
 sub _build_supported_operations {[qw(
   createChatCompletion

@@ -70,15 +70,18 @@ around engine_capabilities => sub {
 
 # image_input (k266, ADR 0019 k266 Update): every Gemini chat model takes
 # inline_data image parts (llm-advisor, docs only, 2026-09-25), so the family
-# keeps the role-derived flag. Cleared: the text-only Gemini 1.0 Pro, TTS and
-# non-chat ids, and the Gemma models the API also serves (vision differs by
-# size there, so no claim).
+# keeps the role-derived flag. Cleared: TTS / Live / native-audio /
+# transcription and embedding ids, the lyria/imagen/veo generators (advisor
+# table), plus the text-only Gemini 1.0 Pro and aqa. Gemma: Gemma 3 and 4 are
+# multimodal and keep the flag; Gemma 1/2 and the text-only gemma-3-1b clear
+# it (decision k266: restrict the exclusion to the text-only sizes rather than
+# the whole family).
 sub model_capability_corrections {
   return (
-    qr/\Agemini-(?:1\.0-)?pro(?:-\d+)?\z/ => { image_input => 0 },
-    qr/-tts(?:-|\z)/                      => { image_input => 0 },
-    qr/embedding/                         => { image_input => 0 },
-    qr/\A(?:imagen|veo|aqa|gemma)/        => { image_input => 0 },
+    qr/(?:-tts|-live|native-audio|transcribe|embedding)/ => { image_input => 0 },
+    qr/\A(?:lyria|imagen|veo|aqa)/                        => { image_input => 0 },
+    qr/\Agemini-(?:1\.0-)?pro(?:-\d+)?\z/                => { image_input => 0 },
+    qr/\Agemma-(?:[12](?!\d)|3-1b)/                      => { image_input => 0 },
   );
 }
 

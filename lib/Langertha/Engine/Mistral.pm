@@ -67,15 +67,23 @@ sub _build_openapi_operations {
 sub default_model { 'mistral-small-latest' }
 
 # image_input (k266, ADR 0019 k266 Update): Mistral serves text-only and vision
-# models side by side, so the catch-all first row clears the flag and the
-# vision ids re-assert it: mistral-small-latest (Mistral Small 4) and the
-# Pixtral line. FRESH FACT, not re-verified: the llm-advisor read
-# mistral-small-latest -> Small 4 with vision from the docs on 2026-09-25.
+# models side by side (llm-advisor, docs only, 2026-09-25), so the catch-all
+# first row clears the flag and the vision models re-assert it: the
+# small/medium/large -latest aliases, Pixtral, Small >= 3.1 (2503 on, Small 4 =
+# 2603), Medium 3.x (2505 on), Large 3 (2512 on) and Ministral 3 (2512 on).
+# Codestral, Nemo, Large 2407/2411, Ministral 2410 and Small 2409/2501 are
+# text-only and fall to the catch-all. UNCERTAIN: the exact dated ids are
+# derived from the release dates, not read from a model list, and
+# mistral-small-latest -> Small 4 is a fresh fact the advisor did not re-verify.
 sub model_capability_corrections {
   return (
-    qr/\A/                 => { image_input => 0 },
-    'mistral-small-latest' => { image_input => 1 },
-    qr/\Apixtral-/         => { image_input => 1 },
+    qr/\A/                                              => { image_input => 0 },
+    qr/\Amistral-(?:small|medium|large)-latest\z/       => { image_input => 1 },
+    qr/\Apixtral-/                                      => { image_input => 1 },
+    qr/\Amistral-small-(?:250[3-9]|251\d|2[6-9]\d\d)/   => { image_input => 1 },
+    qr/\Amistral-medium-(?:250[5-9]|251\d|2[6-9]\d\d)/  => { image_input => 1 },
+    qr/\Amistral-large-(?:251[2-9]|2[6-9]\d\d)/         => { image_input => 1 },
+    qr/\Aministral-\d+b-(?:251[2-9]|2[6-9]\d\d)/        => { image_input => 1 },
   );
 }
 

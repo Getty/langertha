@@ -98,14 +98,16 @@ sub default_model { 'gpt-5.6-terra' }
 # OpenAIResponses inherits this table.
 sub model_capability_corrections {
   return (
-    qr/\Agpt-3\.5/                                   => { image_input => 0 },
-    qr/\Agpt-4(?:-32k)?(?:-\d{4})?\z/                => { image_input => 0 },
-    qr/\Agpt-4-(?:\d{4}-preview|turbo-preview)\z/    => { image_input => 0 },
-    qr/\Ao1-(?:mini|preview)/                        => { image_input => 0 },
-    qr/\Ao3-mini/                                    => { image_input => 0 },
-    qr/\Agpt-oss/                                    => { image_input => 0 },
+    qr/\A(?:gpt-3\.5|o1-mini|o3-mini|text-embedding|whisper|tts-|dall-e|gpt-image|gpt-realtime|gpt-audio)/
+                                                     => { image_input => 0 },
     qr/-(?:audio|realtime|transcribe|tts)(?:-|\z)/   => { image_input => 0 },
-    qr/\A(?:text-embedding|whisper|tts|dall-e|davinci|babbage)/ => { image_input => 0 },
+    'gpt-4'                                          => { image_input => 0 },
+    qr/\Agpt-4-0(?:314|613)/                         => { image_input => 0 },
+    qr/\Agpt-4-32k/                                  => { image_input => 0 },
+    qr/\Agpt-4-(?:\d{4}-preview|turbo-preview)\z/    => { image_input => 0 },
+    qr/\Ao1-preview/                                 => { image_input => 0 },
+    qr/\Agpt-oss/                                    => { image_input => 0 },
+    qr/\A(?:davinci|babbage)/                        => { image_input => 0 },
   );
 }
 
