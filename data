@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-09-25T08:17:23Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T08:17:23Z
+created: 2026-09-25T08:09:28Z
+id: 255
+priority: low
+started: 2026-09-25T08:10:08Z
+status: done
+tags:
+- hermes
+- tools
+title: ToolCall->extract_hermes_from_text drops no-call <tool_call> blocks; Role::Tools
+  _hermes_split_text now keeps them as text (k253)
+updated: 2026-09-25T08:17:23Z
+---
+
+From k253 review round: _hermes_split_text keeps a block that yields no call as text in place (chat_f / stream parity). Langertha::ToolCall->extract_hermes_from_text (used by Output/Tools.pm, skeid Anthropic/Ollama protocols) still removes such blocks from the text. Align: one extractor, or make extract_hermes_from_text return the text with no-call blocks preserved. Check skeid callers' expectations.
