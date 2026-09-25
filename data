@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T22:07:05Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T22:07:05Z
+created: 2026-09-25T21:23:59Z
+id: 311
+priority: low
+started: 2026-09-25T21:37:16Z
+status: done
+tags:
+- bug
+- gemini
+- responses
+- openrouter
+title: 'Streaming/Responses gaps after k301: Gemini stream blockReason, Responses
+  error body with empty output, OpenRouter choices[0].error'
+updated: 2026-09-25T22:07:05Z
+---
+
+Follow-ups from k301: (1) Gemini stream chunk with promptFeedback.blockReason and no candidates is silently skipped - should end the stream with finish_reason = blockReason. (2) Responses API body with error object and empty output returns an empty Response - croak like k301. (3) OpenRouter-style error inside a choice (choices[0].error, finish_reason error) not surfaced - croak with its message. Verify (3) wire shape with langertha-llm-advisor.
