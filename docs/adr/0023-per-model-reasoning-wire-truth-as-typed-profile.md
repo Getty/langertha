@@ -247,3 +247,34 @@ models whose no-effort default is non-reasoning: the **gpt-5.1 / gpt-5.2 / gpt-5
   capability layer all stay as recorded; this is a new declarative dimension of the same category-(a)
   registry, kin to the k180 self-hosted-vocabulary Update. Verified offline:
   `t/79_openai_temperature_reasoning_gate.t`.
+
+## Update (k186 — `is_reasoning_model`: the OpenAI reasoning-model classification moves into the Profile)
+
+The "is this an OpenAI reasoning model?" question used to be answered by an engine-side regex in
+`Engine::OpenAI::_temperature_rejected_by_reasoning` (`\A(?:o\d|gpt-5(?!-chat)|gpt-6)`), a second
+copy of model-family knowledge next to this registry. It is now a read-only Profile predicate,
+**`is_reasoning_model`** (Bool, default `0`), and the engine regex is gone.
+
+- **Explicit on both sides, conservative by default.** The curated OpenAI reasoning families (gpt-6,
+  gpt-5.6, gpt-5.5, the gpt-5.1 pair, gpt-5.2/5.4, legacy gpt-5) carry `is_reasoning_model => 1`.
+  Two new passthrough entries classify the uncurated lines without inventing a ladder: `\Agpt-5\.\d`
+  (gpt-5.3, 5.7, ...) and `\Ao\d` (the o-series) are reasoning with the unlisted-id serialization.
+  The non-reasoning models are marked explicitly: `\Agpt-4` (gpt-4o, gpt-4.1) with the
+  unlisted-id serialization, and one chat carve-out per gpt-5 family (`gpt-5-chat`,
+  `gpt-5.1-chat`, `gpt-5.[24]-chat`, `gpt-5.5-chat`, `gpt-5.6-chat`, plus a generic
+  `gpt-5.N-chat`), prepended so they win over the family patterns. The provider default is
+  `is_reasoning_model => 0`, so an unknown id never classifies as reasoning. Wrongly dropping a
+  caller's temperature is the worse error.
+- **Closes the dotted-chat lookahead gap.** The old `(?!-chat)` only saw a literal `-chat` directly
+  after `gpt-5`, so `gpt-5.1-chat-latest`, `gpt-5.2-chat-latest` and any `gpt-5.N-chat*` were
+  classified as reasoning. The carve-outs make them non-reasoning.
+- **Classification only; the reasoning wire does not move.** Each chat carve-out is a clone of the
+  family profile it sits in (`_non_reasoning_like`), with only `model_match`, `source` and the
+  classification changed. The new passthrough entries have the same serialization fields as the
+  default. `to_openai` / `to_responses` output is byte-identical for every id. It is category-(a)
+  wire-truth like `default_reasoning_off`. Only the OpenAI families are curated, so a `0` on a
+  Claude, Gemini, Qwen or GPT-OSS profile means "not classified", not "known non-reasoning".
+- Verified offline: `t/79_openai_reasoning_model_classification.t` covers reasoning,
+  non-reasoning and dotted-chat ids on both OpenAI engines, the Profile predicate itself, and
+  carve-out serialization parity. The pre-k186 table was green except for the dotted-chat rows,
+  which were red.

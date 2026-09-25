@@ -131,3 +131,17 @@ gpt-5.4** line defaults to reasoning **OFF** with no effort (`reasoning_tokens=0
   `t/79_openai_temperature_reasoning_gate.t` (the live matrix: 5.1/5.2/5.4 keep temp at no effort;
   o4-mini / gpt-5 / gpt-5.5 / gpt-5.6 / gpt-6-astra drop it; an explicit effort re-enables the drop;
   `effort=none` keeps temp where accepted).
+
+## Update (k186 — the reasoning-model gate (§Decision.2a) reads the Profile, not an engine regex)
+
+§Decision.2a's per-engine reasoning-model regex (`o\d` / `gpt-5` except `-chat` / `gpt-6`) is
+gone. `_temperature_rejected_by_reasoning` now resolves the Profile first and returns `0`
+(temperature kept) unless `$profile->is_reasoning_model` (ADR 0023's k186 Update). Now all three
+of the gate's model-specific reads are on the same Profile: `is_reasoning_model`,
+`default_reasoning_off` and `effort_accepted_on`. The classification is unchanged for every
+previously-covered id: the o-series, gpt-5, gpt-5.N and gpt-6 are still reasoning; gpt-4o,
+gpt-4.1, gpt-5-chat and unknown ids are still non-reasoning. The one intended change is the
+dotted chat ids (`gpt-5.1-chat-latest`, `gpt-5.2-chat-latest`, `gpt-5.N-chat*`). The old
+lookahead missed them and would have dropped their temperature. They are now non-reasoning and
+keep it. The effort resolution (2b), the `effort=none` branch (2c) and the k185 no-effort branch
+are unchanged. Verified offline: `t/79_openai_reasoning_model_classification.t`.

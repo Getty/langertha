@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - OpenAI: whether a model is a reasoning model, and so may lose a
+      non-default temperature, is now decided by
+      Langertha::Reasoning::Profile->is_reasoning_model. Dotted chat ids such as
+      gpt-5.1-chat-latest and gpt-5.2-chat-latest now count as non-reasoning and
+      keep their temperature. Unknown ids count as non-reasoning too.
+
     - The async _f methods gained a synchronous LWP fallback: when
       Net::Async::HTTP is not installed (and no client is injected), HTTP runs
       synchronously and returns an already-complete Future, so the _f methods
