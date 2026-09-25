@@ -17,6 +17,10 @@ Revision history for Langertha
       whose body is not JSON croaks with "<engine> response is not valid
       JSON: <body>" instead of the bare decoder message.
 
+    - Mistral and Scaleway send their own default embedding model
+      (mistral-embed, qwen3-embedding-8b) instead of OpenAI's
+      text-embedding-3-large, which neither serves.
+
     - New capability image_input (Langertha::Role::ImageInput):
       $engine->supports('image_input') says whether the configured model
       sees an image part. It is claimed for OpenAI, first-party Anthropic,

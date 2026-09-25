@@ -29,7 +29,9 @@ Scaleway is designed as a drop-in replacement for the OpenAI API and is
 EU-act compliant. Available chat models include C<llama-3.1-8b-instruct>
 (default), C<llama-3.3-70b-instruct>, C<mistral-small-3.1-24b-instruct-2503>,
 C<gemma-3-27b-it> and others. Function calling, structured output and
-embeddings are supported.
+embeddings are supported; the default embedding model is
+C<qwen3-embedding-8b> (C<bge-multilingual-gemma2> is also served, set it
+with C<embedding_model>).
 
 If you want to scope requests to a specific Scaleway project, override C<url>
 with C<https://api.scaleway.ai/E<lt>PROJECT_IDE<gt>/v1>.
@@ -53,6 +55,11 @@ sub _build_api_key {
 }
 
 sub default_model { 'llama-3.1-8b-instruct' }
+
+# Scaleway's embedding model (supported-models list, llm-advisor 2026-09-25;
+# bge-multilingual-gemma2 is also served). The OpenAI role's
+# text-embedding-3-large is not (k291).
+sub default_embedding_model { 'qwen3-embedding-8b' }
 
 # Scaleway's Generative APIs narrow two flags the OpenAI role inventory grants
 # (scaleway.com/en/docs/generative-apis, verified 2026-09-01):
@@ -100,6 +107,8 @@ __PACKAGE__->meta->make_immutable;
 =item * L<https://www.scaleway.com/en/docs/generative-apis/> - Scaleway Generative APIs documentation
 
 =item * L<https://www.scaleway.com/en/generative-apis/> - Scaleway Generative APIs product page
+
+=item * L<https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/> - Supported chat and embedding models
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 

@@ -37,7 +37,8 @@ L<Langertha::Role::OpenAICompatible> with Mistral's endpoint
 Popular models: C<mistral-small-latest> (default, fast), C<mistral-large-latest>
 (most capable, 675B parameters), C<codestral-latest> (code generation),
 C<devstral-latest> (development workflows), C<pixtral-large-latest> (vision).
-Supports chat, embeddings, and tool calling; transcription is not available.
+Supports chat, embeddings (default embedding model C<mistral-embed>), and
+tool calling; transcription is not available.
 
 Dynamic model listing via C<list_models()>. Get your API key at
 L<https://docs.mistral.ai/getting-started/quickstart/> and set
@@ -104,6 +105,10 @@ sub model_metadata_format { 'mistral' }
 sub model_metadata_url    { $_[0]->url . $_[0]->list_models_path }
 
 sub embedding_operation_id { 'embeddings_v1_embeddings_post' }
+
+# Mistral's embedding model; the OpenAI role's text-embedding-3-large is not
+# served here (k291).
+sub default_embedding_model { 'mistral-embed' }
 
 __PACKAGE__->meta->make_immutable;
 
