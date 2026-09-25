@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T21:59:06Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:59:06Z
+created: 2026-09-25T21:30:17Z
+id: 313
+priority: low
+started: 2026-09-25T21:40:44Z
+status: done
+tags:
+- advisor
+- imagegen
+- transcription
+title: 'Advisor check: dall-e-3 deprecation status; TranscriptionBase default gpt-transcribe
+  for third-party subclasses'
+updated: 2026-09-25T21:59:06Z
+---
+
+From k308: (1) dall-e-3 is still the example model in Langertha::ImageGen SYNOPSIS and tests - verify deprecation date on OpenAI deprecations page, update examples/defaults if retired. (2) TranscriptionBase subclasses without their own default now inherit gpt-transcribe (was whisper-1); a third-party subclass aimed at a non-OpenAI server would break - consider TranscriptionBase default undef/whisper-1 and only OpenAI setting gpt-transcribe. Decide & document.
+
+llm-advisor 2026-09-25 (developers.openai.com .md pages, openai-python main; no live calls):
+(1) dall-e-2 + dall-e-3 were REMOVED from the API on 2026-05-12 (announced 2025-11-14; replacement gpt-image-2/-1/-1-mini) - deprecations page + changelog May 12. RULING: replace dall-e-* in Langertha::ImageGen SYNOPSIS and t/95_imagegen.t with gpt-image-2; drop the 'dall-e-* still takes response_format' POD sentence + comment in Role/OpenAICompatible.pm image_request (~l.961/986) - the branch is for a dead model (keep the gpt-image drop logic).
+CORRECTION to k297: gpt-image-1 removal is 2026-10-23 (2026-04-22 legacy-snapshot batch), not 2026-12-01; Dec 1 2026 applies to gpt-image-1-mini, gpt-image-1.5, chatgpt-image-latest. Fix the comment at OpenAICompatible.pm:126.
+(2) gpt-transcribe: real, current, released 2026-07-28 (changelog) with gpt-live-transcribe; recommended replacement for whisper-1/gpt-4o-*transcribe (removal 2027-02-26, confirmed). Returns json {text, languages}; supports prompt, keywords, languages (not singular language - don't send both). Word/segment timestamps (timestamp_granularities + verbose_json), subtitle formats (srt/vtt) and /audio/translations: guide says use whisper-1 - NOT gpt-transcribe (model page: Translation not supported). Whether 'text' is accepted is not stated - UNVERIFIED; treat json as the only safe value. k297 claims (gpt-transcribe default, gpt-4o-* json-only, whisper-1 removal date) confirmed.
+gpt-image-2: not deprecated (snapshot gpt-image-2-2026-04-21). gpt-image-2.5-flare/-sunburst launched 2026-09-08 at gpt-image-2 token rates and the image guide now leads with them; they add quality xhigh/max. RULING: gpt-image-2 stays a correct, conservative default; switching to gpt-image-2.5-flare is optional, not needed.
+(3) TranscriptionBase default: gpt-transcribe exists only on OpenAI; Groq, faster-whisper/speaches, LocalAI etc. won't know it. RULING: set gpt-transcribe only on Engine::OpenAI (and its ->whisper helper); TranscriptionBase/OpenAICompatible fall back to whisper-1 (the de-facto compat alias) or '' like Whisper. Document in TranscriptionBase POD.
