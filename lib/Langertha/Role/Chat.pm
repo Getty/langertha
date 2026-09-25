@@ -846,8 +846,8 @@ async sub chat_stream_realtime_f {
   $request_f->on_ready(sub { $transfer_f->done unless $transfer_f->is_ready });
   $transfer_f->on_cancel(sub { $request_f->cancel unless $request_f->is_ready });
   await $transfer_f;
-  # The exception that stopped the stream wins over a transport failure the
-  # stop may have provoked.
+  # The exception that stopped the stream wins over any transport failure
+  # seen afterwards (from the cancel, a drain, or the connection itself).
   await Future->fail(@$stream_error) if $stream_error;
   await $request_f if $request_f->is_failed;
 

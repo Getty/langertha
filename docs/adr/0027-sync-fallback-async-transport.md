@@ -65,7 +65,8 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
      iteration (`$loop->later`), and the future fails once the transfer has ended; if the response
      completed within that read there is nothing to cancel. A client whose futures carry no loop
      is drained instead, and so is one whose `loop` has no `later` (another event system's loop);
-     the original exception wins over a transport failure the stop provokes (karr #199).
+     the chunk-callback exception is checked before the request future's own state, so it wins
+     over any later transport failure on either path (karr #199).
      Cancelling a `Net::Async::HTTP` request closes its connection. With the library default
      `pipeline => 1` a concurrent request on the same engine was pipelined behind the aborted one
      on that keep-alive connection and failed with `Connection closed`; since karr #199 the
@@ -74,9 +75,10 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
      stays at the library default of 1 (overridable through `NET_ASYNC_HTTP_MAXCONNS`): LLM
      requests are long and a pipelined request waits behind the stream anyway (HTTP/1.1
      answers pipelined requests in order), so
-     dropping pipelining costs no concurrency Langertha had; raising the connection limit would
-     be a new concurrency promise and is left to an injected client. An injected client keeps
-     its own settings.
+     dropping pipelining costs no concurrency Langertha had — at most one extra round trip per
+     queued request — and cancelling a *queued* request no longer closes the connection under
+     the running stream. Raising the connection limit would be a new concurrency promise and is
+     left to an injected client. An injected client keeps its own settings.
    Both are covered by `t/45_sync_http_real_lwp.t`, a real LWP (and `Net::Async::HTTP`) against a
    forked local daemon, including sync/async parity on a 4xx with a body; the `Net::Async::HTTP`
    chunk-sub die by `t/45_async_http_stream_die.t`, in three framings (paced chunks, a chunked
