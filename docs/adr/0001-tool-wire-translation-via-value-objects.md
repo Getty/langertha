@@ -314,3 +314,12 @@ lifted hermes calls, while `chat_f` skips the lift when the reply already carrie
 theoretical on the `hermes` wire, left as is. The splitter rescans its held buffer from the start
 on each chunk while inside a call block (quadratic for very large arguments in tiny chunks);
 negligible at realistic sizes, remembering the scan offset is the fix if it ever shows.
+
+## Update (k255 — one hermes text lift, on the value object)
+
+`Langertha::ToolCall->extract_hermes_from_text` (the public door: `Output::Tools`, skeid's
+protocols) still deleted a `<tool_call>` block that carried no call while `_hermes_split_text`
+kept it. The door is now the one implementation: it keeps such blocks in the text in place and
+takes an optional `tag => ...` (default `tool_call`); `Role::Tools::_hermes_split_text` delegates
+to it with `hermes_call_tag` and returns `{name, arguments}` hashes, so a non-object `arguments`
+now reaches the tool loop as `{}` on every path, as `Response` already coerced it.
