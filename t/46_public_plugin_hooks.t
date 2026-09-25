@@ -88,6 +88,21 @@ subtest 'plugin_instances: public read-only list, private name aliases it' => su
   is_deeply(host()->plugin_instances, [], 'no plugins: empty list');
 };
 
+subtest 'plugin_instances constructor contract: only _plugin_instances injects' => sub {
+  # Sibling dists inject prebuilt instances via the private key (k230); the
+  # public reader is deliberately not an init_arg, so it must not inject.
+  my $injected = TestPlugin::Block->new(host => MockEngine->new);
+
+  my $legacy = host(plugins => ['TestPlugin::Opt'], _plugin_instances => [ $injected ]);
+  is(scalar @{$legacy->plugin_instances}, 1, '_plugin_instances: exactly the injected list');
+  is($legacy->plugin_instances->[0], $injected, '_plugin_instances injects the given instance, plugins not built');
+
+  my $public = host(plugins => ['TestPlugin::Opt'], plugin_instances => [ $injected ]);
+  is(scalar @{$public->plugin_instances}, 1, 'plugin_instances key: list built from plugins');
+  isa_ok($public->plugin_instances->[0], ['TestPlugin::Opt'], 'plugin_instances key is ignored, not injected');
+  isnt($public->plugin_instances->[0], $injected, 'the passed instance is not used');
+};
+
 subtest 'plugin_args: public constructor key, _plugin_args still accepted' => sub {
   my $public = host(plugins => ['TestPlugin::Opt'], plugin_args => { my_option => 'public' });
   is($public->plugin_instances->[0]->my_option, 'public', 'plugin_args reaches the plugin constructor');
