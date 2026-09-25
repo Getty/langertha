@@ -187,3 +187,59 @@ denylist — Responses output items the client must answer and Langertha does no
 `mcp_approval_request`, a client `tool_search_call`) — sits next to it in `Tool.pm` and croaks
 in the Responses walker and in `ToolCall->locate('responses')`, closing the gap the k210 Update
 named for `custom`. Anthropic and Gemini server tools still croak at the door (Phase 2).
+
+## Update (k227 — `chat_f` shapes a caller's tools list per item, through one path)
+
+`chat_f` handed `tools` to `chat_request` raw, and only the Responses envelope reshaped it. A
+`Langertha::Tool` therefore went out through `TO_JSON` in its canonical `to_hash` shape, which
+only the Anthropic wire reads; OpenAI, Gemini and Ollama got an invalid tool. The `chat_f` POD
+claimed `chat_request` serialized per provider, which was false. k221 had fixed only
+`chat_stream_realtime_f` (objects serialized, every hash passed through).
+
+**One path.** Both `chat_f` and `chat_stream_realtime_f` now call `Role::Chat::_wire_tools`
+(k221's `_stream_wire_tools`, renamed now that it is shared), which delegates the per-item work
+to the value object: `Langertha::Tool->request_list($fmt, \@tools)`. The per-format shape
+knowledge stays on `Tool`, as this ADR requires. `_wire_tools` leaves the list alone on the
+`hermes` wire (tools ride the prompt through `chat_with_tools_f`), on an engine without
+`Role::Tools`, and on the `responses` wire, whose envelope already decides per item (k210) and
+needs the `ServerTool` objects for its `_server_tool_wire_check` hook and default-tool dedup —
+an `unlisted` ServerTool turned into a hash there would lose both.
+
+**Decision: classify plain hashes per item.** Serializing only objects (the k221 state) left an
+MCP or canonical hash on the OpenAI, Gemini or Ollama wire just as broken as an object, and the
+end state named on k227 is per-item classification. `request_list` decides each item with
+`classify`, in place:
+
+- a `Tool` or `ServerTool` object goes through its own `to($fmt)`;
+- a `function` hash already in the wire's own shape goes out **verbatim** — OpenAI/Ollama
+  nested `{type=>'function', function=>{…}}`, Anthropic `input_schema` (plain or `custom`), a
+  Gemini declaration. That is where `function.strict`, `cache_control` and Gemini's `behavior`
+  live, so nothing the value object does not model is lost, and a wire-shaped caller's body is
+  byte-identical to before (pinned in `t/69_chat_f_wire_tools.t` before the change);
+- a `function` hash in another shape (MCP `inputSchema`, canonical `input_schema` on a
+  non-Anthropic wire, the other dialect's shape) is converted through `from_hash`, carrying over
+  the extras the target wire takes: `strict` (to `function.strict` on OpenAI, top-level on
+  Anthropic, an explicit value beating `to_anthropic`'s schema guess) and `cache_control` on
+  Anthropic. An extra the target wire has no field for is not carried; the hash was invalid on
+  that wire before;
+- everything else — `server`, `client_builtin`, `foreign`, `unknown` — goes out **verbatim**.
+
+This adapts the k210 policy rather than copying it. The Responses envelope croaks on a
+client-executed built-in, a foreign built-in and an untyped nameless hash because its door only
+emits function tools and its `*_call` output items are unmapped. On the other wires those same
+hashes are native and work today: Anthropic's `web_search_20250305` and `bash_*` (its
+`tool_use` is an ordinary call), Gemini's `{google_search=>{}}` and
+`{functionDeclarations=>[…]}` (untyped and nameless by design), typed OpenAI-compatible
+extensions such as Moonshot's `builtin_function`. Croaking would regress working callers and
+gatekeep a provider's own vocabulary; the classifier's lists are documentation-derived, not
+capture-verified. So the k210 principle carries over — nothing is dropped, nothing is silently
+turned into a function tool — and the provider judges what is not a function tool, as the
+envelope already does for typed `unknown` items.
+
+**Gemini: merge, not croak (k221 review M4).** Converted declarations, `Tool` objects and a
+raw `{functionDeclarations=>[…]}` hash could have produced several `functionDeclarations`
+entries; some Gemini versions reportedly reject that (unverified). All declarations now go into
+one entry, placed where the first declaration came from, in caller order; a later raw entry
+gives up its declarations and keeps its other fields (dropped only when nothing is left).
+Merging loses nothing and is what the caller meant, so it is normalization, not gatekeeping. A
+single raw entry is unchanged.
