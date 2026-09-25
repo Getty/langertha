@@ -11,24 +11,27 @@ Revision history for Langertha
       ToolCall->extract_hermes_from_text, and the JSON the /anthropic shims
       lift into content is characters. New $engine->encode_json_text.
 
-    - chat_f on a Hermes engine (NousResearch, AKI native) sends the tools
-      the way chat_with_tools_f does, in the system prompt instead of an
-      ignored tools key, and <tool_call> blocks in the reply land on
-      Response->tool_calls. tool_choice => 'none' withholds the tools, and a
-      built-in tool croaks there. chat_stream_realtime_f puts the tools in
-      the prompt too and does not stream the <tool_call> blocks: their calls
-      arrive on the final chunk (finish_reason tool_calls), and markup still
-      unclosed at the end is streamed as text. The Hermes engines no longer
-      claim tools_native, tool_choice_any, tool_choice_named or
-      parallel_tool_use. NousResearch created with tool_wire_format =>
-      'openai' claims the native flags instead of tools_hermes and sends
-      tools and tool_choice natively; AKI native croaks on any tag but hermes
-      (use AKIOpenAI). On both, a tool_choice other than auto or none is
-      ignored with a warning, except on NousResearch, where a forced tool
-      from the tools list is sent as a json_schema response_format and the
-      reply lands as a synthetic tool call. On NousResearch every json_schema response_format, forced tool or
-      your own, also puts the schema in the system prompt
-      (hermes_schema_prompt). Use AKIOpenAI to force a tool on AKI.
+    - chat_f on a Hermes engine (NousResearch, AKI native) sends the
+      tools the way chat_with_tools_f does, in the system prompt instead
+      of an ignored tools key, and <tool_call> blocks in the reply land
+      on Response->tool_calls, with finish_reason tool_calls where it
+      was stop. A block that holds no valid call stays in the text.
+      tool_choice => 'none' withholds the tools, and a built-in tool
+      croaks there. chat_stream_realtime_f puts the tools in the prompt
+      too and does not stream the <tool_call> blocks: their calls arrive
+      on the final chunk, and markup still unclosed at the end is
+      streamed as text. The Hermes engines no longer claim tools_native,
+      tool_choice_any, tool_choice_named or parallel_tool_use.
+      NousResearch created with tool_wire_format => 'openai' claims the
+      native flags instead of tools_hermes and sends tools and
+      tool_choice natively; AKI native croaks on any tag but hermes (use
+      AKIOpenAI). On both, a tool_choice other than auto or none is
+      ignored with a warning, except on NousResearch, where a forced
+      tool from the tools list is sent as a json_schema response_format
+      and the reply lands as a synthetic tool call. On NousResearch
+      every json_schema response_format, forced tool or your own, also
+      puts the schema in the system prompt (hermes_schema_prompt). Use
+      AKIOpenAI to force a tool on AKI.
 
     - On engines that send a forced tool as a json_schema response_format
       (Perplexity, Ollama native, NousResearch), chat_f croaks when the same

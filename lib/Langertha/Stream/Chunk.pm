@@ -134,6 +134,10 @@ carries them.
 =item * Open-Responses (L<Langertha::Role::ResponsesCompatible>): the calls land
 on the final chunk, read from the terminal C<response.completed> event.
 
+=item * Hermes (L<Langertha::Role::HermesTools>, tools in the prompt): the
+C<E<lt>tool_callE<gt>> blocks are withheld from C<content> and their calls land
+on the final chunk (see L<Langertha::Role::Chat/chat_stream_realtime_f>).
+
 =back
 
 Most chunks have no tool calls — use C<has_tool_calls> to check, or

@@ -137,11 +137,50 @@ subtest 'unclosed or partial markup is text, no call' => sub {
   $r = stream_turn( [], [ 'Hi <tool', '_ca' ] );
   is( $r->{seen}, 'Hi <tool_ca', 'a partial opening tag is emitted at the end' );
 
-  $r = stream_turn( [], [ 'Hi <tool_call>not json</tool_call> there' ] );
-  is( $r->{seen}, 'Hi  there', 'a closed block that is no call is still withheld' );
-  is_deeply( $r->{calls}, [], 'and gives no call, as in chat_f' );
-  is_deeply( chat_f_turn( [], 'Hi <tool_call>not json</tool_call> there' )->tool_calls // [], [],
-    'chat_f: no call either' );
+  # A closed block that carries no call is text the model wrote: it is
+  # decided when it closes and streamed in place, and chat_f keeps it in
+  # content likewise (k253 review I1).
+  for my $case (
+    [ 'invalid JSON'    => "Hi <tool_call>not json</tool_call> there$CALL!" ],
+    [ 'no name'         => "Hi <tool_call>{\"arguments\":{}}</tool_call> there$CALL!" ],
+    [ 'nested open tag' => "Hi <tool_call>a<tool_call>{\"name\":\"x\",\"arguments\":{}}</tool_call>b</tool_call>$CALL!" ],
+  ) {
+    my ( $name, $text ) = @$case;
+    my $parity = chat_f_turn( [], $text );
+    ( my $expect = $text ) =~ s/\Q$CALL\E//;
+    for my $size ( 1, 4, length $text ) {
+      $r = stream_turn( [], [ $text =~ /(.{1,$size})/sg ] );
+      is( $r->{seen}, $expect, "$name, size $size: the block streams as text, in place" );
+      is( $r->{content}, $parity->content, "$name, size $size: content as chat_f's" );
+      is_deeply( call_list( $r->{calls} ), call_list( $parity->tool_calls ),
+        "$name, size $size: calls as chat_f's" );
+    }
+    is_deeply( call_list( $parity->tool_calls ), [ [ get_weather => { city => 'Berlin' } ] ],
+      "$name: only the real call is a call" );
+  }
+};
+
+subtest 'finish_reason: tool_calls over stop, a provider value kept' => sub {
+  my $r = stream_turn( [], [ $REPLY ] );
+  is( $r->{chunks}[-1]->finish_reason, 'tool_calls', 'stream: stop becomes tool_calls' );
+  is( chat_f_turn( [], $REPLY )->finish_reason, 'tool_calls', 'chat_f: likewise' );
+
+  my @events = ( sse( [ $REPLY ], truncated => 1 ),
+    'data: ' . $json->encode({ choices => [ { index => 0, delta => {}, finish_reason => 'length' } ] }) . "\n\n" );
+  my $engine = nous( _async_http => MockSSEHTTP->new(@events) );
+  my ( undef, $chunks ) = $engine->chat_stream_realtime_f( messages => ['x'], tools => [$TOOL] )->get;
+  is( $chunks->[-1]->finish_reason, 'length', 'stream: a length finish stays' );
+  is( scalar @{ $engine->aggregate_tool_calls($chunks) }, 1, 'the call still lands' );
+
+  my $mock = Test::MockAsyncHTTP->new( responses => [
+    Test::MockAsyncHTTP->mock_json_response({ choices => [ { index => 0,
+      message => { role => 'assistant', content => $REPLY }, finish_reason => 'length' } ] }) ] );
+  my $resp = nous( _async_http => $mock )->chat_f( messages => ['x'], tools => [$TOOL] )->get;
+  is( $resp->finish_reason, 'length', 'chat_f: a length finish stays' );
+
+  $resp = chat_f_turn( [], $REPLY );
+  is( $resp->raw->{choices}[0]{finish_reason}, 'stop', 'chat_f: raw keeps the wire value' );
+  is( chat_f_turn( [], 'no call here' )->finish_reason, 'stop', 'chat_f: no call, stop stays' );
 };
 
 subtest 'a stream that ends without a final chunk' => sub {

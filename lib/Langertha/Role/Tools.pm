@@ -184,15 +184,17 @@ sub _hermes_tool_messages {
 
 # Splits hermes model text into the text without the call tags and the
 # well-formed calls ({name, arguments} HASHes) the tags carried, honoring
-# hermes_call_tag. Shared by response_tool_calls, response_text_content and
-# chat_f's reply lift (karr k231).
+# hermes_call_tag. Shared by response_tool_calls, response_text_content,
+# chat_f's reply lift (karr k231) and the streamed lift (k253). A block that
+# carries no call stays in the text where it was: what the model wrote is not
+# dropped (k253 review).
 sub _hermes_split_text {
   my ( $self, $text ) = @_;
   my $content = $text // '';
   my $tag = $self->hermes_call_tag;
   my @tool_calls;
-  while ( $content =~ m{<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>}sg ) {
-    my $json_str = $1;
+  $content =~ s{(<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>)}{
+    my ( $block, $json_str ) = ( $1, $2 );
     my $tc = eval { $self->decode_json_text($json_str) };
     # Guard as Langertha::ToolCall->extract_hermes_from_text does: only a
     # well-formed call (a HASH carrying a non-empty name) may reach the tool
@@ -200,11 +202,10 @@ sub _hermes_split_text {
     # JSON ([1,2], a bare string/number) or an object without a name would
     # otherwise crash the raid ("Not a HASH reference" / "Tool '' not found").
     # -- karr k163
-    next unless ref($tc) eq 'HASH';
-    next unless defined $tc->{name} && length $tc->{name};
-    push @tool_calls, $tc;
-  }
-  $content =~ s{<\Q$tag\E>.*?</\Q$tag\E>}{}sg;
+    ( ref($tc) eq 'HASH' && defined $tc->{name} && length $tc->{name} )
+      ? do { push @tool_calls, $tc; '' }
+      : $block;
+  }seg;
   $content =~ s/^\s+|\s+$//g;
   return ( $content, \@tool_calls );
 }
@@ -213,10 +214,12 @@ sub _hermes_split_text {
 # inside <tool_call>...</tool_call> (hermes_call_tag) is not emitted, and the
 # calls land on the final chunk. Called by chat_stream_realtime_f for each
 # chunk of a turn whose tools went into the prompt; returns the chunk to
-# deliver, or undef for a chunk that carried only call markup. A closed block
-# is kept whole for _hermes_split_text, so the stream finds the calls chat_f
-# finds. $flush (the stream ended without a final chunk) returns the chunk
-# for whatever is still held, or undef when nothing is.
+# deliver, or undef for a chunk that carried only call markup. Each closed
+# block goes through _hermes_split_text, so the stream finds the calls chat_f
+# finds and streams a block that is no call as text, where chat_f keeps it.
+# $flush (the stream ended without a final chunk) returns the chunk for
+# whatever is still held, or undef when nothing is. finish_reason becomes
+# tool_calls only over stop or none, as chat_f's lift (k253 review).
 sub _hermes_stream_chunk {
   my ( $self, $state, $chunk, $flush ) = @_;
   if ($flush) {
@@ -236,8 +239,11 @@ sub _hermes_stream_chunk {
   if ($final) {
     $state->{done} = 1;
     my $calls = $self->_hermes_stream_calls($state);
-    %set = ( %set, tool_calls => [ @{ $chunk->tool_calls // [] }, @$calls ],
-      finish_reason => 'tool_calls' ) if @$calls;
+    if (@$calls) {
+      $set{tool_calls} = [ @{ $chunk->tool_calls // [] }, @$calls ];
+      my $reason = $chunk->finish_reason;
+      $set{finish_reason} = 'tool_calls' if !length( $reason // '' ) || $reason eq 'stop';
+    }
   }
   return $chunk unless %set;
   return if !$final && $text eq ''
@@ -245,23 +251,23 @@ sub _hermes_stream_chunk {
   return $chunk->meta->clone_object( $chunk, %set );
 }
 
-# The calls of the closed blocks the stream withheld, as chat_f reads them
-# (_hermes_split_text, then the Response BUILDARGS upgrade).
+# The calls of the closed blocks the stream withheld, as the Response
+# BUILDARGS upgrade makes them of chat_f's.
 sub _hermes_stream_calls {
   my ( $self, $state ) = @_;
-  my ( undef, $calls ) = $self->_hermes_split_text( join '', @{ $state->{blocks} // [] } );
   return [ map {
     Langertha::ToolCall->new(
       name      => $_->{name},
       arguments => ( ref $_->{arguments} eq 'HASH' ? $_->{arguments} : {} ),
     )
-  } @$calls ];
+  } @{ $state->{calls} // [] } ];
 }
 
 # Tag-aware incremental splitter behind _hermes_stream_chunk. Appends $text to
 # the held text and returns what may be emitted now: text outside a call block
-# streams, a closed <tool_call>...</tool_call> goes to $state->{blocks}, and a
-# tail that may still turn into a tag is held until the next chunk. With the
+# streams, a closed <tool_call>...</tool_call> is decided when it closes (its
+# call goes to $state->{calls}; a block that is no call is emitted in place as
+# text), and a tail that may still turn into a tag is held until the next chunk. With the
 # think tag filter on (Role::ThinkTag), a <think> block passes through as text
 # and a call tag inside it is no call, as chat_f strips thinking before its
 # lift. $flush releases everything held, an unclosed call block as text.
@@ -279,7 +285,10 @@ sub _hermes_stream_split {
       my $close = "</$tag>";
       my $at = index( $$buf, $close );
       last if $at < 0;
-      push @{ $state->{blocks} }, substr( $$buf, 0, $at + length $close, '' );
+      my $block = substr( $$buf, 0, $at + length $close, '' );
+      my ( undef, $calls ) = $self->_hermes_split_text($block);
+      if (@$calls) { push @{ $state->{calls} }, @$calls }
+      else         { $out .= $block }
       $state->{mode} = 'text';
       next;
     }

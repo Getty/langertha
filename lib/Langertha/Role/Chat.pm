@@ -740,7 +740,13 @@ async sub chat_f {
   if ( $hermes_prompted && blessed($result) && $result->isa('Langertha::Response')
        && !( $result->has_tool_calls && @{ $result->tool_calls } ) ) {
     my ( $clean, $calls ) = $self->_hermes_split_text( $result->content );
-    $result = $result->clone_with( content => $clean, tool_calls => $calls ) if @$calls;
+    if (@$calls) {
+      # The reply ended to call tools: report that over the wire's stop, as the
+      # OpenAI dialect does for native calls (k248); ->raw keeps the wire value.
+      my $reason = $result->finish_reason;
+      $result = $result->clone_with( content => $clean, tool_calls => $calls,
+        ( !length( $reason // '' ) || $reason eq 'stop' ) ? ( finish_reason => 'tool_calls' ) : () );
+    }
   }
 
   if ( $synth_tool_name && blessed($result) && $result->isa('Langertha::Response') ) {
@@ -844,7 +850,12 @@ C<json_schema> rewrite described below instead). On NousResearch, tools
 together with a C<json_schema> C<response_format> send both the schema prompt
 and the tool prompt.
 C<E<lt>tool_callE<gt>> blocks in the reply land on
-L<Langertha::Response/tool_calls> and are removed from C<content>.
+L<Langertha::Response/tool_calls> and are removed from C<content>; a block
+that carries no call (no valid JSON object with a C<name>) stays in
+C<content> as the model wrote it. When calls were lifted and the reply's
+C<finish_reason> was C<stop> or absent, it reads C<tool_calls>
+(L<Langertha::Response/raw> keeps the provider's value); any other value, such
+as C<length>, stays.
 
 A C<tool_choice> goes on the wire only as the engine's C<tool_choice_*>
 capabilities allow. Where the engine does not
@@ -974,13 +985,16 @@ async sub chat_stream_realtime_f {
   # prompt, the <tool_call> blocks are withheld from the text and their calls
   # land on the final chunk, as chat_f lifts them from its reply (karr k253).
   my %hermes_state;
+  # $flush (no chunk) asks the lift for what a stream without a final chunk
+  # still owes.
   my $deliver = sub {
-    my ($chunk) = @_;
-    $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
+    my ( $chunk, $flush ) = @_;
+    $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds || $flush;
     if ($hermes_prompted) {
-      $chunk = $self->_hermes_stream_chunk( \%hermes_state, $chunk );
+      $chunk = $self->_hermes_stream_chunk( \%hermes_state, $chunk, $flush );
       return unless $chunk;
     }
+    $ttft_seconds //= tv_interval($t0);
     push @all_chunks, $chunk;
     $chunk_callback->($chunk) if $chunk_callback;
   };
@@ -1056,13 +1070,7 @@ async sub chat_stream_realtime_f {
   }
   # A hermes stream that ended without a final chunk still owes its held text
   # (a partial or unclosed tag is text) and the calls of its closed blocks.
-  if ($hermes_prompted) {
-    my $chunk = $self->_hermes_stream_chunk( \%hermes_state, undef, 1 );
-    if ($chunk) {
-      push @all_chunks, $chunk;
-      $chunk_callback->($chunk) if $chunk_callback;
-    }
-  }
+  $deliver->( undef, 1 ) if $hermes_prompted;
   # The stream ended: let the dialect report what it could not finish (a
   # tool call that never saw its finish_reason, karr k221).
   $self->_finish_stream_state(\%stream_state) if $self->can('_finish_stream_state');
@@ -1349,11 +1357,13 @@ L</chat_f>. The text inside the C<E<lt>tool_callE<gt>> blocks the model writes
 (L<Langertha::Role::HermesTools/hermes_call_tag>) is not streamed, even when a
 tag is split across chunks, and chunks that carried only such text are not
 delivered; the calls land as L<Langertha::ToolCall> objects on the final chunk,
-whose C<finish_reason> is then C<tool_calls>, as L</chat_f> puts them on
-L<Langertha::Response/tool_calls>. A call tag inside C<E<lt>thinkE<gt>> text is
-no call. Markup that is unclosed when the stream ends is streamed as text and
-gives no call. A stream that ends without a final chunk gets a closing chunk
-for the text still held back and any calls.
+as L</chat_f> puts them on L<Langertha::Response/tool_calls>, and that chunk's
+C<finish_reason> reads C<tool_calls> where L</chat_f>'s would (over C<stop> or
+none). A block that carries no call is streamed as text where it stood, as
+L</chat_f> keeps it in C<content>, and a call tag inside C<E<lt>thinkE<gt>>
+text is no call. Markup that is unclosed when the stream ends is streamed as
+text and gives no call. A stream that ends without a final chunk gets a
+closing chunk for the text still held back and any calls.
 
 Returns a L<Future> that resolves to C<($content, \@chunks, \%timing,
 $thinking)> where C<$content> is the full concatenated text, C<\@chunks> the
