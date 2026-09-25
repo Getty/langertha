@@ -142,3 +142,30 @@ rewrite matrix, ADR 0005) and must never do network I/O.
   reuse the `lmstudio` format; not composed yet.
 - **More capabilities** (tools, reasoning) from the same documents need their own decision,
   because they change what `chat_f` sends.
+
+## Update (k282 — sharing learned facts across instances: `models => 'all'` + `import_learned_capabilities`)
+
+The store stays per instance (decision 1), but a gateway that holds one engine instance per
+discovered model (knarr k37: 300 OpenRouter slugs) would fetch the same catalogue once per
+instance. Sharing is now **public and explicit**, still with no hidden I/O and no global cache:
+
+- `probe_model_capabilities_f(models => 'all')` learns every model a catalogue document names,
+  from one request, and does not fall back to `chat_model`. A format is a catalogue when its
+  document names its models (`ModelProbe->is_catalogue`: `openrouter`, `mistral`, `lmstudio`);
+  on `ollama` (one model per request) and `llamacpp` (the document does not name its model)
+  `'all'` croaks before any request. The resolved value is exactly the facts this call merged
+  into the store, as a fresh HashRef the caller owns.
+- `import_learned_capabilities(\%map)` merges `{ $model_id => { $cap => 0|1 } }` (a probe result
+  or another instance's `learned_model_capabilities`) into this instance's store, with the same
+  rules as a probe: only `probed_capabilities` are taken (other names ignored), only non-empty
+  string ids, values normalized to `0|1` (a JSON boolean counts; `undef` and unblessed references
+  are no fact), later facts win, the store is replaced not mutated (clones stay independent).
+  Imported facts sit in the learned layer exactly like probed ones, so both wire gates (layers 1
+  and 2) still hold. It croaks on a non-HashRef and returns what it merged.
+
+Why not a shared store object passed at construction (keyed by metadata URL, with a TTL): it
+would put cache lifetime and invalidation policy into core, and a per-URL key is not an identity
+the engine owns (proxies, rewritten base URLs). The caller already decides when a round-trip is
+acceptable (Rationale, "opt-in, not lazy"); it now also decides which instances share. Facts are
+keyed by model id, not endpoint, so importing into an engine on a different endpoint is the
+caller's error to avoid.

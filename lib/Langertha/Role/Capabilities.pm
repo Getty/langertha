@@ -3,6 +3,7 @@ package Langertha::Role::Capabilities;
 our $VERSION = '0.503';
 use Moose::Role;
 use Carp qw( croak );
+use Scalar::Util qw( blessed );
 use Future::AsyncAwait;
 use Langertha::ModelProbe;
 
@@ -212,8 +213,15 @@ async sub probe_model_capabilities_f {
     unless defined $url && length $url;
 
   my @models;
-  if ( exists $args{models} ) {
-    croak ref($self) . ': probe_model_capabilities_f models must be an ArrayRef'
+  if ( exists $args{models} && !ref $args{models} && ( $args{models} // '' ) eq 'all' ) {
+    # The whole catalogue (k282): only a document that names its models can
+    # answer "every model"; the others need ids to key their fact by.
+    croak ref($self) . ": probe_model_capabilities_f models => 'all' needs a catalogue"
+      . " document; model_metadata_format '$format' does not name its models"
+      unless Langertha::ModelProbe->is_catalogue($format);
+  }
+  elsif ( exists $args{models} ) {
+    croak ref($self) . q{: probe_model_capabilities_f models must be an ArrayRef or 'all'}
       unless ref $args{models} eq 'ARRAY';
     @models = grep { defined && !ref && length } @{ $args{models} };
   }
@@ -259,14 +267,49 @@ async sub probe_model_capabilities_f {
     }
   }
 
-  # A new HashRef, never a mutation in place: clone_object (Manifest::Builder)
-  # shares the slot, and a clone that probes must not write into its source.
+  $self->_merge_learned_model_capabilities( \%learned );
+  return \%learned;
+}
+
+# Merge facts into the store; a later fact for the same model and capability
+# wins. A new HashRef, never a mutation in place: clone_object
+# (Manifest::Builder) shares the slot, and a clone that probes or imports must
+# not write into its source.
+sub _merge_learned_model_capabilities {
+  my ( $self, $learned ) = @_;
   my $current = $self->learned_model_capabilities;
-  for my $model ( keys %learned ) {
-    $current->{$model} = { %{ $current->{$model} // {} }, %{ $learned{$model} } };
+  for my $model ( keys %$learned ) {
+    $current->{$model} = { %{ $current->{$model} // {} }, %{ $learned->{$model} } };
   }
   $self->_set_learned_model_capabilities($current);
-  return \%learned;
+  return;
+}
+
+sub _is_fact_value {
+  my ( $value ) = @_;
+  return 0 unless defined $value;
+  return 1 unless ref $value;
+  return blessed($value) ? 1 : 0;
+}
+
+sub import_learned_capabilities {
+  my ( $self, $map ) = @_;
+  croak ref($self) . ': import_learned_capabilities needs a HashRef of { $model_id => { $capability => 0|1 } }'
+    unless ref $map eq 'HASH';
+  my %allowed = map { $_ => 1 } Langertha::ModelProbe->probed_capabilities;
+  my %import;
+  for my $model ( keys %$map ) {
+    # Hash keys are always strings; an empty key is never a model id.
+    next unless length $model && ref $map->{$model} eq 'HASH';
+    my $facts = $map->{$model};
+    # A fact is a defined plain scalar or a JSON boolean (a map that went
+    # through a JSON store); undef or an unblessed reference is no fact.
+    for my $cap ( grep { $allowed{$_} && _is_fact_value( $facts->{$_} ) } keys %$facts ) {
+      $import{$model}{$cap} = $facts->{$cap} ? 1 : 0;
+    }
+  }
+  $self->_merge_learned_model_capabilities( \%import );
+  return \%import;
 }
 
 sub probe_model_capabilities {
@@ -295,8 +338,16 @@ Mistral, LM Studio) are fetched once and every model they describe is learned;
 Ollama's C</api/show> is asked once per model; llama.cpp's C</props> describes
 the one loaded model, so its fact is stored for every id that was asked about.
 
+C<< models => 'all' >> asks for the whole catalogue and does not fall back to
+C<chat_model>: every model the document names is learned from one request.
+It croaks on a format whose document does not name its models (Ollama,
+llama.cpp; see L<Langertha::ModelProbe/is_catalogue>). Use it to probe an
+endpoint once and hand the result to the other engine instances on the same
+endpoint with L</import_learned_capabilities>.
+
 Resolves to C<< { $model_id => { $capability => 0|1 } } >>, the facts learned by
-this call; they are merged into the engine's store. Only the capabilities in
+this call, exactly as they were merged into the engine's store (a fresh
+HashRef the caller owns, ready for L</import_learned_capabilities>). Only the capabilities in
 L<Langertha::ModelProbe/probed_capabilities> are learned (C<image_input>). A
 model the document does not describe, or describes without the field, gets no
 fact and keeps its static answer.
@@ -334,11 +385,36 @@ C<< ->get >>).
     my $learned = $engine->learned_model_capabilities;
     # { 'openai/gpt-4o' => { image_input => 1 }, ... }
 
-A copy of every fact probed so far on this instance, per model id.
+A copy of every fact probed or imported so far on this instance, per model id.
+It has the shape L</import_learned_capabilities> takes.
+
+=method import_learned_capabilities
+
+    # One metadata fetch for a whole endpoint, shared by every instance on it:
+    my $learned = await $probe_engine->probe_model_capabilities_f( models => 'all' );
+    $_->import_learned_capabilities($learned) for @other_engines;
+
+Merges C<< { $model_id => { $capability => 0|1 } } >> into this instance's
+learned store, as if this instance had probed it: the facts take the same
+place in L</engine_capabilities> (after the static per-model table, under the
+layer-1 and layer-2 wire gates), and a later fact for the same model and
+capability replaces the earlier one. The map is the result of
+L</probe_model_capabilities_f> or L</learned_model_capabilities> of another
+instance; nothing is fetched (ADR 0032).
+
+Only the capabilities in L<Langertha::ModelProbe/probed_capabilities> are
+taken; other names are ignored. An empty model id, a model whose facts are not
+a HashRef, and a fact value that is C<undef> or an unblessed reference are
+skipped; any other value is stored as C<1> or C<0> by truth (a JSON boolean
+works). Croaks unless the argument is a HashRef. Returns the facts it merged,
+in the same shape.
+
+Facts are keyed by model id, not by endpoint: import only into instances that
+talk to the endpoint the facts were read from.
 
 =method clear_learned_model_capabilities
 
-Forgets every probed fact; L</engine_capabilities> answers from the static
+Forgets every probed or imported fact; L</engine_capabilities> answers from the static
 layers again.
 
 =method model_metadata_format

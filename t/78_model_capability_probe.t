@@ -387,6 +387,107 @@ subtest 'Manifest::Builder publishes probed facts' => sub {
     'probed: each model entry carries its learned fact';
 };
 
+# ---------------------------------------------------------------------------
+# karr k282 (knarr k37): the store is per instance, so a gateway holding one
+# engine instance per discovered model (300 OpenRouter slugs) would fetch the
+# same catalogue 300 times. One probe with models => 'all' learns the whole
+# document; import_learned_capabilities hands it to the other instances with
+# no request of their own. No hidden I/O, no global cache: the caller shares.
+subtest "one probe fills many instances (models => 'all' + import)" => sub {
+  my $prober = Langertha::Engine::OpenRouter->new( url => "$base/or/api/v1", api_key => 'or-key' );
+  my $learned = $prober->probe_model_capabilities( models => 'all' );
+  is_deeply $learned, {
+    'openai/gpt-4o'        => { image_input => 1 },
+    'deepseek/deepseek-r1' => { image_input => 0 },
+  }, 'a model-less engine learns the whole catalogue from one request';
+  is_deeply $prober->learned_model_capabilities, $learned, 'the result is exactly what was stored';
+  $learned->{'openai/gpt-4o'}{image_input} = 0;
+  is $prober->learned_model_capabilities->{'openai/gpt-4o'}{image_input}, 1,
+    'the result is the caller\'s copy, not the store';
+  $learned->{'openai/gpt-4o'}{image_input} = 1;
+
+  my %want = ( 'openai/gpt-4o' => 1, 'deepseek/deepseek-r1' => 0, 'openai/gpt-4o:online' => 1 );
+  for my $model ( sort keys %want ) {
+    my $e = Langertha::Engine::OpenRouter->new( api_key => 'k', model => $model, _async_http => $forbidden );
+    is claims($e), 0, "$model: no claim before the import";
+    is_deeply $e->import_learned_capabilities($learned), $learned, "$model: import returns what it merged";
+    is claims($e), $want{$model}, "$model: answers from the imported fact without a request";
+  }
+
+  my $copy = Langertha::Engine::OpenRouter->new( api_key => 'k', model => 'openai/gpt-4o', _async_http => $forbidden );
+  $copy->import_learned_capabilities( $prober->learned_model_capabilities );
+  is claims($copy), 1, 'learned_model_capabilities of one instance imports into another';
+
+  my $mistral = Langertha::Engine::Mistral->new( url => "$base/mistral-old", api_key => 'k', model => 'mistral-small-latest' );
+  is claims($mistral), 1, 'static yes before the import';
+  $mistral->import_learned_capabilities( { 'mistral-small-latest' => { image_input => 0 } } );
+  is claims($mistral), 0, 'an imported fact is authoritative like a probed one (static yes + learned no)';
+
+  my $closed = My::ClosedRouter->new( api_key => 'k', model => 'openai/gpt-4o', _async_http => $forbidden );
+  $closed->import_learned_capabilities($learned);
+  is claims($closed), 0, 'an imported yes cannot open a wire layer 2 closes';
+};
+
+subtest "models => 'all' needs a catalogue document" => sub {
+  for my $case (
+    [ 'Langertha::Engine::Mistral', url => "$base/mistral", api_key => 'k' ],
+    [ 'Langertha::Engine::LMStudio', url => "$base/lms" ],
+  ) {
+    my ( $class, @args ) = @$case;
+    my $learned = $class->new(@args)->probe_model_capabilities( models => 'all' );
+    ok scalar( keys %$learned ) >= 2, "$class: every model of the document is learned";
+  }
+  for my $e (
+    Langertha::Engine::Ollama->new( url => 'http://h', model => 'llava', _async_http => $forbidden ),
+    Langertha::Engine::LlamaCpp->new( url => 'http://h/v1', _async_http => $forbidden ),
+  ) {
+    like error_of( sub { $e->probe_model_capabilities( models => 'all' ) } ),
+      qr/\A\Q@{[ ref $e ]}\E: probe_model_capabilities_f models => 'all' needs a catalogue document; model_metadata_format '\w+' does not name its models/,
+      ref($e) . ': croaks before any request';
+  }
+  my $o = 'Langertha::ModelProbe';
+  is_deeply { map { $_ => $o->is_catalogue($_) } qw( openrouter mistral lmstudio ollama llamacpp ) },
+    { openrouter => 1, mistral => 1, lmstudio => 1, ollama => 0, llamacpp => 0 }, 'is_catalogue per format';
+  my $e = Langertha::Engine::OpenAI->new( api_key => 'k', _async_http => $forbidden );
+  is_deeply $e->probe_model_capabilities( models => 'all' ), {}, 'an engine without a probe still resolves to {}';
+};
+
+subtest 'import_learned_capabilities validates like a probe' => sub {
+  my $e = Langertha::Engine::OpenRouter->new( api_key => 'k', model => 'a/b', _async_http => $forbidden );
+  for my $bad ( undef, 'a/b', [ 'a/b' ] ) {
+    like error_of( sub { $e->import_learned_capabilities($bad) } ),
+      qr/\ALangertha::Engine::OpenRouter: import_learned_capabilities needs a HashRef/,
+      'a non-HashRef croaks (' . ( defined $bad ? ref $bad || $bad : 'undef' ) . ')';
+  }
+  my $merged = $e->import_learned_capabilities( {
+    ''    => { image_input => 1 },                             # empty id
+    'x/y' => [ 'image_input' ],                                # facts not a HashRef
+    'a/b' => { image_input => 'yes', tools_native => 0 },      # not probe-learnable: ignored
+    'c/d' => { image_input => undef },                         # undef is no fact
+    'e/f' => { image_input => {} },                            # an unblessed ref is no fact
+    'g/h' => { image_input => JSON::MaybeXS::false() },        # a JSON boolean works
+    'i/j' => { image_input => JSON::MaybeXS::true() },
+  } );
+  is_deeply $merged, {
+    'a/b' => { image_input => 1 }, 'g/h' => { image_input => 0 }, 'i/j' => { image_input => 1 },
+  }, 'only plain-string ids, allowlisted capabilities and scalar values, normalized to 0|1';
+  is_deeply $e->learned_model_capabilities, $merged, 'the store holds exactly the merged facts';
+  is claims($e), 1, 'the imported fact applies';
+  ok $e->supports('tools_native'),
+    'a capability a probe may not learn (tools_native => 0) does not clear that flag';
+
+  $e->import_learned_capabilities( { 'a/b' => { image_input => 0 } } );
+  is claims($e), 0, 'a later import for the same model replaces the fact';
+  is_deeply $e->import_learned_capabilities( {} ), {}, 'an empty map merges nothing';
+  is $e->learned_model_capabilities->{'g/h'}{image_input}, 0, 'and keeps what was there';
+
+  my $src = Langertha::Engine::OpenRouter->new( api_key => 'k', model => 'a/b', _async_http => $forbidden );
+  my $clone = $src->meta->clone_object($src);
+  $clone->import_learned_capabilities( { 'a/b' => { image_input => 1 } } );
+  is claims($clone), 1, 'the clone imported';
+  is claims($src), 0, 'an import on a clone does not write into its source';
+};
+
 subtest 'ModelProbe door' => sub {
   is_deeply [ Langertha::ModelProbe->probed_capabilities ], ['image_input'], 'only image_input is learned';
   like error_of( sub { Langertha::ModelProbe->extract( 'nope', {}, [] ) } ),

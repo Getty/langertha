@@ -74,9 +74,9 @@ layers of L<Langertha::Role::Capabilities/engine_capabilities>.
 =cut
 
 my %FORMAT = (
-  openrouter => { method => 'GET',  extract => \&_extract_openrouter },
-  mistral    => { method => 'GET',  extract => \&_extract_mistral },
-  lmstudio   => { method => 'GET',  extract => \&_extract_lmstudio },
+  openrouter => { method => 'GET',  extract => \&_extract_openrouter, catalogue => 1 },
+  mistral    => { method => 'GET',  extract => \&_extract_mistral,    catalogue => 1 },
+  lmstudio   => { method => 'GET',  extract => \&_extract_lmstudio,   catalogue => 1 },
   ollama     => { method => 'POST', extract => \&_extract_ollama, per_model => 1 },
   llamacpp   => { method => 'GET',  extract => \&_extract_llamacpp },
 );
@@ -100,6 +100,8 @@ sub http_method { return $_[0]->_format( $_[1] )->{method} }
 
 sub per_model { return $_[0]->_format( $_[1] )->{per_model} ? 1 : 0 }
 
+sub is_catalogue { return $_[0]->_format( $_[1] )->{catalogue} ? 1 : 0 }
+
 =method is_known_format
 
     Langertha::ModelProbe->is_known_format('ollama');   # 1
@@ -112,6 +114,16 @@ sub per_model { return $_[0]->_format( $_[1] )->{per_model} ? 1 : 0 }
 
 True when the format answers for one model per request (C<ollama>: the request
 body names the model); false when one request answers for the whole server.
+
+=method is_catalogue
+
+    Langertha::ModelProbe->is_catalogue('openrouter');   # 1
+    Langertha::ModelProbe->is_catalogue('llamacpp');     # 0
+
+True when one document names every model it describes (C<openrouter>,
+C<mistral>, C<lmstudio>), so a single probe can learn the whole catalogue
+(C<< models => 'all' >>). False for C<ollama> (one model per request) and
+C<llamacpp> (the document does not name its model).
 
 =cut
 
