@@ -1,0 +1,29 @@
+---
+claimed_at: 2026-09-25T04:33:00Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T04:33:00Z
+created: 2026-09-25T03:11:24Z
+id: 221
+priority: high
+started: 2026-09-25T03:22:52Z
+status: done
+tags:
+- streaming
+- tools
+- bug
+title: 'Streaming: Chat-Completions- und Anthropic-Streampfade verlieren Tool-Calls'
+updated: 2026-09-25T04:33:00Z
+---
+
+Aus k212 (langertha-async-worker, 2026-09-25): Stream::Chunk-POD behauptete, OpenAI/Anthropic befuellten tool_calls - tun sie nicht (POD in k212 korrigiert). Role::Chat::aggregate_tool_calls hat daher fuer OpenAI-kompatible SSE (delta.tool_calls, index-basierte arguments-Fragmente) und Anthropic SSE (content_block_start tool_use + input_json_delta) nichts zu aggregieren -> gestreamte Tool-Calls gehen still verloren (chat_stream_realtime_f). Fix: beide Parser liefern tool_calls (inkrementell oder am Ende), aggregate_tool_calls baut ToolCall-Objekte (ADR 0003). Tests aus dokumentierten Eventformen + vorhandenen Captures; Live-Capture nur mit Gettys OK. Kandidat: langertha-async-worker (Streaming) + wire-worker fuer ToolCall-Extraktion.
+
+Korrektur aus k212-Review: Luecke ist bekannt seit k171 (Commit 3104839, 'known, accepted gap'); nur Stream::Chunk-POD war veraltet. Betroffen sind AUCH Gemini (functionCall-Parts) und Ollama native (message.tool_calls), nicht nur Chat-Completions + Anthropic. chat_with_tools_f und chat_f streamen nicht -> nicht betroffen; chat_stream_realtime_f legt tools roh ohne Tool->format_list auf den Wire und verliert die Calls still.
+
+2026-09-25 03:26 Pinned text-only stream chunks (t/43_stream_text_only_pin.t, golden from pre-k221 parsers). Next: red tests for the four parsers.
+
+2026-09-25 03:42 Done on branch k221: 12f9d45 (text-only pin), 069430e (fix: OpenAI per-index, Anthropic per-block assembly, Gemini/Ollama whole calls, per-stream state, Tool objects serialized in chat_stream_realtime_f), 63127b9 (ADR 0003 Update). prove -lr t/ green (live t/8x skipped), stream tests 3x green, perlcritic clean, dzil build ok. chat_f raw-tools gap filed separately.
+
+Ready for review on branch k221
+
+2026-09-25 04:10 Fix round 1: 8a866dd (I2 Anthropic k167 final meta per stream, I3 index-less fragments keyed by id, M1 fallback closed at final flush, M2 empty finish_reason no flush, M3 tool order kept, point 5 carp on truncation), ed1332b (ADR 0003 Update). I1: main's k212 bullet verbatim + own k221 bullet; merge-tree still shows an adjacent-hunk Changes conflict, resolve by taking the k221 bullet. Suite green, stream tests 3x, perlcritic clean, dzil build ok.
