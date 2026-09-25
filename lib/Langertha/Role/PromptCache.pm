@@ -98,14 +98,11 @@ sub prompt_cache_kwargs_for {
     ( $self->has_prompt_cache_key ? ( prompt_cache_key => $self->prompt_cache_key ) : () ),
     %args,
   );
-  # The wire agrees with the capability registry (karr #200, ADR 0009): a
-  # control the engine does not advertise is not sent, so clearing the flag
-  # in an engine's around engine_capabilities also stops the emission.
-  if ( $self->can('supports') ) {
-    for my $cap (qw( prompt_cache prompt_cache_key )) {
-      delete $merged{$cap} unless $self->supports($cap);
-    }
-  }
+  # The wire agrees with the capability registry for the routing key (karr
+  # #200, ADR 0009): an engine that clears prompt_cache_key does not send it.
+  # prompt_cache is deliberately not gated -- the family-wide flag would drop
+  # cache_control under an explicit cache_wire_format => 'anthropic' override.
+  delete $merged{prompt_cache_key} unless $self->supports('prompt_cache_key');
   return () unless $merged{prompt_cache} || defined $merged{prompt_cache_key};
   return Langertha::PromptCache->new(
     enable => $merged{prompt_cache},
@@ -125,10 +122,12 @@ does not carry fall back to the engine attributes, so a per-request control
 (chat_f, karr #46) beats the configured attribute on a per-key basis. Empty
 list when nothing applies to the engine's wire (caching off / no key).
 
-A control whose capability the engine does not advertise
+A C<prompt_cache_key> the engine does not advertise
 (C<< $engine->supports('prompt_cache_key') >> false, e.g. on the self-hosted
 OpenAI-compatible servers) is dropped silently, so the request body never
-carries a field the capability registry says the wire does not honor.
+carries a routing key the capability registry says the wire does not honor.
+C<prompt_cache> is not gated, so an explicit C<cache_wire_format> override
+keeps emitting C<cache_control>.
 
 =cut
 
