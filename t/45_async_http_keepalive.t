@@ -115,6 +115,25 @@ subtest 'caller cancels a stream with concurrent requests queued behind it' => s
     for 0 .. $#siblings;
 };
 
+# The other direction (karr k203): a caller gives up on a request that is only
+# queued behind a running stream. Without pipelining it holds no connection
+# yet, so cancelling it must not touch the stream in front of it. Same shape
+# as above: when the first request finishes, a pipelining client would put the
+# stream and the queued request behind it on one connection, and cancelling a
+# pipelined request closes that connection under the stream.
+subtest 'caller cancels a queued request while a stream is running' => sub {
+  my $engine = engine();
+  my $first  = stream_f($engine);
+  my $queued;
+  my $running = stream_f( $engine, sub { $loop->later( sub { $queued->cancel unless $queued->is_ready } ) } );
+  $queued = stream_f($engine);
+
+  is( drive( $first, $running, $queued ), '', 'no exception escaped the event loop' );
+  is( outcome($first), 'done: Hello world', 'the request before them completed' );
+  is( outcome($running), 'done: Hello world', 'the running stream completed unharmed' );
+  is( outcome($queued), 'cancelled', 'the queued request was cancelled' );
+};
+
 subtest 'after an aborted stream the engine opens one new connection and keeps reusing it' => sub {
   my $engine = warm_engine();
   my $before = $server->connection_count;

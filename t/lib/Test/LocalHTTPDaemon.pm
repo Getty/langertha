@@ -22,6 +22,11 @@ package Test::LocalHTTPDaemon;
 # served by its own forked child, so a client holding a connection open does
 # not pin the daemon. This is the mode for connection reuse and HTTP/1.1
 # pipelining (Net::Async::HTTP only pipelines on a keep-alive connection).
+#
+# A handler that dies ends the process that ran it (the daemon in the default
+# mode, the connection child in keep-alive mode) with a warning; the client
+# sees the connection close. Destroying the server object kills and reaps the
+# daemon and every connection child.
 
 use strict;
 use warnings;
@@ -34,7 +39,7 @@ sub start {
   my ( $class, $handler, %opts ) = @_;
   my $keep_alive = $opts{keep_alive};
   my $conn_log   = File::Temp->new;   # one line per accepted connection
-  my $daemon = HTTP::Daemon->new( LocalAddr => '127.0.0.1', LocalPort => 0, ReuseAddr => 1 )
+  my $daemon = Test::LocalHTTPDaemon::Listener->new( LocalAddr => '127.0.0.1', LocalPort => 0, ReuseAddr => 1 )
     or die "cannot start HTTP::Daemon: $!";
   my $url = $daemon->url;
   $url =~ s{/\z}{};
@@ -42,27 +47,57 @@ sub start {
   my $pid = fork;
   die "fork failed: $!" unless defined $pid;
   if ( !$pid ) {
-    $SIG{PIPE} = 'IGNORE';
-    my %children;
-    if ($keep_alive) {
-      $SIG{CHLD} = sub { while ( ( my $done = waitpid( -1, POSIX::WNOHANG() ) ) > 0 ) { delete $children{$done} } };
-      $SIG{TERM} = sub { kill 'TERM', keys %children; POSIX::_exit(0) };
-    }
-    while (1) {
-      my $conn = $daemon->accept;
-      unless ($conn) { next if $!{EINTR}; last }   # EINTR: a SIGCHLD during accept
-      if ( open my $log, '>>', $conn_log->filename ) { print {$log} "conn\n"; close $log }
+    # Nothing may unwind out of start() in a forked process: it would run the
+    # rest of the test script as a clone. A handler that dies ends the process.
+    my $ok = eval { _serve( $daemon, $handler, $keep_alive, $conn_log->filename ); 1 };
+    warn "Test::LocalHTTPDaemon: $@" unless $ok;
+    POSIX::_exit( $ok ? 0 : 1 );   # skip END blocks (Test2) in the child
+  }
+
+  close $daemon;
+  return bless { pid => $pid, url => $url, conn_log => $conn_log }, $class;
+}
+
+# Runs in the daemon process. In keep-alive mode each connection gets its own
+# forked child. Children are reaped in the accept loop, not in a SIGCHLD
+# handler, so %children only changes synchronously and never names a pid that
+# is already reaped (and so free for reuse). SIGTERM is blocked from that reap
+# through the fork until the child is recorded, so teardown kills and reaps
+# every child.
+sub _serve {
+  my ( $daemon, $handler, $keep_alive, $conn_log ) = @_;
+  $SIG{PIPE} = 'IGNORE';
+  my %children;
+  my $term = POSIX::SigSet->new( POSIX::SIGTERM() );
+  my $reap = sub { kill 'TERM', keys %children; waitpid $_, 0 for keys %children };
+  $SIG{TERM} = sub { $reap->(); POSIX::_exit(0) } if $keep_alive;
+  my $ok = eval {
+    while ( my $conn = $daemon->accept ) {
+      if ( open my $log, '>>', $conn_log ) { print {$log} "conn\n"; close $log }
       if ($keep_alive) {
+        POSIX::sigprocmask( POSIX::SIG_BLOCK(), $term );
+        while ( ( my $done = waitpid( -1, POSIX::WNOHANG() ) ) > 0 ) { delete $children{$done} }
         my $child = fork;
         die "fork failed: $!" unless defined $child;
-        if ($child) { $children{$child} = 1; close $conn; next }
-        $SIG{TERM} = 'DEFAULT';
-        while ( my $request = $conn->get_request ) {
-          my $response = $handler->($request);
-          if ( ref $response ) { $conn->send_response($response) }
-          else                 { print {$conn} $response }
+        if ( !$child ) {
+          $SIG{TERM} = 'DEFAULT';
+          POSIX::sigprocmask( POSIX::SIG_UNBLOCK(), $term );
+          close $daemon;   # only the daemon listens
+          my $served = eval {
+            while ( my $request = $conn->get_request ) {
+              my $response = $handler->($request);
+              if ( ref $response ) { $conn->send_response($response) }
+              else                 { print {$conn} $response }
+            }
+            1;
+          };
+          warn "Test::LocalHTTPDaemon: $@" unless $served;
+          POSIX::_exit( $served ? 0 : 1 );
         }
-        POSIX::_exit(0);
+        $children{$child} = 1;
+        POSIX::sigprocmask( POSIX::SIG_UNBLOCK(), $term );
+        close $conn;
+        next;
       }
       while ( my $request = $conn->get_request ) {
         $conn->force_last_request;
@@ -74,11 +109,13 @@ sub start {
       }
       $conn->close;
     }
-    POSIX::_exit(0);   # skip END blocks (Test2) in the child
-  }
-
-  close $daemon;
-  return bless { pid => $pid, url => $url, conn_log => $conn_log }, $class;
+    1;
+  };
+  my $err = $@;
+  POSIX::sigprocmask( POSIX::SIG_BLOCK(), $term );
+  $reap->();
+  die $err unless $ok;
+  return;
 }
 
 sub url { $_[0]->{url} }
@@ -96,5 +133,14 @@ sub DESTROY {
   kill 'TERM', $self->{pid};
   waitpid $self->{pid}, 0;
 }
+
+# HTTP::Daemon builds every request URI from $daemon->url, which reads the
+# socket. A keep-alive connection child closes its copy of the listening
+# socket, so the URL is cached while the socket is still open (start() reads
+# it before forking).
+package Test::LocalHTTPDaemon::Listener;
+use parent -norequire, 'HTTP::Daemon';
+
+sub url { my ($self) = @_; return ${*$self}{test_local_url} //= $self->SUPER::url }
 
 1;
