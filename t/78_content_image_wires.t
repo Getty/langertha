@@ -177,6 +177,33 @@ for my $name (qw( OllamaOpenAI Cerebras Moonshot )) {
   }
 }
 
+# --- An outside Content class written against the original three-method
+#     contract still composes (the new serializers are croaking defaults,
+#     not `requires`), and fails loudly only when sent on a new wire. ---
+{
+  package My::OutsideContent;
+  use Moose;
+  with 'Langertha::Content';
+  sub to_openai    { { type => 'text', text => 'outside' } }
+  sub to_anthropic { { type => 'text', text => 'outside' } }
+  sub to_gemini    { { text => 'outside' } }
+  __PACKAGE__->meta->make_immutable;
+}
+{
+  my $block = My::OutsideContent->new;
+  ok $block->does('Langertha::Content'), 'three-method outside class composes';
+  is_deeply body_of( engine( 'OpenAI', @{ $ARGS{OpenAI} } )->chat(
+    { role => 'user', content => [$block] } ) )->{messages}[0]{content},
+    [ { type => 'text', text => 'outside' } ], '... and still serializes on its wires';
+  for my $case ( [ OpenAIResponses => 'responses' ], [ Ollama => 'ollama' ], [ LMStudio => 'lmstudio' ] ) {
+    my ( $name, $fmt ) = @$case;
+    ok !eval { engine( $name, @{ $ARGS{$name} } )->chat( { role => 'user', content => [$block] } ); 1 },
+      "$name: outside class without to_$fmt croaks";
+    like $@, qr/\AMy::OutsideContent cannot be sent on the \Q$fmt\E wire; implement to_\Q$fmt\E /,
+      '... naming the class, the wire and the method to implement';
+  }
+}
+
 # --- Text-only messages: byte-identical to the pre-change bodies (golden) ---
 {
   my @msgs = (
