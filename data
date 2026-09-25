@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-25T20:52:55Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:52:55Z
+created: 2026-09-25T20:22:30Z
+id: 299
+priority: medium
+started: 2026-09-25T20:29:42Z
+status: done
+tags:
+- usage
+- gemini
+- pricing
+- bug
+title: 'Gemini thoughtsTokenCount is not counted in output_tokens: Pricing/Cost undercharge
+  thinking models'
+updated: 2026-09-25T20:52:55Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). REPRODUCED offline.
+
+Where: lib/Langertha/Engine/Gemini.pm:444 (completion_tokens => candidatesTokenCount), Gemini.pm:628 (stream passes raw usageMetadata), lib/Langertha/Usage.pm:97 (output from candidatesTokenCount only). Pricing uses output_tokens (lib/Langertha/Pricing.pm:34).
+
+Gemini usageMetadata reports thinking separately: thoughtsTokenCount is NOT part of candidatesTokenCount, and totalTokenCount = prompt + candidates + thoughts (+ toolUsePrompt). Thinking tokens are billed at the output rate.
+
+Repro: chat_response on {candidates:[{content:{parts:[{text:"4"}]},finishReason:"STOP"}], usageMetadata:{promptTokenCount:10,candidatesTokenCount:1,thoughtsTokenCount:500,totalTokenCount:511}}
+ -> input=10 output=1 total=511 (input+output=11). Cost is computed on 1 output token instead of 501.
+
+Fix: in Usage->from_hash (ADR 0018 tier 1) add thoughtsTokenCount (and the renamed key Gemini.pm emits) to output_tokens, mirroring OpenAI where reasoning tokens are inside completion_tokens; optionally keep a reasoning_tokens count. Keep the Gemini.pm back-compat rename consistent. Verify field semantics with langertha-llm-advisor.
