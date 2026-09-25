@@ -1,6 +1,6 @@
 # Public hooks for langertha-raider (karr k190 + k192)
 
-Date: 2026-09-25 · Status: design · Tickets: k190, k192 · Related: ADR 0026, ADR 0027
+Date: 2026-09-25 · Status: design (revised after review) · Tickets: k190, k192 · Related: ADR 0026, ADR 0027 · Recorded as ADR 0028
 
 ## Problem
 
@@ -49,8 +49,9 @@ not on a `Langertha::Response`. Trace only sees `$data` (plugin hook), no engine
   `_async_loop`, `_langfuse_timestamp`); its own `->_` calls are on its own objects.
 - **langertha-skeid** (@ 4c8f3ef): no engine-private calls. It parses usage itself
   (`Skeid/Proxy.pm:752`, `Skeid.pm:800`, `Protocol/Ollama/Stream.pm:78`) but on proxied
-  wire payloads, with its own cache/cost logic — out of scope here; it could adopt the
-  same `Langertha::Usage` door later (not ticketed by this change).
+  wire payloads, with its own cache/cost logic — out of scope here. Its `metrics.normalize` /
+  `estimate_cost` go through `Usage->from_response`, so figures for Gemini, Ollama-native and
+  `response.usage` bodies change from 0 to real counts (see Changes).
 
 ## What core already has
 
@@ -76,31 +77,27 @@ async sub async_request_f {
 
 The public face of the ADR 0027 `do_request` contract: `Future<HTTP::Response>`, 4xx/5xx
 **resolve** (caller checks `is_success`), `%opts` passes through (`on_header` for
-streaming). Works identically on all three backends (injected, Net::Async::HTTP,
-SyncHTTP). It deliberately returns a response, not the backend object, so nothing
+streaming). HTTP error statuses resolve on all three backends (injected, Net::Async::HTTP,
+SyncHTTP). Transport-level failures do not behave the same way (ADR 0027): Net::Async::HTTP
+fails the future, while SyncHTTP resolves it with LWP's synthesized 500, so callers always
+check `is_success`. It deliberately returns a response, not the backend object, so nothing
 beyond `do_request` is exposed. `_async_http` stays the injection seam, unchanged.
 
-### 2. Loop access (k192) — choice **(b): raider brings its own loop**
+### 2. Loop access (k192) — choice **(a): `$engine->async_loop`, a `Maybe[loop]`** (revised)
 
 What raider uses the loop for: (i) `loop->add` of a `Net::Async::MCP` notifier,
-(ii) `delay_future` for the `wait` self-tool. Both are IO::Async-specific and raider
-already `requires` IO::Async + Net::Async::HTTP + Net::Async::MCP. Option (a) would still
-force raider to handle `undef` (injected client, SyncHTTP) — i.e. raider needs its own
-loop anyway, so (a) adds public surface without removing that need.
+(ii) `delay_future` for the `wait` self-tool.
 
-Why (b) is safe: `IO::Async::Loop->new` is IO::Async's magic constructor and returns the
-process-wide loop (verified at IO::Async::Loop 0.805: two `->new` are `==`). Core's
-default `_async_loop` builder uses exactly that constructor, so a raider that calls
-`IO::Async::Loop->new` shares the engine's loop on the default Net::Async::HTTP backend.
-On SyncHTTP the loop is simply raider's; `->get` on the pending IO::Async future drives it.
+The first draft chose (b), where raider brings its own loop via the `IO::Async::Loop->new`
+singleton. Review reproduced a silent hang under (b). When the backend runs on a foreign loop
+(an injected client, or `_async_loop => $loop` passed at construction), the raid awaits
+futures from two loops, and the outer `->get` drives only one of them. The orchestrator ruled (a).
 
-Core change: documentation only, plus one test pinning the documented fact —
-Role::AsyncHTTP POD states core offers no loop accessor, that the default backend's
-loop is the process `IO::Async::Loop->new`, and that a caller who injects a client on a
-different loop must hand that loop to whatever else needs one.
-
-Raider-side (karr ticket): own `loop` (lazy `IO::Async::Loop->new`, overridable
-attribute — CLI already holds one); use it at 1555/1911/2086.
+`async_loop` returns the active backend's loop: the injected client's loop if it
+`->can('loop')`, the loop the default Net::Async::HTTP backend was added to, or `undef` for the
+sync fallback or a client without a loop. Core still promises no loop. Raider uses
+`$engine->async_loop // IO::Async::Loop->new`, which is correct in the foreign-loop case with
+no extra configuration. Recorded as ADR 0028.
 
 ### 3. `$engine->langfuse_timestamp` — Role::Langfuse (k190)
 
@@ -121,8 +118,10 @@ Extend what exists:
   `prompt_eval_count`/`eval_count` (Ollama native) — and returns a `Langertha::Usage`,
   or **`undef` when the body reports no usage**.
 - `from_response` HashRef branch delegates to `from_raw`, falling back to the previous
-  behaviour (`from_hash($data->{usage} || {})`), so it still always returns a Usage and
-  every previously-handled input is unchanged.
+  behaviour (`from_hash($data->{usage} || {})`), so it still always returns a Usage.
+  Every body with a `usage` key gives the same result as before. Bodies without one that carry
+  `usageMetadata`, Ollama top-level counts or `response.usage` now yield real counts instead of
+  zeros, which skeid's cost figures notice (see Changes).
 
 Raider then replaces its three parsers with `Langertha::Usage->from_raw($data)` and reads
 `input_tokens` / `output_tokens` / `total_tokens`.
@@ -145,5 +144,7 @@ Raider then replaces its three parsers with `Langertha::Usage->from_raw($data)` 
 - `Usage->from_raw`: each shape (OpenAI, Anthropic, Gemini, Ollama native, Responses,
   `response.usage`), `undef` for no usage / non-hash; `from_hash` Gemini keys;
   `from_response` unchanged for old inputs and now understands Gemini bodies.
-- Loop contract: with Net::Async::HTTP installed, the default backend's loop is
-  `IO::Async::Loop->new` (skip otherwise).
+- `async_loop`: `undef` for the sync fallback and a loop-less client. With Net::Async::HTTP
+  installed: the default backend's loop, an injected client's foreign loop, the
+  `_async_loop` constructor argument, and a timer on it that completes in a chain driven by the
+  backend loop, with no hang.
