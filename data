@@ -1,0 +1,33 @@
+---
+claimed_at: 2026-09-25T20:47:04Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:47:04Z
+created: 2026-09-25T20:24:12Z
+id: 306
+priority: low
+started: 2026-09-25T20:25:46Z
+status: done
+tags:
+- metrics
+- runtime
+- parser
+- bug
+title: 'MetricsPoll: metrics_url glues /metrics onto a path without a slash (/vllm
+  -> /vllmmetrics); Prometheus label parser splits quoted values on commas and keeps
+  leading spaces'
+updated: 2026-09-25T20:47:04Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). REPRODUCED offline.
+
+1) lib/Langertha/Role/Runtime/MetricsPoll.pm:77 strips a trailing /v1 then appends "metrics" to the path. For a url whose path neither ends in /v1 nor /, the slash is missing: http://h/vllm -> http://h/vllmmetrics (http://h/vllm/v1 and http://h/vllm/ are fine). Fix: $path .= '/' unless $path =~ m{/\z}.
+
+2) lib/Langertha/Runtime/Metrics.pm:160 _parse_labels splits on every comma. Repro:
+   vllm:lora_requests_info{max_lora="2",running_lora_adapters="a,b",waiting_lora_adapters=""} 1.7e+09
+   -> running_lora_adapters is dropped entirely (vLLM joins the adapter list with commas).
+   vllm:num_requests_running{engine="0", model_name="Qwen/Qwen3"} 3.0 -> label key " model_name" with a leading space.
+3) Metrics.pm:96 sample regex uses \{[^}]*\}: a label value containing } makes the whole sample line unparseable and it is skipped.
+Fix: replace the naive split with a small tokenizer over name="value" pairs honoring \\ \" \n escapes and optional whitespace; add these lines to the MetricsPoll parser test.
+
+2026-09-25 20:40 Fixed on branch worktree-agent-a40bf6155c5d15d37 commit fcdc515: metrics_url join, label tokenizer with escapes, } in values. Fixture t/data/vllm_metrics_lora.prom is vLLM-shaped, not a live capture.
