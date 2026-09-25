@@ -84,8 +84,8 @@ with its own C<TO_JSON>).
 
 The shape is deliberately bounded: L</content> plus the metadata fields that
 are present (L</id>, L</model>, L</finish_reason>, L</usage>, L</timing>,
-L</created>, L</thinking>, L</rate_limit>, L</tool_calls>). L</raw> and
-L</probes> are B<not> included — L</raw> is the entire provider payload
+L</created>, L</thinking>, L</refusal>, L</rate_limit>, L</tool_calls>).
+L</raw> and L</probes> are B<not> included — L</raw> is the entire provider payload
 (duplicating every other field, including the echoed prompt) and L</probes>
 can hold megabytes of tensor data. A C<TO_JSON> that kept them would blow up
 every trace it touched; one that dropped them keeps the object's JSON form
@@ -386,6 +386,12 @@ has thinking => (
   predicate => 'has_thinking',
 );
 
+has refusal => (
+  is => 'ro',
+  isa => 'Maybe[Str]',
+  predicate => 'has_refusal',
+);
+
 has rate_limit => (
   is => 'ro',
   isa => 'Maybe[Langertha::RateLimit]',
@@ -569,6 +575,17 @@ L<Langertha::Role::ThinkTag/think_tag_filter> is enabled.
 
 =cut
 
+=attr refusal
+
+The model's refusal text, when the provider reports a refusal in a field of
+its own instead of as content: the OpenAI-compatible C<message.refusal> (a
+structured-output request the model declined; C<content> is then empty) and a
+Responses API C<refusal> content part. L</content> stays what the model
+answered, usually C<''>, so check C<has_refusal> before treating an empty
+reply as empty. A refusal that arrives as a stop reason (Anthropic
+C<stop_reason> C<refusal>) is in L</finish_reason> instead. Survives
+L</clone_with>.
+
 =attr citations
 
 Search-augmented source citations, when the provider reports them. An ArrayRef
@@ -636,8 +653,8 @@ copy so the override value is what reaches C<new>.
 Returns the canonical, bounded HashRef representation of the response:
 C<content> plus every metadata field that is present (L</id>, L</model>,
 L</finish_reason>, L</usage>, L</timing>, L</created>, L</cached_tokens>,
-L</thinking>, L</rate_limit>, L</tool_calls>). L</raw> and L</probes> are
-deliberately excluded — see L</"TO_JSON — the canonical, bounded
+L</thinking>, L</refusal>, L</rate_limit>, L</tool_calls>). L</raw> and
+L</probes> are deliberately excluded — see L</"TO_JSON — the canonical, bounded
 representation">.
 
 L</created> is emitted as a plain epoch number (via its C<0+> overload), not
@@ -663,6 +680,7 @@ sub to_hash {
     ( $self->has_created       ? ( created       => 0 + $self->created )   : () ),
     ( $self->has_cached_tokens ? ( cached_tokens => $self->cached_tokens ) : () ),
     ( $self->has_thinking      ? ( thinking      => $self->thinking )      : () ),
+    ( $self->has_refusal       ? ( refusal       => $self->refusal )       : () ),
     ( $self->has_rate_limit    ? ( rate_limit    => $self->rate_limit )    : () ),
     ( $self->has_tool_calls    ? ( tool_calls    => $self->tool_calls )    : () ),
   };

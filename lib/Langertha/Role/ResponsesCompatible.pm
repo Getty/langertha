@@ -521,6 +521,7 @@ sub chat_response {
         $out{tool_calls} ? ( tool_calls => $out{tool_calls} ) : (),
         $out{server_tool_calls} ? ( server_tool_calls => $out{server_tool_calls} ) : (),
         defined $out{thinking} ? ( thinking => $out{thinking} ) : (),
+        defined $out{refusal} ? ( refusal => $out{refusal} ) : (),
         $citations ? ( citations => $citations ) : (),
         %extra,
     );
@@ -545,6 +546,9 @@ Langertha cannot (C<mcp_approval_request>, C<computer_call>,
 C<custom_tool_call>, C<local_shell_call>, C<apply_patch_call>, a client
 C<tool_search_call>) croaks.
 
+A C<refusal> content part of a message becomes L<Langertha::Response/refusal>
+(on a stream, the final chunk's C<refusal>).
+
 =cut
 
 # The one output[] walker (karr k212). chat_response reads a whole response
@@ -552,12 +556,12 @@ C<tool_search_call>) croaks.
 # response.completed / response.incomplete event carries, so a streamed and a
 # non-streamed reply of the same response can never disagree about its tool
 # calls, thinking or finish_reason (karr k222). Returns a hash: content (concatenated
-# output_text, '' when none), and -- only when present -- thinking,
+# output_text, '' when none), and -- only when present -- thinking, refusal,
 # finish_reason, and tool_calls (ArrayRef of Langertha::ToolCall).
 sub _responses_walk_output {
     my ( $self, $data ) = @_;
 
-    my ( $text, @tc_data, $finish_reason, $thinking, @citations );
+    my ( $text, @tc_data, $finish_reason, $thinking, @citations, $refusal );
 
     for my $item ( @{ $data->{output} // [] } ) {
         next unless ref($item) eq 'HASH';
@@ -587,6 +591,12 @@ sub _responses_walk_output {
                 elsif ( $block_type eq 'function_call' ) {
                     push @tc_data, $block;
                 }
+                elsif ( $block_type eq 'refusal' ) {
+                    # A declined request answers a refusal part instead of
+                    # output_text (ADR 0004: Response.refusal). -- k301
+                    $refusal .= $block->{refusal}
+                        if defined $block->{refusal} && !ref $block->{refusal};
+                }
             }
         }
         elsif ( $type eq 'function_call' ) {
@@ -613,6 +623,7 @@ sub _responses_walk_output {
     return (
         content => $text // '',
         defined $thinking      ? ( thinking      => $thinking )      : (),
+        defined $refusal       ? ( refusal       => $refusal )       : (),
         defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
         @tc_data ? ( tool_calls => [ map { $self->_parse_function_call($_) } @tc_data ] ) : (),
         @server_calls ? ( server_tool_calls => \@server_calls ) : (),
@@ -859,6 +870,7 @@ sub parse_stream_chunk {
             $out{tool_calls} ? ( tool_calls => $out{tool_calls} ) : (),
             defined $out{finish_reason} ? ( finish_reason => $out{finish_reason} ) : (),
             defined $out{thinking} ? ( thinking => $out{thinking} ) : (),
+            defined $out{refusal} ? ( refusal => $out{refusal} ) : (),
         );
     }
 

@@ -514,7 +514,17 @@ sub _openai_content_parts {
 sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
-  my $choice = $data->{choices}[0];
+  # A 200 without a choice is no answer: gateways (OpenRouter and other
+  # proxies) put an `error` object into a 200 body, and an empty choices list
+  # parsed to content '' with no finish_reason -- the same as a model that
+  # legitimately said nothing. Croak, naming the engine and the error, like
+  # the k290 embedding/image croaks. -- karr k301
+  my $choice = ref $data eq 'HASH' && ref $data->{choices} eq 'ARRAY' ? $data->{choices}[0] : undef;
+  unless ( ref $choice eq 'HASH' ) {
+    my $error = $self->_openai_body_error($data);
+    croak "".(ref $self)." response carried an error: $error" if defined $error;
+    croak "".(ref $self)." response contained no choices";
+  }
   my $msg = $choice->{message} || {};
   # The OpenAI-compatible response envelope is always OpenAI-shaped, even for
   # engines whose tool_wire_format is 'hermes' (their calls ride in the message
@@ -551,8 +561,23 @@ sub chat_response {
       ? ( cached_tokens => $data->{usage}{prompt_tokens_details}{cached_tokens} ) : () ),
     $data->{created} ? ( created => $data->{created} ) : (),
     defined $thinking ? ( thinking => $thinking ) : (),
+    # A declined structured-output request answers content null plus
+    # message.refusal; it was reachable only through raw (ADR 0004). -- k301
+    ( defined $msg->{refusal} && !ref $msg->{refusal} ? ( refusal => $msg->{refusal} ) : () ),
     @tcs ? ( tool_calls => [ @tcs ] ) : (),
   );
+}
+
+# "message (code)" of an `error` in an OpenAI-shaped body (an object with
+# message/code, or a plain string), undef when there is none. -- karr k301
+sub _openai_body_error {
+  my ( $self, $data ) = @_;
+  return undef unless ref $data eq 'HASH' && defined $data->{error};
+  my $err = $data->{error};
+  return "$err" unless ref $err eq 'HASH';
+  my $message = defined $err->{message} && !ref $err->{message} ? $err->{message} : 'no error message';
+  my $code = defined $err->{code} && !ref $err->{code} ? " ($err->{code})" : '';
+  return "$message$code";
 }
 
 =method chat_response
@@ -574,6 +599,15 @@ Mistral's reasoning models send it: the text of C<text> chunks becomes
 C<content>, the text inside C<thinking> chunks becomes C<thinking> (unless
 C<reasoning_content> / C<reasoning> already filled it), and other chunk types
 are skipped.
+
+C<message.refusal> (a declined structured-output request, C<content> then
+null) becomes L<Langertha::Response/refusal>.
+
+A body without a choice is not an answer and croaks, naming the engine: with
+an C<error> object (gateways such as OpenRouter return one in a 200 body)
+C<"E<lt>engineE<gt> response carried an error: E<lt>messageE<gt> (E<lt>codeE<gt>)">,
+otherwise C<"E<lt>engineE<gt> response contained no choices">. Only
+C<choices[0]> is read.
 
 =cut
 
@@ -706,6 +740,14 @@ sub parse_stream_chunk {
 
   return undef unless ref $data eq 'HASH';
 
+  # A gateway that fails mid-stream (OpenRouter) sends a frame with a
+  # top-level `error` object and no choice. Returning undef ended the stream
+  # as a short, silent success; the croak fails the stream future, as the
+  # Responses parser does for its error events. -- karr k301
+  if ( defined $data->{error} && !( ref $data->{choices} eq 'ARRAY' && @{ $data->{choices} } ) ) {
+    croak "".(ref $self)." stream carried an error: ".$self->_openai_body_error($data);
+  }
+
   # With stream_options.include_usage (OpenAI; vLLM and SGLang emit it too) the
   # usage arrives in a frame of its own after the finish chunk, with an empty
   # choices list. It becomes a content-less, non-final chunk carrying the usage
@@ -804,6 +846,8 @@ sub parse_stream_chunk {
     $data->{model} ? (model => $data->{model}) : (),
     $self->_openai_stream_usage_kwargs( $data->{usage} ),
     defined $thinking ? ( thinking => $thinking ) : (),
+    ( defined $delta->{refusal} && !ref $delta->{refusal} && length $delta->{refusal}
+      ? ( refusal => $delta->{refusal} ) : () ),
     @tool_calls ? ( tool_calls => \@tool_calls ) : (),
   );
 }
@@ -839,7 +883,11 @@ C<thinking>. The usage-only frame that C<stream_options =E<gt> { include_usage
 content-less chunk that is not C<is_final> and carries C<usage> and
 C<cached_tokens>; collect the stream's usage with
 L<Langertha::Role::Chat/aggregate_usage>. Returns C<undef> only when the
-payload carries neither a choice nor a usage block.
+payload carries neither a choice nor a usage block. A frame with a top-level
+C<error> object and no choice (a gateway failing mid-stream) croaks
+C<"E<lt>engineE<gt> stream carried an error: E<lt>messageE<gt> (E<lt>codeE<gt>)">,
+which fails the stream. A C<delta.refusal> fragment lands on the chunk's
+C<refusal>.
 
 C<delta.tool_calls> fragments are assembled per C<index> (a fragment without
 C<index> by its C<id>, and by its position only when it has neither) in

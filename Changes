@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - A chat answer without a choice is no longer an empty Response: an
+      OpenAI-compatible 200 body with an error object (as gateways such as
+      OpenRouter send) or no choices croaks, naming the engine and the error,
+      and so does a stream frame carrying an error. A Gemini prompt blocked
+      by promptFeedback reports its blockReason as finish_reason. New
+      Response refusal (and Stream::Chunk refusal) carries OpenAI's
+      message.refusal and a Responses API refusal part.
+
     - Batch embeddings: simple_embedding([ $a, $b, ... ]) (and the
       Langertha::Embedder wrapper) returns one vector per input, in input
       order, on every OpenAI-compatible engine (ordered by data[].index)

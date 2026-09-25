@@ -184,6 +184,22 @@ L<Langertha::Response/thinking> on the non-streaming path.
 
 =cut
 
+has refusal => (
+  is        => 'ro',
+  isa       => 'Maybe[Str]',
+  predicate => 'has_refusal',
+);
+
+=attr refusal
+
+Optional fragment of a refusal delivered in this chunk: the OpenAI-compatible
+C<delta.refusal>, and the whole refusal of a Responses API stream on its final
+chunk. Concatenated in order, the fragments are the text
+L<Langertha::Response/refusal> carries on the non-streaming path. Use
+C<has_refusal> to check.
+
+=cut
+
 =attr usage
 
 Token usage counts as a HashRef, if provided by the engine on the final

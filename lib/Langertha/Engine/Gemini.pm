@@ -429,6 +429,23 @@ sub chat_response {
     $thinking = join("\n", @thought_parts) if @thought_parts;
     $finish_reason = $candidate->{finishReason};
   }
+  else {
+    # No candidate: a blocked prompt says why in promptFeedback.blockReason.
+    # A block is an answer, so it is reported as finish_reason, verbatim like
+    # a candidate's finishReason (SAFETY, PROHIBITED_CONTENT, ...). Anything
+    # else without a candidate is no answer and croaks. -- karr k301
+    my $feedback = ref $data->{promptFeedback} eq 'HASH' ? $data->{promptFeedback} : {};
+    $finish_reason = $feedback->{blockReason};
+    unless ( defined $finish_reason && !ref $finish_reason && length $finish_reason ) {
+      my $err = $data->{error};
+      croak "".(ref $self)." response carried an error: "
+        . ( ref $err eq 'HASH'
+          ? ( $err->{message} // 'no error message' ) . ( defined $err->{code} && !ref $err->{code} ? " ($err->{code})" : '' )
+          : $err )
+        if defined $err;
+      croak "".(ref $self)." response contained no candidates";
+    }
+  }
 
   # Normalize Gemini usage metadata. cachedContentTokenCount is surfaced
   # when present so callers can monitor cache-hit rate (karr #22, 22e).
@@ -468,6 +485,19 @@ sub chat_response {
     @tcs ? ( tool_calls => [ @tcs ] ) : (),
   );
 }
+
+=method chat_response
+
+    my $response = $engine->chat_response($http_response);
+
+Parses a C<generateContent> answer into a L<Langertha::Response> from the
+first candidate; C<finish_reason> is its C<finishReason> as Gemini spells it.
+A blocked prompt (no candidate, C<promptFeedback.blockReason>) is an answer
+with C<content> C<''> and the C<blockReason> as C<finish_reason> (e.g.
+C<SAFETY>). A body with neither croaks, naming the engine and any C<error> it
+carries.
+
+=cut
 
 sub stream_format { 'sse' }
 
