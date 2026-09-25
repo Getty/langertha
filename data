@@ -1,0 +1,35 @@
+---
+claimed_at: 2026-09-25T22:46:29Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T22:46:29Z
+created: 2026-09-25T22:28:51Z
+id: 319
+priority: low
+started: 2026-09-25T22:36:53Z
+status: done
+tags:
+- embedding
+- mistral
+- ollama
+- advisor
+title: 'Advisor+fix: embedding_dimensions spelling for Mistral (output_dimension?)
+  and Ollama native (dimensions?)'
+updated: 2026-09-25T22:46:29Z
+---
+
+From k316: embedding_dimensions is sent as dimensions on every OpenAI-compatible engine incl. Mistral; Mistral codestral-embed may spell it output_dimension (and mistral-embed may reject it). Ollama native /api/embed may accept dimensions - currently not sent. Verify per provider, then map per engine (or drop for engines that reject it).
+
+2026-09-25 22:34 Advisor ruling (2026-09-26, docs+source, no keyed calls):
+- OpenAI: send dimensions. Only text-embedding-3-*; ada-002 -> 400 'This model does not support specifying dimensions'.
+- Mistral: send output_dimension (NOT dimensions). Bundled share/mistral.yaml EmbeddingRequest has additionalProperties:false, so dimensions is rejected. Docs: codestral-embed only, default 1536, max 3072. mistral-embed (fixed 1024) undocumented -> do not send + carp. output_dtype (float/int8/uint8/binary/ubinary) changes the vector type: separate concern, do not map from embedding_dimensions.
+- Scaleway: do not send + carp. using-embeddings-api lists dimensions under 'Unsupported parameters', although supported-models says qwen3-embedding-8b does 32-4096. Doc conflict, re-check live with approval.
+- Ollama native /api/embed: send dimensions (share/ollama.yaml + server/routes.go). Truncates and renormalizes for ANY model, with no MRL check. Ignored silently if >= native size.
+- OllamaOpenAI /v1: send dimensions (openai/openai.go maps it; compat doc lists it).
+- vLLM: send dimensions. 400 'does not support matryoshka representation' unless the model is_matryoshka (hf_overrides can enable it).
+- SGLang: send dimensions. Same ValueError via tokenizer_manager _validate_for_matryoshka_dim, also checks matryoshka_dimensions list and hidden_size.
+- llama.cpp: do not send + carp. The field is not parsed anywhere in tools/server (issue ggml-org/llama.cpp#25210, open), so it is dropped silently and the full vector comes back.
+- LMStudioOpenAI: do not send + carp. lmstudio-ai/lms#524 is open with no answer, and the behavior is unconfirmed.
+- Gemini: embedContentConfig.outputDimensionality confirmed (ai.google.dev/api/embeddings). The batch per-request config and embedding-001 reject it. Current code is correct.
+- HuggingFace: N/A, the engine does not compose Role::Embedding.
+- TSystems (composes Embedding): not researched, docs-only. Follow-up needed.
