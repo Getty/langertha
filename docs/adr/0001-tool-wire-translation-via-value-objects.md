@@ -263,7 +263,7 @@ uses: `format_tools` (`Tool->format_list('hermes', …)`, MCP shape) and the
 `_hermes_split_text`) onto `Response.tool_calls` and out of `content` (ADR 0003), unless the
 engine's `chat_response` already did (AKI native, k123). The lift runs only when tools were
 sent, so `simple_chat_f` on a hermes engine keeps its content. A streamed turn keeps the tags in
-its text: chunks carry no Hermes call.
+its text: chunks carry no Hermes call (superseded by the k253 Update below).
 
 `tool_choice` is never sent. `none` withholds the tools: no tool prompt, so no reply lift
 either, with a carp saying so — the rule k233 set for the Responses envelope (ADR 0020), since a
@@ -273,3 +273,28 @@ but `auto` is dropped with a carp; an explicit `undef` is no choice and stays si
 croaks in `format_tools` rather than going out verbatim as on the other wires. The ADR 0005 forced-tool rewrite does not fire here, because the hermes
 engines still claim `tool_choice_named` (and `tools_native`) through `Role::Tools` in
 `%ROLE_TO_CAPS` — an over-claim for this wire, left for k234, not changed here.
+
+## Update (k253 — a streamed hermes turn lifts its calls too)
+
+k231 left `chat_stream_realtime_f` on the `hermes` wire with the `<tool_call>` markup in the
+streamed text and no call on any chunk, so `aggregate_tool_calls` and a relay built on the chunks
+(langertha-knarr k19) saw none, and the markup reached the user. Text already handed to the
+chunk callback cannot be taken back, so a lift at stream end was not enough. When the tools rode
+the prompt (the same condition as `chat_f`'s reply lift), each chunk now goes through a tag-aware
+incremental splitter (`Role::Tools::_hermes_stream_chunk` / `_hermes_stream_split`): text outside
+the call tag (`hermes_call_tag`) streams as it comes, a closed block is withheld, and a tail that
+may still become an opening tag is held until the next chunk. A chunk that carried only markup is
+not delivered. On the final chunk (`is_final` or a `finish_reason`) the withheld blocks go through
+the same `_hermes_split_text` `chat_f` uses and the calls land there as `Langertha::ToolCall`
+objects with `finish_reason` `tool_calls` (ADR 0003: `Stream::Chunk.tool_calls` is the streamed
+form of `Response.tool_calls`). A stream that ends without a final chunk gets a closing chunk for
+what is still held.
+
+Unclosed or partial markup at the end is emitted as text and gives no call: nothing the model
+wrote is lost, and `chat_f` treats an unclosed block the same way. With the think tag filter on
+(`Role::ThinkTag`) a `<think>` block streams as text and a call tag inside it is no call, since
+`chat_f` strips thinking before its lift; parity with `chat_f` on the same reply text is what the
+tests pin (`t/43_hermes_stream_tool_calls.t`). ThinkTag's own streaming handling is a filter over
+the aggregated content at the end, not incremental, so there was no splitter to reuse. Engines
+off the `hermes` wire, a hermes turn without tools and `tool_choice => 'none'` are unchanged; AKI
+native still has no streaming.
