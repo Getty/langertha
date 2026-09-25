@@ -830,9 +830,11 @@ async sub chat_stream_realtime_f {
         # Net::Async::HTTP then dies on ("Spurious on_read"). Cancel on the
         # next loop iteration instead, once this read is fully processed; if
         # the response completes within this read there is nothing to cancel.
-        # A future without a loop (a foreign injected client) is drained.
+        # A future without an IO::Async-style loop (an injected client with
+        # no loop, or one from another event system) is drained.
         my $loop = $request_f->can('loop') && $request_f->loop;
-        $loop->later(sub { $request_f->cancel unless $request_f->is_ready }) if $loop;
+        $loop->later(sub { $request_f->cancel unless $request_f->is_ready })
+          if $loop && $loop->can('later');
         return;
       };
     },
@@ -844,8 +846,10 @@ async sub chat_stream_realtime_f {
   $request_f->on_ready(sub { $transfer_f->done unless $transfer_f->is_ready });
   $transfer_f->on_cancel(sub { $request_f->cancel unless $request_f->is_ready });
   await $transfer_f;
-  await $request_f if $request_f->is_failed;
+  # The exception that stopped the stream wins over a transport failure the
+  # stop may have provoked.
   await Future->fail(@$stream_error) if $stream_error;
+  await $request_f if $request_f->is_failed;
 
   unless ($response_status->is_success) {
     die "".(ref $self)." streaming request failed: ".$response_status->status_line;
@@ -1009,15 +1013,18 @@ the backend (L<Langertha::Role::AsyncHTTP>):
 =item * L<Net::Async::HTTP>: the exception never escapes the event loop. The
 request is cancelled on the next loop iteration (unless the response already
 ended within the same read), and the engine goes on serving requests. Like any
-cancelled L<Net::Async::HTTP> request this closes its connection, so a request
-the client had already pipelined behind it on that keep-alive connection fails
-with C<Connection closed>; requests through other engines are unaffected.
+cancelled L<Net::Async::HTTP> request this closes its connection; the client
+Langertha builds does not pipeline, so requests queued behind it on the same
+engine wait for a connection of their own and are unaffected.
 
 =item * the synchronous L<Langertha::Request::SyncHTTP> fallback: LWP stops
 reading at once.
 
-=item * an injected client whose futures have no C<loop>: the rest of the body
-is read and discarded, and the future fails when the response ends.
+=item * an injected client whose futures have no C<loop> (or one without
+C<later>, from another event system): the rest of the body is read and
+discarded, and the future fails when the response ends. If the transfer then
+fails at the transport level, the future still fails with the original
+exception.
 
 =back
 
