@@ -42,6 +42,23 @@ tool_choice parameter (openai/anthropic/gemini/responses). The original exemplar
 of the value-object pattern the others now follow.
 _Avoid_: "tool_choice hash"
 
+**ServerTool**:
+A tool the *provider* runs during the request (web search, file search, remote
+MCP, ...), as `Langertha::ServerTool`: the provider-native hash, pinned to one
+`tool_wire_format` and never translated — `to($fmt)` croaks off its wire.
+Recognized by `Tool->classify` (`server`). Not a **Tool**: a Tool is a function
+the client runs. **ADR 0030**.
+_Avoid_: "built-in tool" (built-ins include client-executed ones), "hosted
+function"
+
+**Server tool call**:
+What the provider reports it ran for a ServerTool (`web_search_call`,
+`mcp_call`, ...), recorded as `Langertha::ServerToolCall` on
+`Response.server_tool_calls`. Never a **ToolCall**: `tool_calls` lists only
+calls the client must act on. It travels back unchanged in the **assistant
+echo**.
+_Avoid_: "server-side ToolCall"
+
 **Result envelope**:
 The provider-shaped *conversation elements* wrapping ToolResults for the next
 turn — arity differs (OpenAI/Ollama: N `role:tool` messages; Anthropic/Gemini:

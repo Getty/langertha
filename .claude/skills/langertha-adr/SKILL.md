@@ -89,6 +89,7 @@ the same change, or stops and reports.
 | Area | ADRs |
 |---|---|
 | Tool value objects, `tool_wire_format`, inbound `extract` / outbound `to` | 0001, 0010, `CONTEXT.md` |
+| Server-side tools (`ServerTool`, `server_tools`, `server_tool_calls`, citations) | 0030 |
 | `Response.tool_calls` as the single source | 0003 |
 | Structured output ↔ forced tool, the `chat_f` rewrite matrix | 0005 |
 | Capability registry, per-engine / per-model corrections, pairwise exclusions | 0002, 0019, 0021, 0024 |

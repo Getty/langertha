@@ -79,6 +79,7 @@ refactors:
 - **0027** — sync LWP fallback for the async `_f` transport (`Request::SyncHTTP`, backend selection in `Role::AsyncHTTP`); IO::Async/Net::Async::HTTP are `recommends`
 - **0028** — public hook surface for sibling dists: `async_request_f`, `async_loop` (`Maybe[loop]`), `langfuse_timestamp`, `Usage->from_raw`
 - **0029** — provider manifest v1 (`Langertha::Manifest`): strict structure, open values, no secrets, dialect vocabulary incl. `anthropic-compat`, model-scoped capability allowlist
+- **0030** — server-side tools are a wire-pinned value object (`Langertha::ServerTool`, croaks off its wire) + `Role::ServerTools`/`server_tools` flag; provider-executed calls go to `Response.server_tool_calls`, never `tool_calls`; citations merged, deduped by url without `utm_*`
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
@@ -139,7 +140,7 @@ Engine::Remote              url required, JSON + HTTP
   ├── Engine::OpenAIBase    /chat/completions format, Bearer auth, SSE streaming
   │     │  Cloud providers (url has default, api_key from env)
   │     ├── OpenAI          gpt-5.6 family + gpt-6-astra flagship, embeddings, whisper transcription, structured output
-  │     │     └── OpenAIResponses  /v1/responses API (reasoning models like gpt-5.5-pro); composes `Role::ResponsesCompatible` (`responses` tool/reasoning wire format — shared with Perplexity's Agent API); no streaming
+  │     │     └── OpenAIResponses  /v1/responses API (reasoning models like gpt-5.5-pro); composes `Role::ResponsesCompatible` (`responses` tool/reasoning wire format — shared with Perplexity's Agent API) + `Role::ServerTools` (OpenAI hosted tools); no streaming
   │     ├── DeepSeek        deepseek-flash (V4.1) / v4-pro, structured output
   │     ├── Groq            ultra-fast inference, whisper transcription, structured output
   │     ├── XAI             xAI Grok (grok-4.7), 500K context, agentic tool calling
@@ -218,6 +219,8 @@ delete the inapplicable flag for their family. → **ADR 0015**.
   (vLLM, SGLang, llama.cpp). URL derived by stripping the trailing `/v1` from the engine's
   `url`; Ollama is intentionally not composed (its stats live at `/api/ps` in JSON).
   → **ADR 0014**.
+- **ServerTools** — `server_tools` capability + per-engine default server-side tools, composed by
+  `OpenAIResponses` (the `_server_tool_wire_check` hook carries provider divergence). → **ADR 0030**.
 - **SystemPrompt**, **Temperature**, **ResponseSize**, **ContextSize**, **Seed**,
   **ResponseFormat** (`decode_loose_json`), **Models**, **ParallelToolUse**.
 - **ReasoningEffort** (`reasoning_effort`) · **PromptCache** (`prompt_cache` / `prompt_cache_key`)
@@ -242,6 +245,9 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **Langertha::Tool / ToolCall / ToolResult / ToolChoice** — canonical tool wire-translation
   value objects, dispatched by `tool_wire_format`. Definitions, calls, result blocks, and
   selection policy each own their per-format serializers. → **ADR 0001**, `CONTEXT.md`.
+- **Langertha::ServerTool / ServerToolCall** — provider-native server-side tools (web search,
+  remote MCP, …) pinned to one `tool_wire_format` (Phase 1: `responses`), and the record of a
+  call the provider ran (`Response.server_tool_calls`). → **ADR 0030**.
 - **Langertha::Reasoning / PromptCache** — request-side control value objects (reasoning effort,
   prompt caching); per-format serializers dispatched by `reasoning_wire_format` /
   `cache_wire_format`. → **ADR 0009**.

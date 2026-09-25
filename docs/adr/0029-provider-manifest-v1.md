@@ -151,3 +151,13 @@ Design spec: `docs/superpowers/specs/2026-09-25-provider-manifest-design.md`.
   `tools_native`, plus `anthropic-compat`). Tracked as karr k198 (tagged `raider`).
 - Fetch limits, origin rules and RFC 8615 registration belong to Raider and to publication,
   not to core.
+
+## Update (k206 — `server_tools` joins the model capability allowlist)
+
+`server_tools` (ADR 0030, from `Role::ServerTools`) describes a chat call to a model — the
+request may carry provider-native server-side tools — so it joins `@MODEL_CAPABILITIES` and is
+evaluated per model (a layer-3 correction can clear it). Known v1 limitation: the manifest says
+*that* a model takes server tools, not *which* types; a client must still expect a provider 400
+for a type the model does not offer. No dialect row changes: `OpenAIResponses` already maps to
+`responses`. The `XAIResponses` row (it isa `OpenAIBase`, so it would read `openai-chat`) comes
+with that engine in Phase 1b.

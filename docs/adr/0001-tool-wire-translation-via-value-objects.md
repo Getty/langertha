@@ -173,3 +173,17 @@ resolve to the same `Langertha::Tool` (value-object inbound door, ADR 0018 tier 
 form's behavior is unchanged. `t/92_tool_input_forms.t` pins the flat form through the same
 table as every other accepted form and checks its `format_list` output is identical to the
 nested form's on every wire.
+
+## Update (k206 — server-side tools get their own wire-pinned value object)
+
+The interim "server-side tools are not supported yet" croak of the k210 Update is resolved for
+the `responses` wire by `Langertha::ServerTool` (ADR 0030): the fifth tool value object, keyed
+by the same `tool_wire_format`, carrying the provider-native hash and croaking on every other
+wire. `Tool->format_list($fmt, …)` keeps a server tool of `$fmt` in place; `Tool->from_hash`
+stays function-only (its server-side croak now points at `ServerTool`). Recognition reuses
+`classify`, so the two objects cannot disagree. The inbound mirror of the client-executed
+denylist — Responses output items the client must answer and Langertha does not map
+(`custom_tool_call`, `computer_call`, `local_shell_call`, `apply_patch_call`,
+`mcp_approval_request`, a client `tool_search_call`) — sits next to it in `Tool.pm` and croaks
+in the Responses walker and in `ToolCall->locate('responses')`, closing the gap the k210 Update
+named for `custom`. Anthropic and Gemini server tools still croak at the door (Phase 2).

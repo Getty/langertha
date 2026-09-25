@@ -51,3 +51,14 @@ caller might legitimately want — provenance — without leaking the mechanism.
 - Streaming follows the same rule: `Stream::Chunk` carries an optional `tool_calls` field and
   `Role::Chat::aggregate_tool_calls(\@chunks)` collects them into the same `Langertha::ToolCall`
   list, so streamed and non-streamed responses converge on one representation.
+
+## Update (k206 — `tool_calls` means "calls the client must act on"; provider-executed calls go to `server_tool_calls`)
+
+`chat_with_tools_f` dispatches every entry of `tool_calls` to an MCP server by name and dies on
+a miss; Raider and `chat_f` callers act on them the same way. A tool call the *provider* already
+ran during the request (a `web_search_call`, an `mcp_call`, …) must therefore never land there.
+Such calls are recorded on the new `Response.server_tool_calls`
+(`ArrayRef[Langertha::ServerToolCall]`, ADR 0030): a record of what happened, with the wire item
+verbatim, not an instruction and not a second tool-call representation. `ToolCall->locate`
+never returns a server call item (tested against the verbatim OpenAI captures). `synthetic`
+still records provenance only; it never means "don't execute".

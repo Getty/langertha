@@ -6,6 +6,34 @@ Revision history for Langertha
       response_format, as they do for every named model, instead of sending
       the request the provider rejects.
 
+    - New: server-side tools on OpenAIResponses. OpenAI's hosted tools
+      (web_search, file_search, code_interpreter, image_generation, remote
+      mcp, hosted shell and tool_search) go in the tools list of chat_f,
+      mixed with function tools, as native hashes or Langertha::ServerTool
+      objects, or once on the engine with server_tools => [...], which also
+      covers simple_chat and chat_with_tools_f. supports('server_tools') and
+      the provider manifest tell which engines take them (OpenAIResponses
+      only so far). What the provider ran lands on the new
+      Response->server_tool_calls (Langertha::ServerToolCall records, item
+      verbatim) and never on tool_calls, so chat_with_tools_f runs only
+      function calls and echoes the server items back unchanged. The
+      answer's url_citation annotations land on Response->citations as
+      { url, title, start_index, end_index }, one entry per page (compared
+      without utm_* parameters; the url itself is kept). A remote mcp tool
+      must set require_approval => 'never', and a ServerTool on an engine
+      without the capability croaks before the request is sent. Built on
+      three recorded OpenAI replies (gpt-5.6-luna).
+
+    - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
+      item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,
+      computer_call, local_shell_call, apply_patch_call and a client-side
+      tool_search_call. Such a turn used to end as if the model were done.
+
+    - Role::ResponsesCompatible sends max_output_tokens only when the engine
+      supports('response_size'). No shipped engine is affected; it lets a
+      model that rejects the field clear the flag.
+
+
     - MoonshotAnthropic on kimi-k3 sends a json_schema response_format
       natively as output_config.format, like first-party Anthropic, instead
       of a synthetic tool with a forced tool_choice; it can now be streamed.
@@ -83,11 +111,12 @@ Revision history for Langertha
     - Langertha::Tool->from_hash, from_list and format_list now croak on a
       tool hash that is not a function tool, instead of dropping it or sending
       it as a function tool. That includes server-side tools (web_search,
-      Anthropic's web_search_20250305, Gemini's google_search, ...), which are
-      not supported yet, client-executed built-ins, unknown types, and hashes
-      with neither type nor name (such as a functionDeclarations wrapper). The
-      new Langertha::Tool->classify($hash, $fmt) reports the kind of tool
-      without croaking, so a gateway can reject a request cleanly.
+      Anthropic's web_search_20250305, Gemini's google_search, ...),
+      client-executed built-ins, unknown types, and hashes with neither type
+      nor name (such as a functionDeclarations wrapper). format_list keeps a
+      server-side tool of the wire it formats (see Langertha::ServerTool
+      below). The new Langertha::Tool->classify($hash, $fmt) reports the kind
+      of tool without croaking, so a gateway can reject a request cleanly.
     - Langertha::Tool->from_hash / from_list / format_list now accept the flat
       OpenAI Responses function-tool form, whose name, description and
       parameters sit directly on the tool hash, not only Chat Completions'
@@ -95,8 +124,9 @@ Revision history for Langertha
       dropped on every wire except the Responses envelope, which already
       passed it through verbatim.
     - OpenAIResponses decides tool by tool, in any order: flat function tools,
-      its server-side tools and any other typed tool (custom, namespace, hosted
-      shell, types Langertha does not know) go out verbatim, and other
+      its server-side tools (see Langertha::ServerTool below) and any other
+      typed tool (custom, namespace, types Langertha does not know) go out
+      verbatim, and other
       function-tool forms are converted. Incompatible change: the
       client-executed built-ins local_shell, computer, computer_use_preview,
       apply_patch, a shell outside a container_auto / container_reference

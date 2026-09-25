@@ -186,3 +186,16 @@ The event names and shapes are from OpenAI's streaming-events reference (fetched
 no real SSE capture of a Responses tool-call stream exists yet, and xAI's event names wait on the
 k206 capture. Test: `t/43_responses_stream_tool_calls.t` (the stream is built from the documented
 events around the verbatim non-streaming capture `responses_web_search_function_call.json`).
+
+## Update (k206 — server tools, citations merge, `max_output_tokens` gate in the shared envelope)
+
+Three envelope-level changes from ADR 0030. (1) Both body builders run the `tools` kwarg through
+one per-item step (`_responses_tools_kwarg`), which also appends the engine's `server_tools` and
+routes a server tool through `Langertha::ServerTool` and the engine hook
+`_server_tool_wire_check` — a sixth, capability-scoped divergence point in the same shape as
+the five. (2) A `citations` key from `_responses_extra_fields` no longer passes through
+blindly: `_responses_merge_citations` merges it with the answer's `url_citation` annotations
+(hook first, one entry per page); with no annotations the hook's list is returned unchanged, so
+Perplexity is unaffected. (3) `max_output_tokens` is sent only when
+`supports('response_size')` (a no-op for the shipped consumers). The output walker also croaks
+on a client-actionable item it does not map, on the reply and on the stream's final chunk.
