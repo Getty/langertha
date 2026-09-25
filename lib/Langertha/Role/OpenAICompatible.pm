@@ -525,9 +525,14 @@ sub chat_response {
   # the k290 embedding/image croaks. -- karr k301
   my $choice = ref $data eq 'HASH' && ref $data->{choices} eq 'ARRAY' ? $data->{choices}[0] : undef;
   unless ( ref $choice eq 'HASH' ) {
-    my $error = $self->_openai_body_error($data);
+    my $error = $self->_body_error_text( ref $data eq 'HASH' ? $data->{error} : undef );
     croak "".(ref $self)." response carried an error: $error" if defined $error;
     croak "".(ref $self)." response contained no choices";
+  }
+  # OpenRouter reports a provider failure inside the choice (its `error`,
+  # finish_reason 'error'); that parsed to an empty success. -- karr k311
+  if ( defined( my $error = $self->_openai_choice_error( $data, $choice ) ) ) {
+    croak "".(ref $self)." response carried an error: $error";
   }
   my $msg = $choice->{message} || {};
   # The OpenAI-compatible response envelope is always OpenAI-shaped, even for
@@ -572,16 +577,17 @@ sub chat_response {
   );
 }
 
-# "message (code)" of an `error` in an OpenAI-shaped body (an object with
-# message/code, or a plain string), undef when there is none. -- karr k301
-sub _openai_body_error {
-  my ( $self, $data ) = @_;
-  return undef unless ref $data eq 'HASH' && defined $data->{error};
-  my $err = $data->{error};
-  return "$err" unless ref $err eq 'HASH';
-  my $message = defined $err->{message} && !ref $err->{message} ? $err->{message} : 'no error message';
-  my $code = defined $err->{code} && !ref $err->{code} ? " ($err->{code})" : '';
-  return "$message$code";
+# The error a choice reports, as "message (code)", or undef: the choice's own
+# `error` (OpenRouter's NonStreamingChoice / StreamingChoice `error`), or a
+# top-level `error` beside a choice whose finish_reason is 'error' --
+# OpenRouter's documented mid-stream failure frame. Shapes:
+# https://openrouter.ai/docs/api-reference/overview and .../errors -- k311
+sub _openai_choice_error {
+  my ( $self, $data, $choice ) = @_;
+  return $self->_body_error_text( $choice->{error} ) if defined $choice->{error};
+  return $self->_body_error_text( $data->{error} )
+    if defined $data->{error} && ( $choice->{finish_reason} // '' ) eq 'error';
+  return undef;
 }
 
 =method chat_response
@@ -610,8 +616,11 @@ null) becomes L<Langertha::Response/refusal>.
 A body without a choice is not an answer and croaks, naming the engine: with
 an C<error> object (gateways such as OpenRouter return one in a 200 body)
 C<"E<lt>engineE<gt> response carried an error: E<lt>messageE<gt> (E<lt>codeE<gt>)">,
-otherwise C<"E<lt>engineE<gt> response contained no choices">. Only
-C<choices[0]> is read.
+otherwise C<"E<lt>engineE<gt> response contained no choices">. A choice
+carrying an C<error> object, or a top-level C<error> beside a choice whose
+C<finish_reason> is C<error> (OpenRouter reports a provider failure this
+way), croaks the same C<response carried an error>. Only C<choices[0]> is
+read.
 
 =cut
 
@@ -773,7 +782,14 @@ sub parse_stream_chunk {
   # as a short, silent success; the croak fails the stream future, as the
   # Responses parser does for its error events. -- karr k301
   if ( defined $data->{error} && !( ref $data->{choices} eq 'ARRAY' && @{ $data->{choices} } ) ) {
-    croak "".(ref $self)." stream carried an error: ".$self->_openai_body_error($data);
+    croak "".(ref $self)." stream carried an error: ".$self->_body_error_text( $data->{error} );
+  }
+  # OpenRouter's mid-stream failure frame keeps a choice (delta content '',
+  # finish_reason 'error') beside the error, or puts the error on the choice;
+  # both ended the stream as a silent success. -- karr k311
+  if ( ref $data->{choices} eq 'ARRAY' && ref $data->{choices}[0] eq 'HASH'
+    && defined( my $error = $self->_openai_choice_error( $data, $data->{choices}[0] ) ) ) {
+    croak "".(ref $self)." stream carried an error: $error";
   }
 
   # With stream_options.include_usage (OpenAI; vLLM and SGLang emit it too) the
@@ -914,7 +930,9 @@ L<Langertha::Role::Chat/aggregate_usage>. Returns C<undef> only when the
 payload carries neither a choice nor a usage block. A frame with a top-level
 C<error> object and no choice (a gateway failing mid-stream) croaks
 C<"E<lt>engineE<gt> stream carried an error: E<lt>messageE<gt> (E<lt>codeE<gt>)">,
-which fails the stream. A C<delta.refusal> fragment lands on the chunk's
+which fails the stream; so does a choice carrying an C<error> object, or a
+top-level C<error> beside a choice with C<finish_reason> C<error>
+(OpenRouter's mid-stream failure frame). A C<delta.refusal> fragment lands on the chunk's
 C<refusal>.
 
 C<delta.tool_calls> fragments are assembled per C<index> (a fragment without

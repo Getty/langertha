@@ -26,6 +26,12 @@ Revision history for Langertha
       gemini-embedding-001, task_type / title / output_dimensionality go
       into embedContentConfig). Both answer supports('embedding').
 
+    - Provider errors inside an otherwise well-formed answer croak too: an
+      OpenAI-compatible choice carrying an error object (OpenRouter), a
+      stream frame with an error beside a choice finishing with "error", and
+      a Responses API body with an error and no output. A blocked Gemini
+      prompt ends a stream with its blockReason as finish_reason.
+
     - A chat answer without a choice is no longer an empty Response: an
       OpenAI-compatible 200 body with an error object (as gateways such as
       OpenRouter send) or no choices croaks, naming the engine and the error,

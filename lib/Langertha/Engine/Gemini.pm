@@ -547,15 +547,10 @@ sub chat_response {
     # A block is an answer, so it is reported as finish_reason, verbatim like
     # a candidate's finishReason (SAFETY, PROHIBITED_CONTENT, ...). Anything
     # else without a candidate is no answer and croaks. -- karr k301
-    my $feedback = ref $data->{promptFeedback} eq 'HASH' ? $data->{promptFeedback} : {};
-    $finish_reason = $feedback->{blockReason};
-    unless ( defined $finish_reason && !ref $finish_reason && length $finish_reason ) {
-      my $err = $data->{error};
-      croak "".(ref $self)." response carried an error: "
-        . ( ref $err eq 'HASH'
-          ? ( $err->{message} // 'no error message' ) . ( defined $err->{code} && !ref $err->{code} ? " ($err->{code})" : '' )
-          : $err )
-        if defined $err;
+    $finish_reason = $self->_gemini_block_reason($data);
+    unless ( defined $finish_reason ) {
+      my $error = $self->_body_error_text( $data->{error} );
+      croak "".(ref $self)." response carried an error: $error" if defined $error;
       croak "".(ref $self)." response contained no candidates";
     }
   }
@@ -599,6 +594,15 @@ sub chat_response {
   );
 }
 
+# promptFeedback.blockReason of a candidate-less answer (a blocked prompt),
+# undef when there is none. -- karr k301, k311
+sub _gemini_block_reason {
+  my ( $self, $data ) = @_;
+  my $feedback = ref $data->{promptFeedback} eq 'HASH' ? $data->{promptFeedback} : {};
+  my $reason = $feedback->{blockReason};
+  return defined $reason && !ref $reason && length $reason ? $reason : undef;
+}
+
 =method chat_response
 
     my $response = $engine->chat_response($http_response);
@@ -608,7 +612,8 @@ first candidate; C<finish_reason> is its C<finishReason> as Gemini spells it.
 A blocked prompt (no candidate, C<promptFeedback.blockReason>) is an answer
 with C<content> C<''> and the C<blockReason> as C<finish_reason> (e.g.
 C<SAFETY>). A body with neither croaks, naming the engine and any C<error> it
-carries.
+carries. On a stream, the blocked prompt's chunk is the final chunk, with
+C<content> C<''> and the C<blockReason> as C<finish_reason>.
 
 =cut
 
@@ -739,7 +744,20 @@ sub parse_stream_chunk {
 
   # Gemini streaming format is similar to non-streaming
   my $candidates = $data->{candidates} || [];
-  return undef unless @$candidates;
+  unless (@$candidates) {
+    # A blocked prompt streams a chunk with promptFeedback.blockReason and no
+    # candidate. Skipping it ended the stream without a finish_reason; it is
+    # the final chunk, reported like chat_response does (k301). -- karr k311
+    my $block_reason = $self->_gemini_block_reason($data);
+    return undef unless defined $block_reason;
+    return Langertha::Stream::Chunk->new(
+      content       => '',
+      raw           => $data,
+      is_final      => 1,
+      finish_reason => $block_reason,
+      $data->{usageMetadata} ? ( usage => $data->{usageMetadata} ) : (),
+    );
+  }
 
   my $candidate = $candidates->[0];
   my $content = $candidate->{content} || {};

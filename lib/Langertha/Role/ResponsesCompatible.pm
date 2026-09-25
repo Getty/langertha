@@ -475,6 +475,14 @@ sub chat_response {
     my ( $self, $response ) = @_;
     my $data = $self->parse_response($response);
 
+    # A 200 body with an `error` object and no output (a failed response) is
+    # no answer; it parsed to an empty Response. Croak like the k301
+    # OpenAI-compatible parser. -- karr k311
+    if ( ref $data eq 'HASH' && defined $data->{error}
+        && !( ref $data->{output} eq 'ARRAY' && @{ $data->{output} } ) ) {
+        croak "".( ref $self )." response carried an error: ".$self->_body_error_text( $data->{error} );
+    }
+
     my %out = $self->_responses_walk_output($data);
     my %extra = $self->_responses_extra_fields($data);
     my $citations = $self->_responses_merge_citations( delete $extra{citations}, $out{citations} );
@@ -548,6 +556,10 @@ C<tool_search_call>) croaks.
 
 A C<refusal> content part of a message becomes L<Langertha::Response/refusal>
 (on a stream, the final chunk's C<refusal>).
+
+A body with an C<error> object and an empty or missing C<output> is not an
+answer and croaks
+C<"E<lt>engineE<gt> response carried an error: E<lt>messageE<gt> (E<lt>codeE<gt>)">.
 
 =cut
 

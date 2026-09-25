@@ -219,6 +219,20 @@ sub _request_failed_message {
     .( length $body ? " - ".$body : "" );
 }
 
+# "message (code)" of an `error` a provider put into a 200 body: an object
+# with message/code, the same nested once more under `error`, or a plain
+# string; undef when there is none. Shared by the chat parsers that croak on
+# such a body (karr k301, k311).
+sub _body_error_text {
+  my ( $self, $err ) = @_;
+  return undef unless defined $err;
+  $err = $err->{error} if ref $err eq 'HASH' && ref $err->{error} eq 'HASH';
+  return "$err" unless ref $err eq 'HASH';
+  my $message = defined $err->{message} && !ref $err->{message} ? $err->{message} : 'no error message';
+  my $code = defined $err->{code} && !ref $err->{code} ? " ($err->{code})" : '';
+  return "$message$code";
+}
+
 sub parse_response {
   my ( $self, $response ) = @_;
   # Every response, error or not, replaces the engine's rate limit first: a
