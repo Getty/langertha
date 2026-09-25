@@ -200,18 +200,20 @@ my $openai_reply = $json->encode( { id => 'x', object => 'chat.completion', crea
 }
 
 # --- Sync LWP fallback: the fetch rides the engine's own user_agent ---
+# (the image GET goes through a copy of it restricted to http/https, karr
+# k325, so it is recognised by its settings rather than by identity)
 {
-  my $ua = LWP::UserAgent->new;
+  my $ua = LWP::UserAgent->new( agent => 'k274-engine-ua' );
   my $e = Langertha::Engine::OllamaOpenAI->new( url => "$base/v1", model => 'm', user_agent => $ua,
     _async_http => Langertha::Request::SyncHTTP->new( user_agent => $ua ) );
   my @via;
   { no warnings 'redefine'; my $orig = \&LWP::UserAgent::request;
-    local *LWP::UserAgent::request = sub { push @via, [ $_[0] == $ua, $_[1]->uri->path ]; goto &$orig };
+    local *LWP::UserAgent::request = sub { push @via, [ $_[0]->agent, $_[1]->uri->path ]; goto &$orig };
     my $r = $e->chat_f( messages => [ { role => 'user', content => [
       Langertha::Content::Image->from_url("$base/a.png") ] } ] )->get;
     is "$r", data_url('/a.png'), 'sync fallback: image inlined';
   }
-  is_deeply \@via, [ [ 1, '/a.png' ], [ 1, '/v1/chat/completions' ] ],
+  is_deeply \@via, [ [ 'k274-engine-ua', '/a.png' ], [ 'k274-engine-ua', '/v1/chat/completions' ] ],
     '... fetched through the backend (engine user_agent), before the chat request';
 }
 

@@ -10,6 +10,13 @@ Revision history for Langertha
       events fill the chunks' thinking, so aggregate_thinking returns the same
       text a non-streamed call puts on Response.thinking.
 
+    - Security: Langertha::Content::Image fetches only http and https image
+      URLs (data: URLs are decoded in process). A file:, ftp: or other URL,
+      given to from_url or as an image_url part in a message, croaks before
+      any I/O instead of sending a local file to the provider, and a redirect
+      to another scheme is not followed. Restricting private hosts (SSRF)
+      remains the caller's job.
+
     - Langertha::Embedder and Langertha::ImageGen have simple_embedding_result
       and simple_image_result (each with an _f variant): the wrapper's
       overrides and plugin hooks around the engine's CallResult. The

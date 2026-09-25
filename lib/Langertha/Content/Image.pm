@@ -11,6 +11,10 @@ use Scalar::Util qw( blessed );
 
 with 'Langertha::Content';
 
+# The only schemes the inline fetch talks to (karr k325). data: URLs are
+# decoded locally, everything else croaks before any I/O.
+my @FETCH_SCHEMES = qw( http https );
+
 =head1 SYNOPSIS
 
     use Langertha::Content::Image;
@@ -147,6 +151,7 @@ sub BUILD {
 sub from_url {
   my ( $class, $url, %extra ) = @_;
   croak "from_url requires a URL" unless defined $url && length $url;
+  $class->_check_fetch_scheme($url) unless _is_data_url($url);
   my $media_type = $extra{media_type} // _sniff_media_type($url);
   return $class->new(
     url => $url,
@@ -162,6 +167,13 @@ sub from_url {
 
 Builds an image block referencing a remote URL. Media type is sniffed from
 the URL extension when not provided.
+
+Only C<http>, C<https> and C<data:> URLs are accepted. Any other scheme
+(C<file>, C<ftp>, C<gopher>, ...) croaks here, before any I/O, because the
+engines that have to inline images would otherwise read it (a C<file:> URL
+from a caller's message would send a server-local file to the provider). For
+a local file use L</from_file>. See L</ensure_base64> for what the fetch does
+not protect against.
 
 =cut
 
@@ -238,11 +250,15 @@ sub ensure_base64 {
   my ( $self, %opt ) = @_;
   return $self->base64 if $self->has_base64;
   croak "ensure_base64: no url to fetch" unless $self->has_url;
+  return $self->_inline_data_url if _is_data_url($self->url);
+  $self->_check_fetch_scheme($self->url);
 
   my $secs = $opt{timeout} // 30;
   require LWP::UserAgent;
+  # protocols_allowed also stops a redirect to any other scheme (karr k325).
   my $ua = LWP::UserAgent->new(
     agent => 'Langertha-Content-Image/'.$VERSION,
+    protocols_allowed => [@FETCH_SCHEMES],
     ( $secs ? ( timeout => $secs ) : () ),
   );
   return $self->_inline_fetched( $ua->get($self->url) );
@@ -257,8 +273,19 @@ async sub ensure_base64_f {
   my ( $self, $http ) = @_;
   return $self->base64 if $self->has_base64;
   croak "ensure_base64_f: no url to fetch" unless $self->has_url;
+  return $self->_inline_data_url if _is_data_url($self->url);
+  $self->_check_fetch_scheme($self->url);
   croak "ensure_base64_f requires a client with do_request"
     unless blessed($http) && $http->can('do_request');
+  # The sync LWP shim runs the engine's own user_agent, which allows every
+  # scheme LWP knows: fetch through a copy restricted like ensure_base64's, so
+  # a redirect to another scheme is refused on this path too (karr k325).
+  if ( $http->isa('Langertha::Request::SyncHTTP')
+    && blessed( $http->user_agent ) && $http->user_agent->isa('LWP::UserAgent') ) {
+    my $ua = $http->user_agent->clone;
+    $ua->protocols_allowed([@FETCH_SCHEMES]);
+    $http = Langertha::Request::SyncHTTP->new( user_agent => $ua );
+  }
 
   my $url = $self->url;
   require HTTP::Request;
@@ -277,6 +304,10 @@ sub _inline_fetched {
   my ( $self, $response ) = @_;
   croak "ensure_base64: failed to fetch ".$self->url.": ".$response->status_line
     unless $response->is_success;
+  # Whatever client ran the fetch, a body that came from another scheme (a
+  # redirect it followed) is never stored (karr k325).
+  my $final = $response->request && $response->request->uri;
+  $self->_check_fetch_scheme("$final") if defined $final;
 
   $self->base64(encode_base64($response->decoded_content(charset => 'none'), ''));
   unless ($self->has_media_type) {
@@ -297,6 +328,19 @@ Returns the base64 payload, fetching the URL over HTTP if necessary.
 Populates C<media_type> from the response C<Content-Type> header when the
 image was URL-only. Caches the result on the object.
 
+Only C<http> and C<https> URLs are fetched; a C<data:> URL is decoded locally.
+Any other scheme croaks before any I/O:
+
+    Langertha::Content::Image refuses to fetch image URL with scheme 'file'
+    (only http/https; use Content::Image->from_file for local files)
+
+A redirect to another scheme is not followed, and a fetch that ended on one
+anyway is not stored. The fetch does B<not> restrict which hosts an C<http>
+URL may point at: requests to private or internal addresses (SSRF) are the
+caller's responsibility. When image URLs come from untrusted input and the
+engine has to inline images, validate the host before the message reaches the
+engine, or pass images as base64.
+
 The fetch is a blocking L<LWP::UserAgent> GET that gives up after
 C<timeout> seconds of inactivity, C<30> by default. When
 L<Langertha::Role::Chat> builds a request it passes the engine's
@@ -314,6 +358,10 @@ The async L</ensure_base64>: returns a L<Future> of the base64 payload and
 fetches the URL through C<$http>, any client that answers the async
 C<do_request> contract (L<Langertha::Role::AsyncHTTP>), instead of a blocking
 L<LWP::UserAgent>. A transport error or a non-success status fails the Future.
+The scheme rules of L</ensure_base64> apply unchanged: a non-HTTP(S) URL fails
+the Future before any request, a C<data:> URL is decoded locally, and on the
+synchronous LWP fallback (L<Langertha::Request::SyncHTTP>) the fetch runs over
+a copy of its user agent restricted to C<http> and C<https>.
 The C<_f> methods of L<Langertha::Role::Chat> call it with the engine's backend
 for every URL image the engine has to inline, before the request is built.
 
@@ -529,6 +577,33 @@ C<TO_JSON>.
 =cut
 
 # --- Helpers ---
+
+sub _is_data_url { defined $_[0] && $_[0] =~ /\Adata:/i }
+
+sub _check_fetch_scheme {
+  my ( $self, $url ) = @_;
+  my ($scheme) = $url =~ /\A([a-zA-Z][a-zA-Z0-9+.\-]*):/;
+  return if defined $scheme && grep { lc $scheme eq $_ } @FETCH_SCHEMES;
+  my $class = ref $self || $self;
+  croak "$class refuses to fetch image URL "
+    . ( defined $scheme ? "with scheme '$scheme'" : 'without a scheme' )
+    . " (only http/https; use Content::Image->from_file for local files)";
+}
+
+# Decodes a data: URL image in process, no I/O.
+sub _inline_data_url {
+  my ($self) = @_;
+  require URI;
+  my $uri = URI->new( $self->url );
+  my $bytes = $uri->data;
+  croak "ensure_base64: cannot decode data: URL" unless defined $bytes;
+  $self->base64( encode_base64( $bytes, '' ) );
+  unless ( $self->has_media_type ) {
+    ( my $ct = $uri->media_type // '' ) =~ s/;.*$//;
+    $self->media_type($ct) if length $ct;
+  }
+  return $self->base64;
+}
 
 # detail => ... out of a from_* constructor's %extra; undef means unset.
 sub _detail_arg {
