@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T02:23:21Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T02:23:21Z
+created: 2026-09-25T01:30:49Z
+id: 205
+priority: low
+started: 2026-09-25T01:49:31Z
+status: done
+tags:
+- xai
+- models
+title: 'XAI: Default-Modell grok-4.6 -> grok-4.7 pruefen, POD ''Flagship'' aktualisieren'
+updated: 2026-09-25T02:23:21Z
+---
+
+Aus k202 (langertha-llm-advisor, 2026-09-25): docs.x.ai listet grok-4.7 als neuestes Modell; Engine::XAI defaultet auf grok-4.6 und nennt 4.6 im POD Flagship. Vor Default-Wechsel: Modell-Verfuegbarkeit/Preis/Kontext pruefen (llm-advisor), dann Default + POD + CLAUDE.md-Engine-Map. Kein Live-Call ohne Gettys OK.
+
+llm-advisor 2026-09-25 (docs only, no live call). VERDICT: CHANGE default grok-4.6 -> grok-4.7. Evidence: (1) GA on the API: docs.x.ai/docs/models (last updated 2026-09-21) lists grok-4.7 as the only chat model ('New', 'use Grok 4.7 for code and chat'); launched 2026-09-21 across the API, Cursor and OpenRouter (press, 2026-09-22); no preview or waitlist wording. (2) Specs are identical to 4.6 per docs.x.ai/developers/models/grok-4.7 vs /grok-4.6 (both fetched 2026-09-25): 500K context, $2 in / $0.50 cached / $6 out per 1M, higher rate above 200K, function calling + structured outputs + reasoning, reasoning_effort low|medium|high|xhigh (default high, cannot be disabled), us-east-1, no Batch API, 150 rps / 50M tpm. The only differences are on /v1/responses: 4.7 ALWAYS returns reasoning.encrypted_content and exposes summarized reasoning; knowledge cutoff May 2026. Chat Completions is unaffected. (3) Stable id: 'grok-4.7' is the model name itself. It is not a -latest alias and has no dated sibling (xAI alias policy on docs.x.ai/docs/models: <name>-latest moves, <name>-<date> is pinned). The same risk class as grok-4.6 today. Files to touch: lib/Langertha/Engine/XAI.pm (default_model l.78, SYNOPSIS model l.17, DESCRIPTION flagship paragraph l.38-43; also re-verify the grok-4.5/grok-4.3/grok-build-0.1 'remain selectable' claims, because the models page now lists only 4.7), CLAUDE.md l.145 engine map, t/10_engine_hierarchy.t l.400-408 (asserts the default), Changes entry. t/78_xai_prompt_cache_key.t pins grok-4.6 explicitly, so it can stay. SIDE FINDING (separate ticket filed): XAI emits reasoning_effort as a passthrough, so none/minimal/max reach the wire unchanged, while xAI accepts only low|medium|high|xhigh ('reasoning cannot be disabled'). No grok row exists in Reasoning::Profile.
+
+2026-09-25 02:07 Done on wire-bundle, 13764a4. default_model/SYNOPSIS/flagship POD/CLAUDE.md engine map now grok-4.7; the 'grok-4.5/4.3/grok-build-0.1 remain selectable' claim is softened (the models page lists only 4.7): POD names grok-4.6 as the previous default and points at docs.x.ai. t/10 asserts the new default. t/47 golden: the 26 XAI|default rows, model id only.
