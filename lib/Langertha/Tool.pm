@@ -86,12 +86,71 @@ sub from_hash {
   my ($class, $hash) = @_;
   return $hash if ref($hash) && eval { $hash->isa(__PACKAGE__) };
   return undef unless ref($hash) eq 'HASH';
+  $class->_croak_unless_function_tool($hash);
   return $class->from_openai($hash)    if ( $hash->{type} // '' ) eq 'function';
   return $class->from_mcp($hash)       if ref( $hash->{inputSchema} )  eq 'HASH';
   return $class->from_anthropic($hash) if ref( $hash->{input_schema} ) eq 'HASH';
   return $class->from_gemini($hash)    if ref( $hash->{parameters} )   eq 'HASH';
   # Last resort: name-only / schemaless
   return $class->from_anthropic($hash);
+}
+
+# Only function tools pass this door; since k210 (ADR 0001) everything else
+# croaks instead of being dropped or turned into a function tool. A function
+# tool is recognised by its `type`, never by guessing from the shape: none
+# (canonical / MCP / Gemini / Anthropic client tool), `function` (OpenAI), or
+# `custom` WITH an input_schema (Anthropic's explicit spelling of a client
+# tool; OpenAI's `custom` is a freeform-grammar tool and has none).
+#
+# Server-side tools are recognised explicitly, per wire, so the croak can say
+# what it is; they get their own value object with karr k206. Any other
+# non-function `type` -- including client-executed built-ins such as
+# local_shell, computer_use_preview, apply_patch, bash_*, and OpenAI's
+# custom / namespace -- is an unsupported tool type here. (The Responses
+# envelope passes its own native items through verbatim before they reach
+# this door: Role::ResponsesCompatible::_is_native_responses_tool.)
+my %RESPONSES_SERVER_TYPE = map { $_ => 1 } qw(
+  web_search file_search code_interpreter image_generation mcp
+  x_search collections_search
+);
+my @GEMINI_SERVER_KEY = qw(
+  google_search googleSearch code_execution codeExecution
+  url_context urlContext google_maps googleMaps
+);
+
+# Returns ($wire, $label) for a known server-side tool hash, else ().
+sub _server_tool_wire {
+  my ($class, $hash) = @_;
+  return () unless ref($hash) eq 'HASH';
+  my $type = $hash->{type} // '';
+  if ( length $type ) {
+    return ( responses => $type )
+      if $RESPONSES_SERVER_TYPE{$type}
+      || $type =~ /\Aweb_search_preview/
+      || ( $type eq 'tool_search' && ( $hash->{execution} // '' ) eq 'server' );
+    return ( anthropic => $type )
+      if $type =~ /\A(?:web_search|web_fetch|code_execution)_\d{8}\z/;
+    return ();
+  }
+  # Gemini built-ins are keyed, not typed: { google_search => {} }.
+  for my $key (@GEMINI_SERVER_KEY) {
+    return ( gemini => $key ) if exists $hash->{$key};
+  }
+  return ();
+}
+
+sub _croak_unless_function_tool {
+  my ($class, $hash) = @_;
+  if ( my ( $wire, $label ) = $class->_server_tool_wire($hash) ) {
+    croak "Langertha::Tool: '$label' is a server-side tool ($wire), and "
+      . "server-side tools are not supported yet (refusing to drop it or "
+      . "send it as a function tool)";
+  }
+  my $type = $hash->{type} // '';
+  return if $type eq '' || $type eq 'function';
+  return if $type eq 'custom' && ref( $hash->{input_schema} ) eq 'HASH';
+  croak "Langertha::Tool: unsupported tool type '$type': not a function tool "
+    . "(refusing to drop it or send it as a function tool)";
 }
 
 # Build from a list of any-shape hashrefs and skip ones that don't parse.

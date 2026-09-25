@@ -25,6 +25,17 @@ Revision history for Langertha
       reasoning off; the server default (high) applies. Taken from xAI's
       documentation, not verified against the live API.
 
+    - Langertha::Tool->from_hash, from_list and format_list now croak on a
+      tool hash that is not a function tool instead of dropping it or sending
+      it as a function tool. Known server-side tools (such as web_search,
+      Anthropic's web_search_20250305 or Gemini's google_search) are named as
+      such, since they are not supported yet, and any other non-function type
+      is reported as unsupported. Function tools have no type, type
+      'function', or Anthropic's 'custom' with an input_schema.
+      OpenAIResponses decides tool by tool: flat function tools, custom,
+      namespace and its server-side tools go out verbatim, and other
+      function-tool forms are converted, in any order.
+
     - Role::ReasoningEffort::reasoning_kwargs_for now returns nothing unless
       the engine supports reasoning_effort or thinking_budget (the registry
       gate, as for prompt_cache_key). The MiniMax and Moonshot per-engine

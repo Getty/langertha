@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use Moose::Role;
 use Carp qw( croak carp );
 use JSON::MaybeXS;
+use Langertha::Tool;
 use Langertha::ToolCall;
 use Langertha::ToolChoice;
 use Langertha::Response;
@@ -125,6 +126,23 @@ sub _temperature_kwargs {
     return ( temperature => $temp );
 }
 
+# True for an item the Responses wire takes as-is: a flat function tool,
+# OpenAI's client-executed `custom` (freeform grammar, no input_schema) and
+# `namespace`, or a Responses server-side tool (Langertha::Tool's per-wire
+# recognition). Anything else is left to format_tools, which formats a
+# function-tool form and croaks on the rest (karr k210, ADR 0001).
+sub _is_native_responses_tool {
+    my ($item) = @_;
+    return 0 unless ref $item eq 'HASH';
+    my $type = $item->{type} // '';
+    return 0 unless length $type;
+    return 1 if $type eq 'function' && ref $item->{function} ne 'HASH';
+    return 1 if $type eq 'custom'   && ref $item->{input_schema} ne 'HASH';
+    return 1 if $type eq 'namespace';
+    my ($wire) = Langertha::Tool->_server_tool_wire($item);
+    return ( ( $wire // '' ) eq 'responses' ) ? 1 : 0;
+}
+
 sub chat_request {
     my ( $self, $messages, %extra ) = @_;
 
@@ -143,15 +161,18 @@ sub chat_request {
         }
     }
 
-    # If tools passed in MCP format (inputSchema camelCase), format them to the
-    # flat Responses shape. Guarded by can(): a lean consumer that composes no
+    # A native Responses tool goes out verbatim (see _is_native_responses_tool).
+    # Every other function-tool form (MCP inputSchema, canonical input_schema,
+    # OpenAI chat's nested function, a Langertha::Tool) is formatted to the flat
+    # shape, and anything that is neither croaks in Langertha::Tool. Decided per
+    # item, not by the first one, so a mixed list keeps every tool in both
+    # orders (karr k210). Guarded by can(): a lean consumer that composes no
     # Role::Tools (Perplexity) never receives tools, and has no format_tools.
     if ( exists $extra{tools} && ref $extra{tools} eq 'ARRAY'
       && $self->can('format_tools') ) {
-        my @tools = @{$extra{tools}};
-        if ( @tools && ref $tools[0] eq 'HASH' && !exists $tools[0]{type} ) {
-            $extra{tools} = $self->format_tools(\@tools);
-        }
+        $extra{tools} = [ map {
+            _is_native_responses_tool($_) ? $_ : @{ $self->format_tools([$_]) }
+        } @{$extra{tools}} ];
     }
 
     # parallel_tool_use -> parallel_tool_calls (only when tools present).
