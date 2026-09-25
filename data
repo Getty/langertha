@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T05:21:04Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T05:21:04Z
+created: 2026-09-25T03:11:30Z
+id: 222
+priority: low
+started: 2026-09-25T04:33:38Z
+status: done
+tags:
+- streaming
+- responses
+title: 'Responses-Streaming: finish_reason stop/incomplete auf dem Final-Chunk'
+updated: 2026-09-25T05:21:04Z
+---
+
+Aus k212: der Final-Chunk bekommt finish_reason nur bei Tool-Calls (tool_calls). Text-only-Streams melden nie stop, ein gekuerztes response.incomplete nie incomplete. Hinzufuegen aendert Perplexitys Final-Chunk (additives Feld). Mit anderen Wires abgleichen (welche finish_reason-Werte liefern OpenAI/Anthropic-Streams), dann setzen.
+
+2026-09-25 04:43 Implemented: parse_stream_chunk final chunk now sets finish_reason from _responses_walk_output whenever defined (stop / message status e.g. incomplete / tool_calls), same as chat_response. Golden diff = +finish_reason:stop on the Perplexity final chunk (3 read paths), nothing else. A terminal output[] with no message item still yields no finish_reason on either path. ADR 0020 k222 Update.
+
+Commit f9240de
