@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T18:20:21Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T18:20:21Z
+created: 2026-09-25T18:03:13Z
+id: 278
+priority: medium
+started: 2026-09-25T18:06:31Z
+status: done
+tags:
+- async
+- timeouts
+- http
+title: Chat requests have no timeout on the Net::Async::HTTP backend (user_agent_timeout
+  only reaches LWP)
+updated: 2026-09-25T18:20:21Z
+---
+
+From k276: Role::HTTP user_agent_timeout configures the LWP user agent only; on the Net::Async::HTTP backend a chat request has no timeout, so a hanging provider stalls the Future forever (knarr/skeid/raider hang). Apply user_agent_timeout (when set) to the async backend too (Net::Async::HTTP timeout/stall_timeout, or a loop timeout_future race like k276), consider a sane default for async. Streaming: stall timeout (no bytes for N s) rather than total. Tests with a local daemon that never answers / stalls mid-stream.
