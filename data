@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T01:24:38Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:24:38Z
+created: 2026-09-25T01:05:03Z
+id: 201
+priority: low
+started: 2026-09-25T01:09:49Z
+status: done
+tags:
+- reasoning
+- profile
+- openai
+title: 'Reasoning::Profile: gpt-6.N-Passthrough mit Multi-Digit-Guard (gpt-6.10 erbt
+  gpt-6)'
+updated: 2026-09-25T01:24:38Z
+---
+
+Rest aus k196-Re-Review: gpt-6 hat nur die flache Zeile \Agpt-6(?!\d); der Guard greift nur direkt nach "gpt-6", nicht nach dem Punkt. gpt-6.10/gpt-6.20/gpt-6.100 fallen weiter in die gpt-6-Familie (is_reasoning_model=1) - dieselbe Bugklasse wie gpt-5.10->gpt-5.1 (k196). Vorbestehend, keine reale Modell-ID betroffen. Fix: uncurated Passthrough-Zeile qr/\Agpt-6\.\d(?!\d)/ analog gpt-5 + Tests fuer gpt-6.10/6.20 (unknown) und gpt-6.1 (Familie). Kandidat: langertha-wire-worker.
