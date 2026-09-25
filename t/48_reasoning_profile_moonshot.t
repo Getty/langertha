@@ -51,7 +51,7 @@ for my $model (qw( kimi-k2.7-code kimi-k2.7-code-highspeed kimi-k2-thinking )) {
 
 is_deeply( body( 'Langertha::Engine::Moonshot', model => 'kimi-k3', reasoning_effort => 'high' ),
   { model => 'kimi-k3', reasoning_effort => 'high', stream => JSON::MaybeXS::false(),
-    max_tokens => 4096, messages => $MSG[0] },
+    max_tokens => 16000, messages => $MSG[0] },
   'kimi-k3 wire: top-level reasoning_effort high' );
 
 for my $effort (qw( none minimal low medium high xhigh max )) {

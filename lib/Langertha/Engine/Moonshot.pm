@@ -93,6 +93,11 @@ B<Temperature:> every current Kimi model fixes C<temperature> server-side and
 rejects other values, so this engine never sends one; a C<temperature> other
 than C<1> is dropped with a warning.
 
+B<Response size:> Kimi counts reasoning toward C<max_tokens> and recommends at
+least 16000 while thinking is on, so C<kimi-k3>, C<kimi-k2.7-code>,
+C<kimi-k2.7-code-highspeed> and C<kimi-k2.6> default to 16000; other ids keep
+4096. An explicit C<response_size> is always sent as given.
+
 Supports chat, streaming, tool calling, and structured output. Embeddings,
 transcription, and image generation are not supported via this endpoint.
 
@@ -119,6 +124,19 @@ sub _build_api_key {
 sub default_model { 'kimi-k3' }
 
 sub default_response_size { 4096 }
+
+# Kimi counts reasoning_content against max_tokens and recommends
+# max_tokens >= 16000 while thinking is on (karr k225; platform.kimi.ai, advisor
+# 2026-09-25 on k219, docs only). kimi-k3 and kimi-k2.7-code(-highspeed) always
+# think, kimi-k2.6 thinks by default, so they default to 16000 instead of 4096.
+# Only when no response_size is set; max_tokens is a ceiling, billing follows
+# the tokens produced (ADR 0019 k225 Update).
+sub model_response_size_defaults {
+  return (
+    qr/\Akimi-k3(?!\d)/                          => 16000,
+    qr/\Akimi-k2\.(?:6|7-code(?:-highspeed)?)\z/ => 16000,
+  );
+}
 
 sub _build_static_models {[
   { id => 'kimi-k3' },

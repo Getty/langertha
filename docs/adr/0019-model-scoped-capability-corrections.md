@@ -221,3 +221,28 @@ serialize to nothing, or to a form the docs disagree on, stays off. This is unli
 accepted. Source: platform.kimi.ai `docs/api/models-overview.md`, `docs/api/chat.md`, the K2.6
 and K2.7-code quickstarts, advisor-verified 2026-09-25. This is documentation only and not
 live-verified.
+
+## Update (k225 — a per-model *default* gets the same table shape, outside the capability layer)
+
+Kimi counts `reasoning_content` against `max_tokens` and recommends `max_tokens >= 16000` while
+thinking is on (platform.kimi.ai, advisor 2026-09-25 on k219, docs only). Both Moonshot faces
+default `response_size` to 4096, so thinking replies could truncate before the answer. The fix
+is per model, not a raised engine default: `kimi-k3` and `kimi-k2.7-code(-highspeed)` always
+think and `kimi-k2.6` thinks by default; any other id keeps 4096.
+
+No per-model default mechanism existed, so `Role::ResponseSize` gains one in this ADR's shape:
+`sub model_response_size_defaults { ( $matcher => $tokens, ... ) }`, an ordered list matched
+against `chat_model` (exact id or `qr//`, later matches win). `get_response_size` resolves
+explicit `response_size` → the matching per-model default → `default_response_size`. A
+per-request `max_tokens` control still wins over all three in the wire roles. `Engine::Moonshot`
+and `Engine::MoonshotAnthropic` carry the same two rows (16000), because the same models think
+on both faces (k215, k219). The default is not a capability, so it does not go into
+`model_capability_corrections`. It reuses that table's matching rules but stays a separate hook
+on the role that owns the value. An explicit value is never raised: a caller who sets a
+`response_size` has chosen the ceiling. Cost is unchanged for replies that already fit, because
+`max_tokens` is a ceiling and Kimi bills the tokens produced. `kimi-k2.6` with
+`reasoning_effort => 'none'` also gets 16000. The row is per model, not per effort, and a higher
+ceiling does not hurt a non-thinking reply. The golden reasoning table (t/47) changed only in
+`max_tokens` on the Moonshot and MoonshotAnthropic Kimi rows (4096 → 16000); the foreign-engine
+Kimi rows (vLLM, AKIAnthropic) are unchanged; the one full-body kimi-k3 pin in
+`t/48_reasoning_profile_moonshot.t` moved with it. This is documentation only and not live-verified.

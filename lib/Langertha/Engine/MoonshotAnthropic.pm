@@ -54,6 +54,9 @@ C<output_config.format> (with the schema closed, as on first-party Anthropic),
 so it also streams; a C<json_object>, and every C<response_format> on the K2.x
 models, still use the synthesized-tool rewrite of the C</anthropic> shims.
 
+C<max_tokens> defaults to 16000 on the thinking Kimi models, as on
+L<Langertha::Engine::Moonshot>; an explicit C<response_size> is sent as given.
+
 Kimi fixes C<temperature> server-side on every current model, so none is sent;
 a C<temperature> other than C<1> is dropped with a warning.
 
@@ -82,6 +85,20 @@ sub default_model { 'kimi-k3' }
 sub api_key_env { 'LANGERTHA_MOONSHOT_API_KEY' }
 
 sub default_response_size { 4096 }
+
+# Kimi counts reasoning_content against max_tokens and recommends
+# max_tokens >= 16000 while thinking is on (karr k225; platform.kimi.ai, advisor
+# 2026-09-25 on k219, docs only). kimi-k3 and kimi-k2.7-code(-highspeed) always
+# think, kimi-k2.6 thinks by default, so they default to 16000 instead of 4096.
+# Only when no response_size is set; max_tokens is a ceiling, billing follows
+# the tokens produced (ADR 0019 k225 Update). Same rows as
+# Engine::Moonshot: the same models think on this face (k215).
+sub model_response_size_defaults {
+  return (
+    qr/\Akimi-k3(?!\d)/                          => 16000,
+    qr/\Akimi-k2\.(?:6|7-code(?:-highspeed)?)\z/ => 16000,
+  );
+}
 
 sub _build_static_models {[
   { id => 'kimi-k3' },

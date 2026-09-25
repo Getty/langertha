@@ -36,6 +36,16 @@ Revision history for Langertha
       supports('response_size'). No shipped engine is affected; it lets a
       model that rejects the field clear the flag.
 
+    - Moonshot and MoonshotAnthropic default max_tokens to 16000 instead of
+      4096 on the thinking Kimi models (kimi-k3, kimi-k2.7-code,
+      kimi-k2.7-code-highspeed, kimi-k2.6), as Kimi recommends, because
+      reasoning counts toward max_tokens and could truncate the answer. Only
+      when no response_size is set; an explicit value or per-request
+      max_tokens is sent unchanged. max_tokens is a ceiling: Kimi bills the
+      tokens actually produced, so this does not raise the cost of a reply
+      that fit before. New model_response_size_defaults engine hook. Taken
+      from Moonshot's documentation, not verified against the live API.
+
 
     - MoonshotAnthropic on kimi-k3 sends a json_schema response_format
       natively as output_config.format, like first-party Anthropic, instead
