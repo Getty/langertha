@@ -85,7 +85,7 @@ could not express that.
 - karr #197: Gemini's usage rename duplicating `from_hash`,
   Gemini's missing `cached_tokens`, and AKI native counts in `from_raw`.
 
-## Update (k197 — `from_raw` reads AKI native counts; Gemini cache count reaches `cached_tokens`)
+## Update (k197 — AKI native counts reach `from_raw` and `Response->usage`; Gemini cache count reaches `cached_tokens`)
 
 `from_raw` now also recognizes AKI.IO's native top-level `prompt_length` / `num_generated_tokens` /
 `num_cached_tokens` (the same keys `Engine::AKI` reads). They are the provider's own spelling of
@@ -93,8 +93,21 @@ the canonical counts, so they belong at the universal door (ADR 0018 tier 1), no
 engine. The Ollama top-level probe now follows `Engine::Ollama`: a zero count is "not reported",
 so a body whose counts are all zero gives `undef`, not `Usage(0)`.
 
+A body that reports only `num_cached_tokens` still yields a `Usage` carrying it, as the engine
+does.
+
 `from_hash` maps Gemini's `cachedContentTokenCount` (and the engine's renamed
-`cached_content_token_count`) to `cached_tokens`, read after the OpenAI and Anthropic spellings.
-`Engine::Gemini` keeps its snake_case rename of `usageMetadata`: `Usage`'s `%{}` overload serves
-that hash verbatim, so `$response->usage->{prompt_tokens}` and `{cached_content_token_count}` are
-public back-compat keys. The consequence above that listed these gaps is resolved.
+`cached_content_token_count`) to `cached_tokens`, read after the OpenAI and Anthropic spellings,
+and finally a flat canonical `cached_tokens` key. `Engine::Gemini` keeps its snake_case rename of
+`usageMetadata`: `Usage`'s `%{}` overload serves that hash verbatim, so
+`$response->usage->{prompt_tokens}` and `{cached_content_token_count}` are legacy keys kept for
+compatibility, not deprecated (said so in `Langertha::Usage`'s HASH OVERLOAD POD).
+
+The engine path had the same gap. `Engine::AKI::chat_response` passed `num_cached_tokens` as an
+explicit `Response` argument but left it out of its `usage` hash, so `Response->cached_tokens` was
+16 on the capture while `Response->usage->cached_tokens` was `undef`. The engine now puts the count
+into that hash as `cached_tokens`, the flat key `from_hash` reads, and `Response->cached_tokens` is
+lifted off the parsed `Usage` like every other engine. The existing `usage` hash keys
+(`prompt_tokens`, `completion_tokens`) are unchanged; one key, `cached_tokens`, is added. Both
+the `from_raw` door and the engine path now report all three AKI counts, which resolves the
+consequence above that listed these gaps.
