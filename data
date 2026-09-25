@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T07:41:00Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:41:00Z
+created: 2026-09-25T06:52:45Z
+id: 247
+priority: low
+started: 2026-09-25T07:31:54Z
+status: done
+tags:
+- dx
+- warnings
+title: Drop-carps (temperature ADR 0025, tool_choice k239, parallel_tool_use k241)
+  report internal lines and repeat per request
+updated: 2026-09-25T07:41:00Z
+---
+
+k239/k241 review M3: carps point at lib/Langertha/Role/OpenAICompatible.pm / Engine/Ollama.pm lines, not the caller (carp inside nested private helpers; Carp skips only one frame). Engine-level settings (parallel_tool_use => 1 on Gemini/Ollama, temperature on reasoning models) warn on every request, incl. each chat_with_tools_f iteration. Consider: @CARP_NOT / Carp::Internal for Langertha:: packages so warnings land in user code, and once-per-engine-instance for engine-attribute-sourced drops (per-request values keep warning).
+
+2026-09-25 07:40 Done on branch k247-drop-warning-location (e48d555 fix, 9778ce6 ADR 0025 Update). Role::Chat::_langertha_carp (local %Carp::Internal slice over Langertha/Moose/Class::MOP/Eval::Closure/Future stack packages) + per-instance _warned_drops. prove -lr t/ PASS, live t/8x skipped.
