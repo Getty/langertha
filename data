@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T01:52:58Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:52:58Z
+created: 2026-09-25T01:26:24Z
+id: 203
+priority: low
+started: 2026-09-25T01:29:02Z
+status: done
+tags:
+- test
+- async
+- http
+title: LocalHTTPDaemon Keep-Alive-Modus haerten (Child-Tracking-Race, Listen-Socket,
+  Reaping; Cancel einer queued Request testen)
+updated: 2026-09-25T01:52:58Z
+---
+
+Aus k199-Review (langertha-reviewer, Minors 1,2,5): t/lib/Test/LocalHTTPDaemon.pm:48-58 schmales Race beim Tracken geforkter Connection-Children, Children halten den Listen-Socket offen, Shutdown reaped gekillte Children nicht. :60 ein Handler, der im Keep-Alive-Child stirbt, laesst das Child den Rest des Testskripts weiterlaufen (Default-Modus hat das schon). Optional: Test, dass ein Caller einen queued Request waehrend eines laufenden Streams canceln kann (pipeline => 0). Stabil in allen Laeufen inkl. prove -j4, daher low. Kandidat: langertha-test-writer.
+
+2026-09-25 01:38 Done on branch k203: helper hardened (no escape from start(), dying handler _exits, reap in accept loop + SIGTERM blocked around fork, children close listen socket, teardown waitpids children; Listener subclass caches url because HTTP::Daemon rebuilds request URIs from the socket). New t/45_local_http_daemon.t red first (escape, port still accepting, unreaped children). Queued-cancel subtest in t/45_async_http_keepalive.t; mutation pipeline=>1 makes it red. prove -lr green, -j4 t/45_* x3 green, no leftover processes.
