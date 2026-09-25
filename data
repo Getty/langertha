@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T06:31:00Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T06:31:00Z
+created: 2026-09-25T05:44:19Z
+id: 237
+priority: low
+started: 2026-09-25T06:02:42Z
+status: done
+tags:
+- llm
+- risk
+- nousresearch
+title: 'NousResearch engine: inference-api is now a 341-model gateway, engine assumes
+  Hermes-only'
+updated: 2026-09-25T06:31:00Z
+---
+
+Found by llm-advisor while researching k234 (2026-09-25). hermes-agent.nousresearch.com/docs/integrations/nous-portal and portal.nousresearch.com/models: https://inference-api.nousresearch.com/v1 fronts ~341 models (Claude, GPT-5.6/6, Gemini, DeepSeek, Kimi… via OpenRouter; Hermes-4-70B/405B/4.3-36B on Nous own backend), serving /v1/chat/completions, /v1/completions, /v1/embeddings, /v1/models. Engine::NousResearch hardcodes tool_wire_format hermes, StaticModels [Hermes-4-70B, Hermes-4-405B] (missing Hermes-4.3-36B), and inherits reasoning_effort + prompt_cache_key from OpenAIBase (Hermes-4 reasoning is a system-prompt/template toggle — likely over-claim). For non-Hermes slugs the hermes prompt wire is the wrong choice (Hermes Agent uses native OpenAI tools through the same endpoint). Decide: document Hermes-only scope, or a live /v1/models listing + openai tool wire for non-Hermes models (engine-scoped tool_wire_format makes per-model switching an ADR question). Nous says Hermes-4 is not recommended for tool loops.
+
+Ruling: minimal scope — add Hermes-4.3-36B to StaticModels, POD documents Hermes-only scope (use an OpenAI-compatible engine / OpenRouter for other slugs), reasoning_effort/prompt_cache_key over-claim decided with k234 per advisor evidence. Per-model tool_wire_format split to its own ticket.
+
+2026-09-25 06:10 reasoning_effort / prompt_cache_key left claimed: the advisor note says 'likely over-claim' with no documentary evidence (portal api-docs unreadable), so no layer-2 clear per the k234/k237 ruling; needs a documented source or an approved live check first.
