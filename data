@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T16:06:28Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T16:06:28Z
+created: 2026-09-25T15:49:01Z
+id: 263
+priority: medium
+started: 2026-09-25T15:50:05Z
+status: done
+tags:
+- pricing
+- usage
+- cache
+title: 'Pricing: optional cache read/write rates per rule; cost_for prices cached_tokens
+  / cache_write_tokens (skeid #28 prerequisite)'
+updated: 2026-09-25T16:06:28Z
+---
+
+skeid #28 needs Langertha::Pricing to model prompt-cache rates. Pricing is user-supplied rules (input_per_million/output_per_million). Add optional cached_input_per_million and cache_write_per_million; cost_for prices Usage cached_tokens / cache_write_tokens at them when the rule has them, never invents a discount otherwise. Must respect how Langertha::Usage normalizes input_tokens (does it include cached reads / cache writes? differs per wire: OpenAI prompt_tokens includes cached; Anthropic input_tokens excludes cache_read/cache_creation) — no double counting. Cost value object gains optional cache_read_usd / cache_write_usd included in total.
+
+2026-09-25 16:03 Implemented on branch worktree-agent-a3b51f75296d2ce1b commit 312672a: Usage.input_includes_cache + uncached_input_tokens, Pricing cache rule keys, Cost cache_read_usd/cache_write_usd, ADR 0031. prove -lr t/ green (live tests skipped). Shim follow-up k265.
