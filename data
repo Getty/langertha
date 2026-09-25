@@ -1,0 +1,37 @@
+---
+claimed_at: 2026-09-25T21:00:58Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:00:58Z
+created: 2026-09-25T20:21:59Z
+id: 296
+priority: high
+started: 2026-09-25T20:25:00Z
+status: done
+tags:
+- wire
+- response
+- streaming
+- mistral
+- bug
+title: OpenAI-compatible chat_response / parse_stream_chunk croak on array-valued
+  message.content (Mistral Magistral content chunks)
+updated: 2026-09-25T21:00:58Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). REPRODUCED offline.
+
+Where:
+- lib/Langertha/Role/OpenAICompatible.pm:451  content => $msg->{content} // ''
+- lib/Langertha/Role/OpenAICompatible.pm:581  my $content = $choice->{delta}{content} // ''
+Response.content and Stream::Chunk.content are isa Str, so an ARRAY content dies in the constructor:
+  Attribute (content) does not pass the type constraint because: Validation failed for 'Str' with value ARRAY(...)
+
+Repro (offline): feed chat_response a 200 body
+  {"choices":[{"message":{"role":"assistant","content":[{"type":"thinking","thinking":[{"type":"text","text":"hmm"}]},{"type":"text","text":"Hello"}]},"finish_reason":"stop"}]}
+into Langertha::Engine::Mistral->new(api_key=>'x', model=>'magistral-medium-latest')->chat_response(...) -> dies.
+Same for a streamed delta {"delta":{"content":[{"type":"text","text":"Hi"}]}} through _process_stream_buffer.
+
+Provider reality (NOT live-verified, ask langertha-llm-advisor): Mistral Magistral reasoning models return content as a list of chunks (thinking chunk + text chunk) on /v1/chat/completions; other OpenAI-compatible servers also emit content-part arrays. Either way a whole chat call dies with a Moose type error instead of returning text.
+
+Suggested fix (ADR 0018 tier 2, normalize in the dialect role): in chat_response and parse_stream_chunk, when content is an ARRAY join the text of parts with type text (and text-only strings), and lift type thinking parts (their nested text) into thinking when thinking is otherwise empty. Test with a response fixture + a streamed-delta case in t/2x / t/43.
