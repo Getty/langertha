@@ -295,7 +295,7 @@ sub _normalize_system_prompt {
 # /v1/chat/completions, /v1/messages, /v1/responses; lmstudio.ai/docs/
 # developer/rest), and the tool_call items it returns are server-run
 # plugin/MCP calls. A tools list croaks, like a ServerTool off its wire, since
-# no tool call could ever come back; an empty one is simply not sent. A
+# no tool call could ever come back; an empty one or undef is simply not sent. A
 # tool_choice goes through the shared rule (karr k239): this engine claims no
 # tool_choice_*, so it is dropped, a forced one with a carp.
 sub _lmstudio_tool_kwargs {
@@ -305,7 +305,7 @@ sub _lmstudio_tool_kwargs {
     croak "".( ref $self ).": LM Studio's native /api/v1/chat takes no tools; use "
       . "Langertha::Engine::LMStudioOpenAI or Langertha::Engine::LMStudioAnthropic "
       . "(the ->openai / ->anthropic methods) for tool calling"
-        if ref $tools ne 'ARRAY' || @$tools;
+        if defined $tools && ( ref $tools ne 'ARRAY' || @$tools );
   }
   $self->_gate_tool_choice($extra);
   return;

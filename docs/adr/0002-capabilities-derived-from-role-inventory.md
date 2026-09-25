@@ -108,6 +108,9 @@ The registry is the truth, with no per-engine exception: wherever an OpenAI-comp
 clears a `tool_choice_*` kind, the gate applies — MiniMax and OllamaOpenAI (no field),
 llama.cpp (named downgraded to auto), Moonshot per model (400), SGLang (auto and none
 undocumented: auto drops as the default, none withholds the tools) and Hetzner (all four
-cleared as unverified: auto drops, a forced choice drops with a carp). A flag cleared for want of
+cleared as unverified: auto drops, a forced choice drops with a carp). `tools_native` gates no
+emission: it steers only `chat_f`'s rewrite, so a request's `tools` still go on the body where the
+flag is cleared (Hetzner) — only `tool_choice` and `parallel_tool_calls` are gated. A `none` with
+no tools to withhold drops silently (k246). A flag cleared for want of
 confirmation is re-added once confirmed, and the field comes back with it. Tests: `t/76_tool_choice_capability_gate.t`,
 `t/76_parallel_tool_use_capability_gate.t`.

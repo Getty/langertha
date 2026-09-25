@@ -755,10 +755,11 @@ C<E<lt>tool_callE<gt>> blocks in the reply land on
 L<Langertha::Response/tool_calls> and are removed from C<content>.
 
 A C<tool_choice> goes on the wire only as the engine's C<tool_choice_*>
-capabilities allow. Where the wire has no field for its kind (Ollama native
-and its C</v1> endpoint, Perplexity, LM Studio native), C<auto> is dropped
-silently, C<none> withholds the request's tools instead (with a warning), and
-a forced choice is dropped with a warning, the model then decides; a forced
+capabilities allow. Where the engine does not
+C<supports('tool_choice_E<lt>kindE<gt>')> for the choice's kind, C<auto> is
+dropped silently, C<none> withholds the request's tools instead (with a
+warning when there were tools to withhold), and a forced choice is dropped
+with a warning, the model then decides; a forced
 named tool that the C<json_schema> rewrite below can take is rewritten
 instead. Likewise C<parallel_tool_use> reaches the wire only where the engine
 C<supports('parallel_tool_use')>; a value you set elsewhere is dropped with a
@@ -957,7 +958,9 @@ async sub chat_stream_realtime_f {
 # engine supports its kind; the builder calls ->to($fmt) itself, since only it
 # knows its envelope. Otherwise the field is deleted: undef or 'auto' (the
 # wire default) silently; 'none' withholds the request's tools too, so "call
-# no tool" holds without the field, with a carp; a forced choice (any /
+# no tool" holds without the field, with a carp when there were tools to
+# withhold (none without tools is silent, as on the hermes wire, k246); a
+# forced choice (any /
 # named) with a carp, the model then decides. chat_f's ADR 0005 rewrite runs
 # first and has already taken a forced named tool it could reroute. A value
 # ToolChoice cannot read (a provider-native choice) stays as given where the
@@ -982,9 +985,10 @@ sub _gate_tool_choice {
   return $tc if $self->supports($cap);
   delete $extra->{tool_choice};
   if ( $tc->type eq 'none' ) {
-    delete $extra->{tools};
+    my $tools = delete $extra->{tools};
     carp "".( ref $self ).": dropping tool_choice 'none' -- this engine does not "
-      . "support('tool_choice_none'); the request's tools are withheld instead";
+      . "support('tool_choice_none'); the request's tools are withheld instead"
+        if ref $tools eq 'ARRAY' && @$tools;
     return;
   }
   carp "".( ref $self ).": dropping tool_choice '"

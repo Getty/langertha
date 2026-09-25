@@ -83,9 +83,12 @@ platform is explicitly experimental. The engine composes L<Langertha::Role::Tool
 (so C<chat_with_tools_f> exists) and L<Langertha::Role::ResponseFormat>, but
 C<engine_capabilities> B<clears> C<tools_native>, every C<tool_choice_*>,
 C<parallel_tool_use> and both C<response_format_*> flags rather than advertise
-capabilities that may silently no-op. If a live test confirms the gateway honors
-them for the model you use, re-add them in the engine's
-C<around engine_capabilities>.
+capabilities that may silently no-op. Tools you pass still go out in the
+C<tools> array, but C<tool_choice> and C<parallel_tool_calls> are no longer
+sent: C<auto> is dropped silently, a forced choice with a warning, and
+C<none> leaves the tools out instead (see L<Langertha::Role::Chat/chat_f>).
+If a live test confirms the gateway honors them for the model you use,
+re-add them in the engine's C<around engine_capabilities>.
 
 B<No embeddings or transcription:> the Hetzner Inference endpoint exposes chat
 completions + image processing only. L</embedding> and L</transcription> are
@@ -180,7 +183,8 @@ Advertised flags (derived from composed roles via L<Langertha::Role::Capabilitie
 C<tools_native>, C<tool_choice_*>, C<parallel_tool_use> and
 C<response_format_*> are B<not> advertised even though L<Langertha::Role::Tools>
 and L<Langertha::Role::ResponseFormat> are composed — the engine clears them in
-its C<around engine_capabilities> (see the tool-support caveat above). If a live
+its C<around engine_capabilities> (see the tool-support caveat above). Tools
+are still sent; C<tool_choice> and C<parallel_tool_calls> are not. If a live
 test confirms them, re-add them there.
 
 Vision input is supported on both currently-listed models

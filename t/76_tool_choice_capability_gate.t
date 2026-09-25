@@ -82,6 +82,14 @@ for my $name ( sort keys %engines ) {
                 "$builder: none withholds the tools instead" );
             ok( ( grep { /tool_choice 'none'.*withh[oe]ld/ } @$warns ), "$builder: carps the withhold" )
                 or diag @$warns;
+            # k246: with no tools there is nothing to withhold, so no carp
+            # (the hermes path already stays quiet here); the field still drops.
+            for my $no_tools ( [], [ tools => [] ], [ tools => undef ] ) {
+                my $label = @$no_tools ? ( defined $no_tools->[1] ? 'empty tools' : 'tools undef' ) : 'no tools';
+                ( $body, $warns ) = build( $e, $builder, @$no_tools, tool_choice => 'none' );
+                ok( !exists $body->{tool_choice}, "$builder: none with $label not sent" );
+                ok( !@$warns, "$builder: none with $label is silent" ) or diag @$warns;
+            }
         }
     };
 }
@@ -110,8 +118,18 @@ subtest 'LMStudio native: tools croak, tool_choice never reaches the body' => su
         eval { $e->$builder( $msgs, tools => $tools ) };
         like( $@, qr/LMStudioOpenAI.*LMStudioAnthropic|LMStudioAnthropic.*LMStudioOpenAI/,
             "$builder: tools croak, pointing to the tool-capable faces" );
+        eval { $e->$builder( $msgs, tools => 'get_weather' ) };
+        like( $@, qr/takes no tools/, "$builder: a defined non-list tools value croaks" );
         my ( $body, $warns ) = build( $e, $builder, tools => [] );
         ok( !exists $body->{tools}, "$builder: an empty tools list is not sent" );
+        # k246: tools => undef is "no tools" (a caller passing an optional
+        # list through), not a tool request -- no croak, nothing sent.
+        ( $body, $warns ) = eval { build( $e, $builder, tools => undef ) };
+        is( $@, '', "$builder: tools => undef does not croak" );
+        ok( $body && !exists $body->{tools} && !@$warns, "$builder: tools => undef is not sent, silently" );
+        ( $body, $warns ) = build( $e, $builder, tool_choice => 'none' );
+        ok( !exists $body->{tool_choice} && !@$warns, "$builder: none without tools dropped silently" )
+            or diag @$warns;
         ( $body, $warns ) = build( $e, $builder, tool_choice => 'auto' );
         ok( !exists $body->{tool_choice} && !@$warns, "$builder: auto dropped silently" ) or diag @$warns;
         ( $body, $warns ) = build( $e, $builder, tool_choice => { type => 'tool', name => 'x' } );

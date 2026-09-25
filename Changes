@@ -71,13 +71,14 @@ Revision history for Langertha
       (supports('tool_choice_*')), on the OpenAI-compatible and Responses
       engines and on Ollama and LM Studio native: auto is dropped quietly,
       a forced choice with a warning, and an unsendable tool_choice =>
-      'none' leaves the request's tools out instead, so the model cannot
-      call a tool you ruled out. A tool_choice Langertha cannot read passes
+      'none' leaves the request's tools out instead (warning only when
+      there were tools), so the model cannot call a tool you ruled out. A tool_choice Langertha cannot read passes
       through only where the engine has a tool_choice at all. Ollama native
       no longer claims tool_choice_* (its /api/chat has none, like its /v1),
       so chat_f turns a forced named tool into a format schema and a
-      synthetic tool call there. LM Studio native croaks on tools; use
-      LMStudioOpenAI or LMStudioAnthropic for tool calling.
+      synthetic tool call there. LM Studio native croaks on a non-empty
+      tools list (an empty list or undef is not sent); use LMStudioOpenAI
+      or LMStudioAnthropic for tool calling.
 
     - tool_choice accepts a Langertha::ToolChoice object (ToolChoice->none,
       ->any, ->specific($name), ...) wherever it accepts a string or hash:
