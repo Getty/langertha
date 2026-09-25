@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T22:31:59Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T22:31:59Z
+created: 2026-09-25T21:36:22Z
+id: 314
+priority: medium
+started: 2026-09-25T22:13:55Z
+status: done
+tags:
+- feature
+- embedding
+- transcription
+- imagegen
+- adr
+title: Result objects for embedding/transcription/image calls (usage, rate_limit,
+  timing)
+updated: 2026-09-25T22:31:59Z
+---
+
+From k292: simple_embedding/_f, simple_transcription/_f, simple_image/_f return bare values and drop OpenAI embeddings usage, gpt-image usage, transcription usage/duration, rate_limit and ADR 0011 timing. Proposal: simple_*_result / simple_*_result_f returning a small value object (value + usage via Usage->from_hash + rate_limit + total_seconds), following simple_transcription_result; bare methods unchanged. Embedder/ImageGen + Langfuse (k304 generations) can then report usage. ADR-worthy (non-chat counterpart of Langertha::Response).
