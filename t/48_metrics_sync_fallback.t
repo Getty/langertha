@@ -104,12 +104,6 @@ is(scalar(grep { /synchronous/i } @warnings), 1, 'sync-fallback warning fired on
   }
 }
 {
-  # Preload: export_otlp_f requires OTLP lazily before its await. With a
-  # coderef in @INC (the blocking hook above), a first-time require inside an
-  # async sub that then suspends panics Future::AsyncAwait 0.71 on perl 5.40
-  # ("savestack entry of SAVEt_SV ... $main::INC"). Unrelated to the code
-  # under test; tracked as k193.
-  require Langertha::Runtime::Metrics::OTLP;
   my $client = PendingClient->new;
   my $injected = Langertha::Engine::vLLM->new(
     url         => 'http://test.invalid:8000/v1',

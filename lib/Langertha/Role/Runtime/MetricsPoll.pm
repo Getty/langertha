@@ -6,6 +6,7 @@ use Future::AsyncAwait;
 use Log::Any qw( $log );
 use URI;
 use Carp qw( croak );
+use HTTP::Request;
 
 use Langertha::Runtime::Metrics;
 
@@ -107,7 +108,6 @@ async sub poll_metrics_f {
   my $url = $self->metrics_url;
   $log->debugf("[%s] scraping %s", ref($self), $url);
 
-  require HTTP::Request;
   my $request = HTTP::Request->new(GET => $url);
 
   my $response = await $self->_async_http->do_request(
@@ -167,19 +167,28 @@ async context prefer L</poll_metrics_f>.
 
 =cut
 
+# The OTLP serializer stays a lazy load, but the require lives in this plain
+# sub and never in an async sub's own frame: with a coderef in @INC, perl
+# localizes $INC around the hook call, and Future::AsyncAwait (0.71, perl
+# 5.38+) aborts the process when it suspends a frame that still holds that
+# savestack entry (karr k193, t/48_async_require_inc_hook.t). The local is
+# unwound when this sub returns, before export_otlp_f awaits.
+sub _otlp_json {
+  my ( $records, %opts ) = @_;
+  require Langertha::Runtime::Metrics::OTLP;
+  return Langertha::Runtime::Metrics::OTLP->new->to_json($records, %opts);
+}
+
 async sub export_otlp_f {
   my ( $self, $records, %opts ) = @_;
   my $endpoint = $opts{endpoint}
     // _croak("export_otlp_f requires an endpoint option");
 
-  require Langertha::Runtime::Metrics::OTLP;
-  my $otlp = Langertha::Runtime::Metrics::OTLP->new;
-  my $body = $otlp->to_json($records, %opts);
+  my $body = _otlp_json($records, %opts);
 
   my @headers = ( 'Content-Type' => 'application/json' );
   push @headers, %{ $opts{headers} || {} };
 
-  require HTTP::Request;
   my $request = HTTP::Request->new( POST => $endpoint, \@headers, $body );
 
   $log->debugf("[%s] exporting %d records to %s",
