@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-09-25T16:28:37Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T16:28:37Z
+created: 2026-09-25T16:03:33Z
+id: 265
+priority: medium
+started: 2026-09-25T16:07:56Z
+status: done
+tags:
+- usage
+- pricing
+- cache
+- shim
+title: 'Usage: /anthropic shims may count cache reads inside input_tokens (AKIAnthropic
+  does); input_includes_cache marks them false'
+updated: 2026-09-25T16:28:37Z
+---
+
+Found in k263 (ADR 0031). Usage->from_hash marks flat Anthropic cache keys input_includes_cache=0 (first-party Anthropic truth). Captures show AKI.IO /anthropic reports input_tokens 65 + cache_read_input_tokens 64 for the same request its OpenAI face reports prompt_tokens 65 / cached 64 (t/data/akianthropic_chat_response.json vs akiopenai_chat_response.json) -> the shim count INCLUDES reads, so Pricing with a cache rate over-bills AKIAnthropic by the reads at the cached rate. Fix: engine-scoped correction (ADR 0018 layer 3) so AKIAnthropic usage carries input_includes_cache=1 (needs a clean hook in Role::AnthropicCompatible chat_response + streaming usage path -> langertha-wire-worker). Verify MiniMaxAnthropic / MoonshotAnthropic / LMStudioAnthropic semantics via langertha-llm-advisor first (no live calls without approval; AKI is the exception). Also: Usage->merge drops cached_tokens/cache_write_tokens/input_includes_cache.
+
+2026-09-25 16:09 llm-advisor 2026-09-25 (public docs only, no live calls): input_tokens vs cache on /anthropic shims.
+- AKIAnthropic: INCLUSIVE (captures: akianthropic_chat 65 in/64 read == akiopenai 65 prompt/64 cached; akianthropic_tool_call 227 in/128 read). No AKI doc states it. -> opt in input_includes_cache=1. Captures are llama3-chat-8b only; other AKI models unverified.
+- MiniMaxAnthropic: EXCLUSIVE per docs (platform.minimax.io/docs/api-reference/anthropic-api-compatible-cache: input_tokens = tokens after last breakpoint; total = read+creation+input; example 21 in / 188086 read). Reports both cache fields (also in message_start). -> keep 0. Caveat: third-party reports (MiniMax-M2.7 GH #47, r/hermesagent) say MiniMax cache reporting is unreliable; no capture in t/data.
+- MoonshotAnthropic: EXCLUSIVE per docs (platform.kimi.ai/docs/guide/context-caching: Messages total input = input_tokens + cache_read + cache_creation; 'usage.input_tokens excludes cache reads and writes'; also cache_creation.ephemeral_5m/1h breakdown). -> keep 0. Only kimi-k3 does cache writes.
+- LMStudioAnthropic: UNKNOWN - lmstudio.ai anthropic-compat docs are silent on usage/cache fields. Local server; if no cache keys are sent, flag stays undef and nothing is mispriced. -> leave default, verify with a local capture before any opt-in.
+Recommendation: engine-scoped correction on AKIAnthropic only; do NOT put it on AnthropicBase/AnthropicCompatible.
