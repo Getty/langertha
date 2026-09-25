@@ -22,7 +22,7 @@ use Langertha::Manifest;
       provider_id => 'my-knarr',
       issuer      => 'https://knarr.example',
     );
-    $builder->add_engine( $openai_engine,
+    $builder->add_engine( $openrouter_engine,        # no model of its own needed
       endpoint_id => 'openai', base_url => 'https://knarr.example/v1',
       models      => [ 'gpt-5.6', 'local-qwen' ] );
     $builder->add_endpoint( id => 'ollama', dialect => 'ollama',
@@ -33,9 +33,11 @@ use Langertha::Manifest;
 
 =head1 DESCRIPTION
 
-Maps configured Langertha engines into a L<Langertha::Manifest>. Everything
-is read from the engine object: no network I/O happens (in particular
-C<list_models> is never called).
+Maps configured Langertha chat engines into a L<Langertha::Manifest>.
+Everything is read from the engine object: no network I/O happens (in
+particular C<list_models> is never called), and the caller's engine is not
+touched — lazy attributes (C<model>, C<chat_model>, C<api_key>) are
+evaluated on in-memory clones, never on the engine itself.
 
 =over
 
@@ -43,11 +45,14 @@ C<list_models> is never called).
 L<Langertha::Engine::Perplexity> → C<perplexity-agent>,
 L<Langertha::Engine::OpenAIResponses> → C<responses>,
 L<Langertha::Engine::OpenAIBase> → C<openai-chat>,
-L<Langertha::Engine::AnthropicBase> → C<anthropic>,
+L<Langertha::Engine::AnthropicBase> → C<anthropic> when the engine emits
+first-party native structured output (C<output_config.format>), otherwise
+C<anthropic-compat> (the C</anthropic> shims: AKIAnthropic,
+MiniMaxAnthropic, MoonshotAnthropic, LMStudioAnthropic),
 L<Langertha::Engine::Gemini> → C<gemini>, L<Langertha::Engine::Ollama> →
 C<ollama>, L<Langertha::Engine::AKI> → C<aki>, L<Langertha::Engine::LMStudio>
-→ C<lmstudio>. A transcription-only engine
-(L<Langertha::Engine::TranscriptionBase>) has no chat dialect and croaks.
+→ C<lmstudio>. An engine that is not a chat engine (e.g. the
+transcription-only L<Langertha::Engine::Whisper>) croaks.
 
 =item * B<base_url> — the engine's C<url> (override with C<base_url> to
 publish a public URL instead of an internal one).
@@ -57,12 +62,24 @@ C<api_key_env>: a required key yields an C<api_key> auth entry; an optional
 key only when one is configured; no key, no entry. Only the I<definedness>
 of the key is looked at — its value never enters the manifest.
 
+=item * B<models> — C<models =E<gt> [...]> when given. Otherwise the
+engine's configured model; a placeholder id (C<default>, which the
+self-hosted engines use for "whatever the server loaded", or an empty id)
+is skipped rather than published, and an engine with no model at all
+croaks asking for C<models>.
+
 =item * B<capabilities> — C<engine_capabilities> evaluated B<per model>
-(the engine is cloned in memory with C<chat_model> set to that model id), so
-model-scoped corrections apply. Names are exactly the registry's
-(L<Langertha::Role::Capabilities>); the Builder adds none.
+(on a clone with C<chat_model> set to that model id, so model-scoped
+corrections apply), then filtered to L</model_capabilities>: only flags that
+describe a chat call to that model at that endpoint. Names are exactly the
+registry's (L<Langertha::Role::Capabilities>); the Builder adds none.
 
 =back
+
+Known v1 limitations: engine-class facts that the capability flags cannot
+express are not in the manifest — the Groq/Cerebras refusal of C<tools> plus
+C<response_format> in one request (ADR 0024) and OpenAI's temperature gate
+under active reasoning (ADR 0025).
 
 =cut
 
@@ -98,21 +115,79 @@ it from the origin of the engine's URL.
 
 =attr extensions
 
-HashRef passed through untouched into the manifest's C<extensions>.
+HashRef passed into the manifest's C<extensions> (deep-copied there).
 
 =cut
 
-# Most specific first: OpenAIResponses isa OpenAI isa OpenAIBase.
+# The capabilities a model entry may claim: exactly those that describe a
+# CHAT CALL to that model at that endpoint -- what the request may carry and
+# what the reply can be. Everything else engine_capabilities reports is left
+# out on purpose:
+#   - other operations of the engine (embedding, transcription,
+#     image_generation) are not facts about a chat model;
+#   - client-side or server-management features (runtime_metrics is
+#     Langertha's own Prometheus scrape, prefix_caching the self-hosted
+#     cache knobs, keep_alive Ollama's model residency, cached_content
+#     Gemini's cache-resource lifecycle) are not provider claims about a
+#     model either, and would be wrong behind a proxy's public URL.
+# A capability added to %ROLE_TO_CAPS later is NOT published until it is
+# added here (t/96_manifest_builder.t forces that decision).
+my @MODEL_CAPABILITIES = qw(
+  chat
+  streaming
+  tools_native tools_hermes
+  tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
+  parallel_tool_use
+  response_format_json_object response_format_json_schema
+  reasoning_effort thinking_budget
+  temperature seed
+  system_prompt response_size context_size
+  prompt_cache prompt_cache_key
+);
+my %MODEL_CAPABILITY = map { $_ => 1 } @MODEL_CAPABILITIES;
+
+sub model_capabilities { return @MODEL_CAPABILITIES }
+
+=method model_capabilities
+
+    my @names = Langertha::Manifest::Builder->model_capabilities;
+
+The allowlist of capability names a Builder-made model entry may claim —
+the flags that describe a chat call to that model: C<chat>, C<streaming>,
+the tool flags (C<tools_native>, C<tools_hermes>, C<tool_choice_auto>,
+C<tool_choice_any>, C<tool_choice_none>, C<tool_choice_named>,
+C<parallel_tool_use>), structured output (C<response_format_json_object>,
+C<response_format_json_schema>), reasoning (C<reasoning_effort>,
+C<thinking_budget>), sampling and request controls (C<temperature>,
+C<seed>, C<system_prompt>, C<response_size>, C<context_size>) and the
+request-side prompt-cache controls (C<prompt_cache>, C<prompt_cache_key>).
+
+Engine-level and client-side flags are never published on a model:
+C<embedding>, C<transcription>, C<image_generation>, C<runtime_metrics>,
+C<prefix_caching>, C<keep_alive>, C<cached_content>. (The registry has no
+vision/image-input flag yet; one would belong here.)
+
+This filters only what the Builder B<emits>. A parsed manifest accepts any
+capability name (L<Langertha::Manifest::Model/supports>).
+
+=cut
+
+# Most specific first: OpenAIResponses isa OpenAI isa OpenAIBase. A code
+# value decides within a family.
 my @DIALECT_BY_CLASS = (
-  [ 'Langertha::Engine::Perplexity'        => 'perplexity-agent' ],
-  [ 'Langertha::Engine::OpenAIResponses'   => 'responses' ],
-  [ 'Langertha::Engine::TranscriptionBase' => undef ],
-  [ 'Langertha::Engine::OpenAIBase'        => 'openai-chat' ],
-  [ 'Langertha::Engine::AnthropicBase'     => 'anthropic' ],
-  [ 'Langertha::Engine::Gemini'            => 'gemini' ],
-  [ 'Langertha::Engine::Ollama'            => 'ollama' ],
-  [ 'Langertha::Engine::AKI'               => 'aki' ],
-  [ 'Langertha::Engine::LMStudio'          => 'lmstudio' ],
+  [ 'Langertha::Engine::Perplexity'      => 'perplexity-agent' ],
+  [ 'Langertha::Engine::OpenAIResponses' => 'responses' ],
+  [ 'Langertha::Engine::OpenAIBase'      => 'openai-chat' ],
+  # Same Messages envelope, two wire variants: first-party Anthropic sends
+  # structured output as native output_config.format, the /anthropic shims
+  # emulate it with a synthetic tool + forced tool_choice. The engine's own
+  # predicate (Role::AnthropicCompatible) tells them apart.
+  [ 'Langertha::Engine::AnthropicBase' => sub {
+      $_[0]->_native_structured_output ? 'anthropic' : 'anthropic-compat' } ],
+  [ 'Langertha::Engine::Gemini'   => 'gemini' ],
+  [ 'Langertha::Engine::Ollama'   => 'ollama' ],
+  [ 'Langertha::Engine::AKI'      => 'aki' ],
+  [ 'Langertha::Engine::LMStudio' => 'lmstudio' ],
 );
 
 sub dialect_for_engine {
@@ -120,7 +195,7 @@ sub dialect_for_engine {
   for my $row (@DIALECT_BY_CLASS) {
     my ( $isa, $dialect ) = @$row;
     next unless $engine->isa($isa);
-    return $dialect;
+    return ref $dialect eq 'CODE' ? $dialect->($engine) : $dialect;
   }
   return undef;
 }
@@ -130,9 +205,18 @@ sub dialect_for_engine {
     my $dialect = Langertha::Manifest::Builder->dialect_for_engine($engine);
 
 The manifest dialect of an engine (see L</DESCRIPTION>), or C<undef> when
-the engine has none.
+its family has none.
 
 =cut
+
+# Validation errors from the value objects are "...\n" strings without a
+# location; re-raise them from the caller's perspective.
+sub _reraise {
+  my ($error) = @_;
+  my $message = blessed($error) && $error->can('message') ? $error->message : "$error";
+  $message =~ s/\s+\z//;
+  croak $message;
+}
 
 sub from_engine {
   my ( $class, $engine, %opt ) = @_;
@@ -154,23 +238,40 @@ C<%options>, one L</add_engine> with the rest, then L</manifest>.
 
 sub add_engine {
   my ( $self, $engine, %opt ) = @_;
-  croak 'Langertha::Manifest::Builder: add_engine needs an engine with engine_capabilities'
-    unless blessed($engine) && $engine->can('engine_capabilities');
+  croak 'Langertha::Manifest::Builder: add_engine needs a chat engine (an object'
+    . ' composing Langertha::Role::Chat); ' . ( ref($engine) || 'a non-object' ) . ' is not one'
+    unless blessed($engine) && $engine->can('does') && $engine->does('Langertha::Role::Chat');
 
   my $dialect = $opt{dialect} // $self->dialect_for_engine($engine);
-  croak 'Langertha::Manifest::Builder: ' . ref($engine) . ' has no manifest dialect'
-    . ' (not a chat engine); pass dialect => ... to name one'
+  croak 'Langertha::Manifest::Builder: ' . ref($engine) . ' has no manifest dialect;'
+    . ' pass dialect => ... to name one'
     unless defined $dialect;
 
   my $base_url = $opt{base_url} // ( $engine->can('url') ? $engine->url : undef );
   croak 'Langertha::Manifest::Builder: ' . ref($engine) . ' has no url; pass base_url => ...'
     unless defined $base_url;
 
-  $self->_set_provider_id( _provider_id_for( ref $engine ) ) unless $self->has_provider_id;
-  $self->_set_issuer( _origin_of($base_url) ) unless $self->has_issuer;
+  # Everything lazy is read from a clone, so the caller's engine keeps its
+  # unbuilt slots (and a model-less engine with `models` given never runs its
+  # croaking default_model).
+  my $probe = $engine->meta->clone_object($engine);
 
-  my $auth_ref;
-  my $auth_type = $opt{auth} // _auth_type_for($engine);
+  my @model_ids;
+  if ( $opt{models} ) {
+    @model_ids = @{ $opt{models} };
+  }
+  else {
+    my $model_id = eval { $probe->chat_model };
+    croak 'Langertha::Manifest::Builder: cannot determine a model for ' . ref($engine)
+      . '; pass models => [...]'
+      if $@;
+    # "default" is the self-hosted engines' placeholder for "whatever the
+    # server loaded" -- not a model id worth publishing.
+    @model_ids = grep { defined && length && $_ ne 'default' } $model_id;
+  }
+
+  my $auth_type = $opt{auth} // _auth_type_for($probe);
+  my ( $auth_ref, $new_auth );
   if ( $auth_type ne 'none' ) {
     $auth_ref = $opt{auth_id} // 'api';
     my ($existing) = grep { $_->id eq $auth_ref } @{ $self->_auth };
@@ -180,26 +281,41 @@ sub add_engine {
         unless $existing->type eq $auth_type;
     }
     else {
-      $self->add_auth( id => $auth_ref, type => $auth_type );
+      $new_auth = eval { Langertha::Manifest::Auth->new( id => $auth_ref, type => $auth_type ) }
+        or _reraise($@);
     }
   }
 
   my $endpoint_id = $opt{endpoint_id} // 'chat';
-  $self->add_endpoint(
-    id       => $endpoint_id,
-    dialect  => $dialect,
-    base_url => $base_url,
-    ( defined $auth_ref ? ( auth_ref => $auth_ref ) : () ),
-  );
-
-  my @models = $opt{models} ? @{ $opt{models} } : ( $engine->chat_model );
-  for my $model_id (@models) {
-    $self->add_model(
-      id           => $model_id,
-      endpoint_ref => $endpoint_id,
-      capabilities => _capabilities_for( $engine, $model_id ),
+  my $endpoint = eval {
+    Langertha::Manifest::Endpoint->new(
+      id       => $endpoint_id,
+      dialect  => $dialect,
+      base_url => $base_url,
+      ( defined $auth_ref ? ( auth_ref => $auth_ref ) : () ),
     );
+  } or _reraise($@);
+  $self->_check_new_endpoint($endpoint);
+
+  my @models;
+  for my $model_id (@model_ids) {
+    my $model = eval {
+      Langertha::Manifest::Model->new(
+        id           => $model_id,
+        endpoint_ref => $endpoint_id,
+        capabilities => _capabilities_for( $engine, $model_id ),
+      );
+    } or _reraise($@);
+    $self->_check_new_model( $model, @models );
+    push @models, $model;
   }
+
+  # All checks passed: commit. A croak above leaves the builder unchanged.
+  push @{ $self->_auth }, $new_auth if $new_auth;
+  push @{ $self->_endpoints }, $endpoint;
+  push @{ $self->_models }, @models;
+  $self->_set_provider_id( _provider_id_for( ref $engine ) ) unless $self->has_provider_id;
+  $self->_set_issuer( _origin_of($base_url) ) unless $self->has_issuer;
   return $self;
 }
 
@@ -208,23 +324,41 @@ sub add_engine {
     $builder->add_engine( $engine,
       endpoint_id => 'chat',            # default 'chat'
       base_url    => $public_url,       # default $engine->url
-      models      => [ ... ],           # default [ $engine->chat_model ]
+      models      => [ ... ],           # default: the engine's model (placeholders skipped)
       auth        => 'api_key',         # or 'none'; default from the engine class
       auth_id     => 'api',             # default 'api' (shared across engines)
       dialect     => 'openai-chat',     # default from the engine family
     );
 
-Adds one endpoint for the engine, its auth entry (if any) and one model
-entry per model id. Croaks for an engine without a manifest dialect unless
-C<dialect> is given. Returns the builder.
+Adds one endpoint for the chat engine, its auth entry (if any) and one
+model entry per model id. Croaks for a non-chat engine, for a chat engine
+without a manifest dialect unless C<dialect> is given, for a model-less
+engine unless C<models> is given, and on a duplicate endpoint id or
+C<(model, endpoint)> pair. Atomic: on a croak the builder is unchanged.
+Returns the builder.
 
 =cut
 
-sub add_endpoint {
-  my ( $self, %args ) = @_;
-  my $endpoint = Langertha::Manifest::Endpoint->new(%args);
+sub _check_new_endpoint {
+  my ( $self, $endpoint ) = @_;
   croak "Langertha::Manifest::Builder: duplicate endpoint id '" . $endpoint->id . q{'}
     if grep { $_->id eq $endpoint->id } @{ $self->_endpoints };
+  return;
+}
+
+sub _check_new_model {
+  my ( $self, $model, @pending ) = @_;
+  croak "Langertha::Manifest::Builder: duplicate model '" . $model->id . "' on endpoint '"
+    . $model->endpoint_ref . q{'}
+    if grep { $_->id eq $model->id && $_->endpoint_ref eq $model->endpoint_ref }
+      @{ $self->_models }, @pending;
+  return;
+}
+
+sub add_endpoint {
+  my ( $self, %args ) = @_;
+  my $endpoint = eval { Langertha::Manifest::Endpoint->new(%args) } or _reraise($@);
+  $self->_check_new_endpoint($endpoint);
   push @{ $self->_endpoints }, $endpoint;
   return $self;
 }
@@ -234,12 +368,16 @@ sub add_endpoint {
     $builder->add_endpoint( id => ..., dialect => ..., base_url => ..., auth_ref => ... );
 
 Adds an endpoint that is not an engine (a proxy's own protocol route).
+Croaks on a duplicate id.
 
 =cut
 
 sub add_auth {
   my ( $self, %args ) = @_;
-  push @{ $self->_auth }, Langertha::Manifest::Auth->new(%args);
+  my $auth = eval { Langertha::Manifest::Auth->new(%args) } or _reraise($@);
+  croak "Langertha::Manifest::Builder: duplicate auth id '" . $auth->id . q{'}
+    if grep { $_->id eq $auth->id } @{ $self->_auth };
+  push @{ $self->_auth }, $auth;
   return $self;
 }
 
@@ -247,13 +385,15 @@ sub add_auth {
 
     $builder->add_auth( id => 'api', type => 'api_key' );
 
-Adds an auth entry.
+Adds an auth entry. Croaks on a duplicate id.
 
 =cut
 
 sub add_model {
   my ( $self, %args ) = @_;
-  push @{ $self->_models }, Langertha::Manifest::Model->new(%args);
+  my $model = eval { Langertha::Manifest::Model->new(%args) } or _reraise($@);
+  $self->_check_new_model($model);
+  push @{ $self->_models }, $model;
   return $self;
 }
 
@@ -261,7 +401,8 @@ sub add_model {
 
     $builder->add_model( id => ..., endpoint_ref => ..., capabilities => { ... } );
 
-Adds a model entry.
+Adds a model entry as given (no capability filtering: the caller states the
+claim). Croaks on a duplicate C<(id, endpoint_ref)> pair.
 
 =cut
 
@@ -271,14 +412,17 @@ sub manifest {
     unless $self->has_provider_id;
   croak 'Langertha::Manifest::Builder: no issuer (add an engine or pass issuer)'
     unless $self->has_issuer;
-  return Langertha::Manifest->new(
-    provider_id => $self->provider_id,
-    issuer      => $self->issuer,
-    endpoints   => [ @{ $self->_endpoints } ],
-    auth        => [ @{ $self->_auth } ],
-    models      => [ @{ $self->_models } ],
-    extensions  => $self->extensions,
-  );
+  my $manifest = eval {
+    Langertha::Manifest->new(
+      provider_id => $self->provider_id,
+      issuer      => $self->issuer,
+      endpoints   => [ @{ $self->_endpoints } ],
+      auth        => [ @{ $self->_auth } ],
+      models      => [ @{ $self->_models } ],
+      extensions  => $self->extensions,
+    );
+  } or _reraise($@);
+  return $manifest;
 }
 
 =method manifest
@@ -303,14 +447,16 @@ sub _origin_of {
   return $origin;
 }
 
+# $probe is a clone: reading the lazy api_key builds it there, not on the
+# caller's engine.
 sub _auth_type_for {
-  my ($engine) = @_;
-  return 'api_key' if $engine->can('api_key_required') && $engine->api_key_required;
+  my ($probe) = @_;
+  return 'api_key' if $probe->can('api_key_required') && $probe->api_key_required;
   # Optional key: announce the mechanism only when one is configured. Only
   # definedness is inspected; the value is dropped on the spot.
   return 'none'
-    unless $engine->can('api_key_env') && defined $engine->api_key_env && $engine->can('api_key');
-  my $configured = defined( scalar eval { $engine->api_key } );
+    unless $probe->can('api_key_env') && defined $probe->api_key_env && $probe->can('api_key');
+  my $configured = defined( scalar eval { $probe->api_key } );
   return $configured ? 'api_key' : 'none';
 }
 
@@ -318,12 +464,11 @@ sub _capabilities_for {
   my ( $engine, $model_id ) = @_;
   # engine_capabilities is model-scoped (ADR 0019 layer 3 and model-aware
   # `around engine_capabilities`, e.g. Gemini): evaluate it on an in-memory
-  # clone whose chat_model is this model. The caller's engine is not touched.
-  my $probe = $engine->can('chat_model') && ( $engine->chat_model // '' ) ne $model_id
-    ? $engine->meta->clone_object( $engine, chat_model => $model_id )
-    : $engine;
-  my $caps = $probe->engine_capabilities;
-  return { map { $_ => ( $caps->{$_} ? 1 : 0 ) } keys %$caps };
+  # clone whose chat_model is this model. The caller's engine is not read
+  # for its chat_model and not touched.
+  my $probe = $engine->meta->clone_object( $engine, chat_model => $model_id );
+  my $caps  = $probe->engine_capabilities;
+  return { map { $_ => 1 } grep { $caps->{$_} && $MODEL_CAPABILITY{$_} } keys %$caps };
 }
 
 __PACKAGE__->meta->make_immutable;

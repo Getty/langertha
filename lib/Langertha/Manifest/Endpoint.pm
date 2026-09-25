@@ -28,8 +28,11 @@ construction.
 # inheritance encodes the wire dialect) and named after the tool_wire_format
 # tag where the two coincide. openai-chat carries a suffix because OpenAI
 # ships two envelopes (/chat/completions and /responses).
+# anthropic-compat is the /anthropic shim variant of the Messages envelope:
+# same envelope, but structured output is emulated with a synthetic tool plus
+# a forced tool_choice instead of first-party output_config.format.
 my @KNOWN_DIALECTS = qw(
-  openai-chat responses perplexity-agent anthropic gemini ollama aki lmstudio
+  openai-chat responses perplexity-agent anthropic anthropic-compat gemini ollama aki lmstudio
 );
 my %KNOWN_DIALECT = map { $_ => 1 } @KNOWN_DIALECTS;
 
@@ -52,8 +55,10 @@ L</is_known_dialect>, a separate question from validity.
 =attr base_url
 
 C<http>/C<https> URL; exactly what a Langertha engine of this dialect takes
-as C<url> (the dialect decides which path it appends). Never carries
-userinfo, a query string or a fragment.
+as C<url> (the dialect decides which path it appends). Printable ASCII,
+never carries userinfo, a query string or a fragment. This keeps the usual
+credential carriers out of a published URL; it is best effort — a secret
+embedded in the path itself cannot be told apart from a real path.
 
 =attr auth_ref
 
@@ -64,10 +69,10 @@ C<undef> when it needs no credentials.
 
 sub BUILD {
   my ($self) = @_;
-  $self->check_manifest_id( 'id', $self->id );
-  $self->check_manifest_token( 'dialect', $self->dialect );
-  $self->check_manifest_url( 'base_url', $self->base_url );
-  $self->check_manifest_id( 'auth_ref', $self->auth_ref ) if defined $self->auth_ref;
+  $self->_check_id( 'id', $self->id );
+  $self->_check_token( 'dialect', $self->dialect );
+  $self->_check_url( 'base_url', $self->base_url );
+  $self->_check_id( 'auth_ref', $self->auth_ref ) if defined $self->auth_ref;
   return;
 }
 
@@ -78,7 +83,9 @@ sub known_dialects { return @KNOWN_DIALECTS }
     my @dialects = Langertha::Manifest::Endpoint->known_dialects;
 
 The v1 dialect vocabulary: C<openai-chat>, C<responses>,
-C<perplexity-agent>, C<anthropic>, C<gemini>, C<ollama>, C<aki>,
+C<perplexity-agent>, C<anthropic> (first-party Messages API),
+C<anthropic-compat> (the C</anthropic> shims: structured output via a
+synthetic tool and forced choice), C<gemini>, C<ollama>, C<aki>,
 C<lmstudio>.
 
 =cut
@@ -93,11 +100,14 @@ True when L</dialect> is in the v1 vocabulary.
 
 sub from_hash {
   my ( $class, $data ) = @_;
-  $class->check_manifest_fields( $data,
+  $class->_check_fields( $data,
     required => [qw( id dialect base_url )],
     optional => [qw( auth_ref )],
   );
-  return $class->new(%$data);
+  return $class->new(
+    map { exists $data->{$_} ? ( $_ => $class->_string( $_, $data->{$_} ) ) : () }
+      qw( id dialect base_url auth_ref )
+  );
 }
 
 =method from_hash

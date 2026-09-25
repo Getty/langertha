@@ -1,17 +1,11 @@
 package Langertha::Manifest::Validation;
-# ABSTRACT: Shared validation rules for the provider manifest value objects
+# ABSTRACT: Internal validation rules shared by the provider manifest value objects
 our $VERSION = '0.503';
 use Moose::Role;
-use Carp qw( croak );
+use B ();
 use Scalar::Util qw( blessed );
 use URI;
 use JSON::MaybeXS ();
-
-# Report validation errors at the caller of the manifest API, not inside it.
-our @CARP_NOT = qw(
-  Langertha::Manifest Langertha::Manifest::Endpoint Langertha::Manifest::Auth
-  Langertha::Manifest::Model Langertha::Manifest::Builder
-);
 
 =head1 SYNOPSIS
 
@@ -19,25 +13,23 @@ our @CARP_NOT = qw(
     use Moose;
     with 'Langertha::Manifest::Validation';
 
-    sub from_hash {
-      my ( $class, $data ) = @_;
-      $class->check_manifest_fields( $data,
-        required => [qw( id dialect base_url )],
-        optional => [qw( auth_ref )],
-      );
-      return $class->new(%$data);
-    }
-
 =head1 DESCRIPTION
 
 The rules every part of a L<Langertha::Manifest> shares: the explicit
 rejection of command-, code-, secret- and prompt-shaped fields, the
-rejection of unknown fields, and the value checks for ids, tokens and URLs.
-Composed by L<Langertha::Manifest>, L<Langertha::Manifest::Endpoint>,
-L<Langertha::Manifest::Auth> and L<Langertha::Manifest::Model>.
+rejection of unknown fields, and the value checks for ids, tokens, URLs,
+numbers and booleans. Composed by L<Langertha::Manifest>,
+L<Langertha::Manifest::Endpoint>, L<Langertha::Manifest::Auth> and
+L<Langertha::Manifest::Model>.
 
-This is an internal role of the manifest value objects, not an engine
-capability; it lives outside C<Langertha::Role::> on purpose.
+B<Internal.> Every method of this role is private (underscore-prefixed) and
+not part of the public API of the classes that compose it; it lives outside
+C<Langertha::Role::> on purpose, because it is not an engine capability.
+
+Validation errors are thrown as C<"Langertha::Manifest: E<lt>reasonE<gt>\n">
+(no source location); the public entry points (C<from_hash>, C<from_json>,
+the Builder) re-raise them with C<croak>, so the reported location is the
+caller's.
 
 =cut
 
@@ -45,7 +37,8 @@ capability; it lives outside C<Langertha::Role::> on purpose.
 # before the unknown-field check, so the error says WHY: a manifest comes from
 # the network and never carries anything that could run a command, load code,
 # point at a local secret or inject a prompt (langertha-raider ADR 0007). No v1
-# field name contains any of these words.
+# field name contains any of these words. The closed field set is what actually
+# keeps such fields out; this list only sharpens the message.
 my %FORBIDDEN_WORD = map { $_ => 1 } qw(
   command commands cmd exec shell script run install hook hooks
   class module package code eval require plugin plugins perl
@@ -59,146 +52,146 @@ sub _field_words {
   return grep { length } split /[_\-.\s]+/, lc $split;
 }
 
-sub is_forbidden_manifest_field {
+sub _is_forbidden_field {
   my ( $class, $name ) = @_;
   return scalar grep { $FORBIDDEN_WORD{$_} } _field_words($name);
 }
 
-=method is_forbidden_manifest_field
-
-    Langertha::Manifest->is_forbidden_manifest_field('api_key');  # true
-
-True when a field name contains a word from the forbidden list (commands,
-code, secrets, secret paths, prompts, tool/pack/skill injection). Names are
-split on C<_>, C<->, C<.> and camelCase boundaries, case-insensitively.
-
-=cut
-
-sub manifest_error {
-  my ( $class, $message ) = @_;
-  croak "Langertha::Manifest: $message";
+# Untrusted text ends up in error messages a client prints: show it escaped
+# and bounded, never raw (no terminal escapes, no bidi overrides).
+sub _display {
+  my ( $class, $text ) = @_;
+  $text = '' unless defined $text;
+  $text = substr( $text, 0, 64 ) . '...' if length $text > 64;
+  $text =~ s/([^\x20-\x7e])/sprintf '\\x{%x}', ord $1/ge;
+  return $text;
 }
 
-sub check_manifest_fields {
+sub _error {
+  my ( $class, $message ) = @_;
+  die "Langertha::Manifest: $message\n";
+}
+
+# Re-raise an error from a nested entry with its location in the document.
+sub _rethrow {
+  my ( $class, $path, $error ) = @_;
+  my $message = blessed($error) && $error->can('message') ? $error->message : "$error";
+  $message =~ s/\s+\z//;
+  $message =~ s/\ALangertha::Manifest: //;
+  die "Langertha::Manifest: $path: $message\n";
+}
+
+sub _check_fields {
   my ( $class, $data, %spec ) = @_;
-  $class->manifest_error('must be a JSON object') unless ref $data eq 'HASH';
+  $class->_error('must be a JSON object') unless ref $data eq 'HASH';
   my %allowed = map { $_ => 1 } @{ $spec{required} || [] }, @{ $spec{optional} || [] };
   for my $field ( sort keys %$data ) {
     next if $allowed{$field};
-    $class->manifest_error( "forbidden field '$field': a manifest never carries "
+    my $shown = $class->_display($field);
+    $class->_error( "forbidden field '$shown': a manifest never carries "
       . 'commands, code, secrets or prompts' )
-      if $class->is_forbidden_manifest_field($field);
-    $class->manifest_error("unknown field '$field'");
+      if $class->_is_forbidden_field($field);
+    $class->_error("unknown field '$shown'");
   }
   for my $field ( @{ $spec{required} || [] } ) {
-    $class->manifest_error("field '$field' is required")
-      unless defined $data->{$field};
+    $class->_error("field '$field' is required") unless defined $data->{$field};
   }
   return;
 }
 
-=method check_manifest_fields
-
-    $class->check_manifest_fields( $hashref,
-      required => [ ... ], optional => [ ... ] );
-
-Croaks unless C<$hashref> is a HashRef whose keys are all in the required or
-optional lists and every required key is defined. A key outside both lists is
-reported as I<forbidden> when its name is command/code/secret/prompt-shaped,
-otherwise as I<unknown>.
-
-=cut
+# A schema string field: a JSON string (a JSON number is accepted and
+# stringified, so "id": 42 serializes back as "42"), never an object/array.
+sub _string {
+  my ( $class, $what, $value ) = @_;
+  return undef unless defined $value;
+  $class->_error("$what must be a string") if ref $value;
+  return "$value";
+}
 
 my $ID_RE = qr/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/;
 
-sub check_manifest_id {
+sub _check_id {
   my ( $class, $what, $value ) = @_;
-  $class->manifest_error( "$what must match [A-Za-z0-9][A-Za-z0-9._-]* (max 64), got '"
-    . ( $value // '' ) . q{'} )
+  $class->_error( "$what must match [A-Za-z0-9][A-Za-z0-9._-]* (max 64), got '"
+    . $class->_display($value) . q{'} )
     unless defined $value && !ref $value && $value =~ $ID_RE;
   return;
 }
 
-=method check_manifest_id
-
-Croaks unless the value is a local manifest id (endpoint / auth id or
-reference): C<[A-Za-z0-9][A-Za-z0-9._-]*>, at most 64 characters.
-
-=cut
-
-sub check_manifest_token {
+sub _check_token {
   my ( $class, $what, $value ) = @_;
-  $class->manifest_error( "$what must match [a-z][a-z0-9_-]*, got '" . ( $value // '' ) . q{'} )
+  $class->_error( "$what must match [a-z][a-z0-9_-]*, got '" . $class->_display($value) . q{'} )
     unless defined $value && !ref $value && $value =~ /\A[a-z][a-z0-9_-]{0,63}\z/;
   return;
 }
 
-=method check_manifest_token
-
-Croaks unless the value is a lower-case vocabulary token (dialect, auth
-type): C<[a-z][a-z0-9_-]*>, at most 64 characters.
-
-=cut
-
-sub check_manifest_url {
+# http/https, a host, printable ASCII only (IDN hosts go punycode), and no
+# userinfo, query or fragment -- the usual places a credential is smuggled
+# into a URL. This is best effort: a secret embedded in the PATH
+# (/key/SECRET/v1, ;key=SECRET) cannot be told apart from a real path.
+sub _check_url {
   my ( $class, $what, $value ) = @_;
-  $class->manifest_error("$what: must be an http or https URL")
+  $class->_error("$what: must be an http or https URL")
     unless defined $value && !ref $value && length $value;
+  $class->_error("$what: must be printable ASCII (no control, space or non-ASCII characters)")
+    if $value =~ /[^\x21-\x7e]/;
   my $uri = URI->new($value);
   my $scheme = $uri->scheme // '';
-  $class->manifest_error("$what: must be an http or https URL, got '$value'")
+  $class->_error( "$what: must be an http or https URL, got '" . $class->_display($value) . q{'} )
     unless ( $scheme eq 'http' || $scheme eq 'https' ) && length( $uri->host // '' );
-  $class->manifest_error("$what: must not carry userinfo (credentials) in the URL")
+  $class->_error("$what: must not carry userinfo (credentials) in the URL")
     if defined $uri->userinfo;
-  $class->manifest_error("$what: must not carry a query string (secrets hide there)")
+  $class->_error("$what: must not carry a query string (secrets hide there)")
     if defined $uri->query;
-  $class->manifest_error("$what: must not carry a fragment")
+  $class->_error("$what: must not carry a fragment")
     if defined $uri->fragment;
   return;
 }
 
-=method check_manifest_url
+sub _sv_flags {
+  my ($value) = @_;
+  return B::svref_2object( \$value )->FLAGS;
+}
 
-Croaks unless the value is an C<http>/C<https> URL with a host and without
-userinfo, query string or fragment — the places a credential could be
-smuggled into a published URL.
+# True for a value that carries a numeric (integer) slot: a decoded JSON
+# number, a Perl numeric literal -- also one that has since been printed
+# (IOK plus a cached string). A decoded JSON string ("1") has only a string
+# slot and is not a number; the check reads the flags before anything
+# numifies the value.
+sub _is_integer {
+  my ( $class, $value ) = @_;
+  return 0 if !defined $value || ref $value;
+  return ( _sv_flags($value) & B::SVp_IOK ) ? 1 : 0;
+}
 
-=cut
+sub _is_number {
+  my ( $class, $value ) = @_;
+  return 0 if !defined $value || ref $value;
+  return ( _sv_flags($value) & ( B::SVp_IOK | B::SVp_NOK ) ) ? 1 : 0;
+}
 
-sub manifest_bool {
+# A boolean is a JSON boolean, \1 / \0, or the NUMBERS 1 / 0. A JSON string
+# ("1", "true", "yes") is not a boolean.
+sub _bool {
   my ( $class, $what, $value ) = @_;
-  if ( JSON::MaybeXS::is_bool($value) ) { return $value ? 1 : 0 }
-  if ( ref $value eq 'SCALAR' && defined $$value && $$value =~ /\A[01]\z/ ) { return 0 + $$value }
-  if ( defined $value && !ref $value && $value =~ /\A[01]\z/ ) { return 0 + $value }
-  $class->manifest_error("$what must be a boolean");
+  return $value ? 1 : 0 if JSON::MaybeXS::is_bool($value);
+  return 0 + $$value if ref $value eq 'SCALAR' && defined $$value && $$value =~ /\A[01]\z/;
+  return 0 + $value
+    if $class->_is_number($value) && ( $value == 0 || $value == 1 );
+  $class->_error("$what must be a boolean");
   return;
 }
 
-=method manifest_bool
+# Deep copy through JSON: proves the value is plain JSON data (no objects
+# other than JSON booleans, no code refs) and detaches it from the caller.
+my $CLONE_JSON = JSON::MaybeXS->new( utf8 => 1, canonical => 1, allow_nonref => 1 );
 
-Normalizes a boolean — a JSON boolean, C<\1>/C<\0> or C<1>/C<0> — to C<1>
-or C<0>; croaks on anything else (a string such as C<"yes"> is not a
-boolean).
-
-=cut
-
-sub rethrow_manifest_error {
-  my ( $class, $path, $error ) = @_;
-  my $message = blessed($error) && $error->can('message') ? $error->message : "$error";
-  $message =~ s/\s+at \S+ line \d+\.?\s*\z//s;
-  $message =~ s/\s+\z//;
-  $message =~ s/\ALangertha::Manifest(?:::\w+)?: //;
-  croak "Langertha::Manifest: $path: $message";
+sub _json_clone {
+  my ( $class, $what, $value ) = @_;
+  my $copy = eval { $CLONE_JSON->decode( $CLONE_JSON->encode($value) ) };
+  $class->_error("$what must hold plain JSON data") if $@;
+  return $copy;
 }
-
-=method rethrow_manifest_error
-
-    $class->rethrow_manifest_error( 'endpoints[0]', $@ );
-
-Re-raises a validation error with the location inside the document
-prefixed, so every rejection reads C<Langertha::Manifest: E<lt>pathE<gt>: E<lt>reasonE<gt>>.
-
-=cut
 
 =seealso
 

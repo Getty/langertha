@@ -2,8 +2,9 @@ package Langertha::Manifest;
 # ABSTRACT: Provider manifest (/.well-known/langertha.json) value object, parser and validator
 our $VERSION = '0.503';
 use Moose;
+use Carp qw( croak );
+use Scalar::Util qw( blessed );
 use JSON::MaybeXS ();
-use Scalar::Util qw( looks_like_number );
 use Langertha::Manifest::Endpoint;
 use Langertha::Manifest::Auth;
 use Langertha::Manifest::Model;
@@ -57,16 +58,28 @@ C<exec>, C<engine_class>, C<api_key>, C<secret_path>, C<env>,
 C<system_prompt>, C<mcp_servers>, C<tools>, …) is rejected explicitly with a
 message saying why — a manifest never carries those;
 
-=item * URLs are C<http>/C<https> without userinfo, query or fragment;
+=item * URLs are printable-ASCII C<http>/C<https> without userinfo, query
+or fragment (best effort: a secret embedded in the path itself cannot be
+detected);
+
+=item * ids and model ids carry no control or format characters (a client
+prints them);
 
 =item * ids are unique and every C<auth_ref> / C<endpoint_ref> resolves;
 
-=item * an unknown C<schema_version> is rejected.
+=item * C<schema_version> must be the JSON integer C<1>; any other version
+is rejected before anything else is checked.
 
 =back
 
-C<extensions> is inert: it must be an object, and it is kept and serialized
-exactly as given, never validated or interpreted by core.
+C<extensions> is inert: it must be an object of plain JSON data, and it is
+kept and serialized exactly as given, never validated further or
+interpreted by core.
+
+Values, unlike structure, are open: an unknown C<dialect>, auth C<type> or
+capability name is accepted. C<is_known_dialect> / C<is_known_type> tell a
+client whether it has an adapter; a client treats a capability it does not
+know as absent.
 
 A manifest states what the provider B<claims>. It is not a probe result and
 grants no local permission: a model claiming C<tools_native> does not
@@ -95,11 +108,30 @@ has models => (
   default => sub { [] },
 );
 
-has extensions => (
-  is      => 'ro',
-  isa     => 'HashRef',
-  default => sub { {} },
+# Stored as a private deep copy (plain JSON data only) and handed out as a
+# fresh copy, so neither the caller's input nor a returned structure can
+# mutate the immutable manifest.
+has _extensions => (
+  is       => 'ro',
+  isa      => 'HashRef',
+  init_arg => 'extensions',
+  default  => sub { {} },
 );
+
+around BUILDARGS => sub {
+  my ( $orig, $class, @args ) = @_;
+  my $args = $class->$orig(@args);
+  if ( exists $args->{extensions} ) {
+    $class->_error('extensions: must be a JSON object') unless ref $args->{extensions} eq 'HASH';
+    $args->{extensions} = $class->_json_clone( 'extensions', $args->{extensions} );
+  }
+  return $args;
+};
+
+sub extensions {
+  my ($self) = @_;
+  return $self->_json_clone( 'extensions', $self->_extensions );
+}
 
 =attr provider_id
 
@@ -124,7 +156,11 @@ manifest can legitimately list none).
 
 =attr extensions
 
-HashRef, inert: kept and serialized untouched, never interpreted.
+HashRef, inert: never validated beyond "plain JSON data" and never
+interpreted by core; serialized exactly as given. It is deep-copied on
+construction and every read returns a fresh copy, so mutating the input or
+the returned structure does not change the manifest. A blessed object
+(other than a JSON boolean) or a code reference in it is rejected.
 
 =cut
 
@@ -146,28 +182,28 @@ Always C<langertha-provider>.
 
 sub BUILD {
   my ($self) = @_;
-  $self->manifest_error( 'provider_id must match [a-z0-9][a-z0-9._-]* (max 128), got \''
-    . $self->provider_id . q{'} )
+  $self->_error( q{provider_id must match [a-z0-9][a-z0-9._-]* (max 128), got '}
+    . $self->_display( $self->provider_id ) . q{'} )
     unless $self->provider_id =~ /\A[a-z0-9][a-z0-9._-]{0,127}\z/;
-  $self->check_manifest_url( 'issuer', $self->issuer );
-  $self->manifest_error('at least one endpoint is required') unless @{ $self->endpoints };
+  $self->_check_url( 'issuer', $self->issuer );
+  $self->_error('at least one endpoint is required') unless @{ $self->endpoints };
 
   my ( %auth, %endpoint, %model );
   for my $entry ( @{ $self->auth } ) {
-    $self->manifest_error( "duplicate auth id '" . $entry->id . q{'} ) if $auth{ $entry->id }++;
+    $self->_error( "duplicate auth id '" . $entry->id . q{'} ) if $auth{ $entry->id }++;
   }
   for my $entry ( @{ $self->endpoints } ) {
-    $self->manifest_error( "duplicate endpoint id '" . $entry->id . q{'} ) if $endpoint{ $entry->id }++;
-    $self->manifest_error( "endpoint '" . $entry->id . "': auth_ref '" . $entry->auth_ref
+    $self->_error( "duplicate endpoint id '" . $entry->id . q{'} ) if $endpoint{ $entry->id }++;
+    $self->_error( "endpoint '" . $entry->id . "': auth_ref '" . $entry->auth_ref
       . q{' names no auth entry} )
       if defined $entry->auth_ref && !$auth{ $entry->auth_ref };
   }
   for my $entry ( @{ $self->models } ) {
-    $self->manifest_error( "model '" . $entry->id . "': endpoint_ref '" . $entry->endpoint_ref
+    my $shown = $self->_display( $entry->id );
+    $self->_error( "model '$shown': endpoint_ref '" . $entry->endpoint_ref
       . q{' names no endpoint} )
       unless $endpoint{ $entry->endpoint_ref };
-    $self->manifest_error( "duplicate model '" . $entry->id . "' on endpoint '"
-      . $entry->endpoint_ref . q{'} )
+    $self->_error( "duplicate model '$shown' on endpoint '" . $entry->endpoint_ref . q{'} )
       if $model{ $entry->endpoint_ref }{ $entry->id }++;
   }
   return;
@@ -180,7 +216,7 @@ sub from_json {
   my $data = eval { $JSON->decode($text) };
   unless ( defined $data || !$@ ) {
     ( my $err = $@ ) =~ s/\s+at \S+ line \d+\.?\s*\z//s;
-    $class->manifest_error("invalid JSON: $err");
+    croak "Langertha::Manifest: invalid JSON: $err";
   }
   return $class->from_hash($data);
 }
@@ -196,24 +232,37 @@ JSON and on every validation failure.
 
 sub from_hash {
   my ( $class, $data ) = @_;
+  my $manifest = eval { $class->_from_hash($data) };
+  return $manifest if $manifest;
+  my $error = $@;
+  my $message = blessed($error) && $error->can('message') ? $error->message : "$error";
+  $message =~ s/\s+\z//;
+  $message = "Langertha::Manifest: $message" unless $message =~ /\ALangertha::Manifest: /;
+  croak $message;
+}
+
+sub _from_hash {
+  my ( $class, $data ) = @_;
   # The version is checked before anything else: a document of another major
   # version may legitimately carry fields v1 does not know, and the useful
   # error then is "unsupported version", not "unknown field".
-  $class->manifest_error('must be a JSON object') unless ref $data eq 'HASH';
+  $class->_error('must be a JSON object') unless ref $data eq 'HASH';
   my $version = $data->{schema_version};
-  $class->manifest_error(q{field 'schema_version' is required}) unless defined $version;
-  $class->manifest_error('schema_version: must be an integer')
-    unless !ref $version && looks_like_number($version) && $version =~ /\A[0-9]+\z/;
-  $class->manifest_error( "unsupported schema_version $version (this Langertha reads "
+  $class->_error(q{field 'schema_version' is required}) unless defined $version;
+  # A JSON integer -- not the string "1", not 1.0 -- checked on the value as
+  # decoded, before anything stringifies it.
+  $class->_error('schema_version: must be an integer (a JSON number, not a string)')
+    unless $class->_is_integer($version);
+  $class->_error( "unsupported schema_version $version (this Langertha reads "
     . SCHEMA_VERSION . ')' )
     unless $version == SCHEMA_VERSION;
-  $class->check_manifest_fields( $data,
+  $class->_check_fields( $data,
     required => [qw( schema_version kind provider_id issuer endpoints )],
     optional => [qw( auth models extensions )],
   );
-  $class->manifest_error( q{kind: must be '} . KIND . q{'} )
+  $class->_error( q{kind: must be '} . KIND . q{'} )
     unless !ref $data->{kind} && $data->{kind} eq KIND;
-  $class->manifest_error('extensions: must be a JSON object')
+  $class->_error('extensions: must be a JSON object')
     if exists $data->{extensions} && ref $data->{extensions} ne 'HASH';
 
   my %parsed;
@@ -224,19 +273,19 @@ sub from_hash {
   ) {
     my ( $name, $entry_class ) = @$section;
     next unless exists $data->{$name};
-    $class->manifest_error("$name: must be an array") unless ref $data->{$name} eq 'ARRAY';
+    $class->_error("$name: must be an array") unless ref $data->{$name} eq 'ARRAY';
     my @entries = @{ $data->{$name} };
     for my $i ( 0 .. $#entries ) {
       my $entry = eval { $entry_class->from_hash( $entries[$i] ) };
-      $class->rethrow_manifest_error( "${name}[$i]", $@ ) unless $entry;
+      $class->_rethrow( "${name}[$i]", $@ ) unless $entry;
       push @{ $parsed{$name} }, $entry;
     }
     $parsed{$name} //= [];
   }
 
   return $class->new(
-    provider_id => $data->{provider_id},
-    issuer      => $data->{issuer},
+    provider_id => $class->_string( 'provider_id', $data->{provider_id} ),
+    issuer      => $class->_string( 'issuer', $data->{issuer} ),
     %parsed,
     ( exists $data->{extensions} ? ( extensions => $data->{extensions} ) : () ),
   );
@@ -296,7 +345,9 @@ The model entries served on that endpoint.
 sub to_hash {
   my ($self) = @_;
   return {
-    schema_version => SCHEMA_VERSION,
+    # + 0: a fresh number, never the shared constant (constant folding may
+    # have cached a string on it, and a JSON encoder would then emit "1").
+    schema_version => SCHEMA_VERSION + 0,
     kind           => KIND,
     provider_id    => $self->provider_id,
     issuer         => $self->issuer,
@@ -321,8 +372,12 @@ sub to_json {
 
 =method to_json
 
-UTF-8 JSON with sorted keys (canonical), so the output is byte-stable and
-C<from_json> → C<to_json> is the identity.
+UTF-8 JSON with sorted keys (canonical), so the output is byte-stable:
+C<to_json> is a fixed point after one roundtrip
+(C<< from_json($m->to_json)->to_json eq $m->to_json >>). Input that omitted
+optional sections comes back with their defaults (C<auth>, C<models>,
+C<extensions>, C<capabilities>) filled in, so the first serialization of
+such input is not byte-identical to it.
 
 =cut
 

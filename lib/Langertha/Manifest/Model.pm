@@ -43,8 +43,9 @@ Id of the L<Langertha::Manifest::Endpoint> serving this model.
 =attr capabilities
 
 HashRef of capability name to C<1>/C<0>. Names match C<[a-z][a-z0-9_]*>;
-input values may be JSON booleans, C<\1>/C<\0> or C<1>/C<0> and are
-normalized to C<1>/C<0>.
+input values may be JSON booleans, C<\1>/C<\0> or the numbers C<1>/C<0>
+and are normalized to C<1>/C<0>; strings (C<"1">, C<"true">) are rejected.
+Names are open: a client treats a capability it does not know as absent.
 
 =cut
 
@@ -53,12 +54,12 @@ around BUILDARGS => sub {
   my $args = $class->$orig(@args);
   if ( exists $args->{capabilities} ) {
     my $caps = $args->{capabilities};
-    $class->manifest_error('capabilities: must be a JSON object') unless ref $caps eq 'HASH';
+    $class->_error('capabilities: must be a JSON object') unless ref $caps eq 'HASH';
     my %norm;
     for my $name ( sort keys %$caps ) {
-      $class->manifest_error("capabilities: invalid capability name '$name'")
+      $class->_error( "capabilities: invalid capability name '" . $class->_display($name) . q{'} )
         unless $name =~ /\A[a-z][a-z0-9_]{0,63}\z/;
-      $norm{$name} = $class->manifest_bool( "capabilities: '$name'", $caps->{$name} );
+      $norm{$name} = $class->_bool( "capabilities: '$name'", $caps->{$name} );
     }
     $args->{capabilities} = \%norm;
   }
@@ -68,9 +69,12 @@ around BUILDARGS => sub {
 sub BUILD {
   my ($self) = @_;
   my $id = $self->id;
-  $self->manifest_error('id must be a non-empty model id without control characters (max 256)')
-    unless length $id && length $id <= 256 && $id !~ /[[:cntrl:]]/;
-  $self->check_manifest_id( 'endpoint_ref', $self->endpoint_ref );
+  # Control, format (bidi overrides such as U+202E), surrogate, private-use,
+  # unassigned and line/paragraph-separator characters are rejected: a client
+  # prints model ids.
+  $self->_error('id must be a non-empty model id without control or format characters (max 256)')
+    unless length $id && length $id <= 256 && $id !~ /[\p{C}\p{Zl}\p{Zp}]/;
+  $self->_check_id( 'endpoint_ref', $self->endpoint_ref );
   return;
 }
 
@@ -83,17 +87,22 @@ sub supports {
 
     $model->supports('streaming');
 
-True when the manifest claims the capability for this model.
+True when the manifest claims the capability for this model. Accepts any
+name; an unknown or absent capability is simply not supported.
 
 =cut
 
 sub from_hash {
   my ( $class, $data ) = @_;
-  $class->check_manifest_fields( $data,
+  $class->_check_fields( $data,
     required => [qw( id endpoint_ref )],
     optional => [qw( capabilities )],
   );
-  return $class->new(%$data);
+  return $class->new(
+    id           => $class->_string( 'id', $data->{id} ),
+    endpoint_ref => $class->_string( 'endpoint_ref', $data->{endpoint_ref} ),
+    ( exists $data->{capabilities} ? ( capabilities => $data->{capabilities} ) : () ),
+  );
 }
 
 =method from_hash

@@ -117,6 +117,39 @@ subtest 'extensions are inert and passed through untouched' => sub {
   is_deeply $m->to_hash->{extensions}, $ext, 'and serialized as given';
 };
 
+subtest 'extensions cannot be mutated from outside' => sub {
+  my $ext = { a => 1 };
+  my $doc = full_doc();
+  $doc->{extensions} = $ext;
+  my $m = Langertha::Manifest->from_hash($doc);
+  $ext->{b} = 2;
+  $m->extensions->{c} = 3;
+  $m->to_hash->{extensions}{d} = 4;
+  is_deeply $m->extensions, { a => 1 }, 'input, accessor and to_hash copies are detached';
+};
+
+subtest 'numeric ids are stringified' => sub {
+  my $m = Langertha::Manifest->from_json(
+    '{"schema_version":1,"kind":"langertha-provider","provider_id":"p","issuer":"https://p.example",'
+    . '"endpoints":[{"id":7,"dialect":"x","base_url":"https://p.example"}],'
+    . '"models":[{"id":42,"endpoint_ref":7}]}' );
+  like $m->to_json, qr/"id":"42"/, 'model id 42 serializes as the string "42"';
+  like $m->to_json, qr/"endpoint_ref":"7"/, 'endpoint_ref 7 as "7"';
+};
+
+subtest 'to_json is a fixed point after one roundtrip' => sub {
+  # Non-canonical input (defaults omitted, keys unsorted, whitespace) comes
+  # back with its defaults filled in; from then on the bytes are stable.
+  my $input = '{ "kind": "langertha-provider", "schema_version": 1, "provider_id": "p",'
+    . ' "issuer": "https://p.example",'
+    . ' "endpoints": [ { "id": "c", "dialect": "ollama", "base_url": "https://p.example" } ],'
+    . ' "models": [ { "id": "m", "endpoint_ref": "c" } ] }';
+  my $once = Langertha::Manifest->from_json($input)->to_json;
+  isnt $once, $input, 'first serialization normalizes the input';
+  like $once, qr/"capabilities":\{\}/, 'defaults are filled in';
+  is( Langertha::Manifest->from_json($once)->to_json, $once, 'second roundtrip is byte-identical' );
+};
+
 subtest 'lookups' => sub {
   my $m = Langertha::Manifest->from_hash( full_doc() );
   is $m->endpoint('chat')->dialect, 'openai-chat', 'endpoint by id';

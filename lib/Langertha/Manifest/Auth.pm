@@ -38,8 +38,8 @@ accepted; L</is_known_type> tells a client whether it can serve it.
 
 sub BUILD {
   my ($self) = @_;
-  $self->check_manifest_id( 'id', $self->id );
-  $self->check_manifest_token( 'type', $self->type );
+  $self->_check_id( 'id', $self->id );
+  $self->_check_token( 'type', $self->type );
   return;
 }
 
@@ -61,8 +61,8 @@ True when L</type> is in the v1 vocabulary.
 
 sub from_hash {
   my ( $class, $data ) = @_;
-  $class->check_manifest_fields( $data, required => [qw( id type )] );
-  return $class->new(%$data);
+  $class->_check_fields( $data, required => [qw( id type )] );
+  return $class->new( map { $_ => $class->_string( $_, $data->{$_} ) } qw( id type ) );
 }
 
 =method from_hash

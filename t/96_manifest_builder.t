@@ -5,24 +5,43 @@ use strict;
 use warnings;
 
 use Test2::Bundle::More;
+use Module::Runtime qw( use_module );
 
 use Langertha::Manifest::Builder;
 use Langertha::Engine::OpenAI;
 use Langertha::Engine::OpenAIResponses;
 use Langertha::Engine::Anthropic;
+use Langertha::Engine::AKIAnthropic;
+use Langertha::Engine::MiniMaxAnthropic;
+use Langertha::Engine::MoonshotAnthropic;
+use Langertha::Engine::LMStudioAnthropic;
 use Langertha::Engine::vLLM;
 use Langertha::Engine::Ollama;
+use Langertha::Engine::OllamaOpenAI;
+use Langertha::Engine::OpenRouter;
+use Langertha::Engine::Groq;
 use Langertha::Engine::Gemini;
 use Langertha::Engine::Whisper;
 
-# The Builder is how Knarr and Skeid publish what they expose. Two properties
-# matter above all: the manifest tells the truth about the engine (dialect from
-# the engine family, capabilities straight from engine_capabilities — the same
-# registry chat_f's rewrites read), and it never carries a secret.
+# The Builder is how Knarr and Skeid publish what they expose. What matters:
+# the manifest tells the truth about the engine (dialect from the engine
+# family and its wire variant, capabilities from engine_capabilities -- the
+# same registry chat_f's rewrites read -- limited to what describes a chat
+# call to the model), it never carries a secret, and building it neither does
+# I/O nor disturbs the caller's engine.
 
-delete @ENV{qw( LANGERTHA_OLLAMA_API_KEY LANGERTHA_VLLM_API_KEY )};
+delete @ENV{ grep { /\ALANGERTHA_/ } keys %ENV };
 
 my $SENTINEL = 'sk-SENTINEL-must-never-appear';
+my %ALLOWED  = map { $_ => 1 } Langertha::Manifest::Builder->model_capabilities;
+
+# engine_capabilities for one model, restricted to the published allowlist:
+# what a Builder-made model entry must claim, no more, no less.
+sub expected_caps {
+  my ($engine) = @_;
+  my $caps = $engine->engine_capabilities;
+  return { map { $_ => 1 } grep { $caps->{$_} && $ALLOWED{$_} } keys %$caps };
+}
 
 sub caps_of {
   my ( $manifest, $i ) = @_;
@@ -41,35 +60,63 @@ subtest 'OpenAI' => sub {
   is $ep->base_url, 'https://api.openai.com/v1', 'base_url is the engine url';
   is $ep->auth_ref, 'api', 'required key -> auth_ref';
   is $m->auth_entry('api')->type, 'api_key', 'auth type api_key';
-  is $m->models->[0]->id, $engine->chat_model, 'default model is chat_model';
-  is_deeply caps_of($m), $engine->engine_capabilities, 'capabilities are engine_capabilities verbatim';
+  is $m->models->[0]->id, $engine->chat_model, 'default model is the configured model';
+  is_deeply caps_of($m), expected_caps($engine), 'capabilities are the model-scoped registry flags';
   ok $m->models->[0]->supports($_), "supports $_" for qw( chat streaming tools_native tool_choice_named );
+  # The engine also embeds, transcribes and generates images -- other
+  # operations, not facts about the chat model gpt-5.6.
+  ok $engine->supports($_), "engine itself supports $_" for qw( embedding transcription image_generation );
+  ok !$m->models->[0]->supports($_), "model entry does not claim $_"
+    for qw( embedding transcription image_generation );
   unlike $m->to_json, qr/\Q$SENTINEL\E/, 'the api_key never reaches the manifest';
+};
+
+subtest 'Groq gpt-oss: transcription is not a model claim' => sub {
+  my $engine = Langertha::Engine::Groq->new( api_key => $SENTINEL, model => 'openai/gpt-oss-120b' );
+  ok $engine->supports('transcription'), 'the Groq engine does transcribe';
+  my $m = Langertha::Manifest::Builder->from_engine($engine);
+  ok !$m->models->[0]->supports('transcription'), 'gpt-oss-120b does not claim transcription';
+  ok $m->models->[0]->supports('tools_native'), 'but claims tools';
 };
 
 subtest 'OpenAIResponses is the responses dialect' => sub {
   my $m = Langertha::Manifest::Builder->from_engine(
     Langertha::Engine::OpenAIResponses->new( api_key => $SENTINEL ) );
   is $m->endpoint('chat')->dialect, 'responses', 'most specific class wins over OpenAIBase';
+  ok !$m->models->[0]->supports('embedding'), 'no embedding claim on a responses model';
 };
 
 subtest 'Anthropic, with per-model capabilities' => sub {
   my $engine = Langertha::Engine::Anthropic->new( api_key => $SENTINEL );
   my $m = Langertha::Manifest::Builder->from_engine( $engine,
     models => [ 'claude-sonnet-4-6', 'claude-sonnet-5' ] );
-  is $m->endpoint('chat')->dialect, 'anthropic', 'AnthropicBase family -> anthropic';
+  is $m->endpoint('chat')->dialect, 'anthropic', 'first-party -> anthropic';
   is $m->endpoint('chat')->base_url, 'https://api.anthropic.com', 'base_url is the engine url';
   is $m->endpoint('chat')->auth_ref, 'api', 'required key';
   # Anthropic's model_capability_corrections clear temperature on sonnet-5
   # (ADR 0019 layer 3): the manifest must reflect the model, not the default.
-  my $old = $m->models->[0];
-  my $new = $m->models->[1];
+  my ( $old, $new ) = @{ $m->models };
   is $old->id, 'claude-sonnet-4-6', 'first model';
   ok $old->supports('temperature'), 'sonnet-4-6 accepts temperature';
   ok !$new->supports('temperature'), 'sonnet-5 does not (model-scoped correction applied)';
   my $probe = Langertha::Engine::Anthropic->new( api_key => 'x', chat_model => 'claude-sonnet-5' );
-  is_deeply caps_of( $m, 1 ), $probe->engine_capabilities, 'equals engine_capabilities for that model';
+  is_deeply caps_of( $m, 1 ), expected_caps($probe), 'equals the registry for that model';
   unlike $m->to_json, qr/\Q$SENTINEL\E/, 'no secret';
+};
+
+subtest 'the /anthropic shims are anthropic-compat' => sub {
+  # Same Messages envelope, different wire variant: the shims emulate
+  # structured output with a synthetic tool + forced choice instead of
+  # first-party output_config.format. A client adapter must know which.
+  for my $class (qw( AKIAnthropic MiniMaxAnthropic MoonshotAnthropic LMStudioAnthropic )) {
+    my $engine = "Langertha::Engine::$class"->new( api_key => $SENTINEL, model => 'm' );
+    is( Langertha::Manifest::Builder->dialect_for_engine($engine), 'anthropic-compat',
+      "$class -> anthropic-compat" );
+  }
+  is( Langertha::Manifest::Builder->dialect_for_engine(
+    Langertha::Engine::Anthropic->new( api_key => 'x' ) ), 'anthropic', 'Anthropic stays anthropic' );
+  ok( Langertha::Manifest::Endpoint->new( id => 'c', dialect => 'anthropic-compat',
+    base_url => 'https://x.example' )->is_known_dialect, 'anthropic-compat is a known dialect' );
 };
 
 subtest 'vLLM with a url and no key' => sub {
@@ -83,14 +130,26 @@ subtest 'vLLM with a url and no key' => sub {
   is $ep->auth_ref, undef, 'optional key, none configured -> no auth';
   is_deeply $m->auth, [], 'no auth entries';
   is $m->models->[0]->id, 'qwen3', 'model';
-  ok $m->models->[0]->supports('prefix_caching'), 'RuntimeKnobs capability emitted';
-  ok $m->models->[0]->supports('runtime_metrics'), 'MetricsPoll capability emitted';
-  is_deeply caps_of($m), $engine->engine_capabilities, 'capabilities verbatim';
+  # Client-side (Prometheus scrape) and server-management (prefix-cache
+  # knobs) features are not claims about the model.
+  ok $engine->supports($_), "engine supports $_" for qw( runtime_metrics prefix_caching );
+  ok !$m->models->[0]->supports($_), "model entry does not claim $_"
+    for qw( runtime_metrics prefix_caching embedding );
+  is_deeply caps_of($m), expected_caps($engine), 'capabilities are the model-scoped flags';
+};
+
+subtest 'vLLM placeholder model id is not published' => sub {
+  my $engine = Langertha::Engine::vLLM->new( url => 'http://gpu01.lan:8000/v1' );
+  my $m = Langertha::Manifest::Builder->from_engine($engine);
+  is_deeply $m->models, [], 'the placeholder "default" is skipped';
+  is scalar @{ $m->endpoints }, 1, 'the endpoint is still published';
+  my $with = Langertha::Manifest::Builder->from_engine( $engine, models => ['qwen3'] );
+  is $with->models->[0]->id, 'qwen3', 'models => publishes explicit ids';
 };
 
 subtest 'vLLM with a configured key announces api_key, never the key' => sub {
   my $m = Langertha::Manifest::Builder->from_engine(
-    Langertha::Engine::vLLM->new( url => 'http://gpu01.lan:8000/v1', api_key => $SENTINEL ) );
+    Langertha::Engine::vLLM->new( url => 'http://gpu01.lan:8000/v1', model => 'q', api_key => $SENTINEL ) );
   is $m->endpoint('chat')->auth_ref, 'api', 'optional key configured -> auth';
   unlike $m->to_json, qr/\Q$SENTINEL\E/, 'no secret';
 };
@@ -102,8 +161,29 @@ subtest 'Ollama native' => sub {
   is $m->endpoint('chat')->auth_ref, undef, 'local Ollama needs no auth';
   is $m->issuer, 'http://localhost:11434', 'issuer';
   is scalar @{ $m->models }, 2, 'two models';
-  ok $m->models->[1]->supports('keep_alive'), 'KeepAlive capability';
-  ok $m->models->[1]->supports('embedding'), 'embedding capability';
+  ok $m->models->[1]->supports('context_size'), 'context_size is a chat-call control';
+  ok !$m->models->[1]->supports($_), "no $_ claim" for qw( keep_alive embedding );
+};
+
+subtest 'model-less engines work when models are given, untouched' => sub {
+  # OpenRouter / OllamaOpenAI croak in default_model: the Builder must not
+  # need the engine's own model when the caller lists the models.
+  for my $engine (
+    Langertha::Engine::OllamaOpenAI->new( url => 'http://localhost:11434/v1' ),
+    Langertha::Engine::OpenRouter->new( api_key => $SENTINEL ),
+  ) {
+    my $class = ref $engine;
+    my $m = eval { Langertha::Manifest::Builder->from_engine( $engine, models => [ 'llama3', 'qwen3' ] ) };
+    ok $m, "$class with models => builds" or diag $@;
+    is scalar @{ $m->models }, 2, "$class: two model entries";
+    ok !$engine->has_model,      "$class: model slot not vivified";
+    ok !$engine->has_chat_model, "$class: chat_model slot not vivified";
+    ok !$engine->has_api_key,    "$class: api_key slot not vivified" unless $class =~ /OpenRouter/;
+  }
+  ok !eval { Langertha::Manifest::Builder->from_engine(
+    Langertha::Engine::OllamaOpenAI->new( url => 'http://localhost:11434/v1' ) ); 1 },
+    'without models it croaks';
+  like $@, qr/cannot determine a model .* pass models =>/, 'and says what to pass';
 };
 
 subtest 'overrides and auth=none' => sub {
@@ -138,26 +218,69 @@ subtest 'multi-endpoint build (Knarr shape)' => sub {
   unlike $m->to_json, qr/\Q$SENTINEL\E/, 'no secret';
   ok !eval { $b->add_engine( Langertha::Engine::OpenAI->new( api_key => 'x' ), endpoint_id => 'openai' ); 1 },
     'duplicate endpoint id croaks';
+  ok !eval { $b->add_model( id => 'm1', endpoint_ref => 'ollama' ); 1 },
+    'duplicate (model, endpoint) croaks at add time';
+  ok !eval { $b->add_auth( id => 'api', type => 'api_key' ); 1 }, 'duplicate auth id croaks';
+};
+
+subtest 'add_engine is atomic' => sub {
+  my $b = Langertha::Manifest::Builder->new( provider_id => 'p', issuer => 'https://p.example' );
+  $b->add_endpoint( id => 'chat', dialect => 'openai-chat', base_url => 'https://p.example/v1' );
+  ok !eval { $b->add_engine( Langertha::Engine::OpenAI->new( api_key => $SENTINEL ), models => ['m'] ); 1 },
+    'duplicate endpoint id croaks';
+  like $@, qr/duplicate endpoint id 'chat'/, 'message';
+  my $m = $b->manifest;
+  is_deeply $m->auth, [], 'no half-added auth entry';
+  is_deeply $m->models, [], 'no half-added model entry';
+  ok !eval { $b->add_engine( Langertha::Engine::OpenAI->new( api_key => $SENTINEL ),
+    endpoint_id => 'other', models => [ 'm', 'm' ] ); 1 }, 'duplicate model in one call croaks';
+  is scalar @{ $b->manifest->endpoints }, 1, 'and adds no endpoint';
 };
 
 subtest 'Gemini dialect and model-aware capabilities' => sub {
   my $m = Langertha::Manifest::Builder->from_engine(
     Langertha::Engine::Gemini->new( api_key => $SENTINEL ), models => [ 'gemini-2.5-pro', 'gemini-3-pro' ] );
   is $m->endpoint('chat')->dialect, 'gemini', 'gemini';
-  ok $m->models->[0]->supports('thinking_budget'), 'engine-emitted flag passes through for 2.5';
+  ok $m->models->[0]->supports('thinking_budget'), 'thinking_budget claimed for 2.5';
   ok !$m->models->[1]->supports('thinking_budget'), 'and not for 3';
+  ok !$m->models->[0]->supports('cached_content'), 'cache-resource lifecycle is not a model claim';
 };
 
-subtest 'transcription-only engine has no dialect' => sub {
-  ok !eval { Langertha::Manifest::Builder->from_engine(
-    Langertha::Engine::Whisper->new( url => 'http://localhost:8000/v1' ) ); 1 }, 'Whisper croaks';
-  like $@, qr/no manifest dialect/, 'message';
+subtest 'transcription-only engine is not a chat engine' => sub {
+  my $whisper = Langertha::Engine::Whisper->new( url => 'http://localhost:8000/v1' );
+  ok !eval { Langertha::Manifest::Builder->from_engine($whisper); 1 }, 'Whisper croaks';
+  like $@, qr/needs a chat engine/, 'message says why';
+  ok !eval { Langertha::Manifest::Builder->from_engine( $whisper, dialect => 'openai-chat' ); 1 },
+    'a dialect override does not make it one';
+  like $@, qr/needs a chat engine/, 'same clear message, not a missing-method error';
 };
 
-subtest 'the engine is not mutated' => sub {
-  my $engine = Langertha::Engine::Anthropic->new( api_key => 'x', chat_model => 'claude-sonnet-4-6' );
-  Langertha::Manifest::Builder->from_engine( $engine, models => ['claude-sonnet-5'] );
-  is $engine->chat_model, 'claude-sonnet-4-6', 'chat_model untouched';
+subtest 'every engine capability is classified' => sub {
+  # Guard: a flag engine_capabilities can report is either published on a
+  # model (Builder->model_capabilities) or deliberately engine-level /
+  # client-side (this list). A new %ROLE_TO_CAPS flag fails here until it is
+  # classified -- it can neither leak onto model entries nor vanish silently.
+  my %NOT_MODEL_SCOPED = map { $_ => 1 } qw(
+    embedding transcription image_generation
+    runtime_metrics prefix_caching keep_alive cached_content
+  );
+  ok !( grep { $NOT_MODEL_SCOPED{$_} } keys %ALLOWED ), 'the two lists are disjoint';
+  my %seen;
+  for my $row (
+    [ OpenAI => 'm' ], [ OpenAIResponses => 'm' ], [ Anthropic => 'm' ], [ AKIAnthropic => 'm' ],
+    [ Gemini => 'gemini-2.5-pro' ], [ Ollama => 'm' ], [ OllamaOpenAI => 'm' ], [ vLLM => 'm' ],
+    [ SGLang => 'm' ], [ LlamaCpp => 'm' ], [ Groq => 'm' ], [ Cerebras => 'm' ], [ Mistral => 'm' ],
+    [ Perplexity => 'm' ], [ NousResearch => 'm' ], [ AKI => 'm' ], [ LMStudio => 'm' ],
+    [ DeepSeek => 'm' ], [ Moonshot => 'm' ], [ OpenRouter => 'm' ], [ VLLMHook => 'm' ],
+  ) {
+    my ( $name, $model ) = @$row;
+    my $engine = use_module("Langertha::Engine::$name")
+      ->new( api_key => 'k', url => 'http://h.example:1/v1', model => $model );
+    $seen{$_}++ for grep { $engine->engine_capabilities->{$_} } keys %{ $engine->engine_capabilities };
+  }
+  for my $cap ( sort keys %seen ) {
+    ok $ALLOWED{$cap} || $NOT_MODEL_SCOPED{$cap}, "capability '$cap' is classified";
+  }
 };
 
 done_testing;

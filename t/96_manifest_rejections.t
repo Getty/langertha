@@ -30,6 +30,8 @@ sub base_doc {
   };
 }
 
+sub json_of { JSON::MaybeXS->new( utf8 => 1, canonical => 1 )->encode( $_[0] ) }
+
 sub rejects {
   my ( $mutate, $re, $name ) = @_;
   my $doc = base_doc();
@@ -68,6 +70,14 @@ rejects sub { $_[0]{schema_version} = 2 },
 rejects sub { $_[0]{schema_version} = 2; $_[0]{workflows} = []; delete $_[0]{kind} },
   qr/unsupported schema_version 2/, 'version is checked before the field set';
 rejects sub { $_[0]{schema_version} = '1.0' }, qr/schema_version: must be an integer/, 'non-integer version';
+rejects sub { $_[0]{schema_version} = '1' },
+  qr/schema_version: must be an integer \(a JSON number, not a string\)/, 'version as a Perl string';
+ok !eval { Langertha::Manifest->from_json( json_of( base_doc() ) =~ s/"schema_version":1/"schema_version":"1"/r ); 1 },
+  'rejected: version as a JSON string';
+like $@, qr/must be an integer/, '  message: version as a JSON string';
+ok !eval { Langertha::Manifest->from_json( json_of( base_doc() ) =~ s/"schema_version":1/"schema_version":1.0/r ); 1 },
+  'rejected: version as a JSON float 1.0';
+like $@, qr/must be an integer/, '  message: version as a JSON float';
 rejects sub { $_[0]{kind} = 'openapi' }, qr/kind: must be 'langertha-provider'/, 'wrong kind';
 rejects sub { delete $_[0]{kind} }, qr/kind.*required/, 'missing kind';
 
@@ -121,6 +131,43 @@ rejects sub { $_[0]{models}[0]{capabilities}{streaming} = 'yes' },
   qr/capabilities.*streaming.*boolean/, 'string capability value';
 rejects sub { $_[0]{models}[0]{capabilities}{'Tool Calling'} = JSON::MaybeXS::true() },
   qr/capability name/, 'bad capability name';
+
+ok !eval { Langertha::Manifest->from_json( json_of( base_doc() ) =~ s/"streaming":true/"streaming":"1"/r ); 1 },
+  'rejected: capability value as the JSON string "1"';
+like $@, qr/capabilities: 'streaming' must be a boolean/, '  message: JSON string boolean';
+
+# --- untrusted text: never raw into a client's terminal ----------------------
+
+rejects sub { $_[0]{issuer} = "https://p.example/\e[31m" }, qr/issuer: must be printable ASCII/,
+  'ESC in issuer';
+rejects sub { $_[0]{endpoints}[0]{base_url} = "https://p.example/v1 x" },
+  qr/base_url: must be printable ASCII/, 'space in base_url';
+rejects sub { $_[0]{models}[0]{id} = "gpt\x{202E}evil" }, qr/models\[0\]: id must be/,
+  'bidi override (U+202E, a format char) in model id';
+rejects sub { $_[0]{models}[0]{id} = "a\x{2028}b" }, qr/models\[0\]: id must be/, 'line separator in model id';
+{
+  my $doc = base_doc();
+  $doc->{"\e[2Jboom"} = 1;
+  ok !eval { Langertha::Manifest->from_hash($doc); 1 }, 'rejected: control chars in a field name';
+  unlike $@, qr/\e/, '  the raw ESC is not echoed';
+  like $@, qr/unknown field '\\x\{1b\}\[2Jboom'/, '  it is shown escaped';
+}
+
+# --- types: errors stay prefixed, no Moose internals ---------------------------
+
+rejects sub { $_[0]{provider_id} = [1] }, qr/\ALangertha::Manifest: provider_id must be a string at /,
+  'provider_id as an array';
+rejects sub { $_[0]{endpoints}[0]{id} = { a => 1 } }, qr/\ALangertha::Manifest: endpoints\[0\]: id must be a string at /,
+  'endpoint id as an object';
+rejects sub { $_[0]{provider_id} = 'UPPER' }, qr/\ALangertha::Manifest: provider_id must match .* at \S+ line \d+\.?\n\z/,
+  'BUILD errors carry no constructor tail';
+
+# --- extensions must be plain JSON data ----------------------------------------
+
+rejects sub { $_[0]{extensions} = { obj => bless {}, 'Some::Class' } },
+  qr/extensions must hold plain JSON data/, 'blessed object in extensions';
+rejects sub { $_[0]{extensions} = { code => sub { 1 } } },
+  qr/extensions must hold plain JSON data/, 'code ref in extensions';
 
 # --- uniqueness and references ---------------------------------------------
 
