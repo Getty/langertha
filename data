@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-25T08:36:45Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T08:36:45Z
+created: 2026-09-25T08:26:28Z
+id: 257
+priority: high
+started: 2026-09-25T08:36:45Z
+status: done
+tags:
+- release
+title: Changes:571-574 wrongly says Moonshot clears reasoning_effort; contradicts
+  code and Changes own later entries
+updated: 2026-09-25T08:36:45Z
+---
+
+Changes:571-574 (the "New request-side reasoning_effort control normalized across engines" paragraph) states: "Moonshot's OpenAI endpoint controls reasoning via a Kimi-specific thinking object rather than reasoning_effort, so that engine clears the capability too -- route reasoning through MoonshotAnthropic instead". This is FALSE for the shipped code: lib/Langertha/Engine/Moonshot.pm lines 179-192 (model_capability_corrections) show kimi-k3 sends reasoning_effort (low|high|max, default max) and kimi-k2.6 re-enables reasoning_effort via a thinking-toggle serialization; only the rest of the K2.x family clears it.
+
+This also contradicts the Changes file's own later/other paragraphs about the same engine: lines 171-179 (MoonshotAnthropic k2.6/k2.7-code thinking toggle), lines 192-200, and lines 235-246 ("Moonshot: kimi-k3 now sends reasoning_effort (low, high or max ...) instead of dropping every effort. On kimi-k2.6, reasoning_effort now goes out as Kimi's top-level thinking toggle ..."). The 559-614 paragraph reads as the earliest-written high-level description, never updated after the k207/k219/k225 commits added Moonshot-native kimi-k3/kimi-k2.6 reasoning_effort support.
+
+Fix: correct Changes:571-574 to match lines 235-246 (kimi-k3 sends reasoning_effort low/high/max; kimi-k2.6 sends it via the thinking toggle; kimi-k2.7-code(-highspeed) and base kimi-k2 still clear it).
+
+While there, consider consolidating the roughly four separate paragraphs that all describe Moonshot/MiniMax reasoning_effort wire behavior (153-162, 164-179, 181-200, 230-256, plus the 559-630 summary) into one, per the project's own release-prep convention (getty-perl-release-author-getty skill: merge entries circling one topic before dzil release).
+
+2026-09-25 08:31 Independently verified by a second concurrent pre-release audit this run (langertha-release-checker): lib/Langertha/Engine/Moonshot.pm:179-192 model_capability_corrections confirms kimi-k3 has no reasoning_effort=>0 correction (keeps it, matching Changes:235-246's later 'kimi-k3 now sends reasoning_effort (low, high or max...)'), and 'kimi-k2.6' => { reasoning_effort => 1 } explicitly re-enables it after the generic qr/kimi-k2(?!\d)/ => { reasoning_effort => 0, ... } correction clears it for the rest of the K2.x family. So the blanket Changes:571-574 claim ('Moonshot's OpenAI endpoint... clears the capability too') is confirmed wrong for kimi-k3 and kimi-k2.6, matching this ticket's finding and the code. Agree with the fix direction (correct 571-574 to match 235-246, consider consolidating the ~4 scattered Moonshot/MiniMax reasoning_effort paragraphs per the release-prep skill's merge guidance).
