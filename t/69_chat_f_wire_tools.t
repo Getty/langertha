@@ -303,6 +303,43 @@ subtest 'hermes: tool_choice has no wire of its own' => sub {
   like( $warnings[0] // '', qr/tool_choice.*ignored.*hermes/, 'forced: the warning says it is ignored on hermes' );
 };
 
+subtest 'hermes: tool_choice undef is no choice (k231 review)' => sub {
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my ($body) = hermes_body( [$obj], tool_choice => undef );
+  ok( !exists $body->{tool_choice}, 'not in the body' );
+  is_deeply( prompt_tools( $body->{messages}[0]{content} ), [ $obj->to_mcp ], 'the tools are offered' );
+  is( scalar @warnings, 0, 'silent, as OpenAICompatible treats an undef tool_choice' );
+};
+
+subtest 'hermes: tool_choice none withholds the tools (k231 review, as k233 on Responses)' => sub {
+  # none means the model must not call a tool. The prompt cannot forbid one,
+  # so the only honest expression is to not offer the tools at all -- and a
+  # tag the model writes anyway is not lifted as if a tool had been offered.
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my $text  = qq{<tool_call>{"name": "obj", "arguments": {}}</tool_call>};
+  my $reply = { choices => [ { message => { role => 'assistant', content => $text }, finish_reason => 'stop' } ] };
+  my $mock  = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response($reply) ] );
+  my $engine = $make{hermes}->( _async_http => $mock );
+  my $response = $engine->chat_f( messages => ['hi'], tools => [$obj], tool_choice => 'none' )->get;
+  my $body = $json->decode( ( $mock->requests )[0]->content );
+  ok( !exists $body->{tools} && !exists $body->{tool_choice}, 'neither key in the body' );
+  is_deeply( $body->{messages}, [ { role => 'user', content => 'hi' } ], 'no tool prompt' );
+  ok( !( $response->has_tool_calls && @{ $response->tool_calls } ), 'no reply lift' );
+  is( $response->content, $text, 'content untouched' );
+  is( scalar @warnings, 1, 'one warning' );
+  like( $warnings[0] // '', qr/none.*withheld/, 'the warning says the tools were withheld' );
+};
+
+subtest 'hermes: a built-in cannot ride the prompt and croaks' => sub {
+  my ( $engine, $mock ) = engine_for('hermes');
+  ok( !eval { $engine->chat_f( messages => ['hi'],
+    tools => [ { type => 'web_search_20250305', name => 'web_search' } ] )->get; 1 }, 'croaks' );
+  like( $@, qr/web_search_20250305/, 'names the item' );
+  is( $mock->request_count, 0, 'nothing was sent' );
+};
+
 subtest 'hermes: AKI native puts the prompt in chat_context, no tools key' => sub {
   my $mock = Test::MockAsyncHTTP->new( responses => [
     Test::MockAsyncHTTP->mock_json_response( { success => JSON->true, text => 'ok' } ) ] );

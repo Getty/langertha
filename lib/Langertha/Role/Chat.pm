@@ -740,9 +740,12 @@ C<supports('server_tools')>.
 On a C<hermes> engine (L<Langertha::Role::HermesTools>) a C<chat_f> call is
 one turn of L<Langertha::Role::Tools/chat_with_tools_f>: the tools go into a
 leading system message built from C<hermes_tool_prompt>, in MCP shape, and
-the body carries no C<tools> key. C<tool_choice> is never sent there; any
-value other than C<auto> is ignored with a warning, as the prompt cannot
-force or forbid a tool. C<E<lt>tool_callE<gt>> blocks in the reply land on
+the body carries no C<tools> key. Only function tools can go into the
+prompt: a built-in or other non-function item croaks there instead of going
+out verbatim. C<tool_choice> is never sent there: C<none> withholds the
+tools (no tool prompt; a warning says so), and any value other than
+C<auto> is ignored with a warning, as the prompt cannot force a tool.
+C<E<lt>tool_callE<gt>> blocks in the reply land on
 L<Langertha::Response/tool_calls> and are removed from C<content>.
 
 The canonical per-request controls (karr #46) are normalized like
@@ -948,20 +951,28 @@ sub _wire_tools {
 # system prompt (Role::HermesTools). A chat_f / chat_stream_realtime_f turn is
 # built as one chat_with_tools_f turn (karr k231, ADR 0001): the list goes
 # through the same format_tools and prompt builder, and neither key reaches
-# the body. The prompt has no way to force or forbid a tool, so any
-# tool_choice but auto is ignored with a carp. Returns the conversation to
-# send and whether the tool prompt was put in front of it.
+# the body. tool_choice none withholds the tools (no prompt, so no reply
+# lift either; the Responses rule of k233). The prompt cannot force a tool,
+# so any other choice but auto (or undef, no choice) is ignored with a carp.
+# Returns the conversation to send and whether the tool prompt was put in
+# front of it.
 sub _hermes_prompt_tools {
   my ( $self, $opts, $conversation ) = @_;
   return ( $conversation, 0 )
     unless $self->can('tool_wire_format') && $self->tool_wire_format eq 'hermes';
-  my $tools = delete $opts->{tools};
-  if ( exists $opts->{tool_choice} ) {
-    my $choice = Langertha::ToolChoice->from_hash( delete $opts->{tool_choice} );
-    carp "".(ref $self).": tool_choice is ignored on the hermes tool wire "
-      . "(tools ride the system prompt, which cannot force or forbid a tool)"
-      unless $choice && $choice->type eq 'auto';
+  my $tools  = delete $opts->{tools};
+  my $given  = delete $opts->{tool_choice};
+  my $choice = defined $given ? Langertha::ToolChoice->from_hash($given) : undef;
+  my $type   = $choice ? $choice->type : '';
+  if ( $type eq 'none' ) {
+    carp "".(ref $self).": tool_choice none on the hermes tool wire: "
+      . "the tools were withheld from the system prompt"
+      if ref $tools eq 'ARRAY' && @$tools;
+    return ( $conversation, 0 );
   }
+  carp "".(ref $self).": tool_choice is ignored on the hermes tool wire "
+    . "(tools ride the system prompt, which cannot force a tool)"
+    if defined $given && $type ne 'auto';
   return ( $conversation, 0 ) unless ref $tools eq 'ARRAY' && @$tools;
   return ( $self->_hermes_tool_messages( $conversation, $self->format_tools($tools) ), 1 );
 }
@@ -1088,7 +1099,7 @@ hashes (MCP C<inputSchema>, canonical C<input_schema>) are converted, and on
 Gemini all declarations are merged into one C<functionDeclarations> entry.
 C<tool_choice> and any engine-specific extras pass through. Tool calls the
 model streams are collected with L</aggregate_tool_calls>. On a C<hermes>
-engine the tools ride the system prompt and C<tool_choice> is dropped, as in
+engine the tools ride the system prompt and C<tool_choice> is handled as in
 L</chat_f>; the C<E<lt>tool_callE<gt>> blocks the model writes stay in the
 streamed text.
 
