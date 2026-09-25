@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T01:02:37Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:02:37Z
+created: 2026-09-24T22:47:06Z
+id: 194
+priority: low
+started: 2026-09-25T00:10:32Z
+status: done
+tags:
+- async
+- streaming
+- http
+title: 'Async-Pfad: die im Streaming-Chunk-Callback entkommt dem Event-Loop statt
+  den Request-Future zu failen'
+updated: 2026-09-25T01:02:37Z
+---
+
+Aus k188-Re-Review (langertha-reviewer): Mit Net::Async::HTTP propagiert ein die im chunk-callback (malformed Streamzeile oder user chunk_callback) aus dem IO::Async-Loop heraus, statt den Future des jeweiligen Requests zu failen. Vorbestehend, nicht durch k188 eingefuehrt. Der Sync-Shim (SyncHTTP) failt den Future korrekt. Ziel: auch async den Request-Future failen (eval im on_header-Chunk-Sub, $f->fail). Kandidat fuer langertha-async-worker. Siehe ADR 0027.
+
+2026-09-25 00:22 Fixed in 30c26eb + ADR 0027 update 11b2310 (branch k193-194). Fix lives in Role::Chat::chat_stream_realtime_f (the only on_header consumer), so it covers every backend incl. injected clients: the chunk-sub evals its body; on error it records the exception, drops later chunks, and (a) while a synchronous backend is still inside do_request ($request_f not yet assigned) rethrows so SyncHTTP stops reading and fails with the original exception (unchanged sync behavior), (b) otherwise fails an abort future raced against the request future with Future->wait_any, which cancels the Net::Async::HTTP transfer (NaHTTP on_cancel -> close_now, from inside its own on_read; verified that the engine/loop stays usable). Regression test t/45_async_http_stream_die.t (real NaHTTP 0.50 vs Test::LocalHTTPDaemon): chunk_callback die and malformed SSE line fail the request future with the original exception, nothing escapes $loop->await, a concurrent request on the same loop and a following request on the same engine complete, sync/async exception text identical. Red before the fix (exception escaped the loop, future pending; it even re-surfaced in the next subtest).
+
+2026-09-25 00:52 Fix round 1 (review C1): 9e2bdc5 + ff0db6e + 59b5a6f. Cancelling inside NaHTTP on_read (30c26eb) left a chunked burst in the buffer of a closed connection -> "Spurious on_read of connection while idle" escaped the loop. Now: stop delivering, cancel via $request_f->loop->later (outside the read handler; no-op if the response completed in that read), drain when the future has no loop, fail with the original exception after the transfer ends; caller cancel still cancels the request. Tests cover paced / chunked-burst / Content-Length-burst + follow-up on the same engine, caller cancel, cancel-not-drain. The reviewer-observed follow-up failures ("Connection closed while awaiting header") were a test-daemon bug: force_last_request never sent Connection: close, so NaHTTP reused hung-up connections (fixed in ff0db6e). M1 reproduced with a scratch keep-alive daemon: with 3 concurrent requests on one engine, the one pipelined behind the aborted request fails with "Connection closed" (NaHTTP cancel = close_now); documented in POD/ADR/Changes, not fixed.
