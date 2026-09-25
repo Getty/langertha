@@ -24,7 +24,7 @@ over speed on non-trivial work; use judgment on trivial tasks.
 9. **Match the codebase's conventions, even if you disagree** — Conformance > taste. Surface
    a harmful convention; don't fork silently.
 10. **Fail loud** — "Done" is wrong if anything was skipped silently. "Tests pass" is wrong
-    if any were skipped (and most tests in `t/80-86*` skip without live API keys — say so).
+    if any were skipped (the env-gated live tests `t/8x` skip without keys — say so).
     Surface uncertainty, don't hide it.
 
 ## Delegation

@@ -67,18 +67,18 @@ refactors:
 - **0015** — `-excludes` role-composition pattern + per-family `engine_capabilities` correction (cache-control direction-pair); the per-dialect generation-parameter block as a deliberate dialect split
 - **0016** — a wire envelope becomes a `Role::<X>Compatible` only when a second consumer needs it from a different parent; capability roles are roles from day one
 - **0017** — `Response.created` is a `Langertha::Moment` value object (`0+` = epoch, `""` = ISO stamp with sub-seconds), reversing karr #92's engine-side epoch conversion
-- **0018** — where a provider's wire *spelling* of a canonical field is normalized: value-object inbound door (universal) / dialect role (family) / engine-scoped `around chat_response` (one provider's quirk, guarded by the canonical predicate)
-- **0019** — model-scoped capability corrections (amends 0002): per-model wire reality lives in a declarative `model_capability_corrections` table (layer 3, keyed on `chat_model`); engine-wide reality stays in `around engine_capabilities` (layer 2, the endpoint gate)
-- **0020** — the Open-Responses wire envelope becomes the third composed role (`Role::ResponsesCompatible`); the first extraction whose second consumer (Perplexity Agent API) descends from a *different* parent, so it meets the envelope through five overridable divergence hooks (fires ADR 0016's trigger, extends the 0013 shape)
-- **0021** — pairwise capability exclusions (Cerebras/Groq reject `tools` + `response_format` in one body) are a per-engine `_check_capability_exclusions` croak at the `chat_f`/streaming layer, not a boolean flag and not an auto-rewrite; extends 0002, sits on the 0019 boundary, nuances 0005
-- **0022** — each `RateLimit` reset bucket splits into a typed instant (`*_reset_at`, `Langertha::Moment`) + a typed duration (`*_reset_after`, seconds), reconciled lazily against a `received` anchor, both `undef` when the wire sent neither; a third response-side observability seam kin to 0011/0017 for the "wire speaks one of two kinds" case (Go-`time.Duration` parser + widened `raw` superset; declines the ambiguous bare-number guess)
-- **0023** — per-model reasoning wire-truth is a typed `Langertha::Reasoning::Profile` value object, resolved most-specific-first via `for_model($id)` and consumed by `Langertha::Reasoning`'s `to_*`/`BUILD` (replaces the inline `%OPENAI_MODEL_EFFORT`/`%ANTHROPIC_EFFORT`/`%GEMINI3_LEVEL` hashes + `_is_gemini_25`/`_is_fable_class`/`_openai_effort_ok` regexes); three-category taxonomy with a firewall — accepted vocabulary+control (a) and provider-enforced numeric bounds (b) are Profile wire-truth, invented level↔budget interpolation (c) is a deferred `BudgetPolicy` clamped to (b); `levels_by_wire` seam for the live-confirmed chat/responses `max` divergence (Phase 1 behavior-preserving, capability layer untouched); amends 0009, nuances 0019, relates 0002
-- **0024** — pairwise capability exclusions become model-scoped: the `model_capability_exclusions` table on `Role::Chat` (ordered `matcher => coderef`, keyed on `chat_model`); the `tools` + structured-output `response_format` conflict is a serving-stack property, so the rule is engine-scoped on `Groq`/`Cerebras` — the shared `gpt-oss` rule on `Engine::OpenAIBase` was removed (k184 Option C: AKI serves gpt-oss + tools + json_schema at HTTP 200; see the ADR's Option-C Update); supersedes the per-engine mechanism of 0021 (premise reaffirmed), extends 0019, sits above 0002
-- **0025** — `temperature`'s wire emission is conditioned on the resolved reasoning effort (incl. the model's server-side default) for OpenAI reasoning models: a shared `_temperature_kwargs` gate in the OpenAI wire roles + an effort-aware, model-aware `_temperature_rejected_by_reasoning` predicate on `Engine::OpenAI`; drop+carp a non-default temperature under active reasoning, `temperature=1` passes; a runtime predicate not a static capability clear; extends 0009 (control-on-control), consumes 0023, relates 0019/0002
-- **0026** — Raider/Raid extracted to the sibling distribution `langertha-raider` (agent depends on framework, never the reverse — like langertha-knarr/skeid): names migrating 1:1 (`Langertha::Raider`, `Raider::Result`, `Langertha::Raid*`) are removed from core; a *renamed + previously-published* name keeps a reserved stub under the old name (`Langertha::Result`, folded into a self-contained `Raider::Result`), a *renamed + never-published* name is just dropped (`MCP::Client`→`Langertha::Raider::MCP`); dependency-free generic primitives stay in core (`RunContext`, `Role::Runnable`); core keeps the seams (Role::Tools/`chat_with_tools_f` with duck-typed `mcp_servers`, PluginHost, Plugin) + the lazy `use Langertha 'Raider'` sugar; `Net::Async::MCP` dropped, `IO::Async`+`Net::Async::HTTP` added explicitly (were only transitive); breaking (`feat!:`); ADRs 0007/0008 stay as history
-- **0027** — synchronous LWP fallback for the async `_f` transport: a `Langertha::Request::SyncHTTP` value object satisfies the duck-typed `do_request → Future<HTTP::Response>` contract over `LWP::UserAgent` and returns an already-complete future (no event loop, sequential/blocking, streaming bridged via LWP's content callback); one shared `Langertha::Role::AsyncHTTP` owns backend selection (injected `_async_http` > `Net::Async::HTTP` > sync shim + warn-once) and replaces the duplicated `_async_loop`/`_async_http` builders in `Role::Chat` and `Role::Runtime::MetricsPoll` (whose sync wrappers now block with `->get` on the pending future's own loop, never a private one); on the streaming path the shim enforces error parity explicitly (`on_header` for every response, a die in the chunk callback fails the future); `IO::Async`+`Net::Async::HTTP` move from `requires` to `recommends` (reverses 0026's dependency line), `LWP::UserAgent`/`LWP::Protocol::https` stay `requires`
-- **0028** — a public hook surface for sibling distributions (langertha-raider): `async_request_f` (public face of the 0027 `do_request` contract, same parity scope: HTTP error statuses resolve, transport failures differ per backend), `async_loop` (`Maybe[loop]` — the active backend's loop or `undef`; core promises no loop, callers use `async_loop // IO::Async::Loop->new`), `langfuse_timestamp`, `Langertha::Usage->from_raw` (raw-body usage door, `undef` when not reported); private `_async_http`/`_async_loop`/`_langfuse_timestamp` kept alongside; relates 0026/0027/0018
-- **0029** — provider manifest v1 (`/.well-known/langertha.json`) as `Langertha::Manifest` + `::Endpoint/::Auth/::Model/::Builder`: strict structure (closed field set, command/code/secret/prompt fields rejected, no env-var names, version checked first) with open values (`is_known_dialect`/`is_known_type`); dialect vocabulary from the engine hierarchy incl. `anthropic-compat` for the `/anthropic` shims; the Builder publishes only a model-scoped capability allowlist of `engine_capabilities` per model; no network I/O in core; extends 0002, applies 0006, consumes 0019, implements raider ADR 0007
+- **0018** — where a provider's wire *spelling* is normalized: value-object door (universal) / dialect role (family) / engine `around chat_response` (one provider)
+- **0019** — model-scoped capability corrections (amends 0002): declarative `model_capability_corrections` keyed on `chat_model` (layer 3)
+- **0020** — Open-Responses envelope as third composed role `Role::ResponsesCompatible` (OpenAIResponses + Perplexity, five divergence hooks)
+- **0021** — pairwise capability exclusions (tools + `response_format`) croak at the `chat_f`/streaming layer — mechanism superseded by 0024
+- **0022** — `RateLimit` resets split into typed instant (`*_reset_at`) + duration (`*_reset_after`), `undef` when the wire sent neither
+- **0023** — per-model reasoning wire-truth is a typed `Reasoning::Profile` resolved via `for_model($id)`; carries `is_reasoning_model` (k186) and multi-digit guards (k196)
+- **0024** — pairwise capability exclusions are model-scoped (`model_capability_exclusions` on `Role::Chat`), engine-scoped on Groq/Cerebras
+- **0025** — `temperature` emission is gated on resolved reasoning effort for OpenAI reasoning models (drop+carp; `temperature=1` passes)
+- **0026** — Raider/Raid extracted to sibling dist `langertha-raider`; core keeps generic primitives (`RunContext`, `Role::Runnable`) and the seams
+- **0027** — sync LWP fallback for the async `_f` transport (`Request::SyncHTTP`, backend selection in `Role::AsyncHTTP`); IO::Async/Net::Async::HTTP are `recommends`
+- **0028** — public hook surface for sibling dists: `async_request_f`, `async_loop` (`Maybe[loop]`), `langfuse_timestamp`, `Usage->from_raw`
+- **0029** — provider manifest v1 (`Langertha::Manifest`): strict structure, open values, no secrets, dialect vocabulary incl. `anthropic-compat`, model-scoped capability allowlist
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
@@ -95,8 +95,9 @@ prove -lv t/60_tool_calling.t   # Single test, verbose
 ```
 
 **Verify recursively.** `prove -l t/` is NOT recursive and silently skips `t/` subdir tests.
-Use `prove -lr t/` or `dzil test`. Live tests (`t/80-86*`) are gated on
-`TEST_LANGERTHA_<ENGINE>_API_KEY` and skip without keys (and cost real money — be selective).
+Use `prove -lr t/` or `dzil test`. Live tests (the `t/8x` files gated in `BEGIN` — list in skill
+`langertha-testing`) are gated on `TEST_LANGERTHA_<ENGINE>_API_KEY` (self-hosted ones on a server
+URL) and skip without keys (and cost real money — be selective).
 **TSystems is not live-testable** — no developer key is available to the project (the `.env`
 key is empty and none is obtainable), so its wire behavior is **documentation-derived, not
 live-verified**; treat `docs.llmhub.t-systems.net` as the source of truth for it
@@ -109,8 +110,10 @@ Test framework: `Test2::Bundle::More`. `dzil release` is forbidden without expli
 - **Moose exclusively.** Every class ends with `__PACKAGE__->meta->make_immutable`. One
   documented exception: `Langertha::Moment` subclasses the XS `Time::Moment` (blessed SCALARs,
   constructors bless from inside XS) — do not "convert it to Moose". → **ADR 0017**.
-- **`Future::AsyncAwait`** (>= 0.66) for all async methods; **IO::Async** event loop.
-- **MCP**: `Net::Async::MCP` (client), `MCP::Server` (tool definitions, `inputSchema` camelCase).
+- **`Future::AsyncAwait`** (>= 0.66) for all async methods; **IO::Async** event loop when
+  `Net::Async::HTTP` is installed, else a blocking sync LWP fallback (IO::Async is `recommends`) → **ADR 0027**.
+- **MCP**: any `Net::Async::MCP`-compatible client via `mcp_servers` (user-supplied, not a core
+  dependency since ADR 0026), `MCP::Server` (tool definitions, `inputSchema` camelCase).
 - **POD**: `@Author::GETTY` PodWeaver. `# ABSTRACT:` required on every `.pm`; inline `=attr`,
   `=method`, `=seealso`. Use the `langertha-pod-writer` agent for documentation.
 - **Naming** (enforced by `.perlcriticrc` on every `dzil test`): packages are
@@ -206,7 +209,7 @@ delete the inapplicable flag for their family. → **ADR 0015**.
   orchestration over the value objects. → **ADR 0001**.
 - **HermesTools** — `<tool_call>` XML tag names + prompt template for the `hermes` wire format.
 - **Streaming** — SSE / NDJSON streaming. **Embedding**, **Transcription**, **ImageGeneration**.
-- **HTTP** (sync + async via IO::Async) · **JSON** (`$self->json`) · **OpenAICompatible** ·
+- **HTTP** (sync + async; backend selection in **AsyncHTTP**, ADR 0027) · **JSON** (`$self->json`) · **OpenAICompatible** ·
   **AnthropicCompatible** (`/v1/messages` envelope, parallel to `OpenAICompatible`) ·
   **ResponsesCompatible** (Open-Responses `/v1/responses` + `/v1/agent` envelope, shared by
   `OpenAIResponses` + `Perplexity` via five divergence hooks — ADR 0020) ·
