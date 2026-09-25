@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Moonshot: kimi-k3 now sends reasoning_effort (low, high or max; other
+      levels are dropped and the server default max applies) instead of
+      dropping every effort. The K2.x models still send none. MoonshotAnthropic
+      on kimi-k3 sends output_config.effort only for low, high or max and no
+      longer sends a thinking field. A thinking_budget on kimi-k3 now croaks,
+      as on every other non-Gemini-2.5 engine. Taken from Moonshot's
+      documentation, not verified against the live API.
+
     - XAI: the default model is now grok-4.7, xAI's current flagship (same
       context, pricing and parameters as grok-4.6 on chat/completions). Pass
       model => 'grok-4.6' to keep the previous default.

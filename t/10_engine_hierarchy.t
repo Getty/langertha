@@ -562,8 +562,11 @@ ok(Langertha::Engine::Moonshot->does('Langertha::Role::StaticModels'), 'Moonshot
   my $m = Langertha::Engine::Moonshot->new(api_key => 'test-key');
   is($m->url, 'https://api.moonshot.ai/v1', 'Moonshot url default correct');
   is($m->default_model, 'kimi-k3', 'Moonshot default_model');
-  # OpenAI endpoint controls reasoning via a `thinking` object, not reasoning_effort.
-  ok(!$m->supports('reasoning_effort'), 'Moonshot clears reasoning_effort capability');
+  # kimi-k3 takes a top-level reasoning_effort; the K2.x line uses a `thinking`
+  # object instead, so the flag is cleared per model (karr k207, layer 3).
+  ok($m->supports('reasoning_effort'), 'Moonshot kimi-k3 advertises reasoning_effort');
+  ok(!Langertha::Engine::Moonshot->new(api_key => 'test-key', model => 'kimi-k2.6')
+      ->supports('reasoning_effort'), 'Moonshot kimi-k2.6 clears reasoning_effort (per model)');
 
   my $req = $m->chat('test prompt');
   like($req->uri, qr{/chat/completions$}, 'Moonshot chat endpoint is /chat/completions');

@@ -33,6 +33,11 @@ the Anthropic wire format specifically.
 
 See L<Langertha::Engine::Moonshot> for the available models list.
 
+On C<kimi-k3>, C<reasoning_effort> goes out as C<output_config.effort> when it
+is C<low>, C<high> or C<max>; any other level is dropped and the server default
+(C<max>) applies. K3 always reasons and Kimi's Messages API has no C<thinking>
+request field for it, so none is sent (C<thinking_display> has no effect).
+
 Get your API key at L<https://platform.kimi.ai/> and set
 C<LANGERTHA_MOONSHOT_API_KEY> in your environment.
 

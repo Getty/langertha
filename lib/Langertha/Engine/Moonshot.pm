@@ -75,11 +75,12 @@ See L<https://platform.kimi.ai/docs/models> for the full model catalog.
 B<Reasoning note:> reasoning control differs per model family on this
 endpoint. The K2.x line uses a Kimi-specific C<thinking> object
 (C<{ type =E<gt> 'enabled' }> / C<{ type =E<gt> 'disabled' }>), not the
-OpenAI-wire C<reasoning_effort> field. C<kimi-k3> instead accepts a top-level
+OpenAI-wire C<reasoning_effort> field, so this engine does not advertise or
+emit C<reasoning_effort> for them. C<kimi-k3> instead accepts a top-level
 C<reasoning_effort> of C<low> / C<high> / C<max> and defaults to C<max>
-server-side when the field is omitted. This engine does not advertise or emit
-C<reasoning_effort> (K2.x compatibility); on C<kimi-k3> the server-side
-default of C<max> therefore applies.
+server-side when the field is omitted; it always reasons. On C<kimi-k3> the
+engine sends C<reasoning_effort> when it is one of those three values and drops
+any other level, so the server default applies.
 
 Supports chat, streaming, tool calling, and structured output. Embeddings,
 transcription, and image generation are not supported via this endpoint.
@@ -115,20 +116,6 @@ sub _build_static_models {[
   { id => 'kimi-k2.6' },
 ]}
 
-# Kimi's OpenAI-compatible endpoint controls reasoning per model family: the
-# K2.x line uses a `thinking` object ({type:enabled|disabled}); kimi-k3 takes
-# a top-level reasoning_effort (low|high|max, server-side default max). This
-# engine clears the capability, and Role::ReasoningEffort then emits no
-# reasoning field (it gates on the flag, ADR 0009 k204) — on kimi-k3 the
-# server-side default of max applies. (Wire-level reasoning via
-# MoonshotAnthropic for the Anthropic dialect.)
-around engine_capabilities => sub {
-  my ( $orig, $self, @rest ) = @_;
-  my $caps = $self->$orig(@rest);
-  delete $caps->{reasoning_effort};
-  return $caps;
-};
-
 # Per-model tool_choice reality on Kimi's OpenAI-compatible endpoint
 # (ADR 0002 amendment, ADR 0019; platform.kimi.ai/docs/guide/use-tool-choice):
 #   * kimi-k3 (the engine default) always thinks, and forcing a *specific*
@@ -137,12 +124,18 @@ around engine_capabilities => sub {
 #   * The K2.x line does not support `required` and errors if it is passed.
 #     Canonical `any` serializes to wire `required` (Langertha::ToolChoice),
 #     so clear tool_choice_any there (auto/none/named stay).
+#   * Reasoning is per model too (karr k207, platform.kimi.ai models overview,
+#     advisor 2026-09-25, docs only): kimi-k3 takes a top-level
+#     reasoning_effort (low|high|max, server default max; the accepted set
+#     lives in its Reasoning::Profile row), while the K2.x line takes only the
+#     Kimi `thinking` object. Clear reasoning_effort there, and
+#     Role::ReasoningEffort then sends no reasoning field (the k204 gate).
 # The rows are deliberately distinct per model — that is the discriminating
 # information the flat role-derived row could not carry.
 sub model_capability_corrections {
   return (
     'kimi-k3'       => { tool_choice_named => 0 },
-    qr/\Akimi-k2\./ => { tool_choice_any   => 0 },
+    qr/\Akimi-k2\./ => { tool_choice_any => 0, reasoning_effort => 0 },
   );
 }
 

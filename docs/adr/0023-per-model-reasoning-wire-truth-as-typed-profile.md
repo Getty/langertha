@@ -331,3 +331,18 @@ point-release coverage follows the k201 gpt-6 precedent; the `(?!\d)` guard keep
 `grok-4.20-multi-agent`, whose effort field is an agent count, an unknown id. Source: the xAI
 reasoning page (updated 2026-09-21), advisor-verified 2026-09-25 — documentation only; whether an
 off-enum value 400s or is ignored is not live-verified.
+
+## Update (k207 — Moonshot `kimi-k3` row; `can_disable 0` also covers an Anthropic-wire shim)
+
+`qr/\Akimi-k3/` carries `levels [low high max]` on both OpenAI wires, `can_disable 0`,
+`disable_form 'absent'`. The one row serves both Moonshot faces: `Engine::Moonshot` sends
+`reasoning_effort` on `chat/completions`, and `Engine::MoonshotAnthropic` sends
+`output_config.effort` through `anthropic_effort_ok`, which reads the same `levels`. Kimi's
+Messages API has no `thinking` request field for K3, and `can_disable 0` is exactly what keeps
+`to_anthropic` from sending one, so the Fable-class rule now applies to a non-Claude model too.
+`medium`, `xhigh`, `none` and `minimal` drop on both faces and the server default `max` applies.
+The match is `\A`-anchored on Moonshot's own ids: `moonshotai/kimi-k3` on OpenRouter is not
+matched on purpose: what OpenRouter forwards for that id is not what Moonshot documents, and was
+not checked. The K2.x line has no row; its flag
+is cleared per model (ADR 0019 k207 update). Source: platform.kimi.ai `use-reasoning-effort`,
+`api/chat` and `api/messages`, advisor-verified 2026-09-25 — documentation only, not live-verified.

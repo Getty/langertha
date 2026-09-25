@@ -157,3 +157,22 @@ several places, none migrated in k138 (out of scope), all consolidation candidat
 `CONTEXT.md` carries the vocabulary (`capability axis`, `model_capability_corrections`). See
 ADR 0002 (the base decision this amends), ADR 0005 (the auto-rewrite matrix `supports()` feeds),
 and ADR 0015 (per-family `around` corrections, the layer-2 sibling of this per-model table).
+
+## Update (k207 — the first layer-3 clear of `reasoning_effort`: Moonshot's K2.x line)
+
+`Engine::Moonshot` cleared `reasoning_effort` at layer 2 for every model, so an explicit effort on
+`kimi-k3` was dropped silently although K3 documents a top-level `reasoning_effort`
+(`low|high|max`, default `max`) on `chat/completions`. The K2.x line takes only the Kimi
+`thinking` object. That is per-model wire reality, so it moves to this table: the layer-2
+`around engine_capabilities` is gone, and the existing `qr/\Akimi-k2\./` row now reads
+`{ tool_choice_any => 0, reasoning_effort => 0 }`. The accepted K3 vocabulary lives in its
+`Reasoning::Profile` row (ADR 0023), not here: the flag only says the wire takes the field.
+
+The ADR 0009 k204 gate (`supports('reasoning_effort') || supports('thinking_budget')`) sees the
+layer-3 result through `supports()`, so K2.x still sends nothing, `thinking_budget` included.
+`kimi-k3` now takes the reasoning concern like every other effort engine, and with it the
+`Langertha::Reasoning::BUILD` croak on a `thinking_budget` for a non-Gemini-2.5 model, where the
+layer-2 clear used to drop that budget silently. Moonshot ids that match neither row (a new
+`kimi-*` id, the sunset `moonshot-v1-*`) now advertise `reasoning_effort` and get the
+passthrough profile. Source: platform.kimi.ai models overview, `use-reasoning-effort` guide and
+`api/chat` schema, advisor-verified 2026-09-25 — documentation only, not live-verified.

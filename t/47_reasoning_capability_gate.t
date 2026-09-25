@@ -129,17 +129,21 @@ for my $key ( sort keys %$want ) {
 
 # --- Intent, independent of the golden table ---
 
-# The engines that clear reasoning_effort engine-wide (MiniMax, Moonshot)
-# send no reasoning field, and no longer carry a stub to make that true.
-for my $short (qw( MiniMax Moonshot )) {
+# The engines that clear reasoning_effort -- engine-wide (MiniMax) or per
+# model (Moonshot's K2.x line, layer 3 since karr k207) -- send no reasoning
+# field, and no longer carry a stub to make that true.
+for my $case ( [ 'MiniMax' ], [ 'Moonshot', 'kimi-k2.6' ] ) {
+  my ( $short, $model ) = @$case;
   my $class = "Langertha::Engine::$short";
-  my $engine = $class->new( api_key => 'k', reasoning_effort => 'high' );
-  ok( !$engine->supports('reasoning_effort'), "$short does not advertise reasoning_effort" );
+  my $label = $short . ( $model ? " $model" : '' );
+  my $engine = $class->new( api_key => 'k', reasoning_effort => 'high',
+    ( $model ? ( model => $model ) : () ) );
+  ok( !$engine->supports('reasoning_effort'), "$label does not advertise reasoning_effort" );
   is_deeply( [ $engine->reasoning_kwargs_for( reasoning_effort => 'max' ) ], [],
-    "$short emits no reasoning kwargs (attribute + per-request control)" );
+    "$label emits no reasoning kwargs (attribute + per-request control)" );
   is( $class->can('reasoning_kwargs_for'),
     Langertha::Role::ReasoningEffort->can('reasoning_kwargs_for'),
-    "$short uses the role's reasoning_kwargs_for, not an engine stub" );
+    "$label uses the role's reasoning_kwargs_for, not an engine stub" );
 }
 
 # The wire follows the flag, both ways: a subclass that re-asserts

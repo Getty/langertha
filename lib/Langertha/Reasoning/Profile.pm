@@ -646,6 +646,25 @@ sub _family_profiles {
       [qw( low medium high )],
       source => $XAI_K208_DOC, can_disable => 0, disable_form => 'absent' ),
 
+    # Moonshot kimi-k3 (karr k207): top-level reasoning_effort on
+    # chat/completions and output_config.effort on the Messages API, both
+    # low|high|max (server default max); always reasons, and the Messages API
+    # has no thinking request field, so can_disable 0 keeps to_anthropic from
+    # sending one. \A-anchored on Moonshot's own ids: OpenRouter's
+    # moonshotai/kimi-k3 is deliberately not matched (what an aggregator
+    # forwards was not checked). K2.x takes no effort (cleared per model on
+    # the engine).
+    __PACKAGE__->new(
+      model_match    => qr/\Akimi-k3/,
+      control        => 'effort',
+      wire_format    => 'openai',
+      levels         => [qw( low high max )],
+      levels_by_wire => { openai => [qw( low high max )], responses => [qw( low high max )] },
+      can_disable    => 0,
+      disable_form   => 'absent',
+      source         => 'platform.kimi.ai use-reasoning-effort + api/chat + api/messages; k207 2026-09-25 (advisor-verified, doc-sourced not live)',
+    ),
+
     # Self-hosted Qwen3.x reasoning family (vLLM / SGLang / llama.cpp), matched
     # with or without its HuggingFace org prefix (served ids look like
     # "Qwen/Qwen3.8-27B-FP8"). The loaded chat template — not the server —

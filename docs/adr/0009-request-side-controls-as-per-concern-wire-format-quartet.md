@@ -251,3 +251,11 @@ representative models and every reasoning setting (1118 rows, captured from the 
 before the change, byte-identical after). It also proves that the wire follows the flag in both
 directions: a MiniMax subclass that re-asserts `reasoning_effort` emits it, and an OpenAI subclass
 that clears it stops emitting without a stub. No `Changes` entry, since no body changed.
+
+## Update (k207 — Moonshot's reasoning clear moves to layer 3)
+
+The k204 update's inventory is out of date: `Moonshot` no longer clears `reasoning_effort` for
+every model. The clear is now a `model_capability_corrections` row on the K2.x line (ADR 0019
+k207 update), the first layer-3 entry for this flag. The gate needs no change, because it reads
+`supports()`, which already applies layer 3. Layer-2 clears remain on `MiniMax` and on `Gemini`
+for `gemini-2.5-*`.
