@@ -46,6 +46,13 @@ xAI's audio (Voice API) and image/video (Imagine API) live on separate
 endpoints and are not exposed by this engine; it covers chat, streaming,
 tool calling, and structured output.
 
+Set C<prompt_cache_key> to a stable per-conversation value to steer xAI's
+best-effort prompt-cache routing: it goes out as a C<prompt_cache_key> body
+field on C<chat/completions>, which xAI plumbs internally to its
+C<x-grok-conv-id> sticky-routing hint. Check
+C<< $response->usage->cached_tokens >> to confirm a cache hit actually
+happened.
+
 Get your API key at L<https://console.x.ai/> and set
 C<LANGERTHA_XAI_API_KEY> in your environment.
 

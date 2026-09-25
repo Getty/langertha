@@ -767,6 +767,13 @@ Revision history for Langertha
       and the karr board) and seeded the first Architecture Decision Records
       in docs/adr/ for the tool wire-translation lane.
 
+    - Engine::XAI POD now documents prompt_cache_key: xAI's REST reference
+      confirms it as an accepted chat/completions body field (their "Maximizing
+      Cache Hits" how-to only shows the x-grok-conv-id header), plumbed
+      server-side to that same sticky-routing hint. No behavior change; set a
+      stable per-conversation value and check
+      $response->usage->cached_tokens for a hit.
+
 0.502     2026-05-15 23:02:10Z
 
     - Fix Langertha::Engine::OpenAIResponses to handle function_call as a
