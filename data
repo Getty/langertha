@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T01:41:40Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:41:40Z
+created: 2026-09-25T01:19:17Z
+id: 202
+priority: low
+started: 2026-09-25T01:28:56Z
+status: done
+tags:
+- xai
+- prompt-cache
+- capabilities
+title: 'XAI: prompt_cache_key auf chat/completions vermutlich over-claimed; x-grok-conv-id
+  Header'
+updated: 2026-09-25T01:41:40Z
+---
+
+Aus k200 (langertha-wire-worker, 2026-09-25): docs.x.ai "Maximizing Cache Hits" dokumentiert prompt_cache_key nur fuer die Responses API; chat/completions nutzt den Header x-grok-conv-id. Engine::XAI (OpenAIBase, chat/completions) advertised prompt_cache_key weiterhin (unverifiziert, Flag gelassen). Vorgehen: langertha-llm-advisor verifiziert (Doku; Live-Call nur mit Gettys OK), dann ggf. around engine_capabilities clearen und PromptCache-Wireformat fuer XAI auf den Header mappen (ADR 0009). Quelle: https://docs.x.ai/developers/advanced-api-usage/prompt-caching/maximizing-cache-hits
+
+2026-09-25 01:30 llm-advisor (2026-09-25, docs only, no live call): prompt_cache_key IS documented as a chat/completions body field in xAI's REST reference (docs.x.ai/developers/rest-api-reference/inference/chat-completions: 'prompt_cache_key (string|null) — stable cache key for best-effort sticky routing / prompt-cache hits ... Plumbed to x-grok-conv-id, same as on /v1/responses'). The 'Maximizing Cache Hits' guide shows only the header for chat/completions; the body field and header are the same routing key server-side. Verdict: neither (a) nor (b) — keep the capability, keep cache_wire_format=openai, no code change. Optional: POD note on Engine::XAI + a request-building test pinning prompt_cache_key in the XAI body. Header mapping is not needed and the request path has no per-request header seam (update_request sees no chat_f controls). Caching is automatic, no min length documented; cached tokens in usage.prompt_tokens_details.cached_tokens (already parsed by Usage). Side note: xAI marks chat/completions 'legacy' and grok-4.7 is now latest (XAI default is grok-4.6).
