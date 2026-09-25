@@ -230,6 +230,17 @@ skipped. **Home 2**, for the k248 reason: the list reaches every engine that rel
 (Mistral, OpenRouter, Scaleway, HuggingFace, self-hosted), the read fires only on a non-string
 `content`, and a string `content` is untouched. Documentation-derived, not live-verified.
 
+## Update (karr k298 — where a stream's usage is found)
+
+Streamed usage is read from every documented place, each at its tier. **Home 2**:
+`Role::AnthropicCompatible` merges `message_start`'s usage (input and cache counts) with
+`message_delta`'s (whose keys win) in the per-stream state, and `Role::OpenAICompatible` turns
+the `include_usage` frame (`choices: []`) into a content-less, non-final chunk carrying usage.
+**Home 3**: Groq's `x_groq.usage` is read by an engine-scoped `around parse_stream_chunk` on
+`Engine::Groq`, guarded by `has_usage`. `Role::Chat::aggregate_usage` returns the last usage a
+stream's chunks carry, since the include_usage frame arrives after the `is_final` chunk.
+Documentation-derived, not live-verified.
+
 ## Future work
 
 - **karr k130** — *realized* (see the Update above): the `cached_tokens` (and now

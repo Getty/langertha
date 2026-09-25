@@ -364,6 +364,14 @@ Revision history for Langertha
       types are skipped. Streams too. Built from Mistral's documentation,
       not verified against a live reply.
 
+    - Streamed usage is complete. Anthropic-family streams report the input
+      and cache counts from message_start on the final chunk, together with
+      the output count and the model. An OpenAI-compatible stream requested
+      with stream_options include_usage keeps its usage frame as a
+      content-less chunk after the final one, and Groq streams read
+      x_groq.usage. New aggregate_usage returns a stream's usage from its
+      chunks. Built from the providers' documentation, not live captures.
+
     - Streamed tool calls are no longer lost on Chat-Completions, Anthropic,
       Gemini and Ollama-native streams: each call arrives once, as the same
       Langertha::ToolCall the non-streaming reply has, and

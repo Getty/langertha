@@ -131,6 +131,22 @@ around engine_capabilities => sub {
   return $caps;
 };
 
+# Groq reports a stream's usage under x_groq.usage on its last chunk instead
+# of a top-level usage (Groq API reference / SDK chunk type; not live-verified).
+# One provider's spelling, so it is read here (ADR 0018 tier 3), guarded by the
+# canonical predicate: a top-level usage, when Groq sends one, wins. -- k298
+around parse_stream_chunk => sub {
+  my ( $orig, $self, $data, @rest ) = @_;
+  my $chunk = $self->$orig( $data, @rest );
+  return $chunk if $chunk && $chunk->has_usage;
+  my $x_groq = ref $data eq 'HASH' ? $data->{x_groq} : undef;
+  my %usage  = $self->_openai_stream_usage_kwargs( ref $x_groq eq 'HASH' ? $x_groq->{usage} : undef );
+  return $chunk unless %usage;
+  return $chunk->meta->clone_object( $chunk, %usage ) if $chunk;
+  require Langertha::Stream::Chunk;
+  return Langertha::Stream::Chunk->new( content => '', raw => $data, is_final => 0, %usage );
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

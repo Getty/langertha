@@ -187,7 +187,10 @@ L<Langertha::Response/thinking> on the non-streaming path.
 =attr usage
 
 Token usage counts as a HashRef, if provided by the engine on the final
-chunk. Keys vary by provider. Use C<has_usage> to check availability.
+chunk. Keys vary by provider. Use C<has_usage> to check availability. An
+OpenAI-compatible stream requested with C<include_usage> reports it on a
+content-less chunk after the final one;
+L<Langertha::Role::Chat/aggregate_usage> finds it either way.
 
 =cut
 

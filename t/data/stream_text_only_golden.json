@@ -31,6 +31,7 @@
             "content" : "",
             "finish_reason" : "end_turn",
             "is_final" : 0,
+            "model" : "claude-opus-4-8",
             "raw" : {
                "delta" : {
                   "stop_reason" : "end_turn",
@@ -43,6 +44,7 @@
             },
             "tool_calls" : 0,
             "usage" : {
+               "input_tokens" : 12,
                "output_tokens" : 15
             }
          },
@@ -50,11 +52,13 @@
             "content" : "",
             "finish_reason" : "end_turn",
             "is_final" : 1,
+            "model" : "claude-opus-4-8",
             "raw" : {
                "type" : "message_stop"
             },
             "tool_calls" : 0,
             "usage" : {
+               "input_tokens" : 12,
                "output_tokens" : 15
             }
          }
@@ -90,6 +94,7 @@
             "content" : "",
             "finish_reason" : "end_turn",
             "is_final" : 0,
+            "model" : "claude-opus-4-8",
             "raw" : {
                "delta" : {
                   "stop_reason" : "end_turn",
@@ -102,6 +107,7 @@
             },
             "tool_calls" : 0,
             "usage" : {
+               "input_tokens" : 12,
                "output_tokens" : 15
             }
          },
@@ -109,11 +115,13 @@
             "content" : "",
             "finish_reason" : "end_turn",
             "is_final" : 1,
+            "model" : "claude-opus-4-8",
             "raw" : {
                "type" : "message_stop"
             },
             "tool_calls" : 0,
             "usage" : {
+               "input_tokens" : 12,
                "output_tokens" : 15
             }
          }
@@ -149,6 +157,7 @@
             "content" : "",
             "finish_reason" : "end_turn",
             "is_final" : 0,
+            "model" : "claude-opus-4-8",
             "raw" : {
                "delta" : {
                   "stop_reason" : "end_turn",
@@ -161,6 +170,7 @@
             },
             "tool_calls" : 0,
             "usage" : {
+               "input_tokens" : 12,
                "output_tokens" : 15
             }
          },
@@ -168,11 +178,13 @@
             "content" : "",
             "finish_reason" : "end_turn",
             "is_final" : 1,
+            "model" : "claude-opus-4-8",
             "raw" : {
                "type" : "message_stop"
             },
             "tool_calls" : 0,
             "usage" : {
+               "input_tokens" : 12,
                "output_tokens" : 15
             }
          }
@@ -1171,6 +1183,34 @@
          {
             "cached_tokens" : 4,
             "content" : "",
+            "is_final" : 0,
+            "model" : "gpt-4o-mini",
+            "raw" : {
+               "choices" : [],
+               "id" : "c",
+               "model" : "gpt-4o-mini",
+               "usage" : {
+                  "completion_tokens" : 1,
+                  "prompt_tokens" : 9,
+                  "prompt_tokens_details" : {
+                     "cached_tokens" : 4
+                  },
+                  "total_tokens" : 10
+               }
+            },
+            "tool_calls" : 0,
+            "usage" : {
+               "completion_tokens" : 1,
+               "prompt_tokens" : 9,
+               "prompt_tokens_details" : {
+                  "cached_tokens" : 4
+               },
+               "total_tokens" : 10
+            }
+         },
+         {
+            "cached_tokens" : 4,
+            "content" : "",
             "finish_reason" : "stop",
             "is_final" : 1,
             "model" : "gpt-4o-mini",
@@ -1265,6 +1305,34 @@
          {
             "cached_tokens" : 4,
             "content" : "",
+            "is_final" : 0,
+            "model" : "gpt-4o-mini",
+            "raw" : {
+               "choices" : [],
+               "id" : "c",
+               "model" : "gpt-4o-mini",
+               "usage" : {
+                  "completion_tokens" : 1,
+                  "prompt_tokens" : 9,
+                  "prompt_tokens_details" : {
+                     "cached_tokens" : 4
+                  },
+                  "total_tokens" : 10
+               }
+            },
+            "tool_calls" : 0,
+            "usage" : {
+               "completion_tokens" : 1,
+               "prompt_tokens" : 9,
+               "prompt_tokens_details" : {
+                  "cached_tokens" : 4
+               },
+               "total_tokens" : 10
+            }
+         },
+         {
+            "cached_tokens" : 4,
+            "content" : "",
             "finish_reason" : "stop",
             "is_final" : 1,
             "model" : "gpt-4o-mini",
@@ -1355,6 +1423,34 @@
                "model" : "gpt-4o-mini"
             },
             "tool_calls" : 0
+         },
+         {
+            "cached_tokens" : 4,
+            "content" : "",
+            "is_final" : 0,
+            "model" : "gpt-4o-mini",
+            "raw" : {
+               "choices" : [],
+               "id" : "c",
+               "model" : "gpt-4o-mini",
+               "usage" : {
+                  "completion_tokens" : 1,
+                  "prompt_tokens" : 9,
+                  "prompt_tokens_details" : {
+                     "cached_tokens" : 4
+                  },
+                  "total_tokens" : 10
+               }
+            },
+            "tool_calls" : 0,
+            "usage" : {
+               "completion_tokens" : 1,
+               "prompt_tokens" : 9,
+               "prompt_tokens_details" : {
+                  "cached_tokens" : 4
+               },
+               "total_tokens" : 10
+            }
          },
          {
             "cached_tokens" : 4,

@@ -704,10 +704,25 @@ Returns an HTTP request object for use with streaming execution.
 sub parse_stream_chunk {
   my ( $self, $data, $event, $state ) = @_;
 
-  return undef unless $data && $data->{choices};
+  return undef unless ref $data eq 'HASH';
 
-  my $choice = $data->{choices}[0];
-  return undef unless $choice;
+  # With stream_options.include_usage (OpenAI; vLLM and SGLang emit it too) the
+  # usage arrives in a frame of its own after the finish chunk, with an empty
+  # choices list. It becomes a content-less, non-final chunk carrying the usage
+  # (and cached_tokens), so aggregate_usage and a caller scanning the chunks
+  # see it; dropping it lost the stream's token counts. -- karr k298
+  my $choice = ref $data->{choices} eq 'ARRAY' ? $data->{choices}[0] : undef;
+  unless ($choice) {
+    return undef unless ref $data->{usage} eq 'HASH';
+    require Langertha::Stream::Chunk;
+    return Langertha::Stream::Chunk->new(
+      content  => '',
+      raw      => $data,
+      is_final => 0,
+      $data->{model} ? ( model => $data->{model} ) : (),
+      $self->_openai_stream_usage_kwargs( $data->{usage} ),
+    );
+  }
 
   # delta.content may be a content-chunk list too (k296, see
   # _openai_content_parts); its thinking chunks feed the thinking below.
@@ -787,12 +802,24 @@ sub parse_stream_chunk {
     $finished
       ? (finish_reason => $self->_openai_finish_reason( $finish_reason, scalar @tool_calls )) : (),
     $data->{model} ? (model => $data->{model}) : (),
-    $data->{usage} ? (usage => $data->{usage}) : (),
-    ( $data->{usage} && $data->{usage}{prompt_tokens_details}
-      && defined $data->{usage}{prompt_tokens_details}{cached_tokens}
-      ? ( cached_tokens => $data->{usage}{prompt_tokens_details}{cached_tokens} ) : () ),
+    $self->_openai_stream_usage_kwargs( $data->{usage} ),
     defined $thinking ? ( thinking => $thinking ) : (),
     @tool_calls ? ( tool_calls => \@tool_calls ) : (),
+  );
+}
+
+# The usage and cached_tokens constructor arguments of a stream chunk for one
+# wire usage block (empty when there is none). Shared by the choice and the
+# usage-only chunk, and by engines that find usage elsewhere (Groq's
+# x_groq.usage). -- karr k298
+sub _openai_stream_usage_kwargs {
+  my ( $self, $usage ) = @_;
+  return () unless ref $usage eq 'HASH';
+  my $details = $usage->{prompt_tokens_details};
+  return (
+    usage => $usage,
+    ( ref $details eq 'HASH' && defined $details->{cached_tokens}
+      ? ( cached_tokens => $details->{cached_tokens} ) : () ),
   );
 }
 
@@ -807,7 +834,12 @@ C<usage.prompt_tokens_details.cached_tokens> when present), and C<thinking>
 (the streamed C<delta.reasoning_content> / bare C<delta.reasoning>, guarded
 C<!ref>). A C<delta.content> that is a list of content chunks is read as in
 L</chat_response>: C<text> chunks into C<content>, C<thinking> chunks into
-C<thinking>. Returns C<undef> only when the payload carries no C<choices>.
+C<thinking>. The usage-only frame that C<stream_options =E<gt> { include_usage
+=E<gt> 1 }> adds after the finish chunk (an empty C<choices> list) becomes a
+content-less chunk that is not C<is_final> and carries C<usage> and
+C<cached_tokens>; collect the stream's usage with
+L<Langertha::Role::Chat/aggregate_usage>. Returns C<undef> only when the
+payload carries neither a choice nor a usage block.
 
 C<delta.tool_calls> fragments are assembled per C<index> (a fragment without
 C<index> by its C<id>, and by its position only when it has neither) in

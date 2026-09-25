@@ -1499,6 +1499,34 @@ fragments.
 
 =cut
 
+# Every dialect reports cumulative usage, but not always on the final chunk:
+# the OpenAI include_usage frame arrives after it (karr k298). The last chunk
+# that carries usage has the stream's totals.
+sub aggregate_usage {
+  my ( $self, $chunks ) = @_;
+  return undef unless ref($chunks) eq 'ARRAY';
+  my $usage;
+  for my $c (@$chunks) {
+    my $u = eval { $c->has_usage ? $c->usage : undef };
+    $usage = $u if ref $u eq 'HASH';
+  }
+  return $usage;
+}
+
+=method aggregate_usage
+
+    my $usage = $engine->aggregate_usage( $chunks );
+    my $counts = Langertha::Usage->from_hash($usage) if $usage;
+
+Walks an ArrayRef of L<Langertha::Stream::Chunk> objects and returns the
+C<usage> HashRef of the last chunk that carries one, or C<undef> when none
+did. Streamed usage is cumulative, so that is the whole stream's usage. Use it
+rather than reading the C<is_final> chunk: an OpenAI-compatible stream
+requested with C<stream_options =E<gt> { include_usage =E<gt> 1 }> reports
+its usage on a content-less chunk after the final one.
+
+=cut
+
 =method simple_chat_stream_realtime_f
 
     # With async/await (recommended)

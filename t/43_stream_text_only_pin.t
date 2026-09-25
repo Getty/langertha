@@ -30,7 +30,10 @@ use Langertha::Engine::Perplexity;
 #
 # Intended changes since: karr k222 added finish_reason 'stop' to the final
 # chunk of the Perplexity capture (the Responses walker's value, as on
-# chat_response); nothing else in the snapshot moved.
+# chat_response); nothing else in the snapshot moved. karr k298 added the
+# openai_usage include_usage frame (choices []) as a content-less, non-final
+# usage chunk, and message_start's input_tokens and model onto the
+# anthropic_text message_delta / message_stop chunks; additions only.
 #
 # Regenerate only for an intended change:
 #   LANGERTHA_REGEN_STREAM_GOLDEN=1 prove -l t/43_stream_text_only_pin.t

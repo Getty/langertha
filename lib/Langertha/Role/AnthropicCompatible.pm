@@ -739,9 +739,18 @@ sub parse_stream_chunk {
 
   # A new message begins the terminal-metadata carry fresh (karr k167): guards
   # against a prior stream on the same state that aborted before message_stop.
+  # message_start also carries the input side of the usage (input_tokens,
+  # cache_read_input_tokens, cache_creation_input_tokens) and the model;
+  # message_delta's usage documents only output_tokens. Keep both in the
+  # stream state so the final chunk's usage is complete and names the model.
+  # -- karr k298
   if ($type eq 'message_start') {
     delete $state->{anthropic_final_meta};
     %$blocks = ();
+    my $message = ref $data->{message} eq 'HASH' ? $data->{message} : {};
+    $state->{anthropic_start_usage} =
+      ref $message->{usage} eq 'HASH' ? { %{ $message->{usage} } } : undef;
+    $state->{anthropic_model} = length( $message->{model} // '' ) ? $message->{model} : undef;
     return undef;
   }
 
@@ -794,9 +803,17 @@ sub parse_stream_chunk {
     # replayed onto the is_final message_stop chunk, matching the cross-dialect
     # contract (see anthropic_final_meta above). It still rides this chunk too.
     # -- k167
+    # The usage is message_start's merged with this event's, key by key with
+    # this event winning: it carries the final output_tokens, and newer API
+    # versions repeat cumulative input counts here too. -- karr k298
+    my $start = $state->{anthropic_start_usage};
+    my $usage = ref $data->{usage} eq 'HASH'
+      ? { ( ref $start eq 'HASH' ? %$start : () ), %{ $data->{usage} } }
+      : $start;
     my %final = (
       $delta->{stop_reason} ? (finish_reason => $delta->{stop_reason}) : (),
-      $data->{usage} ? (usage => $self->_wire_usage( $data->{usage} )) : (),
+      $usage ? (usage => $self->_wire_usage($usage)) : (),
+      defined $state->{anthropic_model} ? (model => $state->{anthropic_model}) : (),
     );
     $state->{anthropic_final_meta} = %final ? { %final } : undef;
     return Langertha::Stream::Chunk->new(
@@ -835,7 +852,11 @@ terminal metadata across two events — C<message_delta> carries C<finish_reason
 (C<stop_reason>) and C<usage> while C<message_stop> is the C<is_final> event — so
 the C<message_delta> metadata is held in C<\%state> and replayed onto the
 C<is_final> C<message_stop> chunk, matching the cross-dialect contract where C<finish_reason> and C<usage>
-land on the same chunk that is C<is_final>. Returns a
+land on the same chunk that is C<is_final>. That C<usage> is complete: the
+input side C<message_start> reports (C<input_tokens>,
+C<cache_read_input_tokens>, C<cache_creation_input_tokens>) merged with the
+C<message_delta> usage, whose keys win; both chunks also carry the C<model>
+from C<message_start>. Returns a
 L<Langertha::Stream::Chunk>, or C<undef> for event types that carry no content.
 
 A C<tool_use> content block is assembled from its C<content_block_start> and
