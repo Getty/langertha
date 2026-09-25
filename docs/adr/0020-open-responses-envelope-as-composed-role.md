@@ -151,3 +151,34 @@ reason this decision is worth its own number.
   slot + `strict`, model→preset mapping and which real model each preset runs, citation
   block/marker shape, retrieve path, typed-SSE framing). A live call (approval-gated) resolves
   them; nothing here blocks on it.
+
+## Update (k212 — one `output[]` walker for the reply and the stream)
+
+The envelope's `output[]` walker is now a single method, `_responses_walk_output`, and both
+paths read through it: `chat_response` walks the whole response, and `parse_stream_chunk`
+walks the `response` object that the terminal `response.completed` / `response.incomplete`
+event carries. A streamed and a non-streamed reply of the same response therefore cannot
+disagree about their tool calls (ADR 0003), thinking or `finish_reason`. Before this, the stream
+parser read only text deltas and usage, and streamed function calls were lost — harmless while
+`OpenAIResponses` opts out of streaming and Perplexity streams without tools, but a streaming
+Responses consumer with function tools (XAIResponses, k206) would have ended its tool loop
+silently.
+
+- **Tool calls come from the terminal event only.** The incremental function-call events
+  (`response.output_item.added` / `.done`, `response.function_call_arguments.delta` / `.done`)
+  are not assembled: the terminal `output[]` is complete and authoritative, and reading only it
+  means a call is delivered once, on the `is_final` chunk, where
+  `Role::Chat::aggregate_tool_calls` collects it. Text is not re-read from it (it already
+  streamed as `output_text.delta`); a reasoning summary is, since no reasoning delta is read.
+- **A text-only stream's final chunk is unchanged.** `finish_reason` is set on the final chunk
+  only when it carries tool calls (then `tool_calls`), so Perplexity's streams keep the chunks
+  they had.
+- **`response.failed` and `error` fail the stream.** Both are terminal and carry no reply, so
+  `parse_stream_chunk` croaks with the provider's error code and message (the LMStudio parser's
+  pattern), which fails the `chat_stream_realtime_f` future on every backend (ADR 0027) instead of
+  ending the stream as an empty success.
+
+The event names and shapes are from OpenAI's streaming-events reference (fetched 2026-09-25);
+no real SSE capture of a Responses tool-call stream exists yet, and xAI's event names wait on the
+k206 capture. Test: `t/43_responses_stream_tool_calls.t` (the stream is built from the documented
+events around the verbatim non-streaming capture `responses_web_search_function_call.json`).
