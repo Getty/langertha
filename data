@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T01:28:34Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:28:34Z
+created: 2026-09-25T00:52:57Z
+id: 199
+priority: low
+started: 2026-09-25T01:09:37Z
+status: done
+tags:
+- async
+- http
+title: Consider pipeline => 0 for the Langertha-built Net::Async::HTTP client
+updated: 2026-09-25T01:28:34Z
+---
+
+Role::AsyncHTTP builds Net::Async::HTTP->new with defaults (pipeline => 1, max_connections_per_host => 1). With 3+ concurrent requests on one engine over a keep-alive connection, NaHTTP pipelines queued requests behind an in-flight one; cancelling any request (caller cancel, or the k194 abort after a chunk-sub die) closes the connection and fails the pipelined siblings with "Connection closed". For LLM streaming, pipelining buys little (head-of-line blocking behind a long stream). Decide whether to build the client with pipeline => 0 (and/or a higher max_connections_per_host); needs a keep-alive test daemon (t/lib/Test/LocalHTTPDaemon.pm forces Connection: close). Reproduced in k194 fix round 1 with a scratch keep-alive HTTP::Daemon.
+
+Aus k193-194-Re-Review (Minors, vermutet, nicht reproduziert): N1 Role/Chat.pm: 'await $request_f if $request_f->is_failed' laeuft vor dem $stream_error-Check -> Transportfehler koennte die Original-Exception maskieren; $stream_error zuerst pruefen. N2 fremdes Future mit loop() aus anderem Eventsystem -> ->later stirbt im Read-Pfad; Guard $loop->can('later'). N3 seit ff0db6e reused die Suite nach Abort nie eine Verbindung -> Keep-Alive-Testdaemon (Vorlage: /tmp/claude-1000/-home-getty-dev-langertha/9b3e6b6f-6a4b-438b-ae8d-7a88c3e23ce8/scratchpad/rr/keepalive.pl) hier mit aufnehmen.
+
+2026-09-25 01:19 Done on branch k199 (cd7d002..bfefb07). pipeline => 0 on the Langertha-built NaHTTP client; max_connections_per_host left at NaHTTP default 1 (env NET_ASYNC_HTTP_MAXCONNS). NaHTTP 0.50: ready() pipelines all queued requests after a request completes on a connection known HTTP/1.1; with pipeline 0 queued ones stay in the per-host ready_queue and on_closed re-requests a fresh connection, so an abort only fails its own request. Red-first: t/45_async_http_keepalive.t failed 'Connection closed' before. N1+N2 red-first via injected hand-driven client in t/45_stream_abort_client_future.t (N1 not provokable over real NaHTTP: IO::Async runs later() before the EOF read event). N3: LocalHTTPDaemon keep_alive mode + connection_count. Open: per-engine concurrency is serialized (max_conns 1) - separate question.
