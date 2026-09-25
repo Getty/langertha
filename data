@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T18:17:20Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T18:17:20Z
+created: 2026-09-25T17:38:10Z
+id: 273
+priority: low
+started: 2026-09-25T17:49:07Z
+status: done
+tags:
+- vision
+- content
+title: 'Content::Image: TO_JSON and an optional detail hint (OpenAI image_url.detail)'
+updated: 2026-09-25T18:17:20Z
+---
+
+From knarr k33: Content::Image has no TO_JSON (siblings' tracing/log JSON encoders choke on it) and no field for OpenAI's image_url.detail (low|high|auto), so relays drop the hint. Add TO_JSON (canonical shape without dumping huge base64? decide: include media_type + url or a truncated/omitted data marker) and an optional detail attribute serialized only on wires that have it (openai image_url.detail, responses input_image.detail).
+
+2026-09-25 18:06 Implemented in 545713f (branch worktree-agent-aca1a138dfe630a7c): Content::Image->TO_JSON (compact: type/source/url/media_type/detail/bytes, never base64; a data: URL in url is reported as source=base64 without the url) + optional detail attr (low|high|auto, every from_* accepts it), serialized only as OpenAI chat image_url.detail and Responses input_image.detail. knarr k33: knarr's Image translation can now pass OpenAI image_url.detail through via Content::Image->from_url/from_base64(..., detail => $detail) instead of dropping it (knarr not edited). Open for llm-advisor: does Perplexity /v1/agent (shares to_responses) accept input_image.detail; do current OpenAI models take values beyond low|high|auto (the enum rejects others).
