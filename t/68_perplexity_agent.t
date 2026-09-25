@@ -182,8 +182,9 @@ subtest 'citations lifted from search_results' => sub {
 subtest 'capability corrections (k139)' => sub {
     my $caps = ppx()->engine_capabilities;
 
-    # Honest by composition (no Role::Tools, no Role::PromptCache):
-    ok( !$caps->{tools_native},      'no native tools' );
+    # Client function tools since k213, but no tool_choice field on the Agent
+    # schema (t/68_perplexity_function_tools.t); no Role::PromptCache:
+    ok( $caps->{tools_native},       'native function tools (k213)' );
     ok( !$caps->{tool_choice_named}, 'no named tool_choice (ADR 0005 dir-1 exemplar)' );
     ok( !$caps->{prompt_cache},      'no cache enable' );
     ok( !$caps->{prompt_cache_key},  'no prompt_cache_key (caching automatic)' );

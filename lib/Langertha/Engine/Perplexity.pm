@@ -13,11 +13,14 @@ extends 'Langertha::Engine::Remote';
 # k138 catalogued) would be dishonest. The envelope lives in
 # Role::ResponsesCompatible, composed here exactly as AnthropicBase composes
 # Role::AnthropicCompatible. Role::ReasoningEffort::_build_reasoning_wire_format
-# defaults to 'openai'; ResponsesCompatible (composed last) supplies 'responses'
-# (ADR 0015 -excludes canon).
+# and Role::Tools::_build_tool_wire_format default to 'openai';
+# ResponsesCompatible (composed last) supplies 'responses' for both (ADR 0015
+# -excludes canon). Role::Tools: the Agent API takes client-executed
+# type:function tools (karr k213); its built-in tools are not modelled here.
 with 'Langertha::Role::Models',
      'Langertha::Role::Temperature',
      'Langertha::Role::ReasoningEffort' => { -excludes => ['_build_reasoning_wire_format'] },
+     'Langertha::Role::Tools'           => { -excludes => ['_build_tool_wire_format'] },
      'Langertha::Role::ResponseSize',
      'Langertha::Role::SystemPrompt',
      'Langertha::Role::ResponseFormat',
@@ -82,13 +85,30 @@ off the response rather than inferring it from the preset.
 
 =head2 Capabilities
 
-No tool calling and no C<json_object> mode: the only structured
-C<response_format> the Agent API accepts is C<json_schema> (the C<type> enum is
-C<json_schema>/C<text>; a C<json_object> body is rejected with HTTP 400).
-Structured output still works — C<chat_f> rewrites a forced named tool into a
-top-level C<response_format=json_schema> plus a synthetic L<Langertha::ToolCall>
-(ADR 0005 rewrite direction 1; Perplexity remains its exemplar), and C<strict>
-is enforced on the returned JSON. C<reasoning_effort> B<is> accepted (wire
+Client function tools work: pass C<tools> to C<chat_f>, or set
+C<mcp_servers> and use C<chat_with_tools_f>. They go out as flat
+C<< { type => 'function', name, description, parameters } >> tools, the
+model's C<function_call> items land on L<Langertha::Response/tool_calls>, and
+the tool loop answers them with C<function_call_output> items. Perplexity never
+runs a function tool itself. A preset still runs its own C<web_search>
+alongside your tools (presets merge tools). The echo of a tool turn keeps only
+what the Agent input accepts: the function calls and the assistant's text; the
+search results and other built-in tool items are left out. This is built from
+Perplexity's documentation, not verified against the live API.
+
+There is no C<tool_choice> and no C<parallel_tool_calls> on the Agent API, so
+every C<tool_choice_*> capability and C<parallel_tool_use> are off and neither
+field is ever sent (a forced choice that cannot be sent carps). Perplexity's
+built-in tools (C<web_search>, C<fetch_url>, C<sandbox>, ...) are not modelled
+yet; a native hash of one in C<tools> is sent as given.
+
+No C<json_object> mode: the only structured C<response_format> the Agent API
+accepts is C<json_schema> (the C<type> enum is C<json_schema>/C<text>; a
+C<json_object> body is rejected with HTTP 400). A forced named tool still
+works as structured output — C<chat_f> rewrites it into a top-level
+C<response_format=json_schema> plus a synthetic L<Langertha::ToolCall> (ADR
+0005 rewrite direction 1; Perplexity remains its exemplar), and C<strict> is
+enforced on the returned JSON. C<reasoning_effort> B<is> accepted (wire
 C<reasoning.effort>), though the non-reasoning presets (C<fast>/C<low>) echo it
 back without spending reasoning tokens. Prompt caching is automatic (no
 request-side key).
@@ -233,19 +253,49 @@ sub _responses_extra_fields {
   return @citations ? ( citations => \@citations ) : ();
 }
 
+# Agent API echo filter (karr k213, ADR 0020 k213 Update). The Agent input is
+# a closed oneOf of message | function_call | function_call_output, and a
+# message part is only input_text / input_image (OpenAPI for POST /v1/agent,
+# fetched 2026-09-25; not live-verified). The Responses echo replays every
+# output[] item, which on a preset turn includes search_results /
+# fetch_url_results / *_results / mcp_* items and an assistant message of
+# output_text parts -- all off-schema as input. Keep the calls (thought_signature
+# included, as Perplexity's own sample replays them), flatten an assistant
+# message to its text, drop everything else.
+sub _responses_echo_item {
+  my ( $self, $item ) = @_;
+  my $type = $item->{type} // '';
+  return $item if $type eq 'function_call' || $type eq 'function_call_output';
+  return () unless $type eq 'message';
+  my $content = $item->{content};
+  my $text = ref $content eq 'ARRAY'
+    ? join( '', map { $_->{text} // '' }
+        grep { ref $_ eq 'HASH' && ( $_->{type} // '' ) eq 'output_text' } @$content )
+    : ( $content // '' );
+  return () unless length $text;
+  return { type => 'message', role => ( $item->{role} // 'assistant' ), content => $text };
+}
+
 # The Agent API's response_format enum is {json_schema,text} — no json_object
 # (live-confirmed k147: a json_object body -> HTTP 400 "validation failed:
 # response_format.type must be one of json_schema, text"), so clear the flag
-# Role::ResponseFormat advertises by default. Everything else is
-# honest by composition: no Role::Tools (tools_native / tool_choice_* stay off,
-# keeping Perplexity the ADR 0005 direction-1 exemplar), no Role::PromptCache
-# (prompt_cache / prompt_cache_key stay off — caching is automatic),
-# Role::ReasoningEffort composed so reasoning_effort is on (wire reasoning.effort
-# via the responses format).
+# Role::ResponseFormat advertises by default. The Agent request schema has no
+# tool_choice and no parallel_tool_calls field (karr k213, docs only), so clear
+# every tool_choice_* flag and parallel_tool_use that Role::Tools brings: the
+# envelope then never sends either field, and with tool_choice_named off chat_f
+# still reroutes a forced tool through json_schema (Perplexity stays the ADR
+# 0005 direction-1 exemplar). Everything else is honest by composition: no
+# Role::PromptCache (prompt_cache / prompt_cache_key stay off — caching is
+# automatic), no Role::ServerTools, Role::ReasoningEffort composed so
+# reasoning_effort is on (wire reasoning.effort via the responses format).
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
-  delete $caps->{response_format_json_object};
+  delete $caps->{$_} for qw(
+    response_format_json_object
+    tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
+    parallel_tool_use
+  );
   return $caps;
 };
 

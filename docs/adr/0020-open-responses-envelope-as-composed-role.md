@@ -214,3 +214,39 @@ diff = that one key on the final chunk of each read path). A terminal event whos
 no message item still yields no `finish_reason`, on the stream and on `chat_response` alike.
 Tests: `t/43_responses_stream_tool_calls.t`, `t/43_stream_text_only_pin.t`.
 
+## Update (k213 — Perplexity gains client function tools; a sixth envelope hook filters the tool-loop echo)
+
+The Agent API takes client-executed `type:function` tools (advisor 2026-09-25, docs only: the
+OpenAPI for `POST /v1/agent` and the custom-functions guide; no live capture yet). Perplexity now
+composes `Role::Tools`, with `-excludes => ['_build_tool_wire_format']` so the envelope's
+`responses` builder wins (ADR 0015, as for `reasoning_wire_format`). Three envelope changes
+follow, none of them per-format code on the engine (ADR 0001):
+
+- **`_responses_echo_item($item)` — a sixth hook on the envelope role.** The five hooks of the
+  Decision plus this one live on `Role::ResponsesCompatible`; `_server_tool_wire_check` (k206
+  Update) is the capability-scoped one on `Role::ServerTools`. `Role::Tools::format_tool_results`
+  (`responses` branch) runs every echoed `output[]` item through it after hoisting nested
+  function calls. The default passes the item through (OpenAI takes its own output items back).
+  Perplexity's Agent input is a closed oneOf — `message` | `function_call` |
+  `function_call_output`, message parts only `input_text` / `input_image` — so its override keeps
+  function calls verbatim (`thought_signature` included, as Perplexity's own sample replays
+  them), flattens an assistant message to `{type:message, role:assistant, content:<text>}`, and
+  drops every other item (`search_results`, `*_results`, `mcp_*`). Presets merge their
+  `web_search` with the caller's tools, so the filter is needed on the first tool turn. The hook
+  sits at the echo rather than in `_normalize_input_item` because the echo is where output items
+  become input, for `chat_with_tools_f` and for any caller of `format_tool_results`
+  (langertha-raider) alike.
+- **`tool_choice` only where the engine supports its kind.** `_responses_tool_choice_kwarg`
+  (both body builders) sends a choice only when `supports('tool_choice_<kind>')` (`named` for a
+  specific tool); otherwise it is dropped, silently for `auto` (the default), with a carp for
+  anything else. Perplexity clears all four `tool_choice_*` flags (the Agent schema has no such
+  field), so it never sends one; OpenAIResponses keeps all four and is unchanged.
+- **`parallel_tool_calls` only where `supports('parallel_tool_use')`.** `Role::Tools` brings
+  `Role::ParallelToolUse`; Perplexity clears the flag (no such field), OpenAIResponses keeps it.
+
+Streaming with tools is unchanged beyond k212/k222. Perplexity's built-in tools (`web_search`,
+`fetch_url`, `sandbox`, `people_search`, `finance_search`, `mcp`) are not modelled: that is
+k206 Phase 2, which will reuse this echo filter. Tests: `t/68_perplexity_function_tools.t`
+(documented shapes; request building, `chat_f`, the echo filter, and `chat_with_tools_f` end to
+end over the mocked transport).
+

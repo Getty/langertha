@@ -168,7 +168,7 @@ Engine::Remote              url required, JSON + HTTP
   │     └── Whisper         self-hosted faster-whisper-server etc.
   │
   │  Non-OpenAI formats (own request/response handling)
-  ├── Perplexity            Agent API (/v1/agent), Open-Responses envelope via Role::ResponsesCompatible; search-augmented, citations — NO tool calling
+  ├── Perplexity            Agent API (/v1/agent), Open-Responses envelope via Role::ResponsesCompatible; search-augmented, citations; client function tools, no `tool_choice` (k213)
   ├── Gemini                ?key= auth, functionDeclarations, thought parts
   ├── Ollama                native /api/chat, NDJSON streaming, OpenAPI spec
   ├── AKI                   key-in-body auth, EU/Germany, /api/call/{model}

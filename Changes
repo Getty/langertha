@@ -27,6 +27,19 @@ Revision history for Langertha
       without the capability croaks before the request is sent. Built on
       three recorded OpenAI replies (gpt-5.6-luna).
 
+    - New: function tools on Perplexity (Agent API). chat_f sends tools as
+      flat function tools and the model's calls land on
+      Response->tool_calls; chat_with_tools_f runs the MCP tool loop. The
+      Agent API has no tool_choice and no parallel_tool_calls, so neither is
+      sent and supports() reports all tool_choice_* and parallel_tool_use
+      off; a forced named tool still becomes structured output via
+      json_schema. The echo of a tool turn keeps only the calls and the
+      assistant's text, since the Agent input rejects search results and
+      other built-in tool items. Taken from Perplexity's documentation, not
+      verified against the live API. On the Responses wire a tool_choice the
+      engine does not support is no longer sent (dropping anything but auto
+      carps).
+
     - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
       item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,
       computer_call, local_shell_call, apply_patch_call and a client-side

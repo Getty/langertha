@@ -353,6 +353,11 @@ sub format_tool_results {
       }
       push @echo, $item;
     }
+    # Which echoed items the wire takes back as input is the envelope's call:
+    # the ResponsesCompatible hook passes all through on OpenAI and filters to
+    # the Agent input schema on Perplexity (karr k213, ADR 0020).
+    @echo = map { $self->_responses_echo_item($_) } @echo
+      if $self->can('_responses_echo_item');
     return (
       @echo,
       map {

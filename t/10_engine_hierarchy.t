@@ -408,7 +408,7 @@ test_openai_cloud_engine(
 is(Langertha::Engine::XAI->new(api_key => 'k')->default_model, 'grok-4.7',
   'XAI default_model is grok-4.7 (current flagship, not the superseded grok-4.6)');
 
-# --- Perplexity (Agent API — Responses envelope, NOT OpenAI, NO tools) ---
+# --- Perplexity (Agent API — Responses envelope, NOT OpenAI; client function tools since k213) ---
 # Lean engine (k139): parent = Remote, composes Role::ResponsesCompatible (the
 # Open-Responses wire envelope, shared with OpenAIResponses) — deliberately NOT
 # OpenAIBase / OpenAICompatible / OpenAPI. Bespoke assertions rather than
@@ -427,7 +427,7 @@ use Langertha::Engine::Perplexity;
   ok($class->does('Langertha::Role::StaticModels'), 'Perplexity does StaticModels');
   ok($class->does('Langertha::Role::ReasoningEffort'), 'Perplexity does ReasoningEffort');
   ok($class->does('Langertha::Role::ResponseFormat'), 'Perplexity does ResponseFormat');
-  ok(!$class->does('Langertha::Role::Tools'), 'Perplexity does NOT Tools');
+  ok($class->does('Langertha::Role::Tools'), 'Perplexity does Tools (Agent API function tools, k213)');
   ok(!$class->does('Langertha::Role::OpenAICompatible'), 'Perplexity does NOT OpenAICompatible');
   ok(!$class->does('Langertha::Role::OpenAPI'), 'Perplexity does NOT OpenAPI');
   ok(!$class->does('Langertha::Role::PromptCache'), 'Perplexity does NOT PromptCache');

@@ -30,14 +30,16 @@ use JSON::MaybeXS;
   ok !$e->supports('telepathy'),           'supports() returns false for unknown cap';
 }
 
-# Perplexity Agent API (Responses envelope): composes ResponseFormat +
-# ReasoningEffort, but NOT Tools and NOT PromptCache. So the flags are honest by
-# composition, with one correction: the Agent response_format enum is
-# json_schema-only, so json_object is cleared (k139).
+# Perplexity Agent API (Responses envelope): composes ResponseFormat,
+# ReasoningEffort and (since k213) Tools, but NOT PromptCache. Corrections: the
+# Agent response_format enum is json_schema-only, so json_object is cleared
+# (k139); the Agent schema has no tool_choice / parallel_tool_calls, so those
+# flags are cleared (k213).
 {
   my $e = Langertha::Engine::Perplexity->new( api_key => 'x' );
   my $caps = $e->engine_capabilities;
-  ok !$caps->{tools_native},                'perplexity has no native tools';
+  ok $caps->{tools_native},                 'perplexity has native function tools (k213)';
+  ok !$caps->{tool_choice_auto},            'perplexity has no tool_choice field (k213)';
   # ADR 0005 rewrite direction 1's only exemplar: no named tool_choice, but
   # json_schema response_format is present, so chat_f reroutes a forced tool.
   ok !$caps->{tool_choice_named},           'perplexity has no named tool_choice (ADR 0005 dir-1 exemplar)';

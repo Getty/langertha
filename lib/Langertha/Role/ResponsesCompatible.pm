@@ -84,6 +84,10 @@ C<POST> to a provider path.
 =item * L</_responses_extra_fields> - extra L<Langertha::Response> constructor
 args pulled from the raw payload (e.g. Perplexity citations).
 
+=item * L</_responses_echo_item> - which of the reply's C<output[]> items the
+tool loop echoes back as input, and in which shape (Perplexity keeps only what
+its Agent input schema accepts).
+
 =back
 
 =cut
@@ -171,8 +175,8 @@ sub _is_native_responses_tool {
 #   - every other function-tool form (MCP inputSchema, canonical input_schema,
 #     OpenAI chat's nested function, a Langertha::Tool) is formatted to the
 #     flat shape, and anything that is neither croaks in Langertha::Tool.
-# Guarded by can(): a lean consumer that composes no Role::Tools (Perplexity)
-# has no format_tools, and its tools go out as given.
+# Guarded by can(): a consumer that composes no Role::Tools has no
+# format_tools, and its tools go out as given.
 sub _responses_tools_kwarg {
     my ( $self, $extra ) = @_;
     my @server = $self->can('server_tools') ? $self->_responses_default_server_tools($extra->{tools}) : ();
@@ -191,6 +195,32 @@ sub _responses_tools_kwarg {
       : _is_native_responses_tool($item)   ? $item
       :                                      @{ $self->format_tools([$item]) };
     } @{ $extra->{tools} } ];
+    return;
+}
+
+# Shapes the `tool_choice` kwarg in place, for both request builders.
+# Normalized to the Responses (flat function) format, pinned to the literal
+# 'responses' rather than $self->tool_wire_format: the envelope is always
+# Responses-shaped (mirrors OpenAICompatible pinning 'openai'). A choice whose
+# kind the engine does not support (tool_choice_auto / _any / _none / _named)
+# is not sent: Perplexity's Agent API has no tool_choice field at all (karr
+# k213). Dropping 'auto' is silent -- it is the wire default -- any other drop
+# carps, since the model is then free to call or skip tools. A value
+# ToolChoice cannot read passes through as given.
+sub _responses_tool_choice_kwarg {
+    my ( $self, $extra ) = @_;
+    return unless exists $extra->{tool_choice} && defined $extra->{tool_choice};
+    my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} ) or return;
+    my $cap = $tc->type eq 'tool' ? 'tool_choice_named' : 'tool_choice_' . $tc->type;
+    if ( $self->supports($cap) ) {
+        $extra->{tool_choice} = $tc->to('responses');
+        return;
+    }
+    delete $extra->{tool_choice};
+    carp "".( ref $self ).": dropping tool_choice '"
+      . ( $tc->type eq 'tool' ? 'tool ' . ( $tc->name // '' ) : $tc->type )
+      . "' -- this engine does not support('$cap'); the model decides whether to call a tool"
+        unless $tc->type eq 'auto';
     return;
 }
 
@@ -253,21 +283,13 @@ sub chat_request {
     # attributes on a per-key basis; the rest of %extra passes straight through.
     my $controls = delete $extra{controls} // {};
 
-    # Normalize tool_choice to the Responses (flat function) format. Pinned to
-    # the literal 'responses' rather than $self->tool_wire_format: the envelope
-    # is always Responses-shaped, and a lean consumer (Perplexity) composes no
-    # Role::Tools, so it carries no tool_wire_format attribute at all (mirrors
-    # OpenAICompatible pinning 'openai').
-    if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
-        if ( my $tc = Langertha::ToolChoice->from_hash( $extra{tool_choice} ) ) {
-            $extra{tool_choice} = $tc->to('responses');
-        }
-    }
-
+    $self->_responses_tool_choice_kwarg(\%extra);
     $self->_responses_tools_kwarg(\%extra);
 
-    # parallel_tool_use -> parallel_tool_calls (only when tools present).
-    if ( exists $extra{tools} && !exists $extra{parallel_tool_calls} ) {
+    # parallel_tool_use -> parallel_tool_calls (only when tools present, and
+    # only where the wire has the field: Perplexity's Agent API does not, k213).
+    if ( exists $extra{tools} && !exists $extra{parallel_tool_calls}
+      && $self->supports('parallel_tool_use') ) {
         my $ptu;
         if ( exists $controls->{parallel_tool_use} ) {
             $ptu = $controls->{parallel_tool_use};
@@ -399,6 +421,27 @@ Returns extra L<Langertha::Response> constructor args pulled from the raw
 response payload. Default empty. Overridden by consumers that surface
 provider-specific fields (Perplexity lifts C<search_results> into
 L<Langertha::Response/citations>).
+
+=cut
+
+sub _responses_echo_item {
+    my ( $self, $item ) = @_;
+    return $item;
+}
+
+=method _responses_echo_item
+
+    my @items = $engine->_responses_echo_item($output_item);
+
+Shapes one C<output[]> item of the previous reply for the tool-loop echo
+(L<Langertha::Role::Tools/format_tool_results>, C<responses> wire), after a
+function call nested in a message has been hoisted. Returns the item(s) to send
+back as input, or an empty list to drop it. Default passes every item through
+unchanged: OpenAI's C</v1/responses> takes its own output items as input.
+Overridden by consumers whose input schema is narrower: Perplexity keeps
+C<function_call> items, turns an assistant message into
+C<< { type => 'message', role => 'assistant', content => $text } >>, and drops
+every other item (C<search_results>, C<*_results>, C<mcp_*>).
 
 =cut
 
@@ -668,12 +711,7 @@ sub chat_stream_request {
 
     my $controls = delete $extra{controls} // {};
 
-    if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
-        if ( my $tc = Langertha::ToolChoice->from_hash( $extra{tool_choice} ) ) {
-            $extra{tool_choice} = $tc->to('responses');
-        }
-    }
-
+    $self->_responses_tool_choice_kwarg(\%extra);
     $self->_responses_tools_kwarg(\%extra);
 
     my @input;

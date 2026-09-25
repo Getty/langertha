@@ -250,3 +250,16 @@ ADR 0019 capability row because it picks a wire path, not a flag that a caller w
 Documentation only, not live-verified. The closed-schema normalization (k182) was written for the
 first-party validator and is assumed acceptable to Kimi. Pinned by
 `t/77_response_format_moonshot_native.t`.
+
+## Update (k213 — Perplexity has client function tools now; direction 1 still fires)
+
+The Context's "Perplexity does no tool calling at all" is stale since the Agent API move (k139):
+the Agent API takes client-executed function tools, and Perplexity now composes `Role::Tools`
+(`tools_native` on). Its request schema has no `tool_choice` field, so every `tool_choice_*` flag
+stays cleared. The direction-1 condition (`!supports('tool_choice_named') &&
+supports('response_format_json_schema')`) therefore still holds, a forced named tool is still
+rewritten to `response_format=json_schema` plus a synthetic `ToolCall`, and Perplexity remains
+the exemplar. What changed is only the unforced case: `tools` without a forced choice now go out
+as native function tools. Pinned in `t/68_perplexity_function_tools.t` and
+`t/68_perplexity_agent.t`.
+
