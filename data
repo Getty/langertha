@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T08:09:20Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T08:09:20Z
+created: 2026-09-25T07:40:11Z
+id: 253
+priority: low
+started: 2026-09-25T07:41:22Z
+status: done
+tags:
+- hermes
+- streaming
+- tools
+title: 'Hermes streaming: <tool_call> blocks stay in streamed text, no Stream::Chunk
+  tool_calls'
+updated: 2026-09-25T08:09:20Z
+---
+
+From k231 (documented limitation) and knarr k19: on hermes-wire engines (NousResearch, AKI native) chat_stream_realtime_f leaves <tool_call> markup in the text and puts no ToolCall on chunks, so aggregate_tool_calls and sibling relays (knarr k19) see none. Lift at stream end: buffer text, on the final chunk extract via _hermes_split_text (honours hermes_call_tag), attach tool_calls to the final chunk and strip tags from... (decide: strip from already-emitted text impossible -> either hold back text inside an open <tool_call> tag while streaming, or only attach calls on the final chunk and document). Prefer: suppress emission of text inside <tool_call>...</tool_call> incrementally (tag-aware splitter like ThinkTag), attach ToolCalls on the final chunk.
