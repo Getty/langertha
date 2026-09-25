@@ -134,3 +134,23 @@ through `Role::Chat::_gate_tool_choice` and, claiming no `tool_choice_*`, never 
 classify with `ToolChoice->from_hash` only; `to('ollama')` still croaks, as there is no such
 wire form. AKI native is a hermes engine: `chat_f` takes the tools and `tool_choice` off the
 request before the builder (k231, k234).
+
+## Update (k252 — nested JSON is characters; the transport encodes once)
+
+Several wires carry JSON as a *string* inside the JSON body or inside model text: OpenAI
+`function.arguments`, the tool-result `content` of the `openai` / `ollama` wires, the Responses
+`function_call_output.output`, the hermes `<tool_call>` / `<tool_response>` payloads and tool
+prompt, AKI native's `chat_context`, vLLM-Hook's `vllm_xargs`, and the structured-output JSON the
+`/anthropic` shims lift into `Response.content`. `ToolCall::to_openai` (`encode_json`) and
+`ToolResult` (a `utf8 => 1` encoder) produced UTF-8 *bytes* there; the request body encoder then
+encoded them a second time, so a provider — or knarr's client, which re-serializes
+`ToolCall->to_openai` — read `Köln` as `KÃ¶ln`. The inbound twin: `extract_hermes_from_text`
+fed character text to a byte decoder and silently dropped any call with non-ASCII arguments.
+
+The contract: value objects and serializers produce and accept **character strings**; the one
+UTF-8 encode happens in `Role::JSON`'s `json` when `Role::HTTP` builds the request body, and the
+one decode when `parse_response` / the stream parsers read the wire bytes. Code that nests JSON
+uses a character codec — `$engine->encode_json_text` (mirror of `decode_json_text`) on engines,
+a `utf8 => 0` `JSON::MaybeXS` in the value objects. `$engine->json->encode` stays the byte
+encoder for whole bodies only. Held by `t/77_utf8_tool_wire.t`. Out of scope: `Manifest->to_json`
+is a whole-document serializer, documented to return UTF-8 bytes.
