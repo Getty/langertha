@@ -245,3 +245,21 @@ accepted for the same reason Groq and Cerebras use all-models rules. Verified of
 The guard reads the `response_format` passed to the call, not one set as an engine attribute
 (`$engine->response_format`), which the request builder still sends. That gap predates this
 Update and applies to every rule; it is filed separately as karr k249.
+
+## Update (k249 — rules receive the effective `response_format`, engine attribute included)
+
+The gap named at the end of the k245 Update is closed. `chat_f` and `chat_stream_realtime_f`
+now pass the rules the `response_format` that goes on the wire, resolved by
+`Role::Chat::_chat_effective_response_format`: the per-request value when the caller passed the
+key, else the engine's `response_format` attribute (`Role::ResponseFormat`). That is the
+precedence every request builder already uses (`OpenAICompatible` `chat_request` /
+`chat_stream_request`, `AnthropicCompatible::_take_response_format`, `ResponsesCompatible`), so
+the guard and the wire cannot disagree: an engine-level `json_object` on Groq plus tools now
+croaks, and a per-request `{type => 'text'}` lifts an engine-level JSON format in both places.
+The rule signature and the Groq / Cerebras / SGLang rules are unchanged. Verified offline:
+`t/78_capability_exclusions.t`, `t/23_sglang_forced_tool_exclusion.t`.
+
+The ADR 0005 forced-tool rewrite in `chat_f` does not share the bug: it sets a per-request
+`response_format`, which then wins over the engine attribute on the wire and in the guard alike.
+It does overwrite a `response_format` the caller also passed (per request or on the engine)
+without a word — a separate question, not changed here.
