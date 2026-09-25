@@ -36,6 +36,9 @@ Revision history for Langertha
       namespace and its server-side tools go out verbatim, and other
       function-tool forms are converted, in any order.
 
+    - OpenAIResponses and Perplexity no longer add summary => [{}] to a
+      reasoning item in Response->raw when the item has no summary.
+
     - Role::ReasoningEffort::reasoning_kwargs_for now returns nothing unless
       the engine supports reasoning_effort or thinking_budget (the registry
       gate, as for prompt_cache_key). The MiniMax and Moonshot per-engine

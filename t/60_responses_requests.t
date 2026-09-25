@@ -616,6 +616,35 @@ subtest 'chat_response - no output_tokens_details, no raw.usage autoviv (k168)' 
 };
 
 # Helper to build a mock HTTP::Response from the fixture bytes verbatim.
+# karr k211: a reasoning output item that carries no summary text must reach
+# Response.raw exactly as the server sent it. chat_response used to read
+# $item->{summary}[0]{text} as a chained rvalue, which autovivified
+# summary => [{}] into the item -- raw is the same ref as the decoded body, so
+# the trace claimed a summary block the provider never sent (the k168 bug
+# class). OpenAI sends summary => [] when it has no summary (the verbatim
+# capture responses_api_toolcall_toplevel.json); xAI's encrypted-only
+# reasoning omits the field altogether. No capture of the omitted case exists,
+# so the second case is derived from that same capture by deleting "summary".
+subtest 'chat_response - summary-less reasoning item is not rewritten in raw' => sub {
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key => 'test-key',
+        model   => 'gpt-5.5-pro',
+    );
+    my $absent = $json->decode($toolcall_toplevel_bytes);
+    delete $absent->{output}[0]{summary};
+
+    for my $case (
+        [ 'summary => [] (verbatim capture)' => $toolcall_toplevel_bytes ],
+        [ 'summary omitted (derived)'        => $json->encode($absent) ],
+    ) {
+        my ( $label, $bytes ) = @$case;
+        my $want = $json->decode($bytes)->{output}[0];
+        my $resp = $engine->chat_response( _build_mock_response($bytes) );
+        is_deeply( $resp->raw->{output}[0], $want, "$label: reasoning item unchanged in raw" );
+        ok( !$resp->has_thinking, "$label: no thinking invented" );
+    }
+};
+
 sub _build_mock_response {
     my ($body) = @_;
     require HTTP::Response;

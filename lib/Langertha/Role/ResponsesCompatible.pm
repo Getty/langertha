@@ -345,7 +345,13 @@ sub chat_response {
         my $type = $item->{type} // '';
 
         if ( $type eq 'reasoning' ) {
-            my $summary = $item->{summary}[0]{text} // '';
+            # Ref-check each level before deref: the chained rvalue
+            # $item->{summary}[0]{text} autovivified summary => [{}] into the
+            # item (the same ref as raw => $data) when a reasoning item carries
+            # no summary -- OpenAI's summary => [], xAI's encrypted-only
+            # reasoning with the field omitted. -- k211, the k168 bug class
+            my $first = ref $item->{summary} eq 'ARRAY' ? $item->{summary}[0] : undef;
+            my $summary = ref $first eq 'HASH' ? ( $first->{text} // '' ) : '';
             $thinking //= $summary if length $summary;
         }
         elsif ( $type eq 'message' ) {
