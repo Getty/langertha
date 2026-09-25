@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T22:28:36Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T22:28:36Z
+created: 2026-09-25T22:13:06Z
+id: 316
+priority: low
+started: 2026-09-25T22:14:02Z
+status: done
+tags:
+- cleanup
+- embedding
+- transcription
+title: 'Cleanup: createTranslation still an allowed operation in TranscriptionBase;
+  embedding extras (dimensions/task_type) only via embedding_request'
+updated: 2026-09-25T22:28:36Z
+---
+
+From k309: (1) TranscriptionBase allows operation createTranslation though no method uses it - remove or add translation_request (Groq/OpenAI whisper-1). (2) simple_embedding/_f accept only text; OpenAI dimensions, Gemini task_type/output_dimensionality only via embedding_request. Consider engine attributes (embedding_dimensions etc.) or trailing options hash.
