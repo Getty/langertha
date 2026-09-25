@@ -155,6 +155,26 @@ C<plugin_before_image_gen> and C<plugin_after_image_gen> are fired.
 
 =cut
 
+async sub simple_image_f {
+  my ( $self, $prompt ) = @_;
+  $log->debugf("[ImageGen] simple_image_f via %s, model=%s",
+    ref $self->engine, $self->has_model ? $self->model : 'default');
+  my $engine = $self->_assert_image_engine;
+  $prompt = await $self->_run_plugin_before_image_gen($prompt);
+  my $result = await $engine->simple_image_f($prompt, $self->_extra);
+  return await $self->_run_plugin_after_image_gen($prompt, $result);
+}
+
+=method simple_image_f
+
+    my $result = await $image_gen->simple_image_f('A cat in space');
+
+Async variant of L</simple_image>: the same result, overrides and plugin
+hooks, with the hooks awaited and the request sent through the engine's
+async backend (see L<Langertha::Role::ImageGeneration/simple_image_f>).
+
+=cut
+
 =seealso
 
 =over

@@ -2,8 +2,13 @@ package Langertha::Role::Embedding;
 # ABSTRACT: Role for APIs with embedding functionality
 our $VERSION = '0.503';
 use Moose::Role;
+use Future::AsyncAwait;
 use Carp qw( croak );
 use Log::Any qw( $log );
+
+# simple_embedding_f sends through the engine's async backend (k292): injected
+# client > Net::Async::HTTP > the sync LWP shim (ADR 0027).
+with 'Langertha::Role::AsyncHTTP';
 
 requires qw(
   embedding_request
@@ -75,7 +80,32 @@ sub simple_embedding {
 Sends an embedding request for C<$text> and returns the embedding vector
 (an ArrayRef of floats). An ArrayRef of strings is sent as one batch
 request and returns an ArrayRef of vectors, one per input and in input
-order. Blocks until the request completes.
+order. Blocks until the request completes. L</simple_embedding_f> is the
+non-blocking variant.
+
+=cut
+
+async sub simple_embedding_f {
+  my ( $self, $text ) = @_;
+  $log->debugf("[%s] simple_embedding_f, model=%s, %s",
+    ref $self, $self->embedding_model // 'default',
+    ref $text eq 'ARRAY' ? 'inputs='.scalar(@{$text}) : 'input_length='.length($text // ''));
+  my $request = $self->embedding($text);
+  my $response = await $self->_async_do_request_f( request => $request );
+  return $request->response_call->($response);
+}
+
+=method simple_embedding_f
+
+    my $vector  = await $engine->simple_embedding_f($text);
+    my $vectors = await $engine->simple_embedding_f([ $text_a, $text_b ]);
+
+Async variant of L</simple_embedding>: returns a L<Future> that resolves to
+the same value (a vector, or an ArrayRef of vectors for an ArrayRef input)
+and fails with the same error text. The request goes through the engine's
+async backend (L<Langertha::Role::AsyncHTTP>), so
+L<Langertha::Role::HTTP/user_agent_timeout> bounds it on
+L<Net::Async::HTTP> too; without that module it runs synchronously over LWP.
 
 =cut
 

@@ -2,8 +2,13 @@ package Langertha::Role::Transcription;
 # ABSTRACT: Role for APIs with transcription functionality
 our $VERSION = '0.503';
 use Moose::Role;
+use Future::AsyncAwait;
 use Carp qw( croak );
 use Scalar::Util qw( openhandle );
+
+# The _f methods send through the engine's async backend (k292): injected
+# client > Net::Async::HTTP > the sync LWP shim (ADR 0027).
+with 'Langertha::Role::AsyncHTTP';
 
 requires qw(
   transcription_request
@@ -121,6 +126,30 @@ sub simple_transcription {
 Sends a transcription request for the audio (a path, C<\$bytes> or a
 filehandle, see L</transcription_file_part>) and returns the transcript text. Blocks until the request completes. Additional options such as
 C<language> can be passed as C<%extra> key/value pairs.
+L</simple_transcription_f> is the non-blocking variant.
+
+=cut
+
+async sub simple_transcription_f {
+  my ( $self, $file_or_content, %extra ) = @_;
+  my $request = $self->transcription($file_or_content, %extra);
+  my $response = await $self->_async_do_request_f( request => $request );
+  return $request->response_call->($response);
+}
+
+=method simple_transcription_f
+
+    my $text = await $engine->simple_transcription_f('/path/to/audio.mp3');
+    my $text = await $engine->simple_transcription_f(\$audio_bytes,
+        filename => 'audio.mp3', language => 'en');
+
+Async variant of L</simple_transcription>: same arguments, returns a
+L<Future> that resolves to the transcript text and fails with the same error
+text. The multipart upload goes through the engine's async backend
+(L<Langertha::Role::AsyncHTTP>), so L<Langertha::Role::HTTP/user_agent_timeout>
+bounds it on L<Net::Async::HTTP> too; without that module it runs
+synchronously over LWP. The audio is read into the request body when the
+call is made.
 
 =cut
 
@@ -144,6 +173,25 @@ HashRef (see L<Langertha::Role::OpenAICompatible/transcription_result>)
 instead of only the text. C<verbose_json> and word timestamps need a model
 that offers them (C<whisper-1>, Groq, Whisper servers); OpenAI's default
 C<gpt-transcribe> answers C<json> only.
+
+=cut
+
+async sub simple_transcription_result_f {
+  my ( $self, $file_or_content, %extra ) = @_;
+  croak "".(ref $self)." has no transcription_result" unless $self->can('transcription_result');
+  my $request = $self->transcription($file_or_content, %extra);
+  my $response = await $self->_async_do_request_f( request => $request );
+  return $self->transcription_result($response);
+}
+
+=method simple_transcription_result_f
+
+    my $result = await $engine->simple_transcription_result_f($audio,
+        response_format => 'verbose_json');
+
+Async variant of L</simple_transcription_result>: returns a L<Future> that
+resolves to the parsed answer as a HashRef, like L</simple_transcription_f>
+does for the text.
 
 =cut
 

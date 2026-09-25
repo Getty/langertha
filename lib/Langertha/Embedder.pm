@@ -123,6 +123,35 @@ C<plugin_after_embedding> are fired around the request.
 
 =cut
 
+async sub simple_embedding_f {
+  my ( $self, $text ) = @_;
+  $log->debugf("[Embedder] simple_embedding_f via %s, model=%s",
+    ref $self->engine, $self->has_model ? $self->model : 'default');
+  my $engine = $self->engine;
+  croak ref($engine) . " does not support embeddings"
+    unless $engine->does('Langertha::Role::Embedding');
+  $text = await $self->_run_plugin_before_embedding($text);
+  my $vector;
+  if ($self->has_model) {
+    my $request = $engine->embedding_request($text, model => $self->model);
+    my $response = await $engine->_async_do_request_f( request => $request );
+    $vector = $request->response_call->($response);
+  } else {
+    $vector = await $engine->simple_embedding_f($text);
+  }
+  return await $self->_run_plugin_after_embedding($text, $vector);
+}
+
+=method simple_embedding_f
+
+    my $vector = await $embedder->simple_embedding_f($text);
+
+Async variant of L</simple_embedding>: the same result and plugin hooks, with
+the hooks awaited and the request sent through the engine's async backend
+(see L<Langertha::Role::Embedding/simple_embedding_f>).
+
+=cut
+
 =seealso
 
 =over

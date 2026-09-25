@@ -30,6 +30,15 @@ Revision history for Langertha
       HTTP-date), and the error message names it: "429 Too Many Requests
       (retry after 8s)".
 
+    - Async embeddings, transcription and image generation:
+      simple_embedding_f, simple_transcription_f,
+      simple_transcription_result_f and simple_image_f (and
+      simple_embedding_f / simple_image_f on Langertha::Embedder and
+      Langertha::ImageGen, which await their plugin hooks) return a Future
+      with the same value and error text as the sync method, go through the
+      engine's async backend without blocking the event loop, and are
+      bounded by user_agent_timeout on Net::Async::HTTP.
+
     - Batch embeddings: simple_embedding([ $a, $b, ... ]) (and the
       Langertha::Embedder wrapper) returns one vector per input, in input
       order, on every OpenAI-compatible engine (ordered by data[].index)
