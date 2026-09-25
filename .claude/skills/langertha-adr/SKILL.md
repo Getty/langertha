@@ -98,6 +98,7 @@ the same change, or stops and reports.
 | Request-side controls (reasoning, cache, knobs), temperature gate | 0009, 0012, 0023, 0025 |
 | Normalizing a provider's wire spelling | 0018 |
 | Response observability: timing, `created`, rate-limit reset | 0011, 0017, 0022 |
+| Usage cache counts, `Pricing` cache rates, `Cost` | 0031 |
 | Runtime metrics scrape | 0014 |
 | Async transport, sync fallback | 0027 |
 | Distribution boundary (Raider extraction) | 0026 (0007/0008 history) |

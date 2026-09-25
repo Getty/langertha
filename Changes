@@ -2,6 +2,16 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Langertha::Pricing rules take optional cached_input_per_million and
+      cache_write_per_million. With either set, cost_for prices each
+      input token once: cache reads and writes at their rates (a missing
+      one at the input rate), the rest at the input rate, whether the wire
+      counts the cache inside input_tokens (OpenAI, Responses, Gemini, AKI
+      native) or beside it (Anthropic). Rules without them cost what they
+      did. Langertha::Cost has cache_read_usd and cache_write_usd, in
+      total_usd and to_hash; Langertha::Usage has input_includes_cache and
+      uncached_input_tokens.
+
     - Non-ASCII text in tool arguments and tool results reaches the
       provider intact (Köln no longer arrives as KÃ¶ln). ToolCall->to_openai
       and ToolResult->to return character strings, as do the Hermes tool

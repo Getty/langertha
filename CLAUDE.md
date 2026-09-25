@@ -80,6 +80,7 @@ refactors:
 - **0028** — public hook surface for sibling dists: `async_request_f`, `async_loop` (`Maybe[loop]`), `langfuse_timestamp`, `Usage->from_raw`
 - **0029** — provider manifest v1 (`Langertha::Manifest`): strict structure, open values, no secrets, dialect vocabulary incl. `anthropic-compat`, model-scoped capability allowlist
 - **0030** — server-side tools are a wire-pinned value object (`Langertha::ServerTool`, croaks off its wire) + `Role::ServerTools`/`server_tools` flag; provider-executed calls go to `Response.server_tool_calls`, never `tool_calls`; citations merged, deduped by url without `utm_*`
+- **0031** — `Usage.input_tokens` keeps the wire's meaning; `input_includes_cache` records whether cache reads/writes are in it, and `Pricing` (optional cache rates) prices each token once
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision

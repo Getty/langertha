@@ -114,10 +114,12 @@ sub roundtrip { return $json->decode( $json->encode( $_[0] ) ) }
   my $got = roundtrip( { cost => $c } );
   is( $got->{cost},
     {
-      input_cost_usd  => 0.001,
-      output_cost_usd => 0.002,
-      total_cost_usd  => 0.003,
-      currency        => 'USD',
+      input_cost_usd       => 0.001,
+      output_cost_usd      => 0.002,
+      cache_read_cost_usd  => 0,
+      cache_write_cost_usd => 0,
+      total_cost_usd       => 0.003,
+      currency             => 'USD',
     },
     'Cost round-trips as its canonical hash (lazy total included)' );
 }

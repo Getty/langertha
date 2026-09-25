@@ -24,6 +24,7 @@ has total_tokens  => ( is => 'ro', isa => 'Int', lazy => 1, builder => '_build_t
 
 has cached_tokens      => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
 has cache_write_tokens => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
+has input_includes_cache => ( is => 'ro', isa => 'Maybe[Bool]', default => undef );
 
 has raw => (
   is => 'ro',
@@ -43,6 +44,7 @@ around total_tokens  => sub {
 };
 around cached_tokens      => sub { my ( $orig, $self ) = @_; $DATA{$self}{cached_tokens} };
 around cache_write_tokens => sub { my ( $orig, $self ) = @_; $DATA{$self}{cache_write_tokens} };
+around input_includes_cache => sub { my ( $orig, $self ) = @_; $DATA{$self}{input_includes_cache} };
 around raw => sub { my ( $orig, $self ) = @_; $DATA{$self}{raw} };
 
 # The constructor's writes to $self->{attr} go through the overload and are
@@ -55,8 +57,19 @@ sub BUILD {
     total_tokens       => $args->{total_tokens},
     cached_tokens      => $args->{cached_tokens},
     cache_write_tokens => $args->{cache_write_tokens},
+    input_includes_cache => $args->{input_includes_cache},
     raw                => $args->{raw},
   };
+}
+
+# input_tokens without the cache reads and writes that are counted in it.
+sub uncached_input_tokens {
+  my ($self) = @_;
+  my $input = $self->input_tokens;
+  my $includes = $self->input_includes_cache;
+  return $input if defined $includes && !$includes;
+  my $rest = $input - ( $self->cached_tokens // 0 ) - ( $self->cache_write_tokens // 0 );
+  return $rest < 0 ? 0 : $rest;
 }
 
 sub _build_total_tokens {
@@ -106,25 +119,40 @@ sub from_hash {
   my $itd = $hash->{input_tokens_details};
   $itd = undef unless ref($itd) eq 'HASH';
 
-  my $cached;
-  if    ( $ptd && defined $ptd->{cached_tokens} )           { $cached = $ptd->{cached_tokens} }
-  elsif ( $itd && defined $itd->{cached_tokens} )           { $cached = $itd->{cached_tokens} }
-  elsif ( $itd && defined $itd->{cache_read_input_tokens} ) { $cached = $itd->{cache_read_input_tokens} }
-  elsif ( defined $hash->{cache_read_input_tokens} )        { $cached = $hash->{cache_read_input_tokens} }
-  elsif ( defined $hash->{cachedContentTokenCount} )        { $cached = $hash->{cachedContentTokenCount} }
-  elsif ( defined $hash->{cached_content_token_count} )     { $cached = $hash->{cached_content_token_count} }
-  elsif ( defined $hash->{cached_tokens} )                  { $cached = $hash->{cached_tokens} }
+  # Whether the cache counts are part of the input count depends on where they
+  # were found, so it is recorded next to them (input_includes_cache, k263). A
+  # count nested in a *_details block breaks the prompt/input total down
+  # (OpenAI Chat, Open-Responses: the captures in t/data/ show input_tokens 8542
+  # beside a 4394 write, 4071 beside a 4068 write); Gemini's
+  # cachedContentTokenCount is part of promptTokenCount; AKI native's
+  # num_cached_tokens is a subset of prompt_length. Anthropic's flat keys are
+  # counted beside input_tokens, not in it.
+  my ( $cached, $cached_in_input );
+  if    ( $ptd && defined $ptd->{cached_tokens} )           { $cached = $ptd->{cached_tokens};                $cached_in_input = 1 }
+  elsif ( $itd && defined $itd->{cached_tokens} )           { $cached = $itd->{cached_tokens};                $cached_in_input = 1 }
+  elsif ( $itd && defined $itd->{cache_read_input_tokens} ) { $cached = $itd->{cache_read_input_tokens};      $cached_in_input = 1 }
+  elsif ( defined $hash->{cache_read_input_tokens} )        { $cached = $hash->{cache_read_input_tokens};     $cached_in_input = 0 }
+  elsif ( defined $hash->{cachedContentTokenCount} )        { $cached = $hash->{cachedContentTokenCount};     $cached_in_input = 1 }
+  elsif ( defined $hash->{cached_content_token_count} )     { $cached = $hash->{cached_content_token_count};  $cached_in_input = 1 }
+  elsif ( defined $hash->{cached_tokens} )                  { $cached = $hash->{cached_tokens};               $cached_in_input = 1 }
 
-  my $cache_write;
-  if    ( $ptd && defined $ptd->{cache_write_tokens} )          { $cache_write = $ptd->{cache_write_tokens} }
-  elsif ( $itd && defined $itd->{cache_write_tokens} )          { $cache_write = $itd->{cache_write_tokens} }
-  elsif ( $itd && defined $itd->{cache_creation_input_tokens} ) { $cache_write = $itd->{cache_creation_input_tokens} }
-  elsif ( defined $hash->{cache_creation_input_tokens} )        { $cache_write = $hash->{cache_creation_input_tokens} }
+  my ( $cache_write, $write_in_input );
+  if    ( $ptd && defined $ptd->{cache_write_tokens} )          { $cache_write = $ptd->{cache_write_tokens};           $write_in_input = 1 }
+  elsif ( $itd && defined $itd->{cache_write_tokens} )          { $cache_write = $itd->{cache_write_tokens};           $write_in_input = 1 }
+  elsif ( $itd && defined $itd->{cache_creation_input_tokens} ) { $cache_write = $itd->{cache_creation_input_tokens};  $write_in_input = 1 }
+  elsif ( defined $hash->{cache_creation_input_tokens} )        { $cache_write = $hash->{cache_creation_input_tokens}; $write_in_input = 0 }
+
+  # One flag for both counts: every wire above nests both or flattens both. If
+  # a hash ever mixes the two, "not included" wins — pricing a count on top of
+  # input_tokens can overcharge, subtracting it can go below zero.
+  my $includes = defined $cached_in_input ? $cached_in_input : $write_in_input;
+  $includes = 0 if defined $write_in_input && !$write_in_input;
 
   my %args = ( input_tokens => $input, output_tokens => $output );
   $args{total_tokens}       = 0 + $total       if defined $total;
   $args{cached_tokens}      = 0 + $cached       if defined $cached;
   $args{cache_write_tokens} = 0 + $cache_write  if defined $cache_write;
+  $args{input_includes_cache} = $includes ? 1 : 0 if defined $includes;
   $args{raw} = $hash;
   return $class->new(%args);
 }
@@ -170,7 +198,8 @@ sub from_raw {
     return $class->new(
       input_tokens  => 0 + ( $aki{prompt_length}        // 0 ),
       output_tokens => 0 + ( $aki{num_generated_tokens} // 0 ),
-      exists $aki{num_cached_tokens} ? ( cached_tokens => 0 + $aki{num_cached_tokens} ) : (),
+      exists $aki{num_cached_tokens}
+        ? ( cached_tokens => 0 + $aki{num_cached_tokens}, input_includes_cache => 1 ) : (),
       raw           => \%aki,
     );
   }
@@ -362,6 +391,38 @@ that count across TTL tiers under C<usage.cache_creation>, which stays verbatim
 in L</raw>). The OpenAI Chat nesting wins, then the Responses nesting, then the
 Anthropic flat key. C<undef> when the provider does not report a cache-write
 count.
+
+=attr input_includes_cache
+
+Whether L</cached_tokens> and L</cache_write_tokens> are already counted in
+C<input_tokens>. C<input_tokens> keeps the meaning the wire gives it, and
+that meaning differs: OpenAI's C<prompt_tokens>, the Open-Responses
+C<input_tokens>, Gemini's C<promptTokenCount> and AKI.IO's C<prompt_length>
+include the cached tokens; Anthropic's C<input_tokens> counts only the tokens
+after the last cache breakpoint, with C<cache_read_input_tokens> and
+C<cache_creation_input_tokens> beside it. L</from_hash> and L</from_raw> set
+this flag from where they found the cache counts: true for a count nested in
+C<prompt_tokens_details> / C<input_tokens_details>, for Gemini's and for the
+flat C<cached_tokens>; false for Anthropic's flat keys. C<undef> when no cache
+count was reported, or when the object was built with C<new> and the flag was
+not passed.
+
+The Anthropic-compatible shims follow the Anthropic spelling, but not always
+its meaning: AKI.IO's C</anthropic> endpoint reports the same numbers under
+C<input_tokens> as its OpenAI face does under C<prompt_tokens> (cached reads
+included). Such a Usage is marked false here all the same.
+
+=method uncached_input_tokens
+
+    my $fresh = $usage->uncached_input_tokens;
+
+The input tokens that were neither read from nor written to the prompt cache.
+When L</input_includes_cache> is false this is C<input_tokens>; otherwise
+(true or C<undef>) it is C<input_tokens> minus L</cached_tokens> minus
+L</cache_write_tokens>, never below zero. An C<undef> flag is read as
+"included" because that is what C<total_tokens> assumes of C<input_tokens>.
+L<Langertha::Pricing/cost_for> prices this count at the input rate when a rule
+has a cache rate.
 
 =attr raw
 

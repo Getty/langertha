@@ -44,6 +44,8 @@ sub to_hash {
     tool_names      => $self->tool_names,
     input_cost_usd  => $self->cost->input_usd  + 0,
     output_cost_usd => $self->cost->output_usd + 0,
+    cache_read_cost_usd  => $self->cost->cache_read_usd + 0,
+    cache_write_cost_usd => $self->cost->cache_write_usd + 0,
     total_cost_usd  => $self->cost->total_usd  + 0,
     currency        => $self->cost->currency,
     pricing_version => $self->pricing_version,
