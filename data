@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-25T21:04:20Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:04:20Z
+created: 2026-09-25T20:23:56Z
+id: 304
+priority: low
+started: 2026-09-25T20:25:31Z
+status: done
+tags:
+- langfuse
+- observability
+- plugin
+title: Plugin::Langfuse generation events carry no model, usage, input or output (Langfuse
+  token/cost views empty for Chat users)
+updated: 2026-09-25T21:04:20Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). Confirmed by code reading.
+
+lib/Langertha/Plugin/Langfuse.pm plugin_after_llm_response (~line 460): create_generation(trace_id, name => "generation-$iteration", start_time, end_time) only. $data is the Langertha::Response and has model, usage (Langertha::Usage), content, tool_calls, timing; none of it reaches the generation. create_generation has no completionStartTime either. The engine-level Role::Langfuse around simple_chat does send model + usage + completionStartTime, so the two integrations disagree.
+
+Also: _iter_start / _trace_id are single slots on the plugin, so concurrent simple_chat_f calls on one Chat overwrite each other start time (minor).
+
+Fix: pass model => $data->model (when has_model), usage => {input, output, total} from $data->usage, output => content (or to_hash), input => the conversation captured in plugin_before_llm_call, completion_start_time from ttft_seconds, mirroring Role::Langfuse. Test with a mocked Chat run and assert the batch payload.
