@@ -18,8 +18,8 @@ extends 'Langertha::Engine::TranscriptionBase';
 =head1 DESCRIPTION
 
 Provides access to a self-hosted Whisper-compatible transcription server.
-Extends L<Langertha::Engine::TranscriptionBase> and supports the
-C<createTranscription> and C<createTranslation> operations.
+Extends L<Langertha::Engine::TranscriptionBase> and transcribes through the
+server's C</audio/transcriptions> endpoint.
 
 C<url> is required. The API key defaults to C<'whisper'>. The transcription
 model defaults to an empty string so the server uses its built-in default.

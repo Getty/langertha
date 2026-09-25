@@ -40,8 +40,7 @@ sub _build_supported_operations {[qw(
 =head1 DESCRIPTION
 
 Slim base class for engines that only do audio transcription via the
-OpenAI-shape C</audio/transcriptions> + C</audio/translations>
-endpoints. Unlike L<Langertha::Engine::OpenAIBase>, this does not
+OpenAI-shape C</audio/transcriptions> endpoint. Unlike L<Langertha::Engine::OpenAIBase>, this does not
 compose L<Langertha::Role::Chat> / L<Langertha::Role::Tools> /
 L<Langertha::Role::Embedding> / L<Langertha::Role::ImageGeneration>
 — callers get a focused object with C<simple_transcription> and

@@ -145,8 +145,8 @@ Engine::Remote              url required, JSON + HTTP
   │     │     └── OpenAIResponses  /v1/responses API (reasoning models like gpt-5.5-pro); composes `Role::ResponsesCompatible` (`responses` tool/reasoning wire format — shared with Perplexity's Agent API) + `Role::ServerTools` (OpenAI hosted tools); no streaming
   │     ├── DeepSeek        deepseek-flash (V4.1) / v4-pro, structured output
   │     ├── Groq            ultra-fast inference, whisper transcription, structured output
-  │     ├── XAI             xAI Grok (grok-4.7), 500K context, agentic tool calling
-  │     ├── Mistral         EU-hosted, embeddings, structured output
+  │     ├── XAI             xAI Grok (grok-4.7), 500K context, agentic tool calling, Imagine image generation
+  │     ├── Mistral         EU-hosted, embeddings, Voxtral transcription, structured output
   │     ├── MiniMax         Shanghai (default), ~200K context, M3
   │     ├── Moonshot        Moonshot Kimi (kimi-k3), multimodal, 1M context
   │     ├── NousResearch    Hermes models, <tool_call> XML tool format

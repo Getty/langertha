@@ -315,7 +315,7 @@ namespace) rather than for direct use.
 
 =item * L<Langertha::Engine::Groq> - Fast inference API
 
-=item * L<Langertha::Engine::Mistral> - Mistral AI models
+=item * L<Langertha::Engine::Mistral> - Mistral AI models, embeddings, Voxtral transcription
 
 =item * L<Langertha::Engine::DeepSeek> - DeepSeek models
 
@@ -329,7 +329,7 @@ namespace) rather than for direct use.
 
 =item * L<Langertha::Engine::Gemini> - Google Gemini models (Flash, Pro), embeddings
 
-=item * L<Langertha::Engine::XAI> - xAI Grok models
+=item * L<Langertha::Engine::XAI> - xAI Grok models, Imagine image generation
 
 =item * L<Langertha::Engine::vLLM> - vLLM inference server
 
