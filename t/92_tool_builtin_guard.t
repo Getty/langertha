@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: Non-function tool hashes fail loud, never vanish or turn into function tools
+# ABSTRACT: Non-function tool hashes are classified, and fail loud instead of vanishing
 
 use strict;
 use warnings;
@@ -9,57 +9,108 @@ use Langertha::Tool;
 use Langertha::Engine::OpenAIResponses;
 
 # Why (karr k210, ADR 0001): a tool hash that is not a function tool used to be
-# silently dropped by Tool->from_hash ({type=>'web_search'},
-# {google_search=>{}}) or silently turned into a *function* tool
-# ({type=>'web_search_20250305', name=>'web_search'}), so the request quietly
-# lost its meaning. The door now croaks. Server-side tools are recognised
-# explicitly per wire (so the message can name them) until they get their own
-# value object (k206). Every other non-function `type` is an unsupported tool
-# type: `type` other than `function` does NOT mean "server-side" -- on
-# /v1/responses custom, namespace, local_shell, computer_use_preview,
-# apply_patch, shell and client tool_search are executed by the client
-# (llm-advisor, OpenAI create-response reference, 2026-09-25).
+# silently dropped by Tool->from_hash ({type=>'web_search'}, Gemini's keyed
+# {google_search=>{}}, {functionDeclarations=>[...]}) or silently turned into
+# a *function* tool ({type=>'web_search_20250305', name=>'web_search'}), so the
+# request quietly lost its meaning. Tool->classify now names what a hash is
+# (function / server / client_builtin / foreign / unknown) without croaking --
+# sibling gateways map it to a 400 (k216) -- and the Tool door croaks on every
+# category but `function`, from the same classification. Server-side tools get
+# their own value object with k206.
 #
-# The Responses envelope passes its own native items (flat function, custom,
-# namespace, its server-side tools) through verbatim. It used to decide that
-# for the WHOLE list from the first item only: a typed item first sent an MCP
-# tool unformatted (400); an MCP tool first dropped a built-in and turned
-# custom / namespace into function tools. It now decides per item.
+# `type` other than `function` does NOT mean "server-side": on /v1/responses
+# local_shell, computer, computer_use_preview, apply_patch, a local shell and a
+# client tool_search run on the client (llm-advisor, OpenAI create-response
+# reference, 2026-09-25). The Responses envelope therefore decides per item by
+# a denylist: those croak, another wire's built-ins croak, and every other
+# typed item goes out verbatim (spec k206 section 3.4, values open) -- so a
+# dated web_search_2025_08_26, a hosted shell or a future type still reaches
+# the provider, which judges it. It used to decide for the WHOLE list from the
+# first item only: a typed item first sent an MCP tool unformatted (400), an
+# MCP tool first dropped a built-in and turned custom / namespace into
+# function tools.
 
-my @server = (
-  [ responses => { type => 'web_search' } ],
-  [ responses => { type => 'web_search_preview_2025_03_11' } ],
-  [ responses => { type => 'file_search', vector_store_ids => ['vs'] } ],
-  [ responses => { type => 'code_interpreter', container => { type => 'auto' } } ],
-  [ responses => { type => 'image_generation' } ],
-  [ responses => { type => 'mcp', server_label => 's', server_url => 'https://x' } ],
-  [ responses => { type => 'x_search' } ],
-  [ responses => { type => 'collections_search' } ],
-  [ responses => { type => 'tool_search', execution => 'server' } ],
-  [ anthropic => { type => 'web_search_20250305', name => 'web_search', max_uses => 3 } ],
-  [ anthropic => { type => 'web_fetch_20250910', name => 'web_fetch' } ],
-  [ anthropic => { type => 'code_execution_20250825', name => 'code_execution' } ],
-  [ gemini    => { google_search => {} } ],
-  [ gemini    => { googleSearch => {} } ],
-  [ gemini    => { code_execution => {} } ],
-  [ gemini    => { url_context => {} } ],
-  [ gemini    => { google_maps => {} } ],
-);
+my $server = sub { my $w = shift; qr/is a server-side tool \($w\)/ };
+my $client = sub { my $w = shift; qr/is a client-executed built-in tool \($w\), not a server tool/ };
+my $unsupported = qr/unsupported tool type/;
+my $nameless    = qr/no type and no name/;
 
-my @unsupported = (
-  { type => 'custom', name => 'sql', format => { type => 'grammar' } },
-  { type => 'namespace', name => 'ns', tools => [] },
-  { type => 'local_shell' },
-  { type => 'shell', environment => { type => 'local' } },
-  { type => 'computer_use_preview', display_width => 1024 },
-  { type => 'apply_patch' },
-  { type => 'tool_search', execution => 'client' },
-  { type => 'programmatic_tool_calling' },
-  { type => 'bash_20250124', name => 'bash' },
-  { type => 'frobnicate', name => 'x' },
+# [ hash, classify(), wire, classify($h,'responses'), croak regex, Responses envelope ]
+my @table = (
+  # Responses server-side: verbatim on the Responses wire
+  map( { [ $_, server => 'responses', 'server', $server->('responses'), 'verbatim' ] }
+    { type => 'web_search' },
+    { type => 'web_search_preview_2025_03_11' },
+    { type => 'web_search_2025_08_26' },
+    { type => 'file_search', vector_store_ids => ['vs'] },
+    { type => 'code_interpreter', container => { type => 'auto' } },
+    { type => 'image_generation' },
+    { type => 'mcp', server_label => 's', server_url => 'https://x' },
+    { type => 'x_search' },
+    { type => 'collections_search' },
+    { type => 'tool_search' },
+    { type => 'tool_search', execution => 'server' },
+    { type => 'shell', environment => { type => 'container_auto' } },
+    { type => 'shell', environment => { type => 'container_reference', container_id => 'c' } },
+  ),
+  # Responses client-executed built-ins: croak on the Responses wire too
+  map( { [ $_, client_builtin => 'responses', 'client_builtin', $client->('responses'), 'croak' ] }
+    { type => 'local_shell' },
+    { type => 'computer' },
+    { type => 'computer_use_preview', display_width => 1024 },
+    { type => 'apply_patch' },
+    { type => 'shell', environment => { type => 'local' } },
+    { type => 'tool_search', execution => 'client' },
+  ),
+  # Anthropic built-ins: foreign on the Responses wire, so they croak there
+  map( { [ $_, server => 'anthropic', 'foreign', $server->('anthropic'), 'croak' ] }
+    { type => 'web_search_20250305', name => 'web_search', max_uses => 3 },
+    { type => 'web_fetch_20250910', name => 'web_fetch' },
+    { type => 'code_execution_20250825', name => 'code_execution' },
+    { type => 'tool_search_tool_regex_20251119', name => 'tool_search' },
+    { type => 'mcp_toolset', mcp_server_name => 's' },
+  ),
+  map( { [ $_, client_builtin => 'anthropic', 'foreign', $client->('anthropic'), 'croak' ] }
+    { type => 'bash_20250124', name => 'bash' },
+    { type => 'text_editor_20250728', name => 'str_replace_based_edit_tool' },
+    { type => 'computer_20250124', name => 'computer' },
+    { type => 'memory_20250818', name => 'memory' },
+  ),
+  # Gemini keyed built-ins (untyped): foreign on the Responses wire
+  map( { [ $_, server => 'gemini', 'foreign', $server->('gemini'), 'croak' ] }
+    { google_search => {} },
+    { googleSearch => {} },
+    { google_search_retrieval => {} },
+    { code_execution => {} },
+    { url_context => {} },
+    { google_maps => {} },
+    { enterprise_web_search => {} },
+    { file_search => { file_search_store_names => ['s'] } },
+    { retrieval => {} },
+  ),
+  [ { computer_use => { environment => 'ENVIRONMENT_BROWSER' } },
+    client_builtin => 'gemini', 'foreign', $client->('gemini'), 'croak' ],
+  # Typed, not recognised: croak at the Tool door, verbatim on the Responses wire
+  map( { [ $_, unknown => undef, 'unknown', $unsupported, 'verbatim' ] }
+    { type => 'custom', name => 'sql', format => { type => 'grammar' } },
+    { type => 'namespace', name => 'ns', tools => [] },
+    { type => 'shell' },
+    { type => 'programmatic_tool_calling' },
+    { type => 'frobnicate', name => 'x' },
+  ),
+  # Untyped and nameless: croak everywhere
+  map( { [ $_, unknown => undef, 'unknown', $nameless, 'croak' ] }
+    { functionDeclarations => [ { name => 'f', parameters => { type => 'object' } } ] },
+    { description => 'no name' },
+    {},
+  ),
 );
 
 my $mcp = { name => 'echo', description => 'Echo', inputSchema => { type => 'object', properties => {} } };
+my $json    = JSON::MaybeXS->new->canonical(1)->utf8(1);
+my $engine  = Langertha::Engine::OpenAIResponses->new( api_key => 'k', model => 'gpt-5.5-pro' );
+my $want_fn = { type => 'function', name => 'echo', description => 'Echo',
+                parameters => { type => 'object', properties => {} } };
 
 sub croaks_like {
   my ( $code, $re, $label ) = @_;
@@ -68,57 +119,51 @@ sub croaks_like {
   like( $err, $re, $label );
 }
 
-sub every_door_croaks {
-  my ( $hash, $re ) = @_;
-  croaks_like( sub { Langertha::Tool->from_hash($hash) }, $re, 'from_hash croaks' );
-  for my $order ( [ $hash, $mcp ], [ $mcp, $hash ] ) {
-    croaks_like( sub { Langertha::Tool->from_list($order) }, $re, 'from_list croaks on a mixed list' );
-    for my $fmt (qw( openai anthropic gemini responses )) {
-      croaks_like( sub { Langertha::Tool->format_list( $fmt, $order ) }, $re, "format_list($fmt) croaks" );
-    }
-  }
-}
-
-for my $row (@server) {
-  my ( $wire, $hash ) = @$row;
-  my ($label) = $hash->{type} // keys %$hash;
-  subtest "server-side ($wire): $label" => sub {
-    every_door_croaks( $hash, qr/'\Q$label\E' is a server-side tool \($wire\)/ );
-  };
-}
-
-for my $hash (@unsupported) {
-  subtest "unsupported: $hash->{type}" => sub {
-    every_door_croaks( $hash, qr/unsupported tool type '\Q$hash->{type}\E'/ );
-  };
-}
-
-my $json    = JSON::MaybeXS->new->canonical(1)->utf8(1);
-my $engine  = Langertha::Engine::OpenAIResponses->new( api_key => 'k', model => 'gpt-5.5-pro' );
-my $want_fn = { type => 'function', name => 'echo', description => 'Echo',
-                parameters => { type => 'object', properties => {} } };
-
 sub responses_tools {
   my ($tools) = @_;
   my $req = $engine->chat_request( [ { role => 'user', content => 'hi' } ], tools => $tools );
   return $json->decode( $req->content )->{tools};
 }
 
-subtest 'Responses envelope: native items verbatim, per item, in both orders' => sub {
-  for my $native (
-    { type => 'web_search' },
-    { type => 'tool_search', execution => 'server' },
-    { type => 'custom', name => 'sql', format => { type => 'grammar' } },
-    { type => 'namespace', name => 'ns', tools => [] },
-  ) {
-    is_deeply( responses_tools( [ $native, $mcp ] ), [ $native, $want_fn ],
-      "$native->{type} first: verbatim, MCP tool formatted" );
-    is_deeply( responses_tools( [ $mcp, $native ] ), [ $want_fn, $native ],
-      "$native->{type} second: verbatim, MCP tool formatted" );
-  }
+for my $row (@table) {
+  my ( $hash, $category, $wire, $on_responses, $err_re, $envelope ) = @$row;
+  subtest $json->encode($hash) => sub {
+    is( scalar Langertha::Tool->classify($hash), $category, "classify: $category" );
+    my ( undef, $got_wire ) = Langertha::Tool->classify($hash);
+    is( $got_wire, $wire, 'classify: wire' );
+    is( scalar Langertha::Tool->classify( $hash, 'responses' ), $on_responses,
+      "classify(responses): $on_responses" );
 
-  # Every other function-tool form is formatted per item; an already flat
-  # Responses function tool stays verbatim wherever it sits.
+    croaks_like( sub { Langertha::Tool->from_hash($hash) }, $err_re, 'from_hash croaks' );
+    for my $order ( [ $hash, $mcp ], [ $mcp, $hash ] ) {
+      croaks_like( sub { Langertha::Tool->from_list($order) }, $err_re, 'from_list croaks on a mixed list' );
+      for my $fmt (qw( openai anthropic gemini responses )) {
+        croaks_like( sub { Langertha::Tool->format_list( $fmt, $order ) }, $err_re,
+          "format_list($fmt) croaks" );
+      }
+    }
+
+    if ( $envelope eq 'verbatim' ) {
+      is_deeply( responses_tools( [ $hash, $mcp ] ), [ $hash, $want_fn ], 'Responses: first, verbatim' );
+      is_deeply( responses_tools( [ $mcp, $hash ] ), [ $want_fn, $hash ], 'Responses: second, verbatim' );
+    }
+    else {
+      croaks_like( sub { responses_tools( [ $hash, $mcp ] ) }, $err_re, 'Responses: croaks first' );
+      croaks_like( sub { responses_tools( [ $mcp, $hash ] ) }, $err_re, 'Responses: croaks second' );
+    }
+  };
+}
+
+subtest 'classify never croaks on odd input' => sub {
+  is( scalar Langertha::Tool->classify(undef),    'unknown', 'undef' );
+  is( scalar Langertha::Tool->classify('string'), 'unknown', 'plain string' );
+  is( scalar Langertha::Tool->classify( [] ),     'unknown', 'array ref' );
+  is( scalar Langertha::Tool->classify( Langertha::Tool->new( name => 'x' ) ), 'function', 'Tool object' );
+};
+
+subtest 'Responses envelope: function-tool forms per item' => sub {
+  # An already flat Responses function tool stays verbatim wherever it sits;
+  # every other function-tool form is formatted.
   my $flat = { type => 'function', name => 'flat', parameters => { type => 'object' } };
   is_deeply( responses_tools( [
     $flat,
@@ -127,15 +172,6 @@ subtest 'Responses envelope: native items verbatim, per item, in both orders' =>
     { type => 'custom', name => 'echo', description => 'Echo', input_schema => { type => 'object', properties => {} } },
   ] ), [ $flat, $want_fn, $want_fn, $want_fn ],
     'flat function verbatim; nested OpenAI, Tool object, Anthropic custom formatted' );
-};
-
-subtest 'Responses envelope: non-native, non-function items croak' => sub {
-  croaks_like( sub { responses_tools( [ $mcp, { type => 'local_shell' } ] ) },
-    qr/unsupported tool type 'local_shell'/, 'client-executed local_shell croaks' );
-  croaks_like( sub { responses_tools( [ { type => 'web_search_20250305', name => 'web_search' }, $mcp ] ) },
-    qr/'web_search_20250305' is a server-side tool \(anthropic\)/, 'another wire\'s server tool croaks' );
-  croaks_like( sub { responses_tools( [ { google_search => {} } ] ) },
-    qr/'google_search' is a server-side tool \(gemini\)/, 'Gemini keyed built-in croaks' );
 };
 
 done_testing;

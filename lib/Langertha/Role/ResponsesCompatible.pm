@@ -126,21 +126,21 @@ sub _temperature_kwargs {
     return ( temperature => $temp );
 }
 
-# True for an item the Responses wire takes as-is: a flat function tool,
-# OpenAI's client-executed `custom` (freeform grammar, no input_schema) and
-# `namespace`, or a Responses server-side tool (Langertha::Tool's per-wire
-# recognition). Anything else is left to format_tools, which formats a
-# function-tool form and croaks on the rest (karr k210, ADR 0001).
+# True for an item the Responses wire takes as-is (spec k206 section 3.4,
+# karr k210, ADR 0001): a flat {type=>'function', name, ...}, a Responses
+# server-side tool, or any other typed item Langertha does not recognise
+# (custom, namespace, hosted shell, future server types -- values open, the
+# provider judges). Everything else goes to format_tools: a function-tool form
+# is formatted there, and a known client-executed built-in (local_shell,
+# computer, apply_patch, local shell, client tool_search, ...), another wire's
+# built-in, or an untyped nameless hash croaks there.
 sub _is_native_responses_tool {
     my ($item) = @_;
-    return 0 unless ref $item eq 'HASH';
-    my $type = $item->{type} // '';
-    return 0 unless length $type;
-    return 1 if $type eq 'function' && ref $item->{function} ne 'HASH';
-    return 1 if $type eq 'custom'   && ref $item->{input_schema} ne 'HASH';
-    return 1 if $type eq 'namespace';
-    my ($wire) = Langertha::Tool->_server_tool_wire($item);
-    return ( ( $wire // '' ) eq 'responses' ) ? 1 : 0;
+    return 0 unless ref $item eq 'HASH' && length( $item->{type} // '' );
+    my $category = Langertha::Tool->classify( $item, 'responses' );
+    return 1 if $category eq 'server' || $category eq 'unknown';
+    return ( $category eq 'function' && $item->{type} eq 'function'
+        && ref $item->{function} ne 'HASH' ) ? 1 : 0;
 }
 
 sub chat_request {

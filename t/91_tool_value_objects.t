@@ -97,12 +97,17 @@ use Langertha::ToolChoice;
   my $list = Langertha::Tool->from_list([
     { type => 'function', function => { name => 'a' } },
     { name => 'b', input_schema => {} },
-    { garbage => 1 },
-    {},
   ]);
-  is( scalar @$list, 2, 'two valid tools, two skipped' );
+  is( scalar @$list, 2, 'two valid tools' );
   is( $list->[0]->name, 'a', 'first' );
   is( $list->[1]->name, 'b', 'second' );
+  # A hash with neither type nor name is no longer skipped silently (karr
+  # k210): it croaks, so a malformed tool cannot vanish from a request.
+  for my $bad ( { garbage => 1 }, {} ) {
+    my $ok = eval { Langertha::Tool->from_list( [ { name => 'b' }, $bad ] ); 1 };
+    ok( !$ok, 'nameless untyped hash croaks' );
+    like( $@, qr/no type and no name/, 'message says why' );
+  }
 }
 
 # --- ToolCall ---

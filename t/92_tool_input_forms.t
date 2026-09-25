@@ -44,6 +44,7 @@ my @forms = (
 for my $row (@forms) {
   my ( $label, $input, $want_schema ) = @$row;
   subtest $label => sub {
+    is( scalar Langertha::Tool->classify($input), 'function', 'classify: function' );
     my $tool = Langertha::Tool->from_hash($input);
     ok( $tool, 'parses' ) or return;
     is( $tool->name, 'w', 'name' );
@@ -60,5 +61,11 @@ for my $row (@forms) {
     }
   };
 }
+
+# The flat Responses function form is a function tool too. from_hash does not
+# parse it yet (it is only passed through verbatim by the Responses envelope);
+# that pre-existing gap is karr k217, so only its class is pinned.
+is( scalar Langertha::Tool->classify( { type => 'function', name => 'w', parameters => $schema } ),
+  'function', 'flat Responses function tool classifies as function' );
 
 done_testing;

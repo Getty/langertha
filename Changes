@@ -26,15 +26,22 @@ Revision history for Langertha
       documentation, not verified against the live API.
 
     - Langertha::Tool->from_hash, from_list and format_list now croak on a
-      tool hash that is not a function tool instead of dropping it or sending
-      it as a function tool. Known server-side tools (such as web_search,
-      Anthropic's web_search_20250305 or Gemini's google_search) are named as
-      such, since they are not supported yet, and any other non-function type
-      is reported as unsupported. Function tools have no type, type
-      'function', or Anthropic's 'custom' with an input_schema.
-      OpenAIResponses decides tool by tool: flat function tools, custom,
-      namespace and its server-side tools go out verbatim, and other
-      function-tool forms are converted, in any order.
+      tool hash that is not a function tool, instead of dropping it or sending
+      it as a function tool. That includes server-side tools (web_search,
+      Anthropic's web_search_20250305, Gemini's google_search, ...), which are
+      not supported yet, client-executed built-ins, unknown types, and hashes
+      with neither type nor name (such as a functionDeclarations wrapper). The
+      new Langertha::Tool->classify($hash, $fmt) reports the kind of tool
+      without croaking, so a gateway can reject a request cleanly.
+    - OpenAIResponses decides tool by tool, in any order: flat function tools,
+      its server-side tools and any other typed tool (custom, namespace, hosted
+      shell, types Langertha does not know) go out verbatim, and other
+      function-tool forms are converted. Incompatible change: the
+      client-executed built-ins local_shell, computer, computer_use_preview,
+      apply_patch, shell with a local environment and tool_search with
+      execution "client" now croak. They used to be sent when listed first, but
+      Langertha cannot run them or report their calls, so a shell or
+      computer-use loop built on chat_f and Response->raw no longer works.
 
     - OpenAIResponses and Perplexity no longer add summary => [{}] to a
       reasoning item in Response->raw when the item has no summary.
