@@ -401,6 +401,22 @@ C<stream =E<gt> false>. Returns an HTTP request object.
 
 =cut
 
+# A reply that carries tool calls finishes with 'tool_calls' in the
+# Chat-Completions convention, but gpt-oss served by vLLM-style stacks (seen
+# live on AKI.IO, gpt-oss-120b and llama3-chat-8b) answers a non-streaming tool
+# call with 'stop'. Response.tool_calls is the one tool-call shape (ADR 0003),
+# so the finish reported alongside it says 'tool_calls' too -- the rule
+# ResponsesCompatible applies (k171). Only 'stop' is rewritten: 'length' and
+# the other values carry information ('length' = cut off) and pass through; a
+# missing finish stays missing. The wire value remains on ->raw.
+# Shared by chat_response and parse_stream_chunk. -- karr k248, ADR 0018
+sub _openai_finish_reason {
+  my ( $self, $finish_reason, $has_tool_calls ) = @_;
+  return 'tool_calls'
+    if $has_tool_calls && defined $finish_reason && $finish_reason eq 'stop';
+  return $finish_reason;
+}
+
 sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
@@ -430,7 +446,8 @@ sub chat_response {
     raw           => $data,
     $data->{id} ? ( id => $data->{id} ) : (),
     $data->{model} ? ( model => $data->{model} ) : (),
-    defined $choice->{finish_reason} ? ( finish_reason => $choice->{finish_reason} ) : (),
+    defined $choice->{finish_reason}
+      ? ( finish_reason => $self->_openai_finish_reason( $choice->{finish_reason}, scalar @tcs ) ) : (),
     $data->{usage} ? ( usage => $data->{usage} ) : (),
     ( $data->{usage} && $data->{usage}{prompt_tokens_details}
       && defined $data->{usage}{prompt_tokens_details}{cached_tokens}
@@ -448,6 +465,12 @@ sub chat_response {
 Parses an OpenAI-format chat completion response. Returns a
 L<Langertha::Response> object with C<content>, C<model>, C<finish_reason>,
 C<usage>, C<created>, and C<raw>.
+
+C<finish_reason> is the wire value, with one normalization: a reply that
+carries tool calls but says C<stop> (gpt-oss on vLLM-style servers, e.g.
+AKI.IO) reports C<tool_calls>, so it agrees with C<tool_calls>. Every other
+value, C<length> included, passes through; the wire value stays readable in
+C<raw>.
 
 =cut
 
@@ -616,7 +639,8 @@ sub parse_stream_chunk {
     content => $content,
     raw => $data,
     is_final => defined $finish_reason,
-    defined $finish_reason ? (finish_reason => $finish_reason) : (),
+    defined $finish_reason
+      ? (finish_reason => $self->_openai_finish_reason( $finish_reason, scalar @tool_calls )) : (),
     $data->{model} ? (model => $data->{model}) : (),
     $data->{usage} ? (usage => $data->{usage}) : (),
     ( $data->{usage} && $data->{usage}{prompt_tokens_details}
@@ -643,8 +667,9 @@ C<index> by its C<id>, and by its position only when it has neither) in
 C<\%state>, and the finished calls land as L<Langertha::ToolCall> objects, in
 stream order, on the chunk that carries a non-empty C<finish_reason>, read by the
 same L<Langertha::ToolCall/extract> as L</chat_response>. Collect them with
-L<Langertha::Role::Chat/aggregate_tool_calls>. C<finish_reason> is passed
-through as the provider sent it, as on the non-streaming path. A stream that
+L<Langertha::Role::Chat/aggregate_tool_calls>. C<finish_reason> is read as on
+the non-streaming path: the wire value, except that C<stop> on the chunk that
+delivers tool calls reports C<tool_calls> (the wire value stays in C<raw>). A stream that
 ends without one drops its pending calls with a C<carp> (see
 L</_finish_stream_state>).
 

@@ -92,7 +92,10 @@ subtest 'OpenAI: one call, parity with the AKI.IO non-streaming capture' => sub 
   is_deeply( $tcs->[0]->arguments, { a => 7, b => 15 }, 'arguments assembled from the fragments' );
   ok( $chunks->[-1]->has_tool_calls, 'the call rides the finish_reason chunk' );
   ok( !( grep { $_->has_tool_calls } @$chunks[ 0 .. $#$chunks - 1 ] ), 'and no fragment chunk' );
-  is( $chunks->[-1]->finish_reason, 'stop', 'finish_reason passed through as the reply has it' );
+  is( $chunks->[-1]->finish_reason, 'tool_calls', 'wire stop next to the call reports tool_calls (k248)' );
+  is( $chunks->[-1]->finish_reason, $engine->chat_response( HTTP::Response->new( 200, 'OK',
+    [ 'Content-Type' => 'application/json' ], path('t/data/akiopenai_tool_call_response.json')->slurp_raw ) )->finish_reason,
+    'same finish_reason as the non-streaming reply' );
 };
 
 subtest 'OpenAI: parallel calls, fragments interleaved by index' => sub {

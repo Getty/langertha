@@ -149,12 +149,15 @@ subtest 'AKIOpenAI native tool call (karr k102 probe capture)' => sub {
   ok(defined $resp, 'Response constructed, no type-constraint croak') or diag($@);
 
   SKIP: {
-    skip 'no Response to inspect', 12 unless defined $resp;
+    skip 'no Response to inspect', 13 unless defined $resp;
     isa_ok($resp, 'Langertha::Response');
     is("$resp", '', 'tool-call-only reply stringifies to empty content');
     is($resp->id, 'chatcmpl-22abd180-d3e6-40fb-a278-87a44e93d306-8744', 'id from the wire');
     is($resp->model, 'llama3-chat-8b', 'model from the wire');
-    is($resp->finish_reason, 'stop', 'finish_reason from choices[0]');
+    # The wire says 'stop' next to a tool call; the dialect reports
+    # 'tool_calls' and keeps the wire value on raw (karr k248).
+    is($resp->finish_reason, 'tool_calls', 'finish_reason normalized to tool_calls');
+    is($resp->raw->{choices}[0]{finish_reason}, 'stop', 'wire finish_reason kept on raw');
     is(0 + $resp->created, 1788290624, 'created numifies to Unix seconds');
     is($resp->prompt_tokens, 227, 'prompt_tokens from usage');
     is($resp->completion_tokens, 23, 'completion_tokens from usage');

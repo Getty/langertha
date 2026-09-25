@@ -167,6 +167,11 @@ Revision history for Langertha
       silence it. Taken from Moonshot's documentation, not verified against
       the live API.
 
+    - OpenAI-compatible engines report finish_reason tool_calls when a reply
+      has tool calls but the server said stop, as AKI.IO does for gpt-oss-120b.
+      This applies to streamed replies too. The server's value stays in raw,
+      and length and every other finish_reason pass through unchanged.
+
     - Streamed tool calls are no longer lost on Chat-Completions, Anthropic,
       Gemini and Ollama-native streams: each call arrives once, as the same
       Langertha::ToolCall the non-streaming reply has, and
