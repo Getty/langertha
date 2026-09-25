@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T23:13:34Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:13:34Z
+created: 2026-09-25T22:49:17Z
+id: 334
+priority: low
+started: 2026-09-25T22:51:07Z
+status: done
+tags:
+- lmstudio
+- streaming
+- reasoning
+title: LM Studio native streaming drops reasoning (reasoning.delta events ignored)
+  while chat_response surfaces it
+updated: 2026-09-25T23:13:34Z
+---
+
+Found by reading (bug hunt 2026-09-26); event names are documentation-derived -> langertha-llm-advisor to confirm against lmstudio.ai/docs/developer/rest (streaming events), no live call made.
+
+lib/Langertha/Engine/LMStudio.pm:297 _extract_reasoning_text lifts output[type=reasoning] into Response.thinking on the non-streamed path, but parse_stream_chunk (:509 onward) only handles error, message.delta and chat.end and returns undef for everything else. LM Studio native /api/v1/chat streams reasoning as reasoning.start / reasoning.delta / reasoning.end events, so a streamed call loses the thinking text that the same call returns unstreamed (stream/non-stream divergence, same class as k129 for Ollama/Gemini).
+
+Fix: map reasoning.delta to a Stream::Chunk with thinking => $data->{content} (content ""), so aggregate_thinking rebuilds it; add a parse_stream_chunk test beside t/24_lmstudio_native_input.t, ideally from a captured SSE stream.
