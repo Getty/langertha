@@ -265,7 +265,9 @@ for my $name (qw( OllamaOpenAI Cerebras Moonshot )) {
   my %golden = (
     Cerebras => '{"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"gpt-oss-120b","stream":false}',
     Moonshot => '{"max_tokens":16000,"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"kimi-k3","stream":false}',
-    Ollama => '{"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"llama3.3","options":{},"stream":false}',
+    # Ollama native content is a string: the text-part array is joined (k331,
+    # t/24_ollama_native_content_parts.t); sent verbatim it was a 400.
+    Ollama => '{"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":"native part","role":"user"}],"model":"llama3.3","options":{},"stream":false}',
     OllamaOpenAI => '{"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"llama3.3","stream":false}',
     OpenAI => '{"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"gpt-5.6-terra","stream":false}',
     OpenAIResponses => '{"input":[{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"instructions":"sys","model":"gpt-5.5-pro","stream":false}',

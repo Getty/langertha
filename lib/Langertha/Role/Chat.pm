@@ -34,8 +34,10 @@ L<Langertha::Engine::Ollama> (C<ollama>: text joined into a string content,
 images lifted into the message C<images> array) and
 L<Langertha::Engine::LMStudio> (C<lmstudio>).
 
-A message whose content is a plain string, or an arrayref without any
-L<Langertha::Content> object, is passed through unchanged on every format.
+A message whose content is a plain string is passed through unchanged on
+every format; so is an arrayref without any L<Langertha::Content> object,
+except on C<gemini> (always turned into parts) and C<ollama> (text parts
+always joined into a string, C<image_url> parts lifted into C<images>).
 
 =cut
 
@@ -259,8 +261,9 @@ sub _normalize_content_blocks {
   }
   my $fmt    = $self->content_format;
   # Gemini has no string-or-array content field: every array becomes parts,
-  # Content object or not (karr k269).
-  return $msg unless $needs_convert || $fmt eq 'gemini';
+  # Content object or not (karr k269). Ollama native content is a string: a
+  # text-part array is joined, never sent as an array (karr k331).
+  return $msg unless $needs_convert || $fmt eq 'gemini' || $fmt eq 'ollama';
 
   my $method = "to_$fmt";
   my $role   = $msg->{role} // 'user';
@@ -282,13 +285,18 @@ sub _normalize_content_blocks {
       elsif ( ref $part eq 'HASH' && ( $part->{type} // '' ) eq 'text' && defined $part->{text} ) {
         push @text, $part->{text};
       }
+      elsif ( my $img = $self->_image_url_part_image($part) ) {
+        push @images, $self->_content_block( $img, $method );
+      }
       else {
         croak ref($self).": Ollama native /api/chat takes a string message content; "
-          . "a content part may be a string, a { type => 'text' } hash or a Langertha::Content object";
+          . "a content part may be a string, a { type => 'text' } or { type => 'image_url' } hash "
+          . "or a Langertha::Content object";
       }
     }
     return { %$msg, content => join( "\n", @text ),
-      images => [ @{ $msg->{images} // [] }, @images ] };
+      ( @images || $msg->{images} )
+        ? ( images => [ @{ $msg->{images} // [] }, @images ] ) : () };
   }
 
   my $text_type = $fmt ne 'responses' ? 'text'
@@ -328,19 +336,26 @@ sub _gemini_part {
   return $part unless ref $part eq 'HASH' && defined $part->{type};
   my $type = $part->{type};
   return { text => $part->{text} } if $type eq 'text' && defined $part->{text};
-  if ( $type eq 'image_url' ) {
-    my $url = ref $part->{image_url} eq 'HASH' ? $part->{image_url}{url} : $part->{image_url};
-    if ( defined $url && length $url ) {
-      require Langertha::Content::Image;
-      my $img = $url =~ m{\Adata:([^;,]+);base64,(.*)\z}s
-        ? Langertha::Content::Image->from_base64( $2, media_type => $1 )
-        : Langertha::Content::Image->from_url($url);
-      return $self->_content_block( $img, $method );
-    }
+  if ( my $img = $self->_image_url_part_image($part) ) {
+    return $self->_content_block( $img, $method );
   }
   croak ref($self).": a Gemini message content part may be a string, a native Gemini part, "
     . "a { type => 'text' } or { type => 'image_url' } hash or a Langertha::Content object; "
     . "got type '$type'";
+}
+
+# The Langertha::Content::Image for an OpenAI-style { type => 'image_url' }
+# hash part (a data URL becomes base64), or undef for any other part. Shared by
+# the wires without an image_url part of their own (gemini, ollama).
+sub _image_url_part_image {
+  my ( $self, $part ) = @_;
+  return undef unless ref $part eq 'HASH' && ( $part->{type} // '' ) eq 'image_url';
+  my $url = ref $part->{image_url} eq 'HASH' ? $part->{image_url}{url} : $part->{image_url};
+  return undef unless defined $url && length $url;
+  require Langertha::Content::Image;
+  return $url =~ m{\Adata:([^;,]+);base64,(.*)\z}s
+    ? Langertha::Content::Image->from_base64( $2, media_type => $1 )
+    : Langertha::Content::Image->from_url($url);
 }
 
 # Serializes one Langertha::Content block. A URL-only image that has to be

@@ -27,6 +27,10 @@ Revision history for Langertha
       same reply: Gemini thought parts stay out of it, and a Mistral
       content-chunk list comes back as text instead of an array reference.
 
+    - Ollama native chat joins a message content given as an array of text
+      parts into one string (newline-separated) instead of sending the array,
+      which /api/chat rejects; OpenAI-style image_url parts go to images.
+
     - Langertha::Embedder and Langertha::ImageGen have simple_embedding_result
       and simple_image_result (each with an _f variant): the wrapper's
       overrides and plugin hooks around the engine's CallResult. The
