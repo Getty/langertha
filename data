@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T23:31:24Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:31:24Z
+created: 2026-09-25T22:48:21Z
+id: 326
+priority: medium
+started: 2026-09-25T22:53:05Z
+status: done
+tags:
+- tools
+- anthropic
+- mcp
+- advisor
+title: Anthropic tool_result passes raw MCP content blocks (image data/mimeType, annotations,
+  resource_link) onto the wire
+updated: 2026-09-25T23:31:24Z
+---
+
+ToolResult.pm to_anthropic embeds $self->content verbatim; Role/Tools.pm:448-459 feeds it the MCP call_tool content. MCP blocks are not Anthropic blocks: image is {type:image,data,mimeType} (Anthropic wants source:{type:base64,media_type,data}), text may carry annotations/_meta, and resource/resource_link/audio have no Anthropic type. Expected: a 400 on the next loop turn whenever an MCP tool returns an image or annotated text (provider reality to confirm via langertha-llm-advisor: extra-field rejection on text blocks).
+
+Repro: format_tool_results on Anthropic with result content [{type:text,text:"here",annotations:{...}},{type:image,data:"iVBORw0KGgo=",mimeType:"image/png"},{type:resource_link,uri:...}] -> tool_result.content is exactly that array.
+
+Fix: map MCP content in to_anthropic: text -> {type,text}; image -> {type:image,source:{type:base64,media_type:mimeType,data}}; anything else -> a text block (JSON/uri). Unit test in t/9x ToolResult.
+
+2026-09-25 22:51 llm-advisor (2026-09-26, docs+SDK source, no live call): Anthropic tool_result.content = string OR array of text | image | document | search_result (+ tool_reference, browser_state for toolsets). Sources: platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls; anthropic-sdk-python types/tool_result_block_param.py. Image shape: {type:image, source:{type:base64, media_type, data}} (source may also be {type:url,url} or file); media_type must be image/jpeg|png|gif|webp. Text block accepts only type,text,cache_control,citations -> MCP 'annotations'/'_meta' are unknown fields; the API is strict (400 'Extra inputs are not permitted') - strip them. Reference mapping = anthropic-sdk-python src/anthropic/lib/tools/mcp.py (mcp_content): text->{type,text}; image (supported MIME)->base64 image; embedded resource: image blob->image, application/pdf blob->document{source:{type:base64,media_type:application/pdf}}, text/* or no MIME->document{source:{type:text,media_type:text/plain,data}}; audio + resource_link -> SDK RAISES (unsupported). RULING for Langertha (normalize, don't gatekeep): same mapping, but never die mid-loop -> resource_link becomes text '[resource_link] name <uri>' , audio/unsupported-MIME image/resource becomes a text placeholder (type + mimeType + uri, no base64 dump). If content ends up empty, send the string ''. Empty-content + structuredContent: SDK sends JSON-encoded structuredContent as string - do the same. Other formats: OpenAI chat tool msg content = string or array of TEXT parts only (current JSON-encode of the whole MCP array works but dumps base64 images into tokens -> follow-up: text-join + placeholder); Responses function_call_output.output = string (or input_text/input_image array); Gemini functionResponse.response = JSON object, images go in functionResponse.parts[{inlineData}] (Gemini 3 only, v1beta); Ollama tool msg content = string.
