@@ -284,11 +284,21 @@ the prompt (the same condition as `chat_f`'s reply lift), each chunk now goes th
 incremental splitter (`Role::Tools::_hermes_stream_chunk` / `_hermes_stream_split`): text outside
 the call tag (`hermes_call_tag`) streams as it comes, a closed block is withheld, and a tail that
 may still become an opening tag is held until the next chunk. A chunk that carried only markup is
-not delivered. On the final chunk (`is_final` or a `finish_reason`) the withheld blocks go through
-the same `_hermes_split_text` `chat_f` uses and the calls land there as `Langertha::ToolCall`
-objects with `finish_reason` `tool_calls` (ADR 0003: `Stream::Chunk.tool_calls` is the streamed
-form of `Response.tool_calls`). A stream that ends without a final chunk gets a closing chunk for
-what is still held.
+not delivered. Each block is decided when it closes, through the same `_hermes_split_text`
+`chat_f` uses: a call is kept, a block that carries no call (invalid JSON, no `name`, a nested
+opening tag) is emitted as text in place. On the final chunk (`is_final` or a non-empty
+`finish_reason`) the calls land as `Langertha::ToolCall` objects (ADR 0003:
+`Stream::Chunk.tool_calls` is the streamed form of `Response.tool_calls`). A stream that ends
+without a final chunk gets a closing chunk for what is still held.
+
+Review round (k253 review). `_hermes_split_text` itself now keeps a block that carries no call in
+the text instead of deleting it, so `chat_f`, `response_text_content` and the tool loop lose
+nothing the model wrote either, and stream and `chat_f` content agree. When calls were lifted,
+`finish_reason` reads `tool_calls` over `stop` or none, on the final chunk and on `chat_f`'s
+`Response` alike (the rule k248 set for native OpenAI-dialect calls; `->raw` keeps the wire
+value); `length` and other provider values stay. The OpenAI dialect's `parse_stream_chunk` now
+treats an empty-string `finish_reason` as no finish for `is_final` and `finish_reason` too, as
+Gemini's parser already did, so a server that sends `""` on every delta cannot end the lift early.
 
 Unclosed or partial markup at the end is emitted as text and gives no call: nothing the model
 wrote is lost, and `chat_f` treats an unclosed block the same way. With the think tag filter on
