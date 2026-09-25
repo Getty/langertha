@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T08:36:37Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T08:36:37Z
+created: 2026-09-25T08:26:06Z
+id: 256
+priority: high
+started: 2026-09-25T08:36:37Z
+status: done
+tags:
+- release
+title: 'Changes: remove stale Langertha::MCP::Client paragraph (never shipped, already
+  removed)'
+updated: 2026-09-25T08:36:37Z
+---
+
+Changes:820-828 documents a "New Langertha::MCP::Client, a temporary subclass of Net::Async::MCP" under {{$NEXT}}. That class was added by commit 863ab31 ("Fix MCP client for current protocol revision (karr #60)") and then REMOVED by commit 1e52de0 ("refactor: keep RunContext/Runnable in core, drop unpublished MCP stub") as part of the Raider extraction (ADR 0026), which explicitly states: "Renamed on the way over, but never published -> simply dropped, no stub. Langertha::MCP::Client becomes Langertha::Raider::MCP ... It was added after 0.502 and never released, so there is no PAUSE index entry to preserve ... core just removes it." (docs/adr/0026-raider-extracted-to-sibling-distribution.md:39-42). CLAUDE.md:293 confirms: "Langertha::MCP::Client was never released, so it is simply gone." The 0.503 release will NOT ship this class, so the Changes paragraph is factually wrong and will mislead CPAN readers. Fix: delete Changes:820-828 (or replace with a one-line note that the MCP-protocol-revision fix landed inside the temporary class and then moved to langertha-raider as Langertha::Raider::MCP, if that history is worth keeping at all).
+
+2026-09-25 08:30 Cross-checked independently by a second concurrent pre-release audit this run (langertha-release-checker) — same finding confirmed via git log (863ab31 added the class, 1e52de0 'drop unpublished MCP stub' removed it) and 'find lib -iname *MCP*' showing no such file at HEAD. Two related staleness items found in the same reconciliation sweep, filed on #261: Changes:738-747 claims Langertha::Result still gets 'overload bool=>1', but lib/Langertha/Result.pm is now a bare reserved-namespace stub (no use overload, no class body) — only Response still has it. And Changes:830-855 (three 'Raider:' bullets: paused-raid dedup, session-history-per-wire rendering, plugin_before_llm_call drift) describe fixes to Raider-internal code no longer shipped in core, and are not documented in langertha-raider/Changes either — orphaned between the two distributions.
+
+2026-09-25 08:31 Correction: the two related staleness items mentioned above landed as ticket #262, not #261 (#261 turned out to be a separate concurrent finding — a missing Changes bullet for the empty-finish_reason streaming fix, commit a931866).
