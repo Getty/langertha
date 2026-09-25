@@ -127,3 +127,19 @@ this audit. SGLang gets `tool_choice_auto` / `tool_choice_none` back, the re-add
 Update foresees: `protocol.py` types `tool_choice` as auto|required|none|named and
 `serving_chat` honors none; the docs list only the grammar-backed forms. Pinned in
 `t/78_engine_capabilities.t` and `t/78_model_scoped_capabilities.t`.
+
+## Update (k251 — the Role::HermesTools rule keys on the resolved tag, not on composition)
+
+The k234 rule deleted the native tool flags whenever the role was composed. `tool_wire_format`
+has an init_arg, so `NousResearch->new(tool_wire_format => 'openai')` sent tools natively while
+`supports()` still reported `tools_hermes` and no `tool_choice_named`, and `chat_f` rewrote a
+forced tool to `json_schema` (ADR 0005). The rule now reads `$self->tool_wire_format`: on
+`hermes` it deletes `tools_native`, `tool_choice_any`, `tool_choice_named` and
+`parallel_tool_use` as before; on any other tag it deletes `tools_hermes` and leaves the native
+flags as the role inventory gives them. The flags follow the tag the engine actually sends with.
+`Manifest::Builder` probes each model on a `clone_object` copy, which copies an already-built lazy
+tag; the probe now drops a builder-made tag (`_reset_derived_tool_wire_format`, via the
+`_clear_tool_wire_format` clearer) so it resolves again for the probed `chat_model`. A tag passed
+to the constructor is kept: a `trigger`, which fires for constructor values and never for the
+builder, records it in `_tool_wire_format_given`. A model-aware tag builder (k238 step c) is not
+part of this change. Pinned in `t/66_hermes_tag_override.t` and `t/96_manifest_builder.t`.
