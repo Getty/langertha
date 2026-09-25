@@ -11,6 +11,12 @@ Revision history for Langertha
       response object. On Anthropic, text resources of any MIME type and
       text/* blobs become text documents.
 
+    - The MCP tool loops no longer run a tool with empty arguments when the
+      reply hit its token limit mid-call. A lone truncated call dies with
+      "tool call arguments truncated ...; raise response_size"; beside
+      complete calls it is dropped with a warning. New
+      ToolCall->arguments_undecodable marks arguments that did not decode.
+
     - On a Hermes engine with think_tag_filter on, a <tool_call> block
       inside the model's <think> reasoning is no call: the MCP tool loops do
       not run it and response_tool_calls does not return it, as chat_f and

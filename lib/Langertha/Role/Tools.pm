@@ -5,7 +5,7 @@ use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );
 use JSON::MaybeXS;
-use Scalar::Util qw( blessed );
+use Scalar::Util qw( blessed refaddr );
 use Log::Any qw( $log );
 use Langertha::Tool;
 use Langertha::ToolCall;
@@ -657,6 +657,61 @@ sub _tool_loop_response {
   return $response;
 }
 
+# The finish reasons that mean "the reply hit its token limit", as each wire
+# spells it: OpenAI-compatible and Ollama 'length', Anthropic 'max_tokens',
+# Gemini 'MAX_TOKENS', an incomplete Responses message 'incomplete'.
+my %TOKEN_LIMIT_FINISH = map { $_ => 1 } qw( length max_tokens MAX_TOKENS incomplete );
+
+# The calls one tool-loop turn runs, and the wire body its assistant echo is
+# built from. A reply cut off by its token limit can carry a call whose
+# arguments string was cut too; it decodes to nothing, and running the tool on
+# {} is wrong, so that call is dropped, as the stream parser drops an
+# unfinished call. With no call left the loop croaks; otherwise the complete
+# calls run, a carp names the dropped ones, and the echo leaves them out, so
+# the next turn has no call without a result -- karr k324.
+sub _tool_loop_calls {
+  my ( $self, $reply, $data ) = @_;
+  my @calls  = $reply->has_tool_calls ? @{ $reply->tool_calls } : ();
+  my $reason = $reply->finish_reason;
+  return ( \@calls, $data )
+    unless @calls && defined $reason && $TOKEN_LIMIT_FINISH{$reason};
+  my @dropped = grep { $_->arguments_undecodable } @calls;
+  return ( \@calls, $data ) unless @dropped;
+  my $class = ref $self;
+  croak "$class tool call arguments truncated (finish_reason $reason); raise response_size"
+    if @dropped == @calls;
+  $self->_langertha_carp( "$class: dropped " . scalar(@dropped)
+    . " tool call(s) with truncated arguments (finish_reason $reason): "
+    . join( ', ', map { $_->name } @dropped ) . "; raise response_size" );
+  return ( [ grep { !$_->arguments_undecodable } @calls ],
+    $self->_echo_without_undecodable_calls($data) );
+}
+
+# A copy of the wire body without the raw calls whose arguments do not
+# decode; everything else is shared. Hermes calls ride in the text, and an
+# unfinished <tool_call> block never became a call.
+sub _echo_without_undecodable_calls {
+  my ( $self, $data ) = @_;
+  my $fmt = $self->tool_wire_format;
+  return $data if $fmt eq 'hermes';
+  my %drop;
+  for my $raw ( @{ Langertha::ToolCall->locate( $fmt, $data ) } ) {
+    my $call = Langertha::ToolCall->from_fmt( $fmt, $raw );
+    $drop{ refaddr $raw } = 1 if $call && $call->arguments_undecodable;
+  }
+  return _without_refs( $data, \%drop );
+}
+
+sub _without_refs {
+  my ( $node, $drop ) = @_;
+  return { map { $_ => _without_refs( $node->{$_}, $drop ) } keys %$node }
+    if ref $node eq 'HASH';
+  return [ map { _without_refs( $_, $drop ) }
+    grep { !( ref $_ && $drop->{ refaddr $_ } ) } @$node ]
+    if ref $node eq 'ARRAY';
+  return $node;
+}
+
 async sub chat_with_tools_f {
   my ( $self, @messages ) = @_;
 
@@ -695,8 +750,8 @@ async sub chat_with_tools_f {
     }
 
     my $reply = $self->_tool_loop_response($response);
-    my $data  = $reply->raw;
-    my @tool_calls = $reply->has_tool_calls ? @{ $reply->tool_calls } : ();
+    my ( $calls, $data ) = $self->_tool_loop_calls( $reply, $reply->raw );
+    my @tool_calls = @$calls;
 
     # No tool calls means the LLM is done — return final text
     return $reply->content unless @tool_calls;
@@ -743,6 +798,13 @@ Each reply is read by the engine's C<chat_response>, the parser
 L<Langertha::Role::Chat/chat_f> uses: a response whose body reports an error
 fails with the text C<chat_f> croaks, the calls run are the reply's
 L<Langertha::Response/tool_calls>, and the final text is its C<content>.
+
+A reply that hit its token limit (C<finish_reason> C<length>, C<max_tokens>,
+C<MAX_TOKENS> or C<incomplete>) never runs a call whose arguments do not
+decode (L<Langertha::ToolCall/arguments_undecodable>): if no other call is
+left the loop dies with C<tool call arguments truncated>, otherwise the
+complete calls run, one warning names the dropped ones, and the dropped calls
+are left out of the conversation.
 
 =cut
 

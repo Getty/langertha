@@ -468,6 +468,12 @@ subtest 'Chat with system_prompt + plugin injection — both present' => sub {
     );
   }
 
+  # The calls a turn runs (karr k324 drops truncated ones); this mock has none.
+  sub _tool_loop_calls {
+    my ($self, $reply, $data) = @_;
+    return ([ @{ $reply->tool_calls // [] } ], $data);
+  }
+
   sub think_tag_filter { 0 }
   sub json { JSON::MaybeXS->new(utf8 => 1) }
 

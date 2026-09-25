@@ -350,7 +350,9 @@ sub simple_chat_with_tools {
       $engine, $conversation, $formatted_tools, $iteration,
     );
 
-    my @tool_calls = $reply->has_tool_calls ? @{ $reply->tool_calls } : ();
+    # Calls cut off by the token limit are dropped, as in chat_with_tools_f (k324).
+    ( my $calls, $data ) = $engine->_tool_loop_calls( $reply, $data );
+    my @tool_calls = @$calls;
     return $reply->content unless @tool_calls;
 
     # Execute each tool call
@@ -408,7 +410,9 @@ L<Langertha::Role::Chat/chat_f>: a response whose body reports an error fails
 with the same text, the final text is the reply's C<content>, and the calls
 run are its L<Langertha::Response/tool_calls>. C<plugin_after_llm_response>
 still receives the raw decoded wire body. A failed request dies with
-C<tool chat request failed>, in the sync and the async loop alike.
+C<tool chat request failed>, in the sync and the async loop alike. A call
+whose arguments were cut off by the token limit is not run, as in
+L<Langertha::Role::Tools/chat_with_tools_f>.
 
 =cut
 
@@ -436,7 +440,8 @@ async sub simple_chat_with_tools_f {
     my $reply = $engine->_tool_loop_response($response);
     my $data = await $self->_run_plugin_after_llm_response($reply->raw, $iteration);
 
-    my @tool_calls = $reply->has_tool_calls ? @{ $reply->tool_calls } : ();
+    ( my $calls, $data ) = $engine->_tool_loop_calls( $reply, $data );
+    my @tool_calls = @$calls;
     return $reply->content unless @tool_calls;
 
     my @results;

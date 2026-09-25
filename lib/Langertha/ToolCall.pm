@@ -57,16 +57,41 @@ model decided to make.
 
 =cut
 
-sub _decode_args {
+# True when the wire sent arguments (a string or a non-object) that do not
+# decode to an object -- a JSON string cut off by max_tokens, for one. The
+# arguments are {} then, and the tool loops must not run the call on them
+# (karr k324).
+has arguments_undecodable => (
+  is      => 'ro',
+  isa     => 'Bool',
+  default => 0,
+);
+
+=attr arguments_undecodable
+
+Boolean. True when the provider sent arguments that do not decode to a JSON
+object (typically a JSON string cut off when the reply hit its token limit);
+L</arguments> is then C<{}>. The MCP tool loops do not run such a call when
+the reply ended on its token limit. Missing or empty arguments are not
+undecodable.
+
+=cut
+
+# The constructor arguments for one raw arguments value: the decoded object
+# ({} when there is none) plus arguments_undecodable when the value does not
+# decode to an object. Argument strings reach us as Perl-Unicode (pulled out of
+# an already-decoded response tree), so UTF-8-encode before the utf8 JSON
+# decoder — same convention as Role::JSON's decode_json_text.
+sub _args_kwargs {
   my ($args) = @_;
-  return {} unless defined $args;
-  return $args if ref($args) eq 'HASH';
-  return {} unless length $args;
-  # Argument strings reach us as Perl-Unicode (pulled out of an already-decoded
-  # response tree), so UTF-8-encode before the utf8 JSON decoder — same
-  # convention as Role::JSON's decode_json_text.
+  return ( arguments => {} ) unless defined $args;
+  return ( arguments => $args ) if ref($args) eq 'HASH';
+  return ( arguments => {}, arguments_undecodable => 1 ) if ref $args;
+  return ( arguments => {} ) unless length $args;
   my $decoded = eval { decode_json( encode_utf8($args) ) };
-  return ( ref($decoded) eq 'HASH' ) ? $decoded : {};
+  return ref($decoded) eq 'HASH'
+    ? ( arguments => $decoded )
+    : ( arguments => {}, arguments_undecodable => 1 );
 }
 
 # --- Constructors from wire-format hashes ---
@@ -80,7 +105,7 @@ sub from_openai {
   return undef unless length $name;
   return $class->new(
     name      => $name,
-    arguments => _decode_args( $fn->{arguments} ),
+    _args_kwargs( $fn->{arguments} ),
     id        => ( $hash->{id} // '' ),
   );
 }
@@ -97,7 +122,7 @@ sub from_anthropic {
   # than silently dropped to {}. -- karr k124
   return $class->new(
     name      => $name,
-    arguments => _decode_args( $block->{input} ),
+    _args_kwargs( $block->{input} ),
     id        => ( $block->{id} // '' ),
   );
 }
@@ -111,7 +136,7 @@ sub from_ollama {
   return undef unless length $name;
   return $class->new(
     name      => $name,
-    arguments => _decode_args( $fn->{arguments} ),
+    _args_kwargs( $fn->{arguments} ),
     id        => ( $hash->{id} // '' ),
   );
 }
@@ -131,7 +156,7 @@ sub from_gemini {
   # silently dropped to {}. -- karr k131 (symmetric to k124's from_anthropic fix)
   return $class->new(
     name      => $name,
-    arguments => _decode_args( $fc->{args} ),
+    _args_kwargs( $fc->{args} ),
     id        => ( $fc->{id} // '' ),
   );
 }
@@ -149,11 +174,9 @@ sub from_responses {
   return undef if defined $type && $type ne 'function_call';
   my $name = $block->{name} // '';
   return undef unless length $name;
-  my $args = $block->{arguments};
-  $args = _decode_args($args);
   return $class->new(
     name      => $name,
-    arguments => ( ref($args) eq 'HASH' ? $args : {} ),
+    _args_kwargs( $block->{arguments} ),
     id        => ( $block->{call_id} // '' ),
   );
 }

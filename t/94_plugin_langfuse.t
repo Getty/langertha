@@ -442,6 +442,12 @@ subtest 'Chat with Langfuse + tools creates spans for tool calls' => sub {
       );
     }
 
+    # The calls a turn runs (karr k324 drops truncated ones); this mock has none.
+    sub _tool_loop_calls {
+      my ($self, $reply, $data) = @_;
+      return ([ @{ $reply->tool_calls // [] } ], $data);
+    }
+
     sub think_tag_filter { 0 }
 
     __PACKAGE__->meta->make_immutable;

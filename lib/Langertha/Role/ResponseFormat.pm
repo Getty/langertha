@@ -43,7 +43,7 @@ sub decode_loose_json {
     # decode_json (the JSON::MaybeXS utf8 variant) expects bytes, but $s reaches
     # us as a Perl-Unicode string (already-decoded response content). Decoding it
     # directly dies with "Wide character in subroutine entry" on any non-ASCII
-    # byte, so UTF-8-encode first -- same convention as ToolCall::_decode_args
+    # byte, so UTF-8-encode first -- same convention as ToolCall::_args_kwargs
     # and Role::JSON's decode_json_text. All three strategies route through this
     # closure, so the fence/substring candidates are encoded here too.
     my $r = eval { decode_json( encode_utf8($s) ) };
