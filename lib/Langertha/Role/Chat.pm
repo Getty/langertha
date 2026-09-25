@@ -928,8 +928,11 @@ async sub chat_f {
 
   my $response = await $self->_async_do_request_f( request => $request );
 
+  # A failed response records its rate limit before the die (a success does it
+  # in parse_response), so a caller can back off from a 429 (karr k300).
   unless ($response->is_success) {
-    die "".(ref $self)." request failed: ".$response->status_line;
+    $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
+    die "".(ref $self)." request failed: ".$self->_failed_status_line($response);
   }
 
   my $elapsed = tv_interval($t0);
@@ -1262,13 +1265,18 @@ async sub chat_stream_realtime_f {
   $request_f->on_ready(sub { $transfer_f->done unless $transfer_f->is_ready });
   $transfer_f->on_cancel(sub { $request_f->cancel unless $request_f->is_ready });
   await $transfer_f;
+  # The headers arrived, so their rate limit is this response's, whatever
+  # happens to the body or the status next (karr k300). Taken here, not in
+  # on_header, which may run inside the event loop's read handler.
+  $self->_update_rate_limit($response_status)
+    if $response_status && $self->can('_update_rate_limit');
   # The exception that stopped the stream wins over any transport failure
   # seen afterwards (from the cancel, a drain, or the connection itself).
   await Future->fail(@$stream_error) if $stream_error;
   await $request_f if $request_f->is_failed;
 
   unless ($response_status->is_success) {
-    die "".(ref $self)." streaming request failed: ".$response_status->status_line;
+    die "".(ref $self)." streaming request failed: ".$self->_failed_status_line($response_status);
   }
 
   # Process remaining buffer

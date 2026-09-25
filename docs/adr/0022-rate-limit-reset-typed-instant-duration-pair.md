@@ -219,6 +219,38 @@ manufacturing a normalized value it cannot stand behind.
   seams)" section is the vocabulary companion — this reset pair is a natural
   third sibling there alongside `timing` and `Moment`.
 
+## Update (k300 — `retry_after`, and the rate limit always describes the latest response)
+
+**`retry_after` is a duration, not a third reset pair.** `Retry-After` was already in the
+`raw` superset (decision 4) but had no typed reading. It answers one question — "how long
+until I may retry" — so it gets only the duration half: `retry_after` (`Maybe[Num]`
+seconds), a lazy builder over `raw->{'retry-after'}`. The wire speaks it in two forms
+(RFC 9110): delta-seconds, taken as is (a fractional value is accepted, normalize don't
+gatekeep), and an HTTP-date, measured from `received` exactly as decision 2 measures an
+Anthropic instant, and clamped at `0` — a date already passed means "retry now", not a
+negative wait. Anything else is `undef` and stays in `raw`; no default is invented
+(decision 2's rule). No `retry_at` instant is added: nobody asked for one, and
+`received + retry_after` is one line for a caller who wants it. `to_hash` / `TO_JSON`
+carry `retry_after` when defined. `RateLimit::_parse_retry_after` is the one parser; the
+error messages use it too (`… request failed: 429 Too Many Requests (retry after 8s)`).
+`HTTP::Date` (already installed with `HTTP::Message`) is now a direct `requires`.
+
+**The engine's rate limit is the latest response's, error or not.** Two lies are
+removed. (1) A response without rate-limit headers used to leave the previous
+response's `RateLimit` on the engine, and `simple_chat` / `chat_f` cloned that stale
+object onto the new `Response`; `Engine::Remote::_update_rate_limit` now stores
+whatever the parse returns, so no headers means `undef` and `Response.rate_limit`
+describes the response it sits on. (2) Error responses croaked before the headers were
+read, so after a 429 — the one response whose remaining = 0, resets and `retry-after`
+matter — `engine->rate_limit` still showed the last success. Now every path records the
+rate limit before it croaks or fails its future: `parse_response` and
+`execute_streaming_request` (sync), `chat_f` / `simple_chat_f`, `chat_with_tools_f`,
+`Langertha::Chat`'s async paths, and `chat_stream_realtime_f` (which never recorded one
+at all; it takes the headers once the transfer ends, not inside `on_header`, which may
+run in the event loop's read handler). Same result on every backend of ADR 0027 —
+`t/12_rate_limit_freshness.t` covers the mocked client, the sync LWP shim and
+`Net::Async::HTTP` against a local daemon.
+
 ## Future work
 
 - **karr k137** — capture real rate-limit response headers across the engine

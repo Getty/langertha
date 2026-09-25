@@ -22,6 +22,14 @@ Revision history for Langertha
       llama-3.1-8b-instruct is no longer served on Scaleway's serverless
       Generative APIs.
 
+    - rate_limit now always describes the latest response: a response
+      without rate-limit headers leaves none (instead of the previous one),
+      and a 429 or other error records its headers before the request dies,
+      on every sync and async path including streaming. New
+      RateLimit->retry_after gives Retry-After in seconds (delta-seconds or
+      HTTP-date), and the error message names it: "429 Too Many Requests
+      (retry after 8s)".
+
     - Batch embeddings: simple_embedding([ $a, $b, ... ]) (and the
       Langertha::Embedder wrapper) returns one vector per input, in input
       order, on every OpenAI-compatible engine (ordered by data[].index)

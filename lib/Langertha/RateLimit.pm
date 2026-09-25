@@ -227,6 +227,28 @@ fractional. The token-bucket mirror of L</requests_reset_after>.
 
 =cut
 
+has retry_after => (
+  is => 'ro',
+  isa => 'Maybe[Num]',
+  lazy => 1,
+  builder => '_build_retry_after',
+  predicate => 'has_retry_after',
+);
+
+=attr retry_after
+
+Maybe[Num] — seconds the provider asks the client to wait before retrying,
+read from the C<retry-after> header in L</raw>. It is a duration whichever
+form the wire uses: delta-seconds (C<8>; a fractional C<1.5> is accepted too)
+is taken as is, an HTTP-date is measured from L</received> (a date already
+past gives C<0>, never a negative wait). C<undef> when the response sent no
+C<retry-after>, or one in neither form (the verbatim value stays in L</raw>).
+Providers send it mostly on a C<429> or C<503>, which is why the engine records
+the rate limit of an error response before it croaks (see
+L<Langertha::Engine::Remote/rate_limit>).
+
+=cut
+
 has raw => (
   is => 'ro',
   isa => 'HashRef',
@@ -292,6 +314,37 @@ sub _build_tokens_reset_after {
   return undef unless $self->has_tokens_reset_at;
   return $self->_reset_after_from( $self->tokens_reset_at );
 }
+
+sub _build_retry_after {
+  my ( $self ) = @_;
+  return _parse_retry_after( $self->raw->{'retry-after'}, $self->received );
+}
+
+sub _parse_retry_after {
+  my ( $value, $received ) = @_;
+  return undef unless defined $value;
+  ( my $trimmed = $value ) =~ s/\A\s+|\s+\z//g;
+  return $trimmed + 0 if $trimmed =~ /\A[0-9]+(?:\.[0-9]+)?\z/;
+  require HTTP::Date;
+  my $epoch = HTTP::Date::str2time($trimmed);
+  return undef unless defined $epoch;
+  $received //= Langertha::Moment->now_utc;
+  my $wait = $epoch - ( $received->epoch + $received->nanosecond / 1_000_000_000 );
+  return $wait > 0 ? $wait : 0;
+}
+
+=func _parse_retry_after
+
+    my $seconds = Langertha::RateLimit::_parse_retry_after('8');   # 8
+    my $seconds = Langertha::RateLimit::_parse_retry_after($http_date, $received);
+
+Reads a C<Retry-After> value as the seconds to wait: delta-seconds directly, an
+HTTP-date (via L<HTTP::Date>) as its distance from C<$received> (a
+L<Langertha::Moment>, default now), clamped at C<0>. Returns C<undef> for
+anything else. Backs L</retry_after> and the retry note in the error messages
+of L<Langertha::Role::HTTP>.
+
+=cut
 
 # Go time.Duration.String() unit table, in seconds. Go emits compound
 # ("2m59.56s", "6m0s", "1h2m3s"), sub-second ("250ms", "35ms"), and fractional
@@ -382,6 +435,7 @@ sub to_hash {
     ( defined $self->tokens_reset          ? ( tokens_reset          => $self->tokens_reset )                 : () ),
     ( defined $self->tokens_reset_at       ? ( tokens_reset_at       => 0 + $self->tokens_reset_at )          : () ),
     ( defined $self->tokens_reset_after    ? ( tokens_reset_after    => $self->tokens_reset_after )           : () ),
+    ( defined $self->retry_after           ? ( retry_after           => $self->retry_after )                  : () ),
     raw => $self->raw,
   };
 }
@@ -394,8 +448,9 @@ Returns a flat HashRef of all defined rate limit fields plus the raw headers.
 The typed reset halves appear here whenever they were sent or can be derived:
 L</requests_reset_at> / L</tokens_reset_at> as a plain epoch number (their
 C<0+> overload, matching L<Langertha::Response/created>) and
-L</requests_reset_after> / L</tokens_reset_after> as seconds. A bucket the
-provider never spoke is omitted rather than defaulted. L</received> is not
+L</requests_reset_after> / L</tokens_reset_after> as seconds, and
+L</retry_after> in seconds when the provider sent one. A bucket the provider
+never spoke is omitted rather than defaulted. L</received> is not
 included; read it from the accessor when the derivation anchor is needed.
 
 =cut

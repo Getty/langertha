@@ -115,7 +115,12 @@ sub rate_limit {
     my $rl = $engine->rate_limit;
 
 Returns the L<Langertha::RateLimit> from the most recent API response,
-or C<undef> if no rate limit headers were present.
+or C<undef> if that response carried no rate limit headers — a response
+without them clears the previous one, so the value always describes the
+latest response. Error responses count: a C<429> (or any other non-2xx) is
+recorded B<before> the request croaks or its future fails, on the synchronous
+and every asynchronous path, so a caller can read C<requests_remaining>, the
+resets and L<Langertha::RateLimit/retry_after> after catching the error.
 
 =cut
 
@@ -134,10 +139,11 @@ Returns true if the engine has rate limit data from the most recent response.
 
 sub _update_rate_limit {
   my ( $self, $http_response ) = @_;
+  # No headers clears: rate_limit describes the latest response, never an
+  # older one (karr k300).
   my $rl = $self->_parse_rate_limit_headers($http_response);
-  if ($rl) {
-    $self->_last_rate_limit($rl);
-  }
+  $self->_last_rate_limit($rl);
+  return $rl;
 }
 
 sub _parse_rate_limit_headers {

@@ -623,8 +623,11 @@ async sub chat_with_tools_f {
     my $request = $self->build_tool_chat_request($conversation, $formatted_tools);
     my $response = await $self->_async_do_request_f(request => $request);
 
+    # A failed response records its rate limit before the die, as in chat_f
+    # (karr k300); a success does it in parse_response.
     unless ($response->is_success) {
-      die "".(ref $self)." tool chat request failed: ".$response->status_line;
+      $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
+      die "".(ref $self)." tool chat request failed: ".$self->_failed_status_line($response);
     }
 
     my $data = $self->parse_response($response);

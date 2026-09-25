@@ -192,15 +192,28 @@ sub _error_response_body {
   return $body;
 }
 
+# The status line of a failed response, with the Retry-After the provider sent
+# as seconds: "429 Too Many Requests (retry after 8s)" (karr k300).
+sub _failed_status_line {
+  my ( $self, $response ) = @_;
+  require Langertha::RateLimit;
+  my $wait = Langertha::RateLimit::_parse_retry_after( scalar $response->header('Retry-After') );
+  return $response->status_line unless defined $wait;
+  $wait = sprintf( '%.1f', $wait ) if $wait != int $wait;
+  return $response->status_line . " (retry after ${wait}s)";
+}
+
 sub parse_response {
   my ( $self, $response ) = @_;
+  # Every response, error or not, replaces the engine's rate limit first: a
+  # 429's remaining/reset/retry-after is what a caller backs off from (k300).
+  $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   unless ($response->is_success) {
     my $body = $self->_error_response_body($response);
     $log->errorf("[%s] HTTP %s", ref $self, $response->status_line);
-    croak "".(ref $self)." request failed: ".($response->status_line)
+    croak "".(ref $self)." request failed: ".$self->_failed_status_line($response)
       .( length $body ? " - ".$body : "" );
   }
-  $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   $log->tracef("[%s] Response: %s", ref $self, $response->decoded_content);
   # A 200 that is not JSON (a proxy's HTML page, a truncated body) names the
   # engine and shows the body, like the non-2xx path above (k290).
@@ -224,9 +237,12 @@ Decodes a successful L<HTTP::Response> body as JSON and returns the data
 structure. On failure croaks with the HTTP status line, and appends the
 provider's response body (whitespace-collapsed and truncated to
 C<$error_body_max_length> characters) so the real cause — e.g. a provider
-JSON error object — is visible in the croak message. If the engine supports
-rate limiting, extracts rate limit headers via C<_update_rate_limit> before
-decoding the body. A successful response whose body is not JSON croaks with
+JSON error object — is visible in the croak message; when the response sent a
+C<Retry-After>, the status line is followed by C<(retry after Ns)>. If the
+engine supports rate limiting, it records the rate limit headers via
+C<_update_rate_limit> first, for an error response too, so
+L<Langertha::Engine::Remote/rate_limit> describes the failed response after
+the croak (and is cleared when the response carried none). A successful response whose body is not JSON croaks with
 C<< <engine class> response is not valid JSON: <body> >> (the body shortened
 the same way).
 
@@ -303,9 +319,10 @@ sub execute_streaming_request {
   my $t0 = [gettimeofday];
   my $response = $self->user_agent->request($request);
 
+  $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   unless ($response->is_success) {
     my $body = $self->_error_response_body($response);
-    croak "".(ref $self)." streaming request failed: ".($response->status_line)
+    croak "".(ref $self)." streaming request failed: ".$self->_failed_status_line($response)
       .( length $body ? " - ".$body : "" );
   }
 
@@ -329,8 +346,9 @@ sub execute_streaming_request {
 
 Executes a streaming HTTP request synchronously using L<LWP::UserAgent> and
 delegates stream parsing to L<Langertha::Role::Streaming/process_stream_data>.
-Requires the engine to also compose L<Langertha::Role::Streaming>. On a
-non-success response croaks with the HTTP status line and the provider's
+Requires the engine to also compose L<Langertha::Role::Streaming>. The
+response's rate limit headers replace the engine's rate limit first, as in
+L</parse_response>. On a non-success response croaks with the HTTP status line and the provider's
 response body appended (whitespace-collapsed and length-limited), mirroring
 L</parse_response>. Returns an
 ArrayRef of L<Langertha::Stream::Chunk> objects and a timing HashRef with

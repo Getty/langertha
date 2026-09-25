@@ -9,6 +9,7 @@ requires 'JSON::Schema::Modern', '>= 0.617';
 requires 'LWP::Protocol::https';
 requires 'LWP::UserAgent';
 requires 'HTTP::Message';
+requires 'HTTP::Date';
 requires 'MIME::Base64';
 requires 'Log::Any';
 requires 'Module::Runtime';
