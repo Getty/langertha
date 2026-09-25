@@ -437,13 +437,21 @@ sub chat_response {
   # rename stays: Usage's %{} overload serves this hash verbatim, so
   # $response->usage->{prompt_tokens} / {cached_content_token_count} are
   # public back-compat keys (Langertha::CachedContent POD, karr k197).
+  # The snake_case keys take OpenAI's meaning: thoughtsTokenCount (billed as
+  # output, not part of candidatesTokenCount) is counted in completion_tokens
+  # and shown under completion_tokens_details.reasoning_tokens; the tool-use
+  # prompt (toolUsePromptTokenCount) in prompt_tokens (k299).
   my $usage;
   if (my $um = $data->{usageMetadata}) {
+    my $thoughts = $um->{thoughtsTokenCount};
+    my ( $prompt, $tool_prompt, $candidates ) =
+      @{$um}{qw( promptTokenCount toolUsePromptTokenCount candidatesTokenCount )};
     $usage = {
-      prompt_tokens     => $um->{promptTokenCount},
-      completion_tokens => $um->{candidatesTokenCount},
+      prompt_tokens     => defined $tool_prompt ? ( $prompt // 0 ) + $tool_prompt : $prompt,
+      completion_tokens => defined $thoughts    ? ( $candidates // 0 ) + $thoughts : $candidates,
       total_tokens      => $um->{totalTokenCount},
     };
+    $usage->{completion_tokens_details} = { reasoning_tokens => $thoughts } if defined $thoughts;
     if ( defined $um->{cachedContentTokenCount} ) {
       $usage->{cached_content_token_count} = $um->{cachedContentTokenCount};
     }

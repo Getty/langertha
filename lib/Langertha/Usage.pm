@@ -24,6 +24,7 @@ has total_tokens  => ( is => 'ro', isa => 'Int', lazy => 1, builder => '_build_t
 
 has cached_tokens      => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
 has cache_write_tokens => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
+has reasoning_tokens   => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
 has input_includes_cache => ( is => 'ro', isa => 'Maybe[Bool]', default => undef );
 
 has raw => (
@@ -44,6 +45,7 @@ around total_tokens  => sub {
 };
 around cached_tokens      => sub { my ( $orig, $self ) = @_; $DATA{$self}{cached_tokens} };
 around cache_write_tokens => sub { my ( $orig, $self ) = @_; $DATA{$self}{cache_write_tokens} };
+around reasoning_tokens   => sub { my ( $orig, $self ) = @_; $DATA{$self}{reasoning_tokens} };
 around input_includes_cache => sub { my ( $orig, $self ) = @_; $DATA{$self}{input_includes_cache} };
 around raw => sub { my ( $orig, $self ) = @_; $DATA{$self}{raw} };
 
@@ -57,6 +59,7 @@ sub BUILD {
     total_tokens       => $args->{total_tokens},
     cached_tokens      => $args->{cached_tokens},
     cache_write_tokens => $args->{cache_write_tokens},
+    reasoning_tokens   => $args->{reasoning_tokens},
     input_includes_cache => $args->{input_includes_cache},
     raw                => $args->{raw},
   };
@@ -93,8 +96,19 @@ sub from_hash {
   $output = $hash->{eval_count}        if !defined $output && defined $hash->{eval_count};
 
   # Gemini's usageMetadata spelling (the raw body, before the engine renames it).
-  $input  = $hash->{promptTokenCount}     if !defined $input  && defined $hash->{promptTokenCount};
-  $output = $hash->{candidatesTokenCount} if !defined $output && defined $hash->{candidatesTokenCount};
+  # Gemini counts thinking and the tool-use prompt beside the prompt and the
+  # answer: totalTokenCount = promptTokenCount + toolUsePromptTokenCount +
+  # candidatesTokenCount + thoughtsTokenCount. Thinking is billed as output, so
+  # it is folded into output_tokens (what OpenAI's completion_tokens already
+  # includes), the tool-use prompt into input_tokens. proto3 JSON omits zero
+  # counts, so either half of a sum may be missing (k299).
+  my $gemini_thoughts = $hash->{thoughtsTokenCount};
+  if ( !defined $input && ( defined $hash->{promptTokenCount} || defined $hash->{toolUsePromptTokenCount} ) ) {
+    $input = ( $hash->{promptTokenCount} // 0 ) + ( $hash->{toolUsePromptTokenCount} // 0 );
+  }
+  if ( !defined $output && ( defined $hash->{candidatesTokenCount} || defined $gemini_thoughts ) ) {
+    $output = ( $hash->{candidatesTokenCount} // 0 ) + ( $gemini_thoughts // 0 );
+  }
   $total  = $hash->{totalTokenCount}      if !defined $total  && defined $hash->{totalTokenCount};
 
   $input  = 0 + ($input  // 0);
@@ -161,10 +175,21 @@ sub from_hash {
   $includes = $hash->{input_includes_cache}
     if defined $includes && defined $hash->{input_includes_cache};
 
+  # The reasoning share of output_tokens (already counted in it on every wire):
+  # OpenAI Chat nests it under completion_tokens_details, Open-Responses under
+  # output_tokens_details, Gemini reports thoughtsTokenCount (k299).
+  my $ctd = $hash->{completion_tokens_details};
+  my $otd = $hash->{output_tokens_details};
+  my $reasoning;
+  if    ( ref($ctd) eq 'HASH' && defined $ctd->{reasoning_tokens} ) { $reasoning = $ctd->{reasoning_tokens} }
+  elsif ( ref($otd) eq 'HASH' && defined $otd->{reasoning_tokens} ) { $reasoning = $otd->{reasoning_tokens} }
+  elsif ( defined $gemini_thoughts )                                { $reasoning = $gemini_thoughts }
+
   my %args = ( input_tokens => $input, output_tokens => $output );
   $args{total_tokens}       = 0 + $total       if defined $total;
   $args{cached_tokens}      = 0 + $cached       if defined $cached;
   $args{cache_write_tokens} = 0 + $cache_write  if defined $cache_write;
+  $args{reasoning_tokens}   = 0 + $reasoning    if defined $reasoning;
   $args{input_includes_cache} = $includes ? 1 : 0 if defined $includes;
   $args{raw} = $hash;
   return $class->new(%args);
@@ -257,12 +282,20 @@ OpenAI (C<prompt_tokens> / C<completion_tokens>), Anthropic and Open-Responses
 (C<input_tokens> / C<output_tokens>), Ollama (C<prompt_eval_count> /
 C<eval_count>) and Gemini (C<promptTokenCount> / C<candidatesTokenCount> /
 C<totalTokenCount>) spellings, in that order of preference, plus the cache
-counts described under L</cached_tokens> and L</cache_write_tokens>.
+counts described under L</cached_tokens> and L</cache_write_tokens> and the
+L</reasoning_tokens> share.
+
+Gemini counts thinking and the tool-use prompt beside the prompt and the
+answer (C<totalTokenCount> is their sum), so from the Gemini spelling
+C<output_tokens> is C<candidatesTokenCount> plus C<thoughtsTokenCount> and
+C<input_tokens> is C<promptTokenCount> plus C<toolUsePromptTokenCount>.
+Thinking is billed at the output rate; C<output_tokens> then means what
+OpenAI's C<completion_tokens> means, reasoning included.
 
 =cut
 
 # Immutable merge — returns a new Usage that is the sum of self + other.
-# Cache counts are summed (undef only when neither side reported one). When
+# Cache and reasoning counts are summed (undef only when neither side reported one). When
 # one side counts its cache inside input_tokens (flag 1, or undef with counts)
 # and the other beside it (flag 0), the beside side's cache counts are added to
 # its input_tokens first, so the sum is "inside" throughout and priced without
@@ -271,7 +304,7 @@ sub merge {
   my ($self, $other) = @_;
   return $self unless $other;
   my %cache;
-  for my $count (qw( cached_tokens cache_write_tokens )) {
+  for my $count (qw( cached_tokens cache_write_tokens reasoning_tokens )) {
     my @seen = grep { defined } $self->$count, $other->$count;
     next unless @seen;
     $cache{$count} = 0;
@@ -305,7 +338,7 @@ sub merge {
     my $sum = $usage->merge($other);
 
 Returns a new Usage holding the sum of both: C<input_tokens>, C<output_tokens>,
-and L</cached_tokens> / L</cache_write_tokens> (a side that did not report a
+and L</cached_tokens> / L</cache_write_tokens> / L</reasoning_tokens> (a side that did not report a
 count adds nothing; the sum stays C<undef> when neither did). L</input_includes_cache>
 comes from the sides that reported a cache count. When both count it beside
 C<input_tokens> (false) the sum is false. When one counts it inside (true, or
@@ -475,6 +508,16 @@ beats the inference when a cache count was found;
 L<Langertha::Role::AnthropicCompatible> adds it for an engine whose
 C<_usage_input_includes_cache> hook answers (L<Langertha::Engine::AKIAnthropic>
 answers true), so the key also shows in C<< $response->usage->{...} >>.
+
+=attr reasoning_tokens
+
+How many of C<output_tokens> the model spent reasoning (thinking), when the
+provider reports it. The count is already part of C<output_tokens> — never add
+it again. L</from_hash> reads OpenAI Chat's
+C<completion_tokens_details.reasoning_tokens>, then the Open-Responses
+C<output_tokens_details.reasoning_tokens>, then Gemini's C<thoughtsTokenCount>
+(which Gemini reports beside C<candidatesTokenCount>, so L</from_hash> adds it
+into C<output_tokens>). C<undef> when the provider does not report one.
 
 =method uncached_input_tokens
 

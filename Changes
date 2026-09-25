@@ -97,6 +97,14 @@ Revision history for Langertha
       and to_hash; Langertha::Usage has input_includes_cache and
       uncached_input_tokens, and Usage->merge sums the cache counts.
 
+    - Gemini thinking tokens (thoughtsTokenCount) count in output_tokens
+      and the tool-use prompt (toolUsePromptTokenCount) in input_tokens, so
+      input plus output matches totalTokenCount and Pricing charges
+      thinking at the output rate, streamed or not. usage->{completion_tokens}
+      and usage->{prompt_tokens} include them too. New
+      Langertha::Usage->reasoning_tokens reports the thinking share of
+      output_tokens on Gemini, OpenAI Chat and the Responses wire.
+
     - Non-ASCII text in tool arguments and tool results reaches the
       provider intact (Köln no longer arrives as KÃ¶ln). ToolCall->to_openai
       and ToolResult->to return character strings, as do the Hermes tool
