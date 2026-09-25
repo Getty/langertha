@@ -469,6 +469,8 @@ sub format_tool_results {
         id       => _result_call_id( $_->{tool_call} ),
         content  => ( $_->{result}{content} // [] ),
         is_error => ( $_->{result}{isError} ? 1 : 0 ),
+        ( defined $_->{result}{structuredContent}
+          ? ( structured_content => $_->{result}{structuredContent} ) : () ),
       )->to('anthropic')
     } @$results;
     return (

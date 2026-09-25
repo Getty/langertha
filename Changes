@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Anthropic tool results map MCP content onto Anthropic blocks instead of
+      embedding it: images become base64 image blocks, PDF blobs and text
+      resources become documents, text loses annotations and _meta, and
+      resource links, audio and other MIME types become text placeholders.
+      A result with only structuredContent sends it as a JSON string.
+
     - clear_models_cache also resets the models attribute, so the next access
       to models fetches the list again. Gemini responses fill Response.id from
       responseId.
