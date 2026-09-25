@@ -2,6 +2,7 @@ package Langertha::Content::Image;
 # ABSTRACT: Canonical image content block with cross-provider conversion
 our $VERSION = '0.503';
 use Moose;
+use Moose::Util::TypeConstraints qw( enum );
 use Carp qw( croak );
 use MIME::Base64 qw( encode_base64 decode_base64 );
 use Future;
@@ -54,6 +55,11 @@ formats:
 
 =back
 
+The optional L</detail> hint goes out only on the two wires that have the
+field (OpenAI chat completions and Open-Responses) and is ignored elsewhere.
+L</TO_JSON> gives a compact description for logs and traces, never the
+payload.
+
 Gemini, Ollama native and LM Studio native require inline data, so their
 serializers transparently download a remote URL on first call (cached on the
 object). Engines whose OpenAI-compatible endpoint rejects remote image URLs
@@ -105,6 +111,26 @@ extension by C<from_file> and from the URL path by C<from_url>.
 
 =cut
 
+enum 'Langertha::Content::Image::Detail' => [qw( low high auto )];
+
+has detail => (
+  is => 'ro',
+  isa => 'Langertha::Content::Image::Detail',
+  predicate => 'has_detail',
+);
+
+=attr detail
+
+Optional image-detail hint: C<low>, C<high> or C<auto>. Unset by default, and
+then no C<detail> field goes on any wire. When set, L</to_openai> sends it as
+C<image_url.detail> and L</to_responses> as C<input_image.detail>; the other
+serializers ignore it, because their wires have no such field. Every C<from_*>
+constructor takes it:
+
+    my $img = Langertha::Content::Image->from_url($url, detail => 'low');
+
+=cut
+
 sub BUILD {
   my ($self) = @_;
   croak "Langertha::Content::Image requires url, base64, or data"
@@ -120,6 +146,7 @@ sub from_url {
   return $class->new(
     url => $url,
     ( defined $media_type ? ( media_type => $media_type ) : () ),
+    _detail_arg(%extra),
   );
 }
 
@@ -146,6 +173,7 @@ sub from_file {
   return $class->new(
     base64     => encode_base64($bytes, ''),
     media_type => $media_type,
+    _detail_arg(%extra),
   );
 }
 
@@ -165,6 +193,7 @@ sub from_data {
   return $class->new(
     base64     => encode_base64($bytes, ''),
     media_type => $extra{media_type},
+    _detail_arg(%extra),
   );
 }
 
@@ -183,6 +212,7 @@ sub from_base64 {
   return $class->new(
     base64     => $b64,
     media_type => $extra{media_type},
+    _detail_arg(%extra),
   );
 }
 
@@ -303,7 +333,10 @@ sub _url_or_data_url {
 
 sub to_openai {
   my ( $self, %opt ) = @_;
-  return { type => 'image_url', image_url => { url => $self->_url_or_data_url(%opt) } };
+  return { type => 'image_url', image_url => {
+    url => $self->_url_or_data_url(%opt),
+    ( $self->has_detail ? ( detail => $self->detail ) : () ),
+  } };
 }
 
 =method to_openai
@@ -316,13 +349,17 @@ Serializes to the OpenAI chat-completions image block. Uses the URL when
 available, otherwise emits a C<data:> URL from the base64 payload. With
 C<< inline => 1 >> it always emits the C<data:> URL, fetching a URL-only image
 first; L<Langertha::Role::Chat> passes it for engines whose endpoint rejects
-remote image URLs.
+remote image URLs. A set L</detail> goes out as C<image_url.detail>.
 
 =cut
 
 sub to_responses {
   my ( $self, %opt ) = @_;
-  return { type => 'input_image', image_url => $self->_url_or_data_url(%opt) };
+  return {
+    type      => 'input_image',
+    image_url => $self->_url_or_data_url(%opt),
+    ( $self->has_detail ? ( detail => $self->detail ) : () ),
+  };
 }
 
 =method to_responses
@@ -333,7 +370,7 @@ sub to_responses {
 Serializes to the Open-Responses C<input_image> part (OpenAI C</v1/responses>,
 Perplexity C</v1/agent>). C<image_url> is a plain string, not an object: the
 URL when available, otherwise a C<data:> URL. Takes C<< inline => 1 >> like
-L</to_openai>.
+L</to_openai>. A set L</detail> goes out as the part's C<detail> field.
 
 =cut
 
@@ -423,7 +460,64 @@ images because Gemini has no URL-fetching equivalent.
 
 =cut
 
+# --- JSON ---
+
+# Compact on purpose: TO_JSON fires implicitly wherever a message array holding
+# the image is encoded (a trace, a log line), and the base64 payload would blow
+# those up (karr k273). The payload is described by its decoded size instead.
+sub TO_JSON {
+  my ($self) = @_;
+  my $url = $self->has_url ? $self->url : undef;
+  $url = undef if defined $url && $url =~ /\Adata:/i;
+  my %out = (
+    type   => 'image',
+    source => ( defined $url ? 'url' : 'base64' ),
+    ( defined $url ? ( url => $url ) : () ),
+    ( defined $self->media_type ? ( media_type => $self->media_type ) : () ),
+    ( $self->has_detail ? ( detail => $self->detail ) : () ),
+  );
+  if ( defined $self->base64 ) {
+    ( my $b64 = $self->base64 ) =~ s/\s+//g;
+    my $pad = $b64 =~ /(=+)\z/ ? length $1 : 0;
+    $out{bytes} = int( length($b64) * 3 / 4 ) - $pad;
+  }
+  return \%out;
+}
+
+=method TO_JSON
+
+    my $json = JSON::MaybeXS->new( convert_blessed => 1 )
+      ->encode([ { role => 'user', content => [ 'What is this?', $img ] } ]);
+    # ... {"bytes":48213,"media_type":"image/png","source":"base64","type":"image"} ...
+
+Serialization hook for JSON encoders configured with C<convert_blessed> (the
+engine's own L<Langertha::Role::JSON/json> is one), so a message array holding
+images can be written to a log or a trace. Returns a compact description,
+B<never the image data>:
+
+    { type       => 'image',
+      source     => 'url' | 'base64',
+      url        => ...,     # only for a URL image
+      media_type => ...,     # when known
+      detail     => ...,     # when set
+      bytes      => ... }    # decoded payload size, when base64 is present
+
+C<source> is C<url> for an image built from a URL (even after
+L</ensure_base64> has fetched it; C<bytes> then gives the fetched size), and
+C<base64> otherwise. A C<data:> URL passed as C<url> is reported as
+C<base64> without the URL, because it I<is> the payload. This is not a wire
+format: request bodies are built by the C<to_*> serializers, never through
+C<TO_JSON>.
+
+=cut
+
 # --- Helpers ---
+
+# detail => ... out of a from_* constructor's %extra; undef means unset.
+sub _detail_arg {
+  my (%extra) = @_;
+  return defined $extra{detail} ? ( detail => $extra{detail} ) : ();
+}
 
 my %EXT_MAP = (
   jpg  => 'image/jpeg',

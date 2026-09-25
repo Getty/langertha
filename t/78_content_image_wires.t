@@ -10,6 +10,7 @@ use MIME::Base64 qw( encode_base64 );
 use HTTP::Response;
 use Test::LocalHTTPDaemon;
 use Langertha::Content::Image;
+use Path::Tiny ();
 
 # karr k267: Role::Chat serialized Content::Image with the chat-completions
 # shape on every non-Anthropic/Gemini engine. That is a 400 on the Open-Responses
@@ -64,6 +65,47 @@ my %ARGS = (
   is_deeply $both->to_openai( inline => 1 ),
     { type => 'image_url', image_url => { url => $DATA } },
     'to_openai(inline => 1) forces the data URL';
+}
+
+# --- detail hint (karr k273): only the OpenAI chat and Open-Responses wires
+#     have the field, so a relay (knarr k33) can pass image_url.detail through;
+#     every other wire must stay free of it (an unknown key is a 400 there). ---
+{
+  my $low = sub { Langertha::Content::Image->from_url( $URL, detail => 'low' ) };
+  my $inl = sub { Langertha::Content::Image->from_base64( $B64, media_type => 'image/png', detail => 'high' ) };
+
+  is_deeply body_of( engine( 'OpenAI', @{ $ARGS{OpenAI} } )->chat(
+    { role => 'user', content => [ $low->() ] } ) )->{messages}[0]{content},
+    [ { type => 'image_url', image_url => { url => $URL, detail => 'low' } } ],
+    'OpenAI chat body: image_url.detail';
+  is_deeply body_of( engine( 'OpenAIResponses', @{ $ARGS{OpenAIResponses} } )->chat(
+    { role => 'user', content => [ $low->() ] } ) )->{input}[0]{content},
+    [ { type => 'input_image', image_url => $URL, detail => 'low' } ],
+    'OpenAIResponses body: input_image.detail';
+  is_deeply url_img()->to_openai, { type => 'image_url', image_url => { url => $URL } },
+    'no detail set: no detail key on the OpenAI wire';
+
+  require Langertha::Engine::Anthropic;
+  my $anth = Langertha::Engine::Anthropic->new( api_key => 'k' );
+  my $body = $anth->json->encode( body_of( $anth->chat(
+    { role => 'user', content => [ $low->(), $inl->() ] } ) ) );
+  unlike $body, qr/"detail"/, 'Anthropic body carries no detail';
+  unlike $json->encode( $inl->()->to_gemini ), qr/detail/, 'to_gemini carries no detail';
+  is $inl->()->to_ollama, $B64, 'to_ollama: still the raw base64 string';
+  is_deeply $inl->()->to_lmstudio, { type => 'image', data_url => $DATA }, 'to_lmstudio carries no detail';
+
+  for my $ctor (
+    [ from_file   => sub { my $f = Path::Tiny->tempfile( SUFFIX => '.png' );
+                          $f->spew_raw('foo');
+                          Langertha::Content::Image->from_file( "$f", detail => 'auto' ) } ],
+    [ from_data   => sub { Langertha::Content::Image->from_data( 'foo', media_type => 'image/png', detail => 'auto' ) } ],
+    [ from_base64 => sub { Langertha::Content::Image->from_base64( $B64, media_type => 'image/png', detail => 'auto' ) } ],
+    [ from_url    => sub { Langertha::Content::Image->from_url( $URL, detail => 'auto' ) } ],
+  ) {
+    is $ctor->[1]->()->detail, 'auto', "$ctor->[0] accepts detail";
+  }
+  ok !eval { Langertha::Content::Image->from_url( $URL, detail => 'ultra' ); 1 },
+    'an unknown detail value is rejected';
 }
 
 # --- Open-Responses wire ---

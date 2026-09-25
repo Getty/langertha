@@ -38,6 +38,13 @@ Revision history for Langertha
       system_prompt still replaces the engine's; NousResearch's
       reasoning prompt leads the conversation in both cases.
 
+    - Langertha::Content::Image has a TO_JSON, so a message array holding
+      images encodes with convert_blessed (logs, traces): a compact
+      description (source, url, media_type, detail, decoded byte count),
+      never the image data. New optional detail attribute (low, high,
+      auto; every from_* takes it), sent as image_url.detail on OpenAI
+      chat and input_image.detail on Open-Responses, ignored elsewhere.
+
     - LM Studio native (/api/v1/chat) sends text as type text input
       parts, and since that endpoint takes no assistant messages, a
       history with assistant turns is cut to the user turn(s) after the

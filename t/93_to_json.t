@@ -316,4 +316,40 @@ sub roundtrip { return $json->decode( $json->encode( $_[0] ) ) }
     'engine->json encodes a blessed value object via TO_JSON (karr k120)' );
 }
 
+# --- Langertha::Content::Image (karr k273): a message array holding images
+#     must encode for logs/traces (knarr k33 choked on it), and the implicit
+#     path must never carry the base64 payload — one photo would be megabytes
+#     in every trace line. ---
+{
+  require Langertha::Content::Image;
+  my $bytes = 'x' x 1000;
+  my $inline = Langertha::Content::Image->from_data( $bytes,
+    media_type => 'image/png', detail => 'low' );
+  my $remote = Langertha::Content::Image->from_url('https://img.test/cat.jpg');
+  my $data_url = Langertha::Content::Image->new(
+    url => 'data:image/gif;base64,R0lGODlh', media_type => 'image/gif' );
+
+  my $got = roundtrip( [ { role => 'user', content => [ 'what?', $inline, $remote, $data_url ] } ] );
+  is( $got->[0]{content}, [
+      'what?',
+      { type => 'image', source => 'base64', media_type => 'image/png',
+        detail => 'low', bytes => 1000 },
+      { type => 'image', source => 'url', url => 'https://img.test/cat.jpg',
+        media_type => 'image/jpeg' },
+      { type => 'image', source => 'base64', media_type => 'image/gif' },
+    ],
+    'Content::Image TO_JSON: compact shape, decoded byte count, no payload' );
+
+  my $encoded = $json->encode( { img => $inline } );
+  unlike( $encoded, qr/\Q${\ $inline->base64 }\E/, 'the base64 payload is not in the JSON' );
+  unlike( $encoded, qr/R0lGODlh/, '... nor a data: URL passed as url' );
+
+  require Langertha::Engine::OpenAI;
+  my $engine = Langertha::Engine::OpenAI->new( api_key => 'test', model => 'gpt-4o' );
+  my $back = $engine->json->decode( $engine->json->encode( { messages => [
+    { role => 'user', content => [ $remote ] } ] } ) );
+  is( $back->{messages}[0]{content}[0]{source}, 'url',
+    'engine->json (Role::JSON, convert_blessed) encodes a message array with an image' );
+}
+
 done_testing;
