@@ -21,15 +21,18 @@ and lane are in the house rules. Agents in this repo:
 |---|---|
 | Implement / refactor / debug / test behavior-relevant code | `langertha-worker` (default) |
 | Async & transport: Future/IO::Async semantics, HTTP backend seam, streaming, MetricsPoll, hangs | `langertha-async-worker` |
+| Change the wire seam itself: Tool/ToolCall/ToolResult/ToolChoice, capability registry, `chat_f` rewrite matrix, reasoning/cache wire formats | `langertha-wire-worker` |
 | Review a diff / branch / fix wave (read-only, severity-ranked findings + verdict) | `langertha-reviewer` |
 | Write / extend tests (regression, TDD red phase, fixtures, transport tests) | `langertha-test-writer` |
 | User-facing POD, `lib/Langertha.pm` catalogues, `Changes` entries | `langertha-pod-writer` |
+| Pre-release audit (prereqs, Changes, build, sibling pins) — reports, never releases | `langertha-release-checker` |
 | Backfill & record architecture decisions in `docs/adr/` | `langertha-adr-auditor` |
 | Validate / red-team a plan against LLM-provider reality; market & provider Sonderheiten | `langertha-llm-advisor` |
 
 The natural chain: orchestrator plans → `langertha-llm-advisor` validates it against provider
-reality → `langertha-worker` (or `langertha-async-worker`) implements → `langertha-reviewer`
-reviews → `langertha-adr-auditor` records the decision.
+reality → `langertha-worker` (or the `langertha-async-worker` / `langertha-wire-worker`
+specialist) implements → `langertha-reviewer` reviews → `langertha-adr-auditor` records the
+decision → `langertha-release-checker` audits before a release.
 
 The agents carry their skills via `briefing.skills` (see `.claude/agents/`); the main agent
 delegates rather than loading them. Skill sources live under `.claude/skills/`.

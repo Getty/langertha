@@ -32,7 +32,8 @@ over speed on non-trivial work; use judgment on trivial tasks.
 This rule depends on whether the Agent/Task tool is available to you.
 
 - **You can spawn subagents** (orchestrating main agent): Do NOT touch behavior-relevant
-  Langertha code yourself — delegate to `langertha-worker`. Your lane: coordinate, inspect,
+  Langertha code yourself — delegate to `langertha-worker` or the specialist whose lane it is
+  (table in `CLAUDE.md`). Your lane: coordinate, inspect,
   plan, review diffs, run tests, manage git, write/curate ADRs and non-behavioral docs. When
   in doubt, delegate. Why: the `langertha-*` agents get their skills force-loaded via
   `briefing.skills` (perl-ai-langertha, getty-perl-moose, …); the bare main agent gets no briefing
