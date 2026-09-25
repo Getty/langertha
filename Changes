@@ -26,8 +26,8 @@ Revision history for Langertha
       of a catalogue endpoint (OpenRouter, Mistral, LM Studio, TSystems),
       and $engine->import_learned_capabilities($learned) hands the result
       to other engine instances on the same endpoint without a request of
-      their own. supports() never probes by itself and leaves the
-      caller's $@ alone. The flag never blocks sending an image. Manifests
+      their own. supports() never probes by itself. The flag never blocks
+      sending an image. Manifests
       built by Langertha::Manifest::Builder publish it per model, probed
       answers included.
 
