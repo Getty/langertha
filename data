@@ -1,0 +1,29 @@
+---
+claimed_at: 2026-09-25T01:02:31Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:02:31Z
+created: 2026-09-24T22:41:23Z
+id: 193
+priority: low
+started: 2026-09-25T00:10:26Z
+status: done
+tags:
+- async
+- bug
+title: 'Future::AsyncAwait panic: require inside an async sub before a pending await,
+  with a coderef in @INC'
+updated: 2026-09-25T01:02:31Z
+---
+
+Found while fixing k188. On perl 5.40.1 + Future::AsyncAwait 0.71, an async sub that does a first-time `require Foo` and then suspends on a pending await aborts the process: "Future::AsyncAwait panic: TODO: Unsure how to handle a savestack entry of SAVEt_SV with gv != PL_errgv ($main::INC)" — but only when @INC contains a coderef hook (perl 5.38+ localizes $INC around hook calls). Minimal repro: perl -e 'BEGIN{unshift @INC, sub{return}} use Future; use Future::AsyncAwait; my $p=Future->new; async sub foo { require Mx; await $p } my $f=foo(); $p->done(1); $f->get' (with an Mx.pm on the path). Langertha async subs doing lazy requires before an await: e.g. MetricsPoll::export_otlp_f (require Langertha::Runtime::Metrics::OTLP), probably others. Users with coderef @INC hooks (PAR, lib::relative-style loaders, test blockers) on a real async backend would crash. t/48_metrics_sync_fallback.t preloads OTLP to avoid it. Done = decide: hoist the requires out of the async subs (or before any await is fine — the issue is the require savestack?) — verify exactly which position triggers it, and report upstream to PEVANS if it is an F::AA gap.
+
+2026-09-25 00:14 Fixed in 0b5b169 (branch k193-194). Repro matrix (perl 5.40.1, F::AA 0.71, Future 0.52, pass-through coderef hook sub{return} first in @INC, then first-time require + await on a PENDING future): PANIC = require at sub top level before first await; require between awaits; require in postfix-if / if-block (also non-constant cond); require $string. SAFE = require after the last await; require in a nested plain (non-async) sub called before the await; eval-string require; require in a bare block {..} or do{..}; already-loaded module; await on an already-done future; no coderef hook. Cause: perl 5.38+ pushes `local $INC` (SAVEt_SV) around the hook call; when the require sits directly in the async frame the entry is still on the savestack at suspend time, and F::AA only handles SAVEt_SV for PL_errgv. Abort is SIGABRT, not catchable by eval. Inventory of requires inside async subs in lib/: MetricsPoll::export_otlp_f (OTLP + HTTP::Request) and poll_metrics_f (HTTP::Request) -> fixed (HTTP::Request at file scope, OTLP via plain helper _otlp_json); CachedContent::list_cached_contents_f `require URI` -> not affected (that async sub never awaits, and URI is already loaded by Role::HTTP), left alone. Regression test t/48_async_require_inc_hook.t (child perl, fails with signal 6 before the fix); t/48 OTLP preload removed.
+
+UPSTREAM BUG-REPORT DRAFT (not filed; for PEVANS / rt.cpan.org Future-AsyncAwait):
+Title: panic "Unsure how to handle a savestack entry of SAVEt_SV with gv != PL_errgv ($main::INC)" when an async sub suspends after a require that ran an @INC hook
+Versions: perl 5.40.1 (x86_64-linux-gnu-thread-multi, Debian), Future::AsyncAwait 0.71, Future 0.52. Needs perl >= 5.38 (require localizes $INC around @INC hook calls).
+Repro (Mx.pm = "package Mx; 1;" in cwd):
+  perl -I. -e 'BEGIN { unshift @INC, sub { return } } use Future; use Future::AsyncAwait; my $p = Future->new; async sub foo { require Mx; await $p; 1 } my $f = foo(); $p->done(1); print $f->get, "\n"'
+Expected: prints 1. Actual: process aborts (SIGABRT) at the await with the panic above; not catchable by eval.
+Notes: no panic without the coderef hook, with the require after the last await, inside a nested block/do{} or a called plain sub, or when awaiting an already-done future. Suggest suspend/resume handle SAVEt_SV generally (or at least for PL_incgv / $INC), as it does for $@.
