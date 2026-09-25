@@ -338,6 +338,74 @@ sub chat_response {
     my ( $self, $response ) = @_;
     my $data = $self->parse_response($response);
 
+    my %out = $self->_responses_walk_output($data);
+
+    # Normalize usage to chat-style keys (Langertha::Usage / Goldmine read
+    # prompt_tokens/completion_tokens off the %{} overload), while carrying the
+    # Responses-native detail blocks through verbatim: input_tokens_details holds
+    # the automatic prompt-cache read/write counts, and Langertha::Usage->from_hash
+    # parses them onto cached_tokens / cache_write_tokens the same way it does the
+    # chat wire (karr #159). The per-call cost block rides along under usage.cost.
+    # The chat-spelled aliases stay so the overload keeps returning
+    # prompt_tokens/completion_tokens for existing callers (t/60, t/91).
+    my $usage = $data->{usage} // {};
+    my $normalized_usage = {
+        prompt_tokens     => $usage->{input_tokens},
+        completion_tokens => $usage->{output_tokens},
+        total_tokens      => $usage->{total_tokens},
+        ( ref $usage->{input_tokens_details} eq 'HASH'
+            ? ( input_tokens_details => $usage->{input_tokens_details} ) : () ),
+        ( ref $usage->{cost} eq 'HASH'
+            ? ( cost => $usage->{cost} ) : () ),
+    };
+    # Read output_tokens_details into a lexical and ref-check before deref: the
+    # chained rvalue $usage->{output_tokens_details}{reasoning_tokens} would
+    # autovivify output_tokens_details => {} into $data->{usage} (the same ref as
+    # raw => $data) when the provider omits the block, polluting the trace. -- k168
+    my $otd = $usage->{output_tokens_details};
+    if ( ref($otd) eq 'HASH' && $otd->{reasoning_tokens} ) {
+        $normalized_usage->{completion_tokens_details}
+            = { reasoning_tokens => $otd->{reasoning_tokens} };
+    }
+
+    return Langertha::Response->new(
+        content       => $out{content},
+        raw           => $data,
+        $data->{id}      ? ( id => $data->{id} )      : (),
+        $data->{model}   ? ( model => $data->{model} ) : (),
+        defined $out{finish_reason} ? ( finish_reason => $out{finish_reason} ) : (),
+        usage         => $normalized_usage,
+        # created_at is the Responses envelope's epoch stamp; Response.BUILDARGS
+        # runs it through Langertha::Moment->from_wire (ADR 0017), which drops it
+        # if unreadable rather than failing the whole reply.
+        defined $data->{created_at} ? ( created => $data->{created_at} ) : (),
+        $out{tool_calls} ? ( tool_calls => $out{tool_calls} ) : (),
+        defined $out{thinking} ? ( thinking => $out{thinking} ) : (),
+        $self->_responses_extra_fields($data),
+    );
+}
+
+=method chat_response
+
+    my $response = $engine->chat_response($http_response);
+
+Walks the C<output[]> array (C<message> / C<reasoning> / top-level
+C<function_call>), normalizes usage, maps C<created_at> to
+L<Langertha::Response/created>, and returns a L<Langertha::Response>. Extra
+provider fields come from L</_responses_extra_fields>.
+
+=cut
+
+# The one output[] walker (karr k212). chat_response reads a whole response
+# with it, and parse_stream_chunk reads the response object that the terminal
+# response.completed / response.incomplete event carries, so a streamed and a
+# non-streamed reply of the same response can never disagree about its tool
+# calls, thinking, or finish_reason. Returns a hash: content (concatenated
+# output_text, '' when none), and -- only when present -- thinking,
+# finish_reason, and tool_calls (ArrayRef of Langertha::ToolCall).
+sub _responses_walk_output {
+    my ( $self, $data ) = @_;
+
     my ( $text, @tc_data, $finish_reason, $thinking );
 
     for my $item ( @{ $data->{output} // [] } ) {
@@ -386,63 +454,13 @@ sub chat_response {
         $finish_reason = 'tool_calls';
     }
 
-    # Normalize usage to chat-style keys (Langertha::Usage / Goldmine read
-    # prompt_tokens/completion_tokens off the %{} overload), while carrying the
-    # Responses-native detail blocks through verbatim: input_tokens_details holds
-    # the automatic prompt-cache read/write counts, and Langertha::Usage->from_hash
-    # parses them onto cached_tokens / cache_write_tokens the same way it does the
-    # chat wire (karr #159). The per-call cost block rides along under usage.cost.
-    # The chat-spelled aliases stay so the overload keeps returning
-    # prompt_tokens/completion_tokens for existing callers (t/60, t/91).
-    my $usage = $data->{usage} // {};
-    my $normalized_usage = {
-        prompt_tokens     => $usage->{input_tokens},
-        completion_tokens => $usage->{output_tokens},
-        total_tokens      => $usage->{total_tokens},
-        ( ref $usage->{input_tokens_details} eq 'HASH'
-            ? ( input_tokens_details => $usage->{input_tokens_details} ) : () ),
-        ( ref $usage->{cost} eq 'HASH'
-            ? ( cost => $usage->{cost} ) : () ),
-    };
-    # Read output_tokens_details into a lexical and ref-check before deref: the
-    # chained rvalue $usage->{output_tokens_details}{reasoning_tokens} would
-    # autovivify output_tokens_details => {} into $data->{usage} (the same ref as
-    # raw => $data) when the provider omits the block, polluting the trace. -- k168
-    my $otd = $usage->{output_tokens_details};
-    if ( ref($otd) eq 'HASH' && $otd->{reasoning_tokens} ) {
-        $normalized_usage->{completion_tokens_details}
-            = { reasoning_tokens => $otd->{reasoning_tokens} };
-    }
-
-    my @tcs = map { $self->_parse_function_call($_) } @tc_data;
-
-    return Langertha::Response->new(
-        content       => $text // '',
-        raw           => $data,
-        $data->{id}      ? ( id => $data->{id} )      : (),
-        $data->{model}   ? ( model => $data->{model} ) : (),
+    return (
+        content => $text // '',
+        defined $thinking      ? ( thinking      => $thinking )      : (),
         defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
-        usage         => $normalized_usage,
-        # created_at is the Responses envelope's epoch stamp; Response.BUILDARGS
-        # runs it through Langertha::Moment->from_wire (ADR 0017), which drops it
-        # if unreadable rather than failing the whole reply.
-        defined $data->{created_at} ? ( created => $data->{created_at} ) : (),
-        @tcs ? ( tool_calls => \@tcs ) : (),
-        defined $thinking ? ( thinking => $thinking ) : (),
-        $self->_responses_extra_fields($data),
+        @tc_data ? ( tool_calls => [ map { $self->_parse_function_call($_) } @tc_data ] ) : (),
     );
 }
-
-=method chat_response
-
-    my $response = $engine->chat_response($http_response);
-
-Walks the C<output[]> array (C<message> / C<reasoning> / top-level
-C<function_call>), normalizes usage, maps C<created_at> to
-L<Langertha::Response/created>, and returns a L<Langertha::Response>. Extra
-provider fields come from L</_responses_extra_fields>.
-
-=cut
 
 sub _parse_function_call {
     my ( $self, $block ) = @_;
@@ -550,9 +568,39 @@ sub parse_stream_chunk {
         );
     }
 
+    # A failed run ends the stream with response.failed (the error under
+    # response.error) instead of response.completed; a transport-level problem
+    # arrives as a top-level `error` event (code/message on the event itself).
+    # Both are terminal and carry no reply, so fail the stream loudly with the
+    # provider's own message -- the LMStudio parser's pattern: the croak fails
+    # the request future in chat_stream_realtime_f on every backend (ADR 0027),
+    # where returning undef would end the stream as an empty, silent success.
+    # -- karr k212
+    if ( $type eq 'response.failed' || $type eq 'error' ) {
+        my $err = $type eq 'error' ? $data : ( ref $data->{response} eq 'HASH' ? $data->{response}{error} : undef );
+        $err = $err->{error} if ref $err eq 'HASH' && ref $err->{error} eq 'HASH';
+        my $message = ref $err eq 'HASH' && defined $err->{message} ? $err->{message}
+                    : "$type without an error message";
+        my $code = ref $err eq 'HASH' && defined $err->{code} && !ref $err->{code} ? " ($err->{code})" : '';
+        croak "".( ref $self )." stream failed$code: $message";
+    }
+
     if ( $type eq 'response.completed' || $type eq 'response.incomplete' ) {
         my $resp  = $data->{response} // {};
         my $usage = $resp->{usage};
+        # The terminal event carries the whole response object, so its output[]
+        # goes through the same walker chat_response uses: the function calls
+        # land on this final chunk as finished Langertha::ToolCall objects, where
+        # aggregate_tool_calls collects them (karr k212). The incremental
+        # function-call events (output_item.added/.done, function_call_arguments
+        # .delta/.done) are deliberately not assembled -- the terminal output[]
+        # is complete and authoritative, and reading only it means a call can
+        # never arrive twice. Text is not taken from it: that already streamed as
+        # output_text.delta. Thinking is, because no reasoning delta event is
+        # read (drop it here if one ever is). finish_reason is set only when the
+        # reply carries tool calls, which keeps a text-only stream's final chunk
+        # exactly as it was.
+        my %out = $self->_responses_walk_output($resp);
         # A search-augmented reply carries its sources as a search_results item
         # in the terminal response.output[] array — the same block
         # _responses_extra_fields lifts on the non-streaming path. Reuse that
@@ -587,6 +635,11 @@ sub parse_stream_chunk {
             } ) : (),
             defined $cached ? ( cached_tokens => $cached ) : (),
             $extra{citations} ? ( citations => $extra{citations} ) : (),
+            $out{tool_calls} ? (
+                tool_calls    => $out{tool_calls},
+                finish_reason => $out{finish_reason},
+            ) : (),
+            defined $out{thinking} ? ( thinking => $out{thinking} ) : (),
         );
     }
 
@@ -601,12 +654,20 @@ sub parse_stream_chunk {
 
 Parses one typed-SSE data payload from a Responses/Agent stream. Returns a
 L<Langertha::Stream::Chunk> for C<response.output_text.delta> (text) and the
-terminal C<response.completed> (final chunk: usage, the prefix-cache read count
-from C<usage.input_tokens_details.cached_tokens> lifted onto
-L<Langertha::Stream::Chunk/cached_tokens>, any C<usage.cost> carried through the
-usage hash, and — via L</_responses_extra_fields> — any search-augmented
-C<citations> lifted from the completed C<output[]>), C<undef> for every other
-typed event.
+terminal C<response.completed> / C<response.incomplete> (final chunk: usage, the
+prefix-cache read count from C<usage.input_tokens_details.cached_tokens> lifted
+onto L<Langertha::Stream::Chunk/cached_tokens>, any C<usage.cost> carried
+through the usage hash, and — via L</_responses_extra_fields> — any
+search-augmented C<citations> lifted from the completed C<output[]>), C<undef>
+for every other typed event.
+
+The final chunk's C<output[]> is read by the same walker as L</chat_response>:
+the reply's function calls land on it as L<Langertha::Stream::Chunk/tool_calls>
+(collect them with L<Langertha::Role::Chat/aggregate_tool_calls>), together with
+C<finish_reason> C<tool_calls>, and a reasoning summary lands on its
+C<thinking>. The incremental function-call events are not assembled, so a call
+is delivered exactly once. A C<response.failed> or C<error> event croaks with
+the provider's error code and message, which fails the stream.
 
 =cut
 

@@ -38,6 +38,14 @@ Revision history for Langertha
       and later), where the drop used to be silent. Taken from Moonshot's
       documentation, not verified against the live API.
 
+    - The Open-Responses stream parser (Role::ResponsesCompatible, used by
+      Perplexity's streaming) now delivers the reply's function calls: they
+      arrive on the final chunk as Langertha::ToolCall objects, the same ones
+      the non-streaming reply has, and aggregate_tool_calls collects them. A response.failed or error
+      event fails the stream with the provider's message instead of ending it
+      silently. Built from OpenAI's documented streaming events, not verified
+      against a live stream.
+
     - MiniMaxAnthropic no longer sends output_config.effort, which MiniMax's
       Anthropic-compatible schema does not have. A reasoning_effort still
       sends thinking {type: adaptive}, which turns thinking on. Taken from

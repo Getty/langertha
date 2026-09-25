@@ -114,9 +114,12 @@ has tool_calls => (
 
 Optional ArrayRef of L<Langertha::ToolCall> objects associated with
 this chunk. Populated when the engine emits tool-call information
-mid-stream (e.g. Anthropic's C<content_block_stop> for a C<tool_use>
-block, or the final OpenAI delta carrying assembled tool_calls). Most
-chunks have no tool calls — use C<has_tool_calls> to check.
+on the stream. The Open-Responses envelope
+(L<Langertha::Role::ResponsesCompatible>) puts the reply's function calls
+on its final chunk, read from the terminal C<response.completed> event; the
+Chat-Completions and Anthropic dialects do not populate it yet. Most chunks
+have no tool calls — use C<has_tool_calls> to check, or
+L<Langertha::Role::Chat/aggregate_tool_calls> to collect them.
 
 =cut
 

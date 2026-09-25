@@ -898,12 +898,12 @@ This is the collection seam for streamed tool-call aggregation, the
 streaming counterpart to L<Langertha::Response/tool_calls>. Assembling
 fragmented tool-call deltas (OpenAI's C<delta.tool_calls> stream,
 Anthropic's C<input_json_delta>) into a finished L<Langertha::ToolCall>
-on the chunk belongs in C<parse_stream_chunk> — but B<no engine dialect
-does that assembly today>, so C<Stream::Chunk> carries no tool calls on
-the streaming path and this helper returns an empty list in practice. It
-is the collection point for when an engine implements that assembly, a
-known and accepted gap; use the non-streaming path when you need tool
-calls.
+on the chunk belongs in C<parse_stream_chunk>. Today only the
+Open-Responses envelope (L<Langertha::Role::ResponsesCompatible>) delivers
+streamed tool calls, read off its terminal C<response.completed> event; the
+Chat-Completions and Anthropic dialects do not assemble their deltas yet, so
+on those this helper returns an empty list — use the non-streaming path when
+you need tool calls there.
 
 =cut
 
