@@ -1,0 +1,18 @@
+---
+claimed_at: 2026-09-25T05:03:35Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T05:03:35Z
+created: 2026-09-25T03:41:46Z
+id: 225
+priority: low
+started: 2026-09-25T04:13:43Z
+status: done
+tags:
+- moonshot
+- reasoning
+title: 'Moonshot K2 Thinking: default_response_size 4096 < Kimis empfohlene max_tokens>=16000'
+updated: 2026-09-25T05:03:35Z
+---
+
+Aus k219-Advisor (2026-09-25, Doku): Kimi empfiehlt max_tokens >= 16000 bei aktivem Thinking, weil reasoning_content gegen max_tokens zaehlt. Engine::Moonshot default_response_size = 4096 -> K2-Thinking-Antworten koennen abgeschnitten werden. Loesung: per-Modell-Default (K2.x/K3 thinking-on) oder Doku-Hinweis; kein stilles Hochsetzen ohne ADR-Update (Kosten!).
