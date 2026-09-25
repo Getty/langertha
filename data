@@ -1,0 +1,18 @@
+---
+claimed_at: 2026-09-25T15:58:49Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T15:58:49Z
+created: 2026-09-25T15:49:49Z
+id: 264
+priority: low
+started: 2026-09-25T15:50:12Z
+status: done
+tags:
+- tests
+- conventions
+title: Convert remaining Test::More test files to Test2::Bundle::More (house convention)
+updated: 2026-09-25T15:58:49Z
+---
+
+Pre-release audit: 9 test files still use bare Test::More (pre-0.502). House test framework is Test2::Bundle::More. Convert without changing what they assert; keep plans/done_testing semantics; watch subtest/is_deeply/isa_ok/can_ok/BAIL_OUT/explain differences.
