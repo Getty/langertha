@@ -140,13 +140,13 @@ sub xargs {
   my $cfg = $self->data;
 
   if ( ref $cfg->{steering} eq 'HASH' ) {
-    return { steer => $self->json->encode( $cfg->{steering} ) };
+    return { steer => $self->encode_json_text( $cfg->{steering} ) };
   }
 
   if ( ref $cfg->{hidden_states} eq 'HASH' ) {
     my $layers = $cfg->{hidden_states}{layers};
     if ( ref $layers eq 'ARRAY' && @$layers ) {
-      return { output_hidden_states => $self->json->encode($layers) };
+      return { output_hidden_states => $self->encode_json_text($layers) };
     }
     return { output_hidden_states => JSON::MaybeXS::true() };
   }
@@ -159,7 +159,7 @@ sub xargs {
     }
     my $mode = $cfg->{hookq} ? ( $cfg->{hookq}{hookq_mode} // 'last_token' ) : 'last_token';
     return {
-      output_qk  => $self->json->encode( \%layer_to_heads ),
+      output_qk  => $self->encode_json_text( \%layer_to_heads ),
       hookq_mode => $mode,
     };
   }

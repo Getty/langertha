@@ -180,7 +180,7 @@ sub _hermes_schema_messages {
   return $conversation
     unless ref $format eq 'HASH' && ( $format->{type} // '' ) eq 'json_schema'
       && ref $format->{json_schema} eq 'HASH' && ref $format->{json_schema}{schema} eq 'HASH';
-  my $prompt = sprintf( $self->hermes_schema_prompt, $self->json->encode( $format->{json_schema}{schema} ) );
+  my $prompt = sprintf( $self->hermes_schema_prompt, $self->encode_json_text( $format->{json_schema}{schema} ) );
   return [ { role => 'system', content => $prompt }, @$conversation ];
 }
 

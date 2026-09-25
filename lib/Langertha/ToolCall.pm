@@ -4,7 +4,13 @@ our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 use Encode qw( encode_utf8 );
-use JSON::MaybeXS qw( encode_json decode_json );
+use JSON::MaybeXS qw( decode_json );
+
+# Character-string codec for JSON nested inside a JSON body or model text
+# (function.arguments, the hermes <tool_call> payload). The transport encodes
+# the whole body to UTF-8 once; a byte string here would be encoded twice
+# ("Köln" -> "KÃ¶ln"). -- karr k252, ADR 0010
+my $TEXT_JSON = JSON::MaybeXS->new( utf8 => 0, canonical => 1 );
 
 has name => (
   is       => 'ro',
@@ -309,7 +315,7 @@ sub extract_hermes_from_text {
   my @calls;
   while ( $clean =~ m{<tool_call>\s*(.*?)\s*</tool_call>}sg ) {
     my $json = $1;
-    my $obj = eval { decode_json($json) };
+    my $obj = eval { $TEXT_JSON->decode($json) };
     next unless ref($obj) eq 'HASH';
     next unless defined $obj->{name} && length $obj->{name};
     push @calls, $class->new(
@@ -332,7 +338,7 @@ sub to_openai {
     type     => 'function',
     function => {
       name      => $self->name,
-      arguments => encode_json( $self->arguments ),
+      arguments => $TEXT_JSON->encode( $self->arguments ),
     },
   };
 }

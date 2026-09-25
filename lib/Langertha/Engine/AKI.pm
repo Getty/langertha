@@ -257,7 +257,7 @@ sub chat_request {
     POST => $self->url.'/api/call/'.$model,
     sub { $self->chat_response(shift) },
     key => $self->api_key,
-    chat_context => $self->json->encode($messages),
+    chat_context => $self->encode_json_text($messages),
     exists $controls->{temperature}
       ? ( temperature => $controls->{temperature} )
       : ( $self->has_temperature ? ( temperature => $self->temperature ) : () ),

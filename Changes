@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Non-ASCII text in tool arguments and tool results reaches the
+      provider intact (Köln no longer arrives as KÃ¶ln). ToolCall->to_openai
+      and ToolResult->to return character strings, as do the Hermes tool
+      prompt, AKI native's chat_context and vLLM-Hook's vllm_xargs; the
+      request body is UTF-8 encoded once. Hermes <tool_call> blocks with
+      non-ASCII arguments are no longer dropped by
+      ToolCall->extract_hermes_from_text, and the JSON the /anthropic shims
+      lift into content is characters. New $engine->encode_json_text.
+
     - chat_f on a Hermes engine (NousResearch, AKI native) sends the tools
       the way chat_with_tools_f does, in the system prompt instead of an
       ignored tools key, and <tool_call> blocks in the reply land on

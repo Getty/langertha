@@ -3,7 +3,7 @@ package Langertha::Role::JSON;
 our $VERSION = '0.503';
 use Moose::Role;
 use JSON::MaybeXS;
-use Encode qw( encode_utf8 );
+use Encode qw( encode_utf8 decode_utf8 );
 
 sub json { shift->_json }
 
@@ -24,6 +24,25 @@ configured with C<utf8 =E<gt> 1> and expects raw bytes, so this helper
 UTF-8-encodes the text before delegating to it. Use this instead of
 C<< $self->json->decode >> whenever the source is Perl-Unicode rather
 than the raw HTTP body.
+
+=cut
+
+sub encode_json_text {
+  my ( $self, $data ) = @_;
+  return decode_utf8( $self->_json->encode($data) );
+}
+
+=method encode_json_text
+
+    my $text = $engine->encode_json_text($data);
+
+The mirror of L</decode_json_text>: encodes C<$data> to a JSON I<character>
+string, for JSON that travels as a string value inside another JSON document
+or inside prompt text (a hermes tool prompt, AKI's C<chat_context>, a lifted
+structured-output C<content>). The request body is encoded to UTF-8 bytes
+exactly once, by L</json> at the transport; a nested value encoded to bytes
+here would be encoded a second time there. Same settings as L</json>
+(C<canonical>, C<convert_blessed>).
 
 =cut
 

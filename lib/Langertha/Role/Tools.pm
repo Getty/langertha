@@ -178,7 +178,7 @@ sub build_tool_chat_request {
 # single chat_f / chat_stream_realtime_f turn (karr k231).
 sub _hermes_tool_messages {
   my ( $self, $conversation, $formatted_tools ) = @_;
-  my $tool_prompt = sprintf( $self->hermes_tool_prompt, $self->json->encode($formatted_tools) );
+  my $tool_prompt = sprintf( $self->hermes_tool_prompt, $self->encode_json_text($formatted_tools) );
   return [ { role => 'system', content => $tool_prompt }, @$conversation ];
 }
 

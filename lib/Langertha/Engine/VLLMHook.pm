@@ -134,7 +134,7 @@ sub _encode_xargs {
   for my $k ( keys %$xargs ) {
     my $v = $xargs->{$k};
     $out{$k} = ( ref $v eq 'HASH' || ref $v eq 'ARRAY' )
-      ? $self->json->encode($v)
+      ? $self->encode_json_text($v)
       : $v;
   }
   return \%out;

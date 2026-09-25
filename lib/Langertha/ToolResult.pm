@@ -89,8 +89,11 @@ error flag (Anthropic C<is_error>).
 
 =cut
 
-# Shared encoder, byte-identical to the engines' Role::JSON instance.
-my $JSON = JSON::MaybeXS->new( utf8 => 1, canonical => 1 );
+# Shared encoder for result payloads that ride as a JSON *string* inside the
+# request body (or inside hermes text): characters, not bytes. The transport
+# (Role::JSON) encodes the whole body to UTF-8 once; a byte string here would be
+# encoded twice ("Köln" -> "KÃ¶ln"). Same key order as Role::JSON. -- karr k252
+my $JSON = JSON::MaybeXS->new( utf8 => 0, canonical => 1 );
 
 # Flatten the MCP content array down to a plain text string.
 sub _text {

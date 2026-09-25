@@ -542,7 +542,7 @@ sub chat_response {
   # fallback for callers invoking chat_response directly.
   $rf_routed = $self->has_response_format unless defined $rf_routed;
   if ( $rf_routed && @tcs ) {
-    $text = $self->json->encode( $tcs[0]->arguments );
+    $text = $self->encode_json_text( $tcs[0]->arguments );
   }
   return Langertha::Response->new(
     content       => $text,
