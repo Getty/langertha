@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T01:33:13Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:33:13Z
+created: 2026-09-25T00:54:39Z
+id: 200
+priority: low
+started: 2026-09-25T01:09:43Z
+status: done
+tags:
+- capabilities
+- manifest
+title: Registry reports prompt_cache_key for self-hosted OpenAIBase engines
+updated: 2026-09-25T01:33:13Z
+---
+
+Found in the k191 re-review. OpenAIBase keeps prompt_cache_key (the OpenAI routing hint) for every subclass, so self-hosted engines (vLLM, SGLang, LlamaCpp, OllamaOpenAI, LMStudioOpenAI, ...) report it even though their servers do not honor an OpenAI prompt_cache_key. The manifest Builder (ADR 0029) publishes it on their model entries via the model-scoped allowlist. Check per engine whether the wire accepts/honors it; clear via around engine_capabilities (ADR 0002 layer 2) where it does not. Deferred out of k191.
+
+2026-09-25 01:18 Done on branch k200 (5e0ea45 test, d0b0361 fix, 3a060ca ADR). Cleared prompt_cache_key on vLLM/VLLMHook, SGLang, LlamaCpp, OllamaOpenAI, LMStudioOpenAI (source/doc evidence in the engine comments). Role::PromptCache::prompt_cache_kwargs_for now drops a cache control the engine does not advertise, so the wire follows the flag. Honored: OpenAI, OpenRouter. Unverified, left as-is: DeepSeek Groq XAI Mistral MiniMax Moonshot NousResearch Cerebras Replicate HuggingFace AKIOpenAI TSystems Scaleway Hetzner. XAI docs show prompt_cache_key only for the Responses API (chat completions uses the x-grok-conv-id header), a follow-up candidate.
