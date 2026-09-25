@@ -23,7 +23,8 @@ use Langertha::Reasoning::Profile;
   no warnings 'redefine';
   my $orig = \&Langertha::Reasoning::Profile::_family_profiles;
   *Langertha::Reasoning::Profile::_family_profiles = sub {
-    my @rows = grep { $_->source !~ /uncurated gpt-5\.N/ } $orig->();
+    # Identify the row by its model_match pattern, not by its source prose.
+    my @rows = grep { $_->model_match ne qr/\Agpt-5\.\d(?!\d)/ } $orig->();
     die "passthrough row not found -- update this test\n"
       if @rows == scalar( () = $orig->() );
     return @rows;
