@@ -263,3 +263,20 @@ the exemplar. What changed is only the unforced case: `tools` without a forced c
 as native function tools. Pinned in `t/68_perplexity_function_tools.t` and
 `t/68_perplexity_agent.t`.
 
+## Update (k234 — the hermes wire takes direction 1; the schema also rides the system prompt)
+
+The hermes engines (`NousResearch`, `AKI` native) used to claim `tools_native` and every
+`tool_choice_*` through `Role::Tools`, so direction 1 never fired on them (ADR 0001, k231 Update).
+`Role::HermesTools` now clears the native flags (ADR 0002, k234 Update). `NousResearch` keeps the
+`response_format_json_{object,schema}` flags from `OpenAIBase`, so a forced named tool there is
+rewritten to `response_format=json_schema` plus a synthetic `ToolCall`, as on Perplexity. The
+rewrite runs before `_hermes_prompt_tools`, so the tools and the choice are already gone and no
+tool prompt is sent.
+
+On this wire the rewrite also puts the schema into a leading system message, built from
+`hermes_schema_prompt` (the Hermes structured-output form, `<schema>…</schema>`). Whether the
+Nous backend enforces `response_format` is not documented, and a Hermes model follows a schema in
+its system prompt, so the synthetic `ToolCall` does not depend on the backend honoring the field.
+`AKI` native has no `response_format` field, so direction 1 cannot fire there: a forced choice is
+still dropped with a carp (k231), and the POD points to `AKIOpenAI`. Streaming has no rewrite and
+is unchanged. Documentation only, not live-verified. Pinned in `t/69_chat_f_wire_tools.t`.

@@ -65,3 +65,17 @@ table keyed on `chat_model`, applied *inside* `engine_capabilities` after the ro
 The `around` hatch is unchanged and is now specifically the **engine-wide endpoint gate** (the
 whole endpoint never accepts a field); per-model reality lives in the new table. Layers 1 and 2
 of this decision stand as written. See ADR 0019.
+
+## Update (k234 — a layer-2 rule on a role: Role::HermesTools clears the native tool flags)
+
+Composing `Role::Tools` gives `tools_native`, `tool_choice_{auto,any,none,named}` and
+`parallel_tool_use`, but the hermes wire has no `tools`, `tool_choice` or `parallel_tool_calls`
+body key: the tools ride the system prompt, which cannot force a tool. `Role::HermesTools` now
+carries an `around engine_capabilities` that deletes `tools_native`, `tool_choice_any`,
+`tool_choice_named` and `parallel_tool_use`. `tools_hermes`, `tool_choice_auto` (what the prompt
+says) and `tool_choice_none` (`chat_f` withholds the tools, k231) stay. The rule sits on the role,
+not on each engine, because its two consumers have different parents (`OpenAIBase`, `Remote`) —
+the ADR 0016 placement. It only deletes, so its order against an engine's own `around` or its
+layer-3 corrections does not change the result. It is not a layer-3 row: `tool_wire_format` is
+per engine, so a per-model `tools_native` would misdescribe the wire. Pinned in
+`t/78_engine_capabilities.t`.
