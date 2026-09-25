@@ -34,6 +34,12 @@ Revision history for Langertha
       response_format, as they do for every named model, instead of sending
       the request the provider rejects.
 
+    - SGLang croaks on tools with a forced tool_choice (required or a named
+      tool) combined with a json_schema, json_object or structural_tag
+      response_format, which the SGLang server rejects with HTTP 400;
+      tool_choice auto with a response_format is still sent. Exclusion rules
+      in model_capability_exclusions also receive tool_choice_forced.
+
     - New: server-side tools on OpenAIResponses. OpenAI's hosted tools
       (web_search, file_search, code_interpreter, image_generation, remote
       mcp, hosted shell and tool_search) go in the tools list of chat_f,

@@ -475,11 +475,11 @@ sub _warn_control_message_args {
 # model-id string (matched with eq) or a qr// regex (matched against
 # chat_model). $rule is a CODEREF — the concrete seam, deliberately NOT a
 # declarative constraint DSL (karr #148) — invoked as $self->$rule(%request)
-# with has_tools / response_format / streaming; it croaks when the request hits
-# the combination the stack rejects. The default is an empty list, so engines
-# that constrain nothing pay nothing; an engine whose serving stack rejects the
-# combination declares an all-models rule by overriding
-# model_capability_exclusions (Groq, Cerebras).
+# with has_tools / tool_choice_forced / response_format / streaming; it croaks
+# when the request hits the combination the stack rejects. The default is an
+# empty list, so engines that constrain nothing pay nothing; an engine whose
+# serving stack rejects the combination declares an all-models rule by
+# overriding model_capability_exclusions (Groq, Cerebras, SGLang).
 sub model_capability_exclusions { return () }
 
 # Consulted by chat_f (streaming => 0) and chat_stream_realtime_f
@@ -532,13 +532,15 @@ regex (matched against C<chat_model>) — model ids come in families and, throug
 aggregators, carry a C<provider/> prefix, so a regex catches the routed backend
 id too. C<$rule> is a B<coderef> (the concrete seam — deliberately not a
 constraint DSL) invoked as C<< $self->$rule(%request) >> with C<has_tools>,
-C<response_format> and C<streaming>; it C<croak>s when the request hits the
-combination the model rejects.
+C<tool_choice_forced> (true for a C<tool_choice> of C<any>/C<required> or a
+named tool, as the caller passed it), C<response_format> and C<streaming>; it
+C<croak>s when the request hits the combination the model rejects.
 
 Where the rule lives depends on what the constraint belongs to. Groq and
 Cerebras reject C<tools> alongside a structured-output C<response_format> across
 every model they serve — a property of the serving stack — so each declares an
-all-models (C<qr//>) rule by overriding this method. A constraint that belonged
+all-models (C<qr//>) rule by overriding this method. SGLang does the same for a
+forced C<tool_choice> combined with a C<response_format>. A constraint that belonged
 to one model would instead be keyed on that model id or family regex, leaving a
 sibling model on the same engine unaffected. The default is an empty list, so an
 engine that constrains nothing pays nothing.
@@ -557,6 +559,18 @@ sub _chat_tools_requested {
   return 0 unless exists $opts->{tool_choice};
   my $tc = Langertha::ToolChoice->from_hash( $opts->{tool_choice} );
   return ( $tc && $tc->type eq 'tool' ) ? 1 : 0;
+}
+
+# True when the request forces a tool call: tool_choice any (wire 'required')
+# or a named tool (karr k245). Read from the caller's tool_choice before any
+# tool_choice gate runs, so an exclusion rule sees what was asked; after the
+# ADR 0005 rewrite (which deletes tool_choice) it is 0. Feeds the
+# capability-exclusion hook as tool_choice_forced.
+sub _chat_tool_choice_forced {
+  my ( $self, $opts ) = @_;
+  return 0 unless defined $opts->{tool_choice};
+  my $tc = Langertha::ToolChoice->from_hash( $opts->{tool_choice} );
+  return ( $tc && ( $tc->type eq 'any' || $tc->type eq 'tool' ) ) ? 1 : 0;
 }
 
 async sub chat_f {
@@ -607,9 +621,10 @@ async sub chat_f {
   # effective request; walks the per-model exclusion table for the selected
   # chat_model and croaks on a combination the model rejects with an opaque 400.
   $self->_check_capability_exclusions(
-    has_tools       => $self->_chat_tools_requested(\%opts),
-    response_format => $opts{response_format},
-    streaming       => 0,
+    has_tools          => $self->_chat_tools_requested(\%opts),
+    tool_choice_forced => $self->_chat_tool_choice_forced(\%opts),
+    response_format    => $opts{response_format},
+    streaming          => 0,
   );
 
   # Extract the canonical controls (after the forced-tool fallback, which may
@@ -838,9 +853,10 @@ async sub chat_stream_realtime_f {
   # rejected only when streaming (e.g. Groq structured outputs, which do not
   # support streaming at all).
   $self->_check_capability_exclusions(
-    has_tools       => $self->_chat_tools_requested(\%opts),
-    response_format => $opts{response_format},
-    streaming       => 1,
+    has_tools          => $self->_chat_tools_requested(\%opts),
+    tool_choice_forced => $self->_chat_tool_choice_forced(\%opts),
+    response_format    => $opts{response_format},
+    streaming          => 1,
   );
 
   # Same canonical-control extraction as chat_f (karr #46).

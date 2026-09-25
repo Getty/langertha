@@ -2,6 +2,7 @@ package Langertha::Engine::SGLang;
 # ABSTRACT: SGLang inference server
 our $VERSION = '0.503';
 use Moose;
+use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
@@ -118,6 +119,35 @@ around engine_capabilities => sub {
   return $caps;
 };
 
+# karr k245: SGLang rejects tool_choice 'required' or a named tool together
+# with an output constraint ("tool_choice 'required' or a named tool cannot be
+# combined with response_format, regex, or ebnf", ValueError in
+# python/sglang/srt/entrypoints/openai/protocol.py since 307a90f6d3 /
+# 17ba2c2e7c, source-checked 2026-09-25): json_schema, json_object (becomes
+# json_schema '{"type":"object"}') and structural_tag constrain, text does not.
+# tool_choice auto + response_format is accepted. The server exempts parsers
+# whose tool constraint is full_assistant_ebnf; that is a launch flag Langertha
+# cannot see, so the rule holds for every model (qr//), like Groq/Cerebras.
+my %SGLANG_CONSTRAINING_RF = map { $_ => 1 } qw( json_schema json_object structural_tag );
+
+sub model_capability_exclusions {
+  return (
+    qr// => \&_exclude_forced_tool_choice_with_response_format,
+  );
+}
+
+sub _exclude_forced_tool_choice_with_response_format {
+  my ( $self, %request ) = @_;
+  return unless $request{has_tools} && $request{tool_choice_forced};
+  my $rf   = $request{response_format};
+  my $type = ( ref $rf eq 'HASH' ) ? ( $rf->{type} // '' ) : '';
+  return unless $SGLANG_CONSTRAINING_RF{$type};
+  croak "".(ref $self)." cannot combine a forced tool_choice (required or a "
+    ."named tool) with response_format $type in one request: the SGLang server "
+    ."rejects it (the tool-call constraint and the output constraint cannot both "
+    ."be honored) with HTTP 400. Use tool_choice auto, or drop the response_format.";
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 CAPABILITIES
@@ -146,6 +176,11 @@ C<required>) and a named tool also need the grammar backend, xgrammar by default
 — generation-parameter knobs the engine will honour
 
 =back
+
+A forced C<tool_choice> (C<required> or a named tool) together with a
+C<response_format> of C<json_schema>, C<json_object> or C<structural_tag>
+croaks before the request is sent: the SGLang server rejects that combination
+with HTTP 400. C<tool_choice> C<auto> with a C<response_format> is sent.
 
 =cut
 
