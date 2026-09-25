@@ -226,14 +226,23 @@ system prompt from L<Langertha::Role::SystemPrompt> is prepended automatically.
 sub chat_messages {
   my ( $self, @messages ) = @_;
   $self->_warn_control_message_args(@messages);
-  my @out;
-  push @out, { role => 'system', content => $self->system_prompt }
-    if $self->has_system_prompt;
+  my @out = $self->_system_messages;
   for my $m (@messages) {
     my $msg = ref $m ? $m : { role => 'user', content => $m };
     push @out, $self->_normalize_content_blocks($msg);
   }
   return \@out;
+}
+
+# The leading system messages this engine prepends to a conversation. An
+# explicit $system_prompt replaces the engine's own system_prompt; engine
+# prefixes (NousResearch's reasoning prompt) wrap this method and still apply.
+# Shared by chat_messages and Langertha::Chat (karr k277).
+sub _system_messages {
+  my ( $self, @override ) = @_;
+  my $prompt = @override ? $override[0]
+    : $self->has_system_prompt ? $self->system_prompt : undef;
+  return defined $prompt ? ( { role => 'system', content => $prompt } ) : ();
 }
 
 sub _normalize_content_blocks {

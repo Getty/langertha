@@ -33,6 +33,11 @@ Revision history for Langertha
       the way its engine does on every simple_chat* method, instead of
       failing to encode them.
 
+    - Langertha::Chat without a system_prompt of its own sends the
+      engine's system_prompt, as the engine itself would. A wrapper
+      system_prompt still replaces the engine's; NousResearch's
+      reasoning prompt leads the conversation in both cases.
+
     - LM Studio native (/api/v1/chat) sends text as type text input
       parts, and since that endpoint takes no assistant messages, a
       history with assistant turns is cut to the user turn(s) after the

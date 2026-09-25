@@ -149,13 +149,14 @@ a different trigger format), it is strongly recommended to keep the default.
 
 =cut
 
-around chat_messages => sub {
-  my ( $orig, $self, @messages ) = @_;
-  my $msgs = $self->$orig(@messages);
-  return $msgs unless $self->reasoning;
-  # Prepend reasoning prompt as first system message
-  unshift @$msgs, { role => 'system', content => $self->reasoning_prompt };
-  return $msgs;
+# Prepend the reasoning prompt as the first system message. Wrapping
+# _system_messages (not chat_messages) makes Langertha::Chat send it too,
+# also when the wrapper brings its own system prompt (karr k277).
+around _system_messages => sub {
+  my ( $orig, $self, @override ) = @_;
+  my @system = $self->$orig(@override);
+  return @system unless $self->reasoning;
+  return ( { role => 'system', content => $self->reasoning_prompt }, @system );
 };
 
 around engine_capabilities => sub {

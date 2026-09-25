@@ -91,7 +91,13 @@ L<Langertha::Role::Chat>.
 =attr system_prompt
 
 Optional system prompt. When set, prepended to messages for each
-request, overriding any system prompt on the engine itself.
+request in place of the engine's own C<system_prompt>. When not set, the
+engine's C<system_prompt> is sent, exactly as the engine's own
+C<chat_messages> would send it. System messages the engine itself mandates
+still apply either way: with L<Langertha::Engine::NousResearch> and
+C<reasoning> enabled, its C<reasoning_prompt> leads the conversation,
+followed by this system prompt. Plugins see these system messages in the
+conversation passed to C<plugin_before_llm_call>.
 
 =attr model
 
@@ -126,15 +132,18 @@ sub _extra {
 
 # Each message goes through the engine's own per-message step of chat_messages,
 # so Langertha::Content objects become the engine's content_format blocks
-# (karr k275). The system prompt stays the wrapper's own, not the engine's.
+# (karr k275). The leading system messages are the engine's own
+# _system_messages: the engine's system_prompt unless the wrapper has one, plus
+# engine prefixes such as NousResearch's reasoning prompt either way (k277).
 sub _build_messages {
   my ( $self, @messages ) = @_;
   my $engine    = $self->engine;
   my $normalize = $engine->can('_normalize_content_blocks');
+  my @override  = $self->has_system_prompt ? ( $self->system_prompt ) : ();
   return [
-    ($self->has_system_prompt
-      ? ({ role => 'system', content => $self->system_prompt })
-      : ()),
+    ( $engine->can('_system_messages')
+      ? $engine->_system_messages(@override)
+      : map { +{ role => 'system', content => $_ } } @override ),
     map {
       my $msg = ref $_ ? $_ : { role => 'user', content => $_ };
       $normalize ? $engine->$normalize($msg) : $msg;
