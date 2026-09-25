@@ -250,7 +250,6 @@ k206 Phase 2, which will reuse this echo filter. Tests: `t/68_perplexity_functio
 (documented shapes; request building, `chat_f`, the echo filter, and `chat_with_tools_f` end to
 end over the mocked transport).
 
-
 ## Update (k233 — an unsendable `none` withholds the tools; an unreadable choice drops where there is no field)
 
 Two edge cases of the k213 `tool_choice` rule, both in `_responses_tool_choice_kwarg` (shared by
