@@ -640,12 +640,17 @@ sub parse_stream_chunk {
     : ( defined $delta->{reasoning} && !ref $delta->{reasoning} ) ? $delta->{reasoning}
     : undef;
 
+  # An empty-string finish_reason is no finish here either (as for the tool
+  # call flush above): the chunk is not final and carries no finish_reason,
+  # as Gemini's parser reads an empty finishReason. -- karr k253 review
+  my $finished = length( $finish_reason // '' );
+
   require Langertha::Stream::Chunk;
   return Langertha::Stream::Chunk->new(
     content => $content,
     raw => $data,
-    is_final => defined $finish_reason,
-    defined $finish_reason
+    is_final => $finished ? 1 : 0,
+    $finished
       ? (finish_reason => $self->_openai_finish_reason( $finish_reason, scalar @tool_calls )) : (),
     $data->{model} ? (model => $data->{model}) : (),
     $data->{usage} ? (usage => $data->{usage}) : (),

@@ -215,6 +215,13 @@ subtest 'OpenAI: fragments without index' => sub {
     [ { name => 'f', arguments => { x => 1 }, id => 'call_a', synthetic => 0 } ],
     'an empty finish_reason does not flush early' );
   ok( $chunks->[-1]->has_tool_calls, 'the call rides the real finish_reason chunk' );
+  # Nor does it end the stream: a consumer that stops at is_final (the hermes
+  # stream lift, k253) would otherwise finish before the text did (k253 review).
+  ok( !( grep { $_->is_final } @{$chunks}[ 0 .. $#$chunks - 1 ] ),
+    'a chunk with an empty finish_reason is not final' );
+  ok( !( grep { $_->has_finish_reason } @{$chunks}[ 0 .. $#$chunks - 1 ] ),
+    'and carries no finish_reason' );
+  ok( $chunks->[-1]->is_final, 'the real finish_reason chunk is' );
 };
 
 # ---------------------------------------------------------------------------

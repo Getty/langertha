@@ -155,6 +155,25 @@ subtest 'a stream that ends without a final chunk' => sub {
   is( $r->{chunks}[-1]->finish_reason, 'tool_calls', 'on a closing tool_calls chunk' );
 };
 
+subtest 'a mid-stream empty finish_reason is no finish' => sub {
+  # Some servers send finish_reason "" on every delta; ending the lift there
+  # would stream the rest of the markup as text (k253 review).
+  my @events = map {
+    'data: ' . $json->encode({ choices => [ { index => 0, delta => { content => $_ },
+      finish_reason => '' } ] }) . "\n\n"
+  } ( 'Sure. <tool_', 'call>{"name":"get_weather","arguments":{"city":"Berlin"}}</tool_call>', ' ok' );
+  push @events, 'data: ' . $json->encode({ choices => [ { index => 0, delta => {},
+    finish_reason => 'stop' } ] }) . "\n\n", "data: [DONE]\n\n";
+  my $engine = nous( _async_http => MockSSEHTTP->new(@events) );
+  my $seen = '';
+  my ( undef, $chunks ) = $engine->chat_stream_realtime_f( messages => ['weather?'], tools => [$TOOL],
+    chunk_callback => sub { $seen .= $_[0]->content } )->get;
+  is( $seen, 'Sure.  ok', 'the markup is withheld past the empty finish_reason' );
+  is_deeply( call_list( $engine->aggregate_tool_calls($chunks) ), [ [ get_weather => { city => 'Berlin' } ] ],
+    'the call lands' );
+  is( $chunks->[-1]->finish_reason, 'tool_calls', 'on the real final chunk' );
+};
+
 subtest 'think tags: a call tag inside thinking is no call' => sub {
   my $text = '<think>maybe <tool_call>{"name":"nope","arguments":{}}</tool_call></think>'
     . "Sure.$CALL";
