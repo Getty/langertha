@@ -40,7 +40,10 @@ Revision history for Langertha
     - Mistral transcribes audio with Voxtral (voxtral-mini-latest by
       default): simple_transcription, simple_transcription_result and their
       _f variants, with diarize, context_bias and timestamp_granularities
-      passed through.
+      passed through. xAI generates images with the Imagine API
+      (grok-imagine-image-2.0 by default): simple_image and simple_image_f
+      take aspect_ratio, resolution, n and response_format; size, quality
+      and style, which xAI does not accept, are dropped with a warning.
 
     - A chat answer without a choice is no longer an empty Response: an
       OpenAI-compatible 200 body with an error object (as gateways such as

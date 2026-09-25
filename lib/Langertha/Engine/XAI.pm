@@ -2,11 +2,14 @@ package Langertha::Engine::XAI;
 # ABSTRACT: xAI Grok API
 our $VERSION = '0.503';
 use Moose;
-use Carp qw( croak );
+use Carp qw( carp croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Tools';
+with map { 'Langertha::Role::'.$_ } qw(
+  ImageGeneration
+  Tools
+);
 
 =head1 SYNOPSIS
 
@@ -28,6 +31,12 @@ with 'Langertha::Role::Tools';
     # Tool calling
     my $response = await $xai->chat_with_tools_f('Search for Perl modules');
 
+    # Image generation (Imagine API)
+    my $images = $xai->simple_image('A lighthouse at dusk',
+        aspect_ratio => '16:9', resolution => '2k');
+    print $images->[0]{url}, "\n";
+    # async: await $xai->simple_image_f(...)
+
 =head1 DESCRIPTION
 
 Provides access to L<xAI|https://x.ai/>'s Grok models via their
@@ -43,9 +52,10 @@ relying on an older id. Grok has no knowledge of current events beyond its
 training cut-off unless you enable xAI's server-side Web Search / X Search
 tools.
 
-xAI's audio (Voice API) and image/video (Imagine API) live on separate
-endpoints and are not exposed by this engine; it covers chat, streaming,
-tool calling, and structured output.
+The engine covers chat, streaming, tool calling, structured output, and
+image generation with the Imagine API (C</v1/images/generations>, default
+model C<grok-imagine-image-2.0>, see L</image_request>). xAI's audio (Voice
+API) and video endpoints are not exposed.
 
 C<reasoning_effort> goes out on C<chat/completions> only with a level the
 model accepts: C<low>/C<medium>/C<high>/C<xhigh> on C<grok-4.6> and later,
@@ -69,6 +79,7 @@ B<THIS API IS WORK IN PROGRESS>
 
 sub _build_supported_operations {[qw(
   createChatCompletion
+  createImage
 )]}
 
 has '+url' => (
@@ -98,6 +109,43 @@ sub model_capability_corrections {
   );
 }
 
+sub default_image_model { 'grok-imagine-image-2.0' }
+
+# xAI's /v1/images/generations takes aspect_ratio and resolution in place of
+# OpenAI's size / quality / style and does not accept those; one passed in
+# (Langertha::ImageGen forwards size and quality) is dropped with a warning,
+# as k308 drops response_format for gpt-image. -- karr k309
+around image_request => sub {
+  my ( $orig, $self, $prompt, %extra ) = @_;
+  if ( my @unsupported = grep { exists $extra{$_} } qw( quality size style ) ) {
+    delete @extra{@unsupported};
+    carp "".(ref $self)." image_request: xAI does not take "
+      . join( ', ', @unsupported ) . " (use aspect_ratio / resolution); dropped";
+  }
+  return $self->$orig( $prompt, %extra );
+};
+
+=method image_request
+
+    my $request = $xai->image_request('A lighthouse at dusk',
+        aspect_ratio    => '16:9',
+        resolution      => '2k',
+        n               => 2,
+        response_format => 'b64_json',
+    );
+
+Builds the Imagine API request (C<POST /v1/images/generations>) with
+C<image_model> (default: C<grok-imagine-image-2.0>). xAI's own options pass
+through as given: C<aspect_ratio> (such as C<1:1>, C<16:9>), C<resolution>
+(C<1k>, C<1.5k>, C<2k>), C<n> (up to 10 images) and C<response_format>
+(C<url>, the default, or C<b64_json>). The OpenAI options C<size>,
+C<quality> and C<style> are not accepted by xAI and are dropped with a
+warning. L<Langertha::Role::OpenAICompatible/simple_image> and
+L<Langertha::Role::ImageGeneration/simple_image_f> return the ArrayRef of
+images (C<url> or C<b64_json> each).
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -111,6 +159,10 @@ __PACKAGE__->meta->make_immutable;
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
 
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
+
+=item * L<Langertha::Role::ImageGeneration> - Image generation role (Imagine API)
+
+=item * L<https://docs.x.ai/docs/guides/image-generations> - xAI image generation guide
 
 =item * L<Langertha::Engine::Groq> - Another OpenAI-compatible engine
 
