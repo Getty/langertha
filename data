@@ -1,0 +1,33 @@
+---
+claimed_at: 2026-09-25T23:18:03Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:18:03Z
+created: 2026-09-25T22:47:57Z
+id: 325
+priority: high
+started: 2026-09-25T22:50:28Z
+status: done
+tags:
+- security
+- content-image
+- gemini
+- ollama
+- lmstudio
+title: 'Content::Image inline fetch reads local files: file:// image URLs are fetched
+  by LWP and sent to the provider (Gemini/Ollama/LMStudio)'
+updated: 2026-09-25T23:18:03Z
+---
+
+Reproduced offline (bug hunt 2026-09-26).
+
+WHERE: lib/Langertha/Content/Image.pm:147 from_url takes any scheme; :237 ensure_base64 does LWP::UserAgent->get($self->url) with the default protocols_allowed (file:, ftp:, data: all on). lib/Langertha/Role/Chat.pm:326 _gemini_part turns an OpenAI-shape {type=>"image_url"} hash into Content::Image->from_url for ANY url that is not a data: URL. The sync LWP shim (Request::SyncHTTP) used on the _f path without Net::Async::HTTP has the same LWP default, so ensure_base64_f leaks too; Net::Async::HTTP rejects non-http schemes -> sync/async divergence as well.
+
+REPRO:
+  my $g = Langertha::Engine::Gemini->new(api_key=>"k");
+  my $req = $g->chat_request($g->chat_messages({role=>"user", content=>["hi",
+    {type=>"image_url", image_url=>{url=>"file:///etc/passwd"}}]}));
+  # contents[0].parts[1].inline_data.data base64-decodes to the local file
+Same via Content::Image->from_url("file://...") on Ollama native (images[]) and LMStudio native / inline-only engines (data_url). Impact: any gateway that forwards caller-supplied OpenAI-shape messages into a Gemini/Ollama/LMStudio engine (knarr/skeid pattern) discloses server-local files to the upstream model and back to the caller.
+
+FIX: restrict the inline fetch to http/https in one place (Content::Image: validate scheme in from_url and again in ensure_base64/ensure_base64_f; LWP ua with protocols_allowed=>[qw(http https)]); data: URLs keep going through the from_base64 branch. Consider a max body size (max_size on LWP / check Content-Length) since the whole body is slurped into memory, and a documented hook for callers who need to block private-address SSRF. Regression test: file:// url croaks on sync and _f paths with the same text (sync/async parity).
