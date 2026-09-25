@@ -30,9 +30,11 @@ Revision history for Langertha
       entry. A Gemini declaration's parametersJsonSchema is read as its
       schema when it goes to another wire.
 
-    - Groq and Cerebras with model => '' now croak on tools combined with a
-      response_format, as they do for every named model, instead of sending
-      the request the provider rejects.
+    - Groq and Cerebras now croak on tools combined with a response_format
+      also with model => '' and when the response_format is set on the engine
+      rather than passed to chat_f, instead of sending the request the
+      provider rejects. The same holds for SGLang's forced tool_choice rule
+      below. A response_format passed to chat_f still wins over the engine's.
 
     - SGLang croaks on tools with a forced tool_choice (required or a named
       tool) combined with a json_schema, json_object or structural_tag

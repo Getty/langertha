@@ -303,4 +303,65 @@ sub run {
     or diag $err;
 }
 
+# ======================================================================
+# karr k249: the guard sees the EFFECTIVE response_format -- the per-request
+# value, else the engine attribute (Role::ResponseFormat) -- with the same
+# precedence the OpenAICompatible request builder uses to put it on the wire.
+# An engine-level response_format used to reach the wire next to the tools
+# unguarded, so Groq/Cerebras answered with the opaque 400 the rule exists
+# to replace.
+# ======================================================================
+{
+  my $mock = mock();
+  my $engine = Langertha::Engine::Groq->new(
+    api_key => 'apikey', model => 'llama-3.3-70b-versatile',
+    response_format => $JSON_OBJECT_RF, _async_http => $mock,
+  );
+  my ( $ok, $err ) = run( sub { $engine->chat_f(
+    messages => ['weather?'], tools => [$TOOL],
+  ) });
+  ok( !$ok, 'Groq: engine-level json_object + per-request tools croaks (k249)' );
+  like( $err, qr/cannot combine tools with a JSON response_format/,
+    'Groq engine-level croak is the exclusion' );
+  is( $mock->request_count, 0, 'Groq engine-level: nothing reached the wire' );
+}
+{
+  my ( $ok, $err ) = run( sub { groq( response_format => $JSON_SCHEMA_RF )
+    ->chat_stream_realtime_f( messages => ['weather?'] ) });
+  ok( !$ok, 'Groq streaming: engine-level json_schema croaks (k249)' );
+  like( $err, qr/cannot combine response_format json_schema with streaming/,
+    'Groq engine-level streaming croak is the exclusion' );
+}
+{
+  my $mock = mock();
+  my ( $ok, $err ) = run( sub { Langertha::Engine::Cerebras->new(
+    api_key => 'apikey', model => 'gpt-oss-120b',
+    response_format => $JSON_SCHEMA_RF, _async_http => $mock,
+  )->chat_f( messages => ['weather?'], tools => [$TOOL] ) });
+  ok( !$ok, 'Cerebras: engine-level json_schema + per-request tools croaks (k249)' );
+  like( $err, qr/tools and response_format/, 'Cerebras engine-level croak is the exclusion' );
+  is( $mock->request_count, 0, 'Cerebras engine-level: nothing reached the wire' );
+}
+# The per-request value wins over the engine attribute, on the wire and in the
+# guard alike: a per-request text format lifts the engine json_object ...
+{
+  my $mock = mock();
+  my ( $ok, $err ) = run( sub { groq( response_format => $JSON_OBJECT_RF, _async_http => $mock )
+    ->chat_f( messages => ['weather?'], tools => [$TOOL],
+      response_format => { type => 'text' } ) });
+  ok( $ok, 'Groq: per-request text overrides engine-level json_object, no croak (k249)' )
+    or diag $err;
+  my ($req) = $mock->requests;
+  is( $req && $json->decode( $req->content )->{response_format}{type}, 'text',
+    '  the per-request response_format is the one on the wire' );
+}
+# ... and a per-request json_object is refused even when the engine holds text.
+{
+  my ( $ok, $err ) = run( sub { groq( response_format => { type => 'text' } )
+    ->chat_f( messages => ['weather?'], tools => [$TOOL],
+      response_format => $JSON_OBJECT_RF ) });
+  ok( !$ok, 'Groq: per-request json_object beats engine-level text and croaks (k249)' );
+  like( $err, qr/cannot combine tools/, '  croak is the exclusion' );
+}
+
 done_testing;

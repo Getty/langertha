@@ -533,8 +533,10 @@ aggregators, carry a C<provider/> prefix, so a regex catches the routed backend
 id too. C<$rule> is a B<coderef> (the concrete seam — deliberately not a
 constraint DSL) invoked as C<< $self->$rule(%request) >> with C<has_tools>,
 C<tool_choice_forced> (true for a C<tool_choice> of C<any>/C<required> or a
-named tool, as the caller passed it), C<response_format> and C<streaming>; it
-C<croak>s when the request hits the combination the model rejects.
+named tool, as the caller passed it), C<response_format> (the one that goes on
+the wire: the per-request value, else the engine's C<response_format>
+attribute) and C<streaming>; it C<croak>s when the request hits the combination
+the model rejects.
 
 Where the rule lives depends on what the constraint belongs to. Groq and
 Cerebras reject C<tools> alongside a structured-output C<response_format> across
@@ -571,6 +573,21 @@ sub _chat_tool_choice_forced {
   return 0 unless defined $opts->{tool_choice};
   my $tc = Langertha::ToolChoice->from_hash( $opts->{tool_choice} );
   return ( $tc && ( $tc->type eq 'any' || $tc->type eq 'tool' ) ) ? 1 : 0;
+}
+
+# The response_format the request builders will put on the wire (karr k249):
+# the per-request value when the caller passed the key, else the engine
+# attribute (Role::ResponseFormat) -- the same precedence as
+# OpenAICompatible's chat_request / chat_stream_request, AnthropicCompatible's
+# _take_response_format and ResponsesCompatible. Feeds the capability-exclusion
+# hook, so a rule also fires for an engine-level response_format. Always a
+# scalar (undef when neither is set): it is called in a hash-list position.
+sub _chat_effective_response_format {
+  my ( $self, $opts ) = @_;
+  my $rf = exists $opts->{response_format} ? $opts->{response_format}
+    : ( $self->can('has_response_format') && $self->has_response_format ) ? $self->response_format
+    : undef;
+  return $rf;
 }
 
 async sub chat_f {
@@ -623,7 +640,7 @@ async sub chat_f {
   $self->_check_capability_exclusions(
     has_tools          => $self->_chat_tools_requested(\%opts),
     tool_choice_forced => $self->_chat_tool_choice_forced(\%opts),
-    response_format    => $opts{response_format},
+    response_format    => $self->_chat_effective_response_format(\%opts),
     streaming          => 0,
   );
 
@@ -855,7 +872,7 @@ async sub chat_stream_realtime_f {
   $self->_check_capability_exclusions(
     has_tools          => $self->_chat_tools_requested(\%opts),
     tool_choice_forced => $self->_chat_tool_choice_forced(\%opts),
-    response_format    => $opts{response_format},
+    response_format    => $self->_chat_effective_response_format(\%opts),
     streaming          => 1,
   );
 

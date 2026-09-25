@@ -167,4 +167,35 @@ for my $case (
     "seam: existing keys still passed ($label)" );
 }
 
+# karr k249: the guard sees the engine-level response_format too, and the
+# per-request value wins over it exactly as on the wire.
+{
+  my $mock = mock();
+  my ( $ok, $err ) = run( sub { Langertha::Engine::SGLang->new(
+    url => 'http://localhost:30000/v1', response_format => $JSON_SCHEMA_RF,
+    _async_http => $mock,
+  )->chat_f(
+    messages => [ { role => 'user', content => 'hi' } ],
+    tools    => [$TOOL], tool_choice => 'required',
+  ) } );
+  ok( !$ok, 'SGLang: engine-level json_schema + forced tool_choice croaks (k249)' );
+  like( $err, qr/tool_choice.*response_format/s, '  croak is the exclusion' );
+  is( $mock->request_count, 0, '  nothing reached the wire' );
+}
+{
+  my $mock = mock();
+  my ( $ok, $err ) = run( sub { Langertha::Engine::SGLang->new(
+    url => 'http://localhost:30000/v1', response_format => $JSON_SCHEMA_RF,
+    _async_http => $mock,
+  )->chat_f(
+    messages        => [ { role => 'user', content => 'hi' } ],
+    tools           => [$TOOL], tool_choice => 'required',
+    response_format => { type => 'text' },
+  ) } );
+  ok( $ok, 'SGLang: per-request text overrides engine-level json_schema (k249)' ) or diag $err;
+  my ($req) = $mock->requests;
+  is( $req && $json->decode( $req->content )->{response_format}{type}, 'text',
+    '  the per-request response_format is the one on the wire' );
+}
+
 done_testing;
