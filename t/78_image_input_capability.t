@@ -60,7 +60,7 @@ my %DEFAULT = (
   TSystems          => 0,  # gpt-oss-120b
   Groq              => 0,  # probed with a neutral id
   # cloud, no claim
-  AKIOpenAI         => 0,  # gpt-oss-120b; qwen3.6 allowlisted (k271)
+  AKIOpenAI         => 0,  # gpt-oss-120b; qwen3.6/qwen3.8/gemma4 allowlisted (k271/k272)
   NousResearch      => 0,
   # shims
   MoonshotAnthropic => 0,
@@ -218,8 +218,13 @@ my @ROWS = (
   [ AKIOpenAI       => 'qwen3.6-chat-35b'            => 1 ],  # live probe k271
   [ AKIOpenAI       => 'qwen3.6-35b'                 => 1 ],
   [ AKIOpenAI       => 'qwen3.65-35b'                => 0 ],  # multi-digit guard
-  [ AKIOpenAI       => 'qwen3.8-27b'                 => 0 ],  # vision upstream, unprobed on AKI
-  [ AKIOpenAI       => 'gemma4-chat-26b'             => 0 ],  # vision upstream, unprobed on AKI
+  [ AKIOpenAI       => 'qwen3.8-27b'                 => 1 ],  # live probe k272
+  [ AKIOpenAI       => 'qwen3.85-27b'                => 0 ],  # multi-digit guard
+  [ AKIOpenAI       => 'gemma4-chat-26b'             => 1 ],  # live probe k272
+  [ AKIOpenAI       => 'gemma4-26b'                  => 1 ],  # family of the probed chat variant
+  [ AKIOpenAI       => 'gemma45-26b'                 => 0 ],  # multi-digit guard
+  [ AKIOpenAI       => 'apertus-chat-70b'            => 0 ],  # unprobed
+  [ AKIOpenAI       => 'mistral4-119b'               => 0 ],  # unprobed
   [ AKIOpenAI       => 'gpt-oss-120b'                => 0 ],
   [ AKIOpenAI       => 'llama3-chat-70b'             => 0 ],
   [ Perplexity      => 'openai/gpt-5.6-luna'         => 1 ],

@@ -69,9 +69,10 @@ spelling (canonical C<reasoning_content> first, then bare C<reasoning>) onto
 L<Langertha::Response/thinking>, so C<< $response->thinking >> is populated.
 
 B<Vision:> images in C<content> go out as C<image_url> parts.
-C<< supports('image_input') >> is true only for the C<qwen3.6-*> models, the
-family verified to see an image on this endpoint; other models make no claim,
-which never stops an image from being sent.
+C<< supports('image_input') >> is true only for the C<qwen3.6-*>,
+C<qwen3.8-*> and C<gemma4-*> models, the families verified to see an image on
+this endpoint; other models make no claim, which never stops an image from
+being sent.
 
 B<Client errors arrive as HTTP 529:> AKI.IO returns some B<caller-side> errors
 as C<529> C<overloaded_error> — notably a token budget too small to finish a
@@ -149,13 +150,20 @@ around engine_capabilities => sub {
 # row clears the flag (the default gpt-oss-120b makes no claim). Live probe
 # 2026-09-25 (k271): an 8x8 solid-red base64 PNG sent as an image_url part to
 # qwen3.6-chat-35b answered "Red", its reasoning describing "a solid, uniform
-# block of color" (t/data/akiopenai_qwen36_image_response.json). Only the
-# probed Qwen3.6 family is claimed; gemma4-* and qwen3.8-27b are vision models
-# upstream but were not probed on AKI's serving stack, so they stay unclaimed.
+# block of color" (t/data/akiopenai_qwen36_image_response.json). Follow-up
+# probe 2026-09-25 (k272), same image and prompt, max_tokens 2048:
+# gemma4-chat-26b and qwen3.8-27b both answered "Red", each reasoning about a
+# uniform red field (t/data/akiopenai_{gemma4,qwen38}_image_response.json).
+# Each row claims the probed model's family, as k271 did for qwen3.6-35b:
+# gemma4-26b is claimed with gemma4-chat-26b but was not called itself.
+# Every other id (gpt-oss, llama3, apertus, mistral4, deepseek, glm) stays
+# unclaimed: not probed as of 2026-09-25.
 sub model_capability_corrections {
   return (
     qr/\A/               => { image_input => 0 },
     qr/\Aqwen3\.6(?!\d)/ => { image_input => 1 },
+    qr/\Aqwen3\.8(?!\d)/ => { image_input => 1 },
+    qr/\Agemma4(?!\d)/   => { image_input => 1 },
   );
 }
 

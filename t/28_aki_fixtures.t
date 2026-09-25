@@ -254,6 +254,43 @@ subtest 'AKIOpenAI qwen3.6 image answer (karr k271 probe capture)' => sub {
   }
 };
 
+# --- 7. AKIOpenAI image input on gemma4 / qwen3.8 — the karr k272 probe ---
+# The follow-up probe that widened the claim: the same 8x8 solid-red PNG and
+# the same prompt, max_tokens 2048, one call per model. Both named the color
+# and reasoned about the image, so their families are claimed. Captured
+# 2026-09-25 the same way as the k271 capture (client-* headers stripped).
+
+my @K272_CAPTURES = (
+  [ akiopenai_gemma4_image_response => 'gemma4-chat-26b',
+    qr/solid square of color.*bright red/s, 309 ],
+  [ akiopenai_qwen38_image_response => 'qwen3.8-27b',
+    qr/uniform field of red/, 154 ],
+);
+
+for my $capture (@K272_CAPTURES) {
+  my ( $fixture, $model, $reasoning_re, $prompt_tokens ) = @$capture;
+  subtest "AKIOpenAI $model image answer (karr k272 probe capture)" => sub {
+    my $engine = Langertha::Engine::AKIOpenAI->new(
+      api_key => 'testkey',
+      model   => $model,
+    );
+    ok($engine->supports('image_input'), "$model claims image_input");
+    my $resp = eval { $engine->chat_response( fixture_http($fixture) ) };
+    ok(defined $resp, 'Response constructed, no type-constraint croak') or diag($@);
+
+    SKIP: {
+      skip 'no Response to inspect', 6 unless defined $resp;
+      is("$resp", 'Red', 'the model named the color of the image');
+      is($resp->model, $model, 'the probed model answered, no substitution');
+      is($resp->finish_reason, 'stop', 'finished normally');
+      like($resp->thinking, $reasoning_re,
+        'its reasoning describes the image, so the answer is not a guess from the text');
+      is($resp->prompt_tokens, $prompt_tokens, 'prompt_tokens from usage');
+      ok(!$engine->has_rate_limit, 'no rate-limit headers on this capture either');
+    }
+  };
+}
+
 # --- Captured response headers ---
 # t/12_rate_limit.t hand-writes every rate-limit header it tests. These headers
 # were captured alongside the bodies and run through the engines' real

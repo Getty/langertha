@@ -8,8 +8,8 @@ Revision history for Langertha
       Gemini and Hetzner models (minus text-only ones such as gpt-3.5,
       claude-2, gemini-1.0-pro), and for the documented vision models on
       DeepSeek, Mistral, XAI, MiniMax, Moonshot, Groq, Cerebras, Scaleway,
-      TSystems, the qwen3.6 models on AKIOpenAI (verified with a live
-      image request) and third-party ids on Perplexity. Gateways, self-hosted
+      TSystems, the qwen3.6, qwen3.8 and gemma4 models on AKIOpenAI
+      (verified with live image requests) and third-party ids on Perplexity. Gateways, self-hosted
       servers and the /anthropic shims
       make no claim. The flag never blocks sending an image. Manifests
       built by Langertha::Manifest::Builder publish it per model.
