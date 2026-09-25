@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T05:41:43Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T05:41:19Z
+created: 2026-09-25T05:17:33Z
+id: 233
+priority: low
+started: 2026-09-25T05:28:16Z
+status: done
+tags:
+- responses
+- tools
+- perplexity
+title: 'ResponsesCompatible tool_choice edge cases: unsendable ''none'' still sends
+  tools; unreadable choice hash passes through on Perplexity'
+updated: 2026-09-25T05:41:43Z
+---
+
+k213 review M7: _responses_tool_choice_kwarg (ResponsesCompatible.pm ~201-224): (a) when tool_choice=>'none' is unsupported (tool_choice_none cleared) only a carp happens, tools are still sent, the model may call a tool the caller ruled out -> consider dropping tools too. (b) a choice ToolChoice->from_hash cannot read (e.g. {type=>'web_search_preview'}) passes through to the wire even on Perplexity (no such field) -> likely 400. Also ToolChoice::to_perplexity (ToolChoice.pm:102-111, 169-171) describes the legacy sonar /chat/completions string forms; the Agent API has no tool_choice -> mark legacy / deprecate (public API decision). Also t/68 OpenAIResponses verbatim-echo test only counts 5 items -> compare item types.
+
+Merged (9746a1a, 07f70a1). Review minors -> #234 (ToolChoice object input), #235 (ToolChoice POD); none-with-tool-history question on #232.
+
+Correction: review minors are #235 (ToolChoice object input) and #236 (ToolChoice POD).
