@@ -1,0 +1,34 @@
+---
+claimed_at: 2026-09-25T03:18:01Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:18:01Z
+created: 2026-09-25T01:48:38Z
+id: 209
+priority: low
+started: 2026-09-25T01:49:49Z
+status: done
+tags:
+- llm
+- risk
+- minimax
+- reasoning
+title: 'MiniMax: M3 binary thinking toggle unreachable; MiniMaxAnthropic emits output_config.effort
+  MiniMax does not document'
+updated: 2026-09-25T03:18:01Z
+---
+
+From k207 (llm-advisor, 2026-09-25, docs only). (1) MiniMax-M3 on /v1/chat/completions takes thinking:{type: disabled|adaptive} (default adaptive) and has no effort control (openapi-chat-openai.json). Engine::MiniMax clears reasoning_effort, so reasoning_effort=>'none' cannot turn thinking off. That needs a wire mapping (none -> thinking disabled), not a capability flag. (2) MiniMax /anthropic CreateMessageReq (openapi-chat-anthropic.json) has thinking (default DISABLED on M3, the opposite of the OpenAI endpoint) but no output_config. MiniMaxAnthropic currently sends output_config.effort=<level> + thinking:{type:adaptive} (verified offline). The effort field is undocumented there, probably ignored, and possibly rejected. A Profile row for MiniMax-M3 (anthropic wire: drop effort, keep adaptive/disabled) would make it honest. Unverified live.
+
+2026-09-25 02:08 Part (2) done on wire-bundle, e8f6cad: MiniMaxAnthropic wraps reasoning_kwargs_for and strips output_config.effort, keeps thinking:{type:adaptive}. Engine-scoped rather than a Profile row: the missing field is endpoint-wide, not per model id. ADR 0009 k209 update. Part (1), the M3 chat/completions binary thinking toggle (none -> thinking disabled), is NOT done and needs a reasoning wire mapping.
+
+2026-09-25 02:28 llm-advisor 2026-09-25, part 1 (MiniMax chat/completions thinking), docs only, no live call.
+WIRE (platform.minimax.io/docs/api-reference/text/api/openapi-chat-openai.json, fetched 2026-09-25): ChatCompletionReq.thinking = {type: enum[disabled, adaptive], default adaptive}. No 'enabled' value, no budget_tokens / budget field, no effort field. M3: disabled = answer directly, adaptive = thinking on (equal to omitting the field). M2.x: 'disabled is accepted but thinking remains on' (text-openai-api page, Thinking Control). reasoning_split is output formatting only, not a toggle. /anthropic CreateMessageReq (openapi-chat-anthropic.json, same date): same enum, default disabled, no output_config. That confirms the k209 part-2 fix.
+PROVIDER'S OWN MAPPING: MiniMax /v1/responses (openapi-responses.json, same date): reasoning.effort enum [minimal, low, medium, high, none], default none. 'Set effort to a non-none value to enable Adaptive Thinking, but this does not tune M3's reasoning depth.' So MiniMax maps effort to the toggle exactly like this: none -> off, any level -> adaptive.
+PROFILE CHECK: Profile has control enum 'boolean' and disable_form enum [absent, explicit_none, think_false, budget_zero]. disable_form is DESCRIPTIVE only: no serializer reads it. Reasoning::to_openai always emits reasoning_effort and cannot emit thinking:{type:disabled}. The Profile cannot express this today without a new enum value.
+RECOMMEND (effort mapping, not a new boolean capability): (1) Profile rows: qr/\AMiniMax-M3(?!\d)/ with control=>'boolean', can_disable=>1, disable_form=>'thinking_disabled' (new DisableForm value). M2.x rows with control=>'boolean', can_disable=>0. (2) Engine::MiniMax: layer-3 correction that turns reasoning_effort back ON for MiniMax-M3 only (M2.x stays cleared, because nothing is controllable there). Add an engine-scoped reasoning_kwargs_for (the DeepSeek precedent) that reads the Profile: none -> thinking:{type:'disabled'} when can_disable, any other level -> thinking:{type:'adaptive'} (explicit, which mirrors MiniMax's own /v1/responses and survives a default flip), unset -> nothing. Keep the k204 supports() gate inside the override. (3) MiniMaxAnthropic can then send an explicit thinking:{type:disabled} for none from the same row. Today it omits the field, and the endpoint default is disabled, so the result is correct but implicit. (4) POD: the level ladder collapses to a binary. low and high both mean adaptive.
+RISK: M3 supports() reasoning_effort, yet every level gives the same depth. Document it. Callers should not expect graded effort.
+
+2026-09-25 02:47 Part 1 done on wire-bundle2 1a26fb8: Profile thinking_on + disable_form thinking_disabled; Reasoning::to_openai/to_anthropic serialize toggle rows (no engine reasoning_kwargs_for override, k204 gate stays the role's; ADR 0023 k209 Update). MiniMax reasoning_effort: catch-all clear + M3 re-enable (ADR 0019 k209 Update). MiniMaxAnthropic M3 none -> explicit disabled, minimal -> adaptive. Golden: 28 MiniMax/MiniMaxAnthropic rows changed, all intended. Doc-derived, not live.
+
+2026-09-25 03:08 Review fixes d98f315 (toggle opt-in per engine; foreign engines byte-identical to 4e7f9d8, pinned), d6c2590 (empty chat_model now hits the catch-all), 4692e73, 30b26dd.
