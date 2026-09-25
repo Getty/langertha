@@ -194,6 +194,38 @@ has _batch => (
   default => sub { [] },
 );
 
+has max_batch => (
+  is      => 'ro',
+  isa     => 'Int',
+  default => 1000,
+);
+
+=attr max_batch
+
+The most events kept in memory between two flushes. Default C<1000>. When the
+batch is full the B<oldest> event is dropped for each new one, with a single
+warning per plugin object; C<0> removes the cap. Without L</auto_flush> the
+events are only sent by L</flush>, so this bounds what a process that never
+flushes holds.
+
+=cut
+
+# Every event goes through here so the batch stays bounded (karr k305).
+sub _push {
+  my ( $self, $event ) = @_;
+  my $batch = $self->_batch;
+  push @$batch, $event;
+  my $max = $self->max_batch;
+  if ( $max > 0 && @$batch > $max ) {
+    splice @$batch, 0, @$batch - $max;
+    unless ( $self->{_overflow_warned}++ ) {
+      warn ref($self) . ": Langfuse batch reached max_batch ($max events) without a flush; "
+         . "dropping the oldest events. Call flush regularly or set auto_flush.\n";
+    }
+  }
+  return;
+}
+
 has _trace_id => (
   is  => 'rw',
   isa => 'Maybe[Str]',
@@ -236,7 +268,7 @@ sub create_trace {
   my ( $self, %opts ) = @_;
   return unless $self->enabled;
   my $id = $opts{id} || _id();
-  push @{$self->_batch}, {
+  $self->_push({
     id        => _id(),
     type      => 'trace-create',
     timestamp => _timestamp(),
@@ -250,7 +282,7 @@ sub create_trace {
       $opts{user_id}     ? ( userId      => $opts{user_id} )     : (),
       $opts{session_id}  ? ( sessionId   => $opts{session_id} )  : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -267,7 +299,7 @@ sub create_generation {
   my ( $self, %opts ) = @_;
   return unless $self->enabled;
   my $id = $opts{id} || _id();
-  push @{$self->_batch}, {
+  $self->_push({
     id        => _id(),
     type      => 'generation-create',
     timestamp => _timestamp(),
@@ -284,7 +316,7 @@ sub create_generation {
       $opts{parent_observation_id}? ( parentObservationId => $opts{parent_observation_id} ) : (),
       $opts{model_parameters}     ? ( modelParameters    => $opts{model_parameters} )   : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -300,7 +332,7 @@ sub create_span {
   my ( $self, %opts ) = @_;
   return unless $self->enabled;
   my $id = $opts{id} || _id();
-  push @{$self->_batch}, {
+  $self->_push({
     id        => _id(),
     type      => 'span-create',
     timestamp => _timestamp(),
@@ -315,7 +347,7 @@ sub create_span {
       $opts{parent_observation_id}? ( parentObservationId => $opts{parent_observation_id} ) : (),
       $opts{metadata}             ? ( metadata           => $opts{metadata} )           : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -331,7 +363,7 @@ sub update_trace {
   my ( $self, %opts ) = @_;
   return unless $self->enabled;
   my $id = $opts{id} // croak("update_trace requires id");
-  push @{$self->_batch}, {
+  $self->_push({
     id        => _id(),
     type      => 'trace-create',
     timestamp => _timestamp(),
@@ -340,7 +372,7 @@ sub update_trace {
       $opts{output}   ? ( output   => $opts{output} )   : (),
       $opts{metadata} ? ( metadata => $opts{metadata} )  : (),
     },
-  };
+  });
   return $id;
 }
 

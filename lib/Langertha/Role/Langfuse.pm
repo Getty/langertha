@@ -175,6 +175,46 @@ has _langfuse_batch => (
   default => sub { [] },
 );
 
+has langfuse_max_batch => (
+  is => 'ro',
+  isa => 'Int',
+  default => 1000,
+);
+
+=attr langfuse_max_batch
+
+The most events kept in memory between two L</langfuse_flush> calls. Default
+C<1000> (500 traced C<simple_chat> calls, each a trace and a generation). The
+events are only sent when someone flushes, and Langfuse turns on by itself as
+soon as C<LANGFUSE_PUBLIC_KEY> and C<LANGFUSE_SECRET_KEY> are in the
+environment, so a long-running process that never flushes would otherwise
+keep every prompt and answer it ever sent. When the batch is full the
+B<oldest> event is dropped for each new one, with a single warning per engine
+object. C<0> removes the cap.
+
+Nothing is flushed automatically: a flush is an HTTP request, and
+C<simple_chat> should not pay for one at an unpredictable moment. Call
+L</langfuse_flush> (or L</langfuse_flush_f>) yourself, for example after each
+request in a server.
+
+=cut
+
+# Every event goes through here so the batch stays bounded (karr k305).
+sub _langfuse_push {
+  my ( $self, $event ) = @_;
+  my $batch = $self->_langfuse_batch;
+  push @$batch, $event;
+  my $max = $self->langfuse_max_batch;
+  if ( $max > 0 && @$batch > $max ) {
+    splice @$batch, 0, @$batch - $max;
+    unless ( $self->{_langfuse_overflow_warned}++ ) {
+      warn ref($self) . ": Langfuse batch reached langfuse_max_batch ($max events) "
+         . "without a flush; dropping the oldest events. Call langfuse_flush regularly.\n";
+    }
+  }
+  return;
+}
+
 sub _langfuse_id {
   my ( $self ) = @_;
   # Simple UUID v4 generation without external dependency
@@ -222,7 +262,7 @@ sub langfuse_trace {
   my ( $self, %opts ) = @_;
   return unless $self->langfuse_enabled;
   my $id = $opts{id} || $self->_langfuse_id;
-  push @{$self->_langfuse_batch}, {
+  $self->_langfuse_push({
     id   => $self->_langfuse_id,
     type => 'trace-create',
     timestamp => $self->_langfuse_timestamp,
@@ -241,7 +281,7 @@ sub langfuse_trace {
         ? ( public => $opts{public} ? JSON->true : JSON->false ) : (),
       $opts{environment} ? ( environment => $opts{environment} ) : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -272,7 +312,7 @@ sub langfuse_generation {
   my ( $self, %opts ) = @_;
   return unless $self->langfuse_enabled;
   my $id = $opts{id} || $self->_langfuse_id;
-  push @{$self->_langfuse_batch}, {
+  $self->_langfuse_push({
     id   => $self->_langfuse_id,
     type => 'generation-create',
     timestamp => $self->_langfuse_timestamp,
@@ -297,7 +337,7 @@ sub langfuse_generation {
       $opts{status_message} ? ( statusMessage  => $opts{status_message} ) : (),
       $opts{version}        ? ( version        => $opts{version} )        : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -330,7 +370,7 @@ sub langfuse_span {
   my ( $self, %opts ) = @_;
   return unless $self->langfuse_enabled;
   my $id = $opts{id} || $self->_langfuse_id;
-  push @{$self->_langfuse_batch}, {
+  $self->_langfuse_push({
     id   => $self->_langfuse_id,
     type => 'span-create',
     timestamp => $self->_langfuse_timestamp,
@@ -349,7 +389,7 @@ sub langfuse_span {
       $opts{status_message} ? ( statusMessage => $opts{status_message} ) : (),
       $opts{version}        ? ( version       => $opts{version} )        : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -379,7 +419,7 @@ sub langfuse_update_trace {
   my ( $self, %opts ) = @_;
   return unless $self->langfuse_enabled;
   my $id = $opts{id} // croak("langfuse_update_trace requires id");
-  push @{$self->_langfuse_batch}, {
+  $self->_langfuse_push({
     id   => $self->_langfuse_id,
     type => 'trace-create',
     timestamp => $self->_langfuse_timestamp,
@@ -398,7 +438,7 @@ sub langfuse_update_trace {
         ? ( public => $opts{public} ? JSON->true : JSON->false ) : (),
       $opts{environment} ? ( environment => $opts{environment} ) : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -419,7 +459,7 @@ sub langfuse_update_span {
   my ( $self, %opts ) = @_;
   return unless $self->langfuse_enabled;
   my $id = $opts{id} // croak("langfuse_update_span requires id");
-  push @{$self->_langfuse_batch}, {
+  $self->_langfuse_push({
     id   => $self->_langfuse_id,
     type => 'span-update',
     timestamp => $self->_langfuse_timestamp,
@@ -432,7 +472,7 @@ sub langfuse_update_span {
       $opts{level}          ? ( level         => $opts{level} )          : (),
       $opts{status_message} ? ( statusMessage => $opts{status_message} ) : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -453,7 +493,7 @@ sub langfuse_update_generation {
   my ( $self, %opts ) = @_;
   return unless $self->langfuse_enabled;
   my $id = $opts{id} // croak("langfuse_update_generation requires id");
-  push @{$self->_langfuse_batch}, {
+  $self->_langfuse_push({
     id   => $self->_langfuse_id,
     type => 'generation-update',
     timestamp => $self->_langfuse_timestamp,
@@ -469,7 +509,7 @@ sub langfuse_update_generation {
       defined $opts{completion_start_time}
         ? ( completionStartTime => $opts{completion_start_time} ) : (),
     },
-  };
+  });
   return $id;
 }
 
@@ -627,6 +667,13 @@ around simple_chat => sub {
 =item C<LANGFUSE_URL> — Auto-populates C<langfuse_url> (default: C<https://cloud.langfuse.com>)
 
 =back
+
+With both keys in the environment every engine records C<simple_chat> calls
+without being asked to, but sends nothing until L</langfuse_flush> is called.
+Events wait in memory up to L</langfuse_max_batch>; past that the oldest are
+dropped with one warning. A process that has the variables set but never
+flushes therefore holds a bounded amount of trace data, not every prompt it
+ever sent.
 
 =head1 SELF-HOSTING LANGFUSE
 
