@@ -283,3 +283,27 @@ the backend honoring the field. The schema prompt goes in front of the tool prom
 `AKI` native has no `response_format` field, so direction 1 cannot fire there: a forced choice is
 still dropped with a carp (k231), and the POD points to `AKIOpenAI`. Streaming has no rewrite, but
 it does get the schema prompt. Documentation only, not live-verified. Pinned in `t/69_chat_f_wire_tools.t`.
+
+## Update (k250 — the rewrite no longer replaces a caller's response_format silently)
+
+Direction 1 sets a per-request `response_format` (the forced tool's `json_schema`), which replaces
+whatever `response_format` the request would otherwise carry. That used to happen silently, so a
+caller who asked for both got the tool's schema back instead of the shape they asked for. Where
+the other `response_format` comes from decides the outcome; the source is read with
+`_chat_effective_response_format` (ADR 0024, k249 Update), the precedence the request builders use:
+
+- **Passed to the same `chat_f` call** (any type but `text`, `json_object` included): the caller
+  asked for two different outputs in one request. `chat_f` croaks before sending and the message
+  says to pick one. This also covers a per-request value that repeats the engine's.
+- **Only on the engine attribute**: the request is the more specific intent, so the forced tool
+  wins. The rewrite goes ahead and carps that the engine's `response_format` is replaced for this
+  request.
+- **`text`**, from either source, asks for no structure, so it is not a conflict: the rewrite
+  stays silent, as before.
+
+The check runs only when the rewrite actually fires (named tool found in `tools`), inside
+`_chat_rewrite_replaces_response_format`. On NousResearch the hermes schema prompt (k234 Update)
+carries the rewritten tool schema, because it reads the controls after the rewrite. Ollama's
+legacy `json_format` attribute is not a `response_format` and is still overridden silently.
+Streaming has no rewrite, so it is unaffected. Pinned on Perplexity, Ollama native and
+NousResearch in `t/77_forced_tool_response_format_conflict.t`.
