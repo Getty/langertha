@@ -6,7 +6,8 @@ use Future::AsyncAwait;
 use Time::HiRes qw( gettimeofday );
 use Carp qw( croak );
 use JSON::MaybeXS ();
-use MIME::Base64 qw( encode_base64 );
+use Future;
+use Scalar::Util qw( blessed refaddr weaken );
 
 extends 'Langertha::Plugin';
 
@@ -181,10 +182,54 @@ has auto_flush => (
 
 =attr auto_flush
 
-When true, automatically flushes events after each C<plugin_after_llm_response>.
-Defaults to false.
+When true, the batch is sent after each C<plugin_after_llm_response>,
+C<plugin_after_image_gen> and C<plugin_after_embedding>. Defaults to false.
+
+The hook does not wait for Langfuse. With the L<Net::Async::HTTP> backend the
+flush runs in the background on the host engine's event loop, bounded by
+L</flush_timeout>, and the call returns at once; a slow or unreachable
+Langfuse costs the chat nothing. The request only makes progress while that
+loop runs, so a synchronous program should call L</flush> before it exits:
+that waits for flushes still in flight and sends what is left. Without
+L<Net::Async::HTTP> (or without an engine on the host) everything is
+synchronous anyway and the hook sends right away, again bounded by
+L</flush_timeout>.
 
 =cut
+
+has flush_timeout => (
+  is      => 'ro',
+  isa     => 'Num',
+  default => 10,
+);
+
+=attr flush_timeout
+
+Seconds a flush may wait for Langfuse per request. Default C<10>: an
+ingestion endpoint that accepts the connection and never answers must not
+hold up the application. The engine's C<user_agent_timeout> does not apply to
+flushes. On the L<Net::Async::HTTP> backend it is the total time of the
+request, on the LWP path the time without activity on the connection.
+
+=cut
+
+has flush_batch_size => (
+  is      => 'ro',
+  isa     => 'Int',
+  default => 100,
+);
+
+=attr flush_batch_size
+
+The most events sent in one ingestion request. Default C<100>; a larger batch
+goes out as several requests, one after another.
+
+=cut
+
+has _pending_flushes => (
+  is      => 'ro',
+  default => sub { {} },
+);
 
 # --- Internal state ---
 
@@ -384,46 +429,115 @@ Updates a trace by upserting with the same ID.
 
 =cut
 
+sub _flush_args {
+  my ( $self ) = @_;
+  my @events = @{ $self->_batch };
+  return unless @events;
+  $self->_batch([]);
+  my $size = $self->flush_batch_size;
+  $size = 1 if $size < 1;
+  my @chunks;
+  push @chunks, [ splice @events, 0, $size ] while @events;
+  return (
+    chunks     => \@chunks,
+    url        => $self->url,
+    public_key => $self->public_key,
+    secret_key => $self->secret_key,
+    json       => $self->_json,
+    agent      => 'Langertha-Plugin-Langfuse/' . $VERSION,
+    timeout    => $self->flush_timeout,
+  );
+}
+
+# The engine whose async backend carries a flush: the host when it is an
+# engine itself, else the host's engine (Chat, Embedder, ImageGen, Raider).
+# None (a host without one, or a host already gone: it is a weak ref) means
+# the dedicated LWP agent with flush_timeout.
+sub _flush_engine {
+  my ( $self ) = @_;
+  my $host = $self->host or return;
+  return $host if $host->can('_async_do_request_f');
+  return unless $host->can('engine');
+  my $engine = $host->engine;
+  return blessed($engine) && $engine->can('_async_do_request_f') ? $engine : undef;
+}
+
+sub _send_f {
+  my ( $self, %args ) = @_;
+  require Langertha::Role::Langfuse;
+  return Langertha::Role::Langfuse->_langfuse_send_chunks_f( %args, engine => $self->_flush_engine );
+}
+
+# auto_flush from inside an async hook: start the flush and return at once.
+# The future is held on the object until it is ready (flush_timeout bounds
+# that), so it is not lost to garbage collection; flush / flush_f wait for it.
+sub _auto_flush {
+  my ( $self ) = @_;
+  my %args = $self->_flush_args or return;
+  my $future = $self->_send_f(%args);
+  return if $future->is_ready;
+  my $pending = $self->_pending_flushes;
+  my $key     = refaddr $future;
+  $pending->{$key} = $future;
+  weaken( my $weak = $pending );
+  $future->on_ready( sub { delete $weak->{$key} if $weak } );
+  return;
+}
+
 sub flush {
   my ( $self ) = @_;
   return unless $self->enabled;
-  my $batch = $self->_batch;
-  return unless @$batch;
-
-  require LWP::UserAgent;
-  my $ua = LWP::UserAgent->new(agent => 'Langertha-Plugin-Langfuse/'.$VERSION);
-
-  my $auth = encode_base64(
-    $self->public_key . ':' . $self->secret_key, ''
-  );
-
-  my $body = $self->_json->encode({ batch => $batch });
-
-  my $request = HTTP::Request->new(
-    POST => $self->url . '/api/public/ingestion',
-    [
-      'Content-Type'  => 'application/json',
-      'Authorization' => 'Basic ' . $auth,
-    ],
-    $body,
-  );
-
-  my $response = $ua->request($request);
-  $self->_batch([]);
-
-  unless ($response->is_success) {
-    warn "Langfuse ingestion failed: " . $response->status_line;
+  if ( my @pending = values %{ $self->_pending_flushes } ) {
+    # Only the Net::Async::HTTP path leaves a flush pending, so there is a loop.
+    my $engine = $self->_flush_engine;
+    my $loop   = $engine ? $engine->async_loop : undef;
+    $loop->await_all(@pending) if $loop;
   }
-
-  return $response;
+  my %args = $self->_flush_args or return;
+  require Langertha::Role::Langfuse;
+  my @responses = Langertha::Role::Langfuse->_langfuse_send_chunks_f(%args)->get;
+  return $responses[-1];
 }
 
 =method flush
 
     $plugin->flush;
 
-Sends all batched events to the Langfuse ingestion API. Clears the
-batch after sending.
+Sends all batched events to the Langfuse ingestion API over a dedicated
+L<LWP::UserAgent> with L</flush_timeout>, and clears the batch. Blocks until
+done; first it waits for any L</auto_flush> request still in flight. Do not
+call it from inside an event loop; use L</flush_f> there. More than
+L</flush_batch_size> events go out as several requests. Returns the
+L<HTTP::Response> of the last request, or nothing when there was nothing to
+send.
+
+It never dies. It warns when a request fails (its events are lost, and after
+a timeout or refused connection the rest of the flush is dropped too) and when
+Langfuse answers C<207 Multi-Status> with per-event C<errors> (the number
+rejected and the first error).
+
+=cut
+
+async sub flush_f {
+  my ( $self ) = @_;
+  return unless $self->enabled;
+  my @pending = values %{ $self->_pending_flushes };
+  await Future->wait_all(@pending) if @pending;
+  my %args = $self->_flush_args or return;
+  return await $self->_send_f(%args);
+}
+
+=method flush_f
+
+    await $plugin->flush_f;
+
+Async L</flush>: waits for L</auto_flush> requests still in flight, then
+sends the batch through the host engine's async backend
+(L<Langertha::Role::AsyncHTTP>) with L</flush_timeout> as each request's total
+timeout, so a slow or silent Langfuse never blocks the event loop. Resolves
+to the L<HTTP::Response> of each request and B<never fails>; problems are
+warned about as in L</flush>. Without an engine on the host, or on the
+synchronous fallback, it runs like L</flush>.
 
 =cut
 
@@ -505,9 +619,7 @@ async sub plugin_after_llm_response {
     output => $data,
   );
 
-  if ($self->auto_flush) {
-    $self->flush;
-  }
+  $self->_auto_flush if $self->auto_flush;
 
   return $data;
 }
@@ -566,9 +678,7 @@ async sub plugin_after_image_gen {
     output => $result,
   );
 
-  if ($self->auto_flush) {
-    $self->flush;
-  }
+  $self->_auto_flush if $self->auto_flush;
 
   return $result;
 }
@@ -613,9 +723,7 @@ async sub plugin_after_embedding {
       : undef },
   );
 
-  if ($self->auto_flush) {
-    $self->flush;
-  }
+  $self->_auto_flush if $self->auto_flush;
 
   return $vector;
 }

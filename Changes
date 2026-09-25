@@ -1227,6 +1227,22 @@ Revision history for Langertha
       from LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY, and still sends
       nothing until you flush.
 
+    - Langfuse flushes no longer stall chats. Plugin::Langfuse's auto_flush
+      sends in the background on the engine's Net::Async::HTTP backend and
+      the hook returns at once; new $engine->langfuse_flush_f and
+      $plugin->flush_f do the same on demand, and the sync flushes wait at
+      most langfuse_timeout / flush_timeout (default 10s, was LWP's 180s).
+      A flush goes out in requests of at most 100 events
+      (langfuse_flush_batch_size / flush_batch_size), stops after a timeout
+      instead of waiting it out per request, and warns with counts when
+      Langfuse answers 207 with rejected events. Batches are bounded too:
+      at most langfuse_max_batch / max_batch events (default 1000) wait for
+      a flush, the oldest are dropped past that with one warning. Langfuse
+      still turns on by itself from LANGFUSE_PUBLIC_KEY /
+      LANGFUSE_SECRET_KEY, and the engine still sends nothing until you
+      flush.
+
+
 0.502     2026-05-15 23:02:10Z
 
 

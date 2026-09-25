@@ -6,6 +6,9 @@ use Time::HiRes qw( gettimeofday tv_interval );
 use Carp qw( croak );
 use JSON::MaybeXS qw( JSON );
 use MIME::Base64 qw( encode_base64 );
+use Scalar::Util qw( blessed );
+use Future;
+use Future::AsyncAwait;
 
 =head1 SYNOPSIS
 
@@ -26,6 +29,9 @@ Then use any engine as normal — C<simple_chat> is auto-traced:
 
     my $response = $engine->simple_chat('Hello!');
     $engine->langfuse_flush;  # send events to Langfuse
+
+    # inside an event loop, without blocking it:
+    await $engine->langfuse_flush_f;
 
 Or pass keys explicitly:
 
@@ -526,46 +532,189 @@ C<output>, C<usage>, and C<end_time> after the LLM call completes.
 
 =cut
 
-sub langfuse_flush {
-  my ( $self ) = @_;
-  return unless $self->langfuse_enabled;
-  my $batch = $self->_langfuse_batch;
-  return unless @$batch;
+has langfuse_timeout => (
+  is => 'ro',
+  isa => 'Num',
+  default => 10,
+);
 
-  require LWP::UserAgent;
-  my $ua = LWP::UserAgent->new(agent => 'Langertha-Langfuse/'.$VERSION);
+=attr langfuse_timeout
 
-  my $auth = encode_base64(
-    $self->langfuse_public_key . ':' . $self->langfuse_secret_key, ''
-  );
+Seconds a flush may wait for Langfuse per request. Default C<10>, deliberately
+short: Langfuse is observability, and an ingestion endpoint that accepts the
+connection and never answers must not hold up the application (LWP's own
+default would be 180 seconds). The engine's
+L<Langertha::Role::HTTP/user_agent_timeout> does not apply here; it is meant
+for the LLM provider. On the L<Net::Async::HTTP> backend it is the total time
+of the request, on the synchronous LWP path the time without activity on the
+connection.
 
-  my $body = $self->json->encode({ batch => $batch });
+=cut
 
-  my $request = HTTP::Request->new(
-    POST => $self->langfuse_url . '/api/public/ingestion',
+has langfuse_flush_batch_size => (
+  is => 'ro',
+  isa => 'Int',
+  default => 100,
+);
+
+=attr langfuse_flush_batch_size
+
+The most events sent in one ingestion request. Default C<100>. A flush with
+more events sends several requests one after another, so a large backlog does
+not become one body that Langfuse rejects for its size.
+
+=cut
+
+# --- Ingestion transport (karr k303) -----------------------------------------
+# The helpers below use no engine state and are called as class methods, so
+# Langertha::Plugin::Langfuse shares them instead of carrying a copy.
+
+sub _langfuse_ingestion_request {
+  my ( $class, %args ) = @_;
+  require HTTP::Request;
+  my $auth = encode_base64( $args{public_key} . ':' . $args{secret_key}, '' );
+  return HTTP::Request->new(
+    POST => $args{url} . '/api/public/ingestion',
     [
       'Content-Type'  => 'application/json',
       'Authorization' => 'Basic ' . $auth,
     ],
-    $body,
+    $args{json}->encode({ batch => $args{events} }),
   );
+}
 
-  my $response = $ua->request($request);
-  $self->_langfuse_batch([]);
-
-  unless ($response->is_success) {
-    warn "Langfuse ingestion failed: " . $response->status_line;
+# Sends @{$args{chunks}} one request after another and returns a Future of
+# the responses; it never fails. $args{engine} (anything with
+# _async_do_request_f) carries the request on its async backend with the
+# short timeout; without one, or when that backend is the synchronous LWP
+# shim (whose user agent has the provider's timeout), a dedicated LWP agent
+# with the short timeout does. A transport failure (timeout, refused) stops
+# the flush: the remaining chunks would only wait out the same timeout.
+async sub _langfuse_send_chunks_f {
+  my ( $class, %args ) = @_;
+  my @chunks = @{ $args{chunks} };
+  my @responses;
+  while ( my $chunk = shift @chunks ) {
+    my $request  = $class->_langfuse_ingestion_request( %args, events => $chunk );
+    my $response = await $class->_langfuse_send_f( $args{engine}, $request, %args );
+    push @responses, $response;
+    $class->_langfuse_check_ingestion( $response, scalar @$chunk );
+    if ( @chunks && ( $response->header('Client-Warning') // '' ) eq 'Internal response' ) {
+      my $dropped = 0;
+      $dropped += @$_ for @chunks;
+      warn "Langfuse ingestion: endpoint unreachable, dropping $dropped more event(s)\n";
+      last;
+    }
   }
+  return @responses;
+}
 
-  return $response;
+sub _langfuse_send_f {
+  my ( $class, $engine, $request, %args ) = @_;
+  my $http = $engine ? $engine->_async_http : undef;
+  unless ( blessed($http) && !$http->isa('Langertha::Request::SyncHTTP') ) {
+    require LWP::UserAgent;
+    my $ua = LWP::UserAgent->new( agent => $args{agent}, timeout => $args{timeout} );
+    return Future->done( $ua->request($request) );
+  }
+  return $engine->_async_do_request_f( request => $request, timeout => $args{timeout} )
+    ->else( sub {
+      my ( $message ) = @_;
+      $message = ( split /\n/, "$message" )[0] // 'request failed';
+      # Same shape LWP gives a transport failure, so both paths report alike.
+      require HTTP::Response;
+      return Future->done( HTTP::Response->new(
+        500, $message, [ 'Client-Warning' => 'Internal response' ],
+      ) );
+    } );
+}
+
+# Warns about what did not arrive; never dies. Langfuse answers a batch with
+# 207 Multi-Status, listing per-event failures under "errors".
+sub _langfuse_check_ingestion {
+  my ( $class, $response, $count ) = @_;
+  unless ( $response->is_success ) {
+    warn "Langfuse ingestion failed: " . $response->status_line . " ($count event(s) lost)\n";
+    return;
+  }
+  return unless $response->code == 207;
+  my $data = eval { JSON::MaybeXS->new( utf8 => 1 )->decode( $response->content ) };
+  my $errors = ref $data eq 'HASH' && ref $data->{errors} eq 'ARRAY' ? $data->{errors} : [];
+  return unless @$errors;
+  my $first  = ref $errors->[0] eq 'HASH' ? $errors->[0] : {};
+  my $detail = join ' ', grep { defined && !ref && length } @{$first}{qw( status message )};
+  warn sprintf "Langfuse ingestion: %d of %d event(s) rejected%s\n",
+    scalar @$errors, $count, length $detail ? " (first: $detail)" : '';
+  return;
+}
+
+sub _langfuse_flush_args {
+  my ( $self ) = @_;
+  my @events = @{ $self->_langfuse_batch };
+  return unless @events;
+  $self->_langfuse_batch([]);
+  my $size = $self->langfuse_flush_batch_size;
+  $size = 1 if $size < 1;
+  my @chunks;
+  push @chunks, [ splice @events, 0, $size ] while @events;
+  return (
+    chunks     => \@chunks,
+    url        => $self->langfuse_url,
+    public_key => $self->langfuse_public_key,
+    secret_key => $self->langfuse_secret_key,
+    json       => $self->json,
+    agent      => 'Langertha-Langfuse/' . $VERSION,
+    timeout    => $self->langfuse_timeout,
+  );
+}
+
+sub langfuse_flush {
+  my ( $self ) = @_;
+  return unless $self->langfuse_enabled;
+  my %args = $self->_langfuse_flush_args or return;
+  my @responses = __PACKAGE__->_langfuse_send_chunks_f(%args)->get;
+  return $responses[-1];
 }
 
 =method langfuse_flush
 
     $engine->langfuse_flush;
 
-Sends all batched events to the Langfuse ingestion API. Clears the batch
-after sending. Warns on HTTP errors but does not die.
+Sends all batched events to the Langfuse ingestion API over a dedicated
+L<LWP::UserAgent> with L</langfuse_timeout>, and clears the batch. Blocks
+until the requests are done, so do not call it from inside an event loop;
+use L</langfuse_flush_f> there. More than L</langfuse_flush_batch_size>
+events go out as several requests. Returns the L<HTTP::Response> of the last
+request, or nothing when there was nothing to send.
+
+It never dies. It warns when a request fails (the events of that request are
+lost, and after a timeout or refused connection the rest of the flush is
+dropped too, instead of waiting out the timeout once per request), and when
+Langfuse accepts the request but rejects single events (C<207 Multi-Status>
+with an C<errors> list): the warning gives the number rejected and the first
+error.
+
+=cut
+
+async sub langfuse_flush_f {
+  my ( $self ) = @_;
+  return unless $self->langfuse_enabled;
+  my %args = $self->_langfuse_flush_args or return;
+  return await __PACKAGE__->_langfuse_send_chunks_f( %args, engine => $self );
+}
+
+=method langfuse_flush_f
+
+    await $engine->langfuse_flush_f;
+
+Async L</langfuse_flush>: sends the batched events through the engine's own
+async backend (L<Langertha::Role::AsyncHTTP>) with L</langfuse_timeout> as
+the request's total timeout, so a slow or silent Langfuse never blocks the
+event loop. The batch is taken when the call starts; events recorded while
+it runs wait for the next flush. The future resolves to the
+L<HTTP::Response> of each request and B<never fails>; problems are warned
+about as in L</langfuse_flush>. On the synchronous fallback (no
+L<Net::Async::HTTP>) it runs like L</langfuse_flush>.
 
 =cut
 
