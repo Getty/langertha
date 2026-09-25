@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-09-25T06:52:24Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T06:52:24Z
+created: 2026-09-25T05:52:24Z
+id: 239
+priority: low
+started: 2026-09-25T06:31:29Z
+status: done
+tags:
+- tools
+- wire
+- capabilities
+title: 'Native engines pass tool_choice verbatim: Ollama native claims tool_choice_*
+  but has no tool_choice wire'
+updated: 2026-09-25T06:52:24Z
+---
+
+Found in the k235 audit. Ollama (native /api/chat), AKI (native), LMStudio (native) chat_request / chat_stream_request never touch tool_choice: any string, hash or Langertha::ToolChoice object goes into the body as given (an object via TO_JSON canonical shape). ToolChoice->to croaks for ollama/hermes (ADR 0010: no wire-level tool_choice). Yet Engine::Ollama supports() reports tool_choice_auto/any/none/named (Role::Tools default), and AKI/NousResearch (hermes) too. Decide per engine: clear the tool_choice_* flags where the wire has none (ADR 0002 layer 2) and drop+carp a forced choice (the ResponsesCompatible k233 pattern), or document the passthrough. Needs langertha-llm-advisor on whether Ollama native / AKI native / LMStudio native accept a tool_choice today.
+
+2026-09-25 06:04 llm-advisor 2026-09-25 (docs/source only, no live calls). AKI skipped (k234).
+FACTS: (1) Ollama native /api/chat has NO tool_choice: api/types.go ChatRequest (main @2026-09-24, release v0.34.4) = model,messages,stream,format,keep_alive,tools,options,think,truncate,shift,logprobs,top_logprobs. Handler binds with gin ShouldBindJSON, no DisallowUnknownFields -> tool_choice is accepted, IGNORED, HTTP 200 (the dangerous silent case). Even Ollama own /v1/responses shim has "TODO(drifkin): tool_choice is not supported" (openai/responses.go); /v1 ChatCompletionRequest has no tool_choice either. No parallel_tool_calls field; docs.ollama.com/capabilities/tool-calling "Parallel tool calling" = model emits several calls, not a request knob. (2) LM Studio native POST /api/v1/chat (Engine::LMStudio) accepts NEITHER tools NOR tool_choice: params = model,input,system_prompt,integrations(plugin|ephemeral_mcp, allowed_tools),stream,temperature,top_p,top_k,min_p,repeat_penalty,max_output_tokens,reasoning,context_length,store,previous_response_id (lmstudio.ai/docs/developer/rest/chat). Endpoint comparison table (lmstudio.ai/docs/developer/rest) lists "Custom tools: /api/v1/chat NO" (yes on /v1/responses, /v1/chat/completions, /v1/messages). Its output tool_call items are server-executed MCP/plugin calls (with output + provider_info) -> ADR 0030 territory, not client tools. Unknown-field behavior of LM Studio server not documented (may 400 or ignore) - unverified.
+RECOMMEND Ollama: keep tools_native; layer-2 around engine_capabilities delete tool_choice_auto/any/none/named (mirror OllamaOpenAI, same server). Side effect is GOOD: chat_f forced named choice + tools now takes the ADR 0005 fallback -> format=<schema> + synthetic ToolCall (Ollama has response_format_json_schema), grammar-constrained, stronger than a tool_choice would be. Request builders (chat_request AND chat_stream_request; streaming gets no fallback) must strip tool_choice from %extra with the k233 rules: undef/auto -> silent drop; none -> withhold tools + carp; any/required/named left over -> drop + carp. Classify via ToolChoice->from_hash only (->to(ollama) croaks, ADR 0010). Do NOT add ParallelToolUse.
+RECOMMEND LMStudio native: flags already right (no Role::Tools -> no tools_*/tool_choice_*; keep it so, do not add tools_native). But chat_request/chat_stream_request pass %extra verbatim, so chat_f(tools=>..,tool_choice=>..) puts both raw into the body. Strip both: tool_choice -> same rules (auto/none silent since no tools reach the wire; forced -> carp). tools -> carp+drop at minimum; I lean croak (like ServerTool->check_engine) with a pointer to LMStudioOpenAI/LMStudioAnthropic, since no tool call can ever come back - orchestrator call.
+ADJACENT (same bug class): OllamaOpenAI clears all tool_choice_* but OpenAICompatible chat_request (l.353) still serializes and sends tool_choice -> silently ignored by Ollama /v1. Best fix is one generic Role::Chat helper (generalize ResponsesCompatible::_responses_tool_choice_kwarg / _hermes_prompt_tools) that gates tool_choice on supports(tool_choice_*) for every envelope, so Ollama, LMStudio, OllamaOpenAI and AKI(k234) share one rule.
+
+Orchestrator ruling: follow advisor note. Shared Role::Chat helper sends tool_choice only as supports('tool_choice_*') allows (undef/auto silent drop; none withholds tools + carp; any/named drop + carp when ADR 0005 fallback didn't fire), used by Ollama native, LMStudio native, OllamaOpenAI (via OpenAICompatible), generalizing _responses_tool_choice_kwarg/_hermes_prompt_tools where it stays small. Ollama native: clear tool_choice_* at layer 2. LMStudio native: croak on tools (point to LMStudioOpenAI/LMStudioAnthropic). Starts after k234 and k235 merge (same files).
