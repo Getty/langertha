@@ -13,9 +13,11 @@ Revision history for Langertha
       the selected async backend and resolves with the HTTP::Response;
       $engine->langfuse_timestamp returns the Langfuse ISO timestamp; and
       Langertha::Usage->from_raw($body) reads usage from a raw provider body
-      (usage, Gemini usageMetadata, response.usage, Ollama native counts),
-      returning undef when none is reported. Usage->from_hash also reads
-      Gemini's camelCase counts. $engine->async_loop returns the active async
+      (usage, Gemini usageMetadata, response.usage, Ollama and AKI.IO native
+      counts), returning undef when none is reported; an Ollama count of zero
+      counts as not reported, as in Engine::Ollama. Usage->from_hash also reads
+      Gemini's camelCase counts, and Gemini's cachedContentTokenCount now
+      reaches cached_tokens on both Usage and Response. $engine->async_loop returns the active async
       backend's event loop, or undef on the sync fallback or a loop-less client:
       core promises no loop, so use $engine->async_loop // IO::Async::Loop->new.
       The private _async_http and _langfuse_timestamp keep working. (ADR 0028.)

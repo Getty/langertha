@@ -402,6 +402,10 @@ sub chat_response {
   # Normalize Gemini usage metadata. cachedContentTokenCount is surfaced
   # when present so callers can monitor cache-hit rate (karr #22, 22e).
   # See https://ai.google.dev/api/generate-content (usageMetadata).
+  # Langertha::Usage->from_hash reads both spellings (ADR 0018 tier 1), but the
+  # rename stays: Usage's %{} overload serves this hash verbatim, so
+  # $response->usage->{prompt_tokens} / {cached_content_token_count} are
+  # public back-compat keys (Langertha::CachedContent POD, karr k197).
   my $usage;
   if (my $um = $data->{usageMetadata}) {
     $usage = {

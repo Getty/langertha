@@ -93,8 +93,10 @@ sub from_hash {
   # Perplexity Agent API) nests them under input_tokens_details, mixing the
   # OpenAI read key (cached_tokens) with the Anthropic-named counts
   # (cache_read_input_tokens / cache_creation_input_tokens); Anthropic reports
-  # them flat. The OpenAI Chat nesting wins, then the Responses nesting, then
-  # the Anthropic flat keys (karr #125 / #130 / #159). The read count and the
+  # them flat; Gemini reports the read count as usageMetadata's
+  # cachedContentTokenCount (Engine::Gemini renames it cached_content_token_count).
+  # The OpenAI Chat nesting wins, then the Responses nesting, then the Anthropic
+  # flat keys, then Gemini's (karr #125 / #130 / #159 / k197). The read count and the
   # write count are distinct quantities — the write count is deliberately NOT
   # folded into cached_tokens. Values are read into lexicals first so a missing
   # key never autovivifies the caller's hash.
@@ -108,6 +110,8 @@ sub from_hash {
   elsif ( $itd && defined $itd->{cached_tokens} )           { $cached = $itd->{cached_tokens} }
   elsif ( $itd && defined $itd->{cache_read_input_tokens} ) { $cached = $itd->{cache_read_input_tokens} }
   elsif ( defined $hash->{cache_read_input_tokens} )        { $cached = $hash->{cache_read_input_tokens} }
+  elsif ( defined $hash->{cachedContentTokenCount} )        { $cached = $hash->{cachedContentTokenCount} }
+  elsif ( defined $hash->{cached_content_token_count} )     { $cached = $hash->{cached_content_token_count} }
 
   my $cache_write;
   if    ( $ptd && defined $ptd->{cache_write_tokens} )          { $cache_write = $ptd->{cache_write_tokens} }
@@ -152,10 +156,21 @@ sub from_raw {
   if ( ref($envelope) eq 'HASH' && ref( $envelope->{usage} ) eq 'HASH' ) {
     return $class->from_hash( $envelope->{usage} );
   }
-  if ( defined $data->{prompt_eval_count} || defined $data->{eval_count} ) {
-    return $class->from_hash({
-      map { defined $data->{$_} ? ( $_ => $data->{$_} ) : () } qw( prompt_eval_count eval_count )
-    });
+  # Ollama native: top-level counts. A zero count is "not reported", as in
+  # Engine::Ollama's chat_response, so a body with only zeros has no usage.
+  my %ollama = map { $data->{$_} ? ( $_ => $data->{$_} ) : () } qw( prompt_eval_count eval_count );
+  return $class->from_hash( \%ollama ) if %ollama;
+  # AKI native: top-level counts under their own names (Engine::AKI's
+  # chat_response reads the same keys, by definedness).
+  my %aki = map { defined $data->{$_} ? ( $_ => $data->{$_} ) : () }
+    qw( prompt_length num_generated_tokens num_cached_tokens );
+  if ( exists $aki{prompt_length} || exists $aki{num_generated_tokens} ) {
+    return $class->new(
+      input_tokens  => 0 + ( $aki{prompt_length}        // 0 ),
+      output_tokens => 0 + ( $aki{num_generated_tokens} // 0 ),
+      exists $aki{num_cached_tokens} ? ( cached_tokens => 0 + $aki{num_cached_tokens} ) : (),
+      raw           => \%aki,
+    );
   }
   return undef;
 }
@@ -172,14 +187,14 @@ HashRef C<parse_response> returns — for callers that send their own requests
 and never get a L<Langertha::Response>. It finds the usage block wherever the
 provider puts it: C<usage> (OpenAI-compatible, Anthropic, Open-Responses),
 C<usageMetadata> (Gemini), C<response.usage> (an Open-Responses event
-envelope), or the top-level C<prompt_eval_count> / C<eval_count> of Ollama's
-native API; the counts are then read by L</from_hash>, so every spelling it
-knows applies.
+envelope), the top-level C<prompt_eval_count> / C<eval_count> of Ollama's
+native API, or the top-level C<prompt_length> / C<num_generated_tokens> /
+C<num_cached_tokens> of AKI.IO's native API. The usage block and the Ollama
+counts are then read by L</from_hash>, so every spelling it knows applies.
 
 Returns C<undef> when the body reports no usage (or is not a HashRef), so a
-caller can tell "not reported" from "zero tokens". Engine-specific spellings
-that only an engine's own response parsing translates (for example AKI's
-native C<prompt_length>) are not recognized here.
+caller can tell "not reported" from "zero tokens". As in
+L<Langertha::Engine::Ollama>, an Ollama count of zero counts as not reported.
 
 =method from_response
 
@@ -314,8 +329,10 @@ the Open-Responses envelope (OpenAI Responses, the Perplexity Agent API) nests
 it at C<usage.input_tokens_details.cached_tokens> (or the Anthropic-named
 C<cache_read_input_tokens> in the same block), and Anthropic reports it flat as
 C<usage.cache_read_input_tokens>. The OpenAI Chat nesting wins, then the
-Responses nesting, then the Anthropic flat key. C<undef> when the provider does
-not report a cache-read count.
+Responses nesting, then the Anthropic flat key. Gemini reports it as
+C<usageMetadata.cachedContentTokenCount> (C<cached_content_token_count> after
+L<Langertha::Engine::Gemini> renames it), read last. C<undef> when the provider
+does not report a cache-read count.
 
 Note: on OpenAI (GPT-5.6 and later) this count excludes hidden tokens and
 rounds down to a multiple of 128, so cost arithmetic built on it is
