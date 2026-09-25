@@ -12,6 +12,14 @@ Revision history for Langertha
       croaks before the request. New Image methods to_responses,
       to_ollama, to_lmstudio and data_url; to_openai takes inline => 1.
 
+    - LM Studio native (/api/v1/chat) sends text as type text input
+      parts, and since that endpoint takes no assistant messages, a
+      history with assistant turns is cut to the user turn(s) after the
+      last one, with a warning, instead of passing earlier replies off as
+      user text. previous_response_id and store pass through, so continue
+      a conversation with previous_response_id => $response->id, or use
+      ->openai / ->anthropic for client-side history.
+
     - Langertha::Pricing rules take optional cached_input_per_million and
       cache_write_per_million. With either set, cost_for prices each
       input token once: cache reads and writes at their rates (a missing

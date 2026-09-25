@@ -113,9 +113,9 @@ for my $name (qw( OpenAIResponses Perplexity )) {
   is_deeply body_of( $e->chat(
     { role => 'user', content => [ 'look', b64_img(), 'and this' ] },
   ) )->{input}, [
-    { type => 'message', content => 'look' },
+    { type => 'text', content => 'look' },
     { type => 'image', data_url => $DATA },
-    { type => 'message', content => 'and this' },
+    { type => 'text', content => 'and this' },
   ], 'LMStudio: image item with data_url, text around it kept in order';
 
   is_deeply body_of( $e->chat( { role => 'user', content => [ b64_img() ] } ) )->{input},
@@ -205,6 +205,8 @@ for my $name (qw( OllamaOpenAI Cerebras Moonshot )) {
 }
 
 # --- Text-only messages: byte-identical to the pre-change bodies (golden) ---
+# LM Studio native left this table in k268 on purpose: it now sends text parts
+# and only the turns after the last assistant message (t/24_lmstudio_native_input.t).
 {
   my @msgs = (
     'plain user',
@@ -213,7 +215,6 @@ for my $name (qw( OllamaOpenAI Cerebras Moonshot )) {
   );
   my %golden = (
     Cerebras => '{"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"gpt-oss-120b","stream":false}',
-    LMStudio => '{"input":[{"content":"plain user","type":"message"},{"content":"plain assistant","type":"message"},{"content":"native part","type":"message"}],"max_output_tokens":1024,"model":"m","system_prompt":"sys"}',
     Moonshot => '{"max_tokens":16000,"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"kimi-k3","stream":false}',
     Ollama => '{"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"llama3.3","options":{},"stream":false}',
     OllamaOpenAI => '{"messages":[{"content":"sys","role":"system"},{"content":"plain user","role":"user"},{"content":"plain assistant","role":"assistant"},{"content":[{"text":"native part","type":"text"}],"role":"user"}],"model":"llama3.3","stream":false}',

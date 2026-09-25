@@ -60,6 +60,33 @@ The native chat endpoint takes no client tools: passing a non-empty C<tools>
 list croaks, use the L</openai> or L</anthropic> wrapper for tool calling. A
 C<tool_choice> is never sent (a forced one warns).
 
+The native C<input> is one user turn: a plain string, or an array of
+C<< { type => 'text', content } >> and C<< { type => 'image', data_url } >>
+parts (L<Langertha::Content::Image> goes as a base64 data URL). The endpoint
+takes no assistant messages, so a history that contains assistant turns is cut
+to the user turn(s) after the last one, with a warning; system messages still
+go out as C<system_prompt>. For client-side history use the L</openai> or
+L</anthropic> wrapper.
+
+Multi-turn on this wire is server-side state instead: LM Studio stores each
+chat (C<store> defaults to true on the server) and answers with a
+C<response_id> (L<Langertha::Response/id>). Pass it back as
+C<previous_response_id> together with the next user turn only; both
+C<previous_response_id> and C<store> are passed through unchanged:
+
+    my $first = await $lmstudio->chat_f( messages => [ 'My name is Ada.' ] );
+    my $next  = await $lmstudio->chat_f(
+        messages             => [ 'What is my name?' ],
+        previous_response_id => $first->id,
+    );
+
+    # a throwaway call that leaves no stored chat behind
+    await $lmstudio->chat_f( messages => [ 'Hi' ], store => JSON::MaybeXS::false );
+
+Langertha does not send C<store> by default, so every call is stored by the
+server. With C<store> false the server returns no C<response_id>, and the
+final streamed chunk then carries no C<finish_reason>.
+
 Authentication is optional. If C<api_key> (or C<LANGERTHA_LMSTUDIO_API_KEY>)
 is set, requests include C<Authorization: Bearer ...>.
 
@@ -264,6 +291,11 @@ sub _extract_reasoning_text {
   return @parts ? join("\n", @parts) : undef;
 }
 
+# Native /api/v1/chat input is ONE user turn: a string, or an array of content
+# parts { type => 'text', content } / { type => 'image', data_url }
+# (lmstudio.ai/docs/developer/rest/chat, corrected in lmstudio-ai/docs 9b8bc20,
+# karr k268). The items carry no role, so the caller has already cut the
+# history down to the trailing user turn(s) (_trailing_turns).
 sub _normalize_input {
   my ( $messages ) = @_;
   my @items;
@@ -278,13 +310,13 @@ sub _normalize_input {
     }
     my $content = ref $msg->{content} ? _extract_text($msg->{content}) : $msg->{content};
     push @items, {
-      type => 'message',
+      type => 'text',
       content => $content,
     };
   }
 
   return '' unless @items;
-  return $items[0]{content} if @items == 1 && $items[0]{type} eq 'message';
+  return $items[0]{content} if @items == 1 && $items[0]{type} eq 'text';
   return \@items;
 }
 
@@ -295,7 +327,7 @@ sub _input_items_with_images {
   my ( $parts ) = @_;
   my ( @items, @run );
   my $flush = sub {
-    push @items, { type => 'message', content => _extract_text([ @run ]) } if @run;
+    push @items, { type => 'text', content => _extract_text([ @run ]) } if @run;
     @run = ();
   };
   for my $part (@{$parts}) {
@@ -309,6 +341,26 @@ sub _input_items_with_images {
   }
   $flush->();
   return @items;
+}
+
+# The native chat endpoint takes no assistant messages ("Include assistant
+# messages in the request: NO", lmstudio.ai/docs/developer/rest, karr k268):
+# flattening earlier assistant replies into the input would present them as
+# user text. Multi-turn on this wire is stateful (store + previous_response_id),
+# so a history with assistant turns is cut to what follows the last one, with a
+# carp per request. System messages stay: they go out as system_prompt.
+sub _trailing_turns {
+  my ( $self, $messages ) = @_;
+  my $last_assistant;
+  for my $i ( 0 .. $#{$messages} ) {
+    my $msg = $messages->[$i];
+    $last_assistant = $i if ref $msg eq 'HASH' && ( $msg->{role} // '' ) eq 'assistant';
+  }
+  return $messages unless defined $last_assistant;
+  $self->_langertha_carp( "".( ref $self ).": LM Studio native has no multi-turn "
+    . "history; sending only the trailing user turn(s); use ->openai/->anthropic "
+    . "or previous_response_id" );
+  return [ @{$messages}[ $last_assistant + 1 .. $#{$messages} ] ];
 }
 
 sub _normalize_system_prompt {
@@ -356,7 +408,7 @@ sub chat_request {
   my $controls = delete $extra{controls} // {};
 
   my $system_prompt = _normalize_system_prompt($messages);
-  my $input = _normalize_input($messages);
+  my $input = _normalize_input( $self->_trailing_turns($messages) );
 
   return $self->generate_request(
     'chat',
@@ -407,7 +459,7 @@ sub chat_stream_request {
   my $controls = delete $extra{controls} // {};
 
   my $system_prompt = _normalize_system_prompt($messages);
-  my $input = _normalize_input($messages);
+  my $input = _normalize_input( $self->_trailing_turns($messages) );
 
   return $self->generate_request(
     'chat',
