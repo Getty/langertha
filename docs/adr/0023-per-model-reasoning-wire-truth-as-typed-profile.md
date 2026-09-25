@@ -271,7 +271,10 @@ copy of model-family knowledge next to this registry. It is now a read-only Prof
 - **Classification only; the reasoning wire does not move.** Each chat carve-out is a clone of the
   family profile it sits in (`_non_reasoning_like`), with only `model_match`, `source` and the
   classification changed. The new passthrough entries have the same serialization fields as the
-  default. `to_openai` / `to_responses` output is byte-identical for every id. It is category-(a)
+  default. `to_openai` / `to_responses` output is byte-identical for every single-digit id
+  (`gpt-5.N-chat*`). Multi-digit chat ids (`gpt-5.10-chat`, …) do not exist yet and now resolve
+  through the generic carve-out rather than a misread digit family, so their reasoning fields
+  differ from before; the multi-digit family guard is karr #196. It is category-(a)
   wire-truth like `default_reasoning_off`. Only the OpenAI families are curated, so a `0` on a
   Claude, Gemini, Qwen or GPT-OSS profile means "not classified", not "known non-reasoning".
 - Verified offline: `t/79_openai_reasoning_model_classification.t` covers reasoning,
