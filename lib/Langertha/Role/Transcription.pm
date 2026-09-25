@@ -5,6 +5,8 @@ use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );
 use Scalar::Util qw( openhandle );
+use Time::HiRes qw( gettimeofday tv_interval );
+use Langertha::CallResult;
 
 # The _f methods send through the engine's async backend (k292): injected
 # client > Net::Async::HTTP > the sync LWP shim (ADR 0027).
@@ -192,6 +194,59 @@ async sub simple_transcription_result_f {
 Async variant of L</simple_transcription_result>: returns a L<Future> that
 resolves to the parsed answer as a HashRef, like L</simple_transcription_f>
 does for the text.
+
+=cut
+
+sub simple_transcription_call {
+  my ( $self, $file_or_content, %extra ) = @_;
+  my $model = exists $extra{model} ? $extra{model} : $self->transcription_model;
+  my $request = $self->transcription($file_or_content, %extra);
+  my $t0 = [gettimeofday];
+  my $response = $self->user_agent->request($request);
+  my $elapsed = tv_interval($t0);
+  my $value = $request->response_call->($response);
+  return Langertha::CallResult->from_http_response( $self, $response,
+    value => $value, model => $model, total_seconds => $elapsed );
+}
+
+=method simple_transcription_call
+
+    my $result = $engine->simple_transcription_call('/path/to/audio.mp3');
+    say $result->value;                                   # the transcript text
+    say $result->usage->input_tokens if $result->has_usage;
+    my $segments = $result->raw->{segments};              # verbose_json
+
+Like L</simple_transcription>, but returns a L<Langertha::CallResult>: the
+transcript text as C<value>, plus the provider's token C<usage> (OpenAI's
+C<gpt-transcribe>), this response's C<rate_limit>, the model and the measured
+C<total_seconds>. A JSON answer is kept whole in C<raw> (C<segments>,
+C<words>, C<duration>, a duration-billed C<usage>).
+
+It is not called C<simple_transcription_result> because that name already
+returns the parsed answer as a HashRef, and keeps doing so.
+
+=cut
+
+async sub simple_transcription_call_f {
+  my ( $self, $file_or_content, %extra ) = @_;
+  my $model = exists $extra{model} ? $extra{model} : $self->transcription_model;
+  my $request = $self->transcription($file_or_content, %extra);
+  my $t0 = [gettimeofday];
+  my $response = await $self->_async_do_request_f( request => $request );
+  my $elapsed = tv_interval($t0);
+  my $value = $request->response_call->($response);
+  return Langertha::CallResult->from_http_response( $self, $response,
+    value => $value, model => $model, total_seconds => $elapsed );
+}
+
+=method simple_transcription_call_f
+
+    my $result = await $engine->simple_transcription_call_f(\$bytes,
+        filename => 'speech.mp3');
+
+Async variant of L</simple_transcription_call>, sent like
+L</simple_transcription_f>: resolves to the L<Langertha::CallResult> and fails
+with the same error text.
 
 =cut
 

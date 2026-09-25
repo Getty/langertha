@@ -512,6 +512,10 @@ the single source of truth for both native and synthesized tool calls
 normalized across providers, with cache reads/writes and whether the wire
 counts them inside C<input_tokens>
 
+=item * L<Langertha::CallResult> - Result of an embedding, transcription or
+image call (C<simple_embedding_result>, C<simple_transcription_call>,
+C<simple_image_result>): the value plus usage, rate limit, model and timing
+
 =item * L<Langertha::Pricing> - Model-to-price catalogue that turns a
 L<Langertha::Usage> into a L<Langertha::Cost>, with optional cache rates
 

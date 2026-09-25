@@ -5,6 +5,8 @@ use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );
 use Log::Any qw( $log );
+use Time::HiRes qw( gettimeofday tv_interval );
+use Langertha::CallResult;
 
 # simple_embedding_f sends through the engine's async backend (k292): injected
 # client > Net::Async::HTTP > the sync LWP shim (ADR 0027).
@@ -122,6 +124,51 @@ and fails with the same error text. The request goes through the engine's
 async backend (L<Langertha::Role::AsyncHTTP>), so
 L<Langertha::Role::HTTP/user_agent_timeout> bounds it on
 L<Net::Async::HTTP> too; without that module it runs synchronously over LWP.
+
+=cut
+
+sub simple_embedding_result {
+  my ( $self, $text ) = @_;
+  my $request = $self->embedding($text);
+  my $t0 = [gettimeofday];
+  my $response = $self->user_agent->request($request);
+  my $elapsed = tv_interval($t0);
+  my $value = $request->response_call->($response);
+  return Langertha::CallResult->from_http_response( $self, $response,
+    value => $value, model => $self->embedding_model, total_seconds => $elapsed );
+}
+
+=method simple_embedding_result
+
+    my $result = $engine->simple_embedding_result($text);
+    my $vector = $result->value;
+    say $result->usage->input_tokens if $result->has_usage;
+
+Like L</simple_embedding>, but returns a L<Langertha::CallResult>: the same
+vector (or ArrayRef of vectors for a batch) as C<value>, plus the provider's
+C<usage>, this response's C<rate_limit>, the answering C<model> and the
+measured C<total_seconds>. Croaks like L</simple_embedding>.
+
+=cut
+
+async sub simple_embedding_result_f {
+  my ( $self, $text ) = @_;
+  my $request = $self->embedding($text);
+  my $t0 = [gettimeofday];
+  my $response = await $self->_async_do_request_f( request => $request );
+  my $elapsed = tv_interval($t0);
+  my $value = $request->response_call->($response);
+  return Langertha::CallResult->from_http_response( $self, $response,
+    value => $value, model => $self->embedding_model, total_seconds => $elapsed );
+}
+
+=method simple_embedding_result_f
+
+    my $result = await $engine->simple_embedding_result_f(\@texts);
+
+Async variant of L</simple_embedding_result>, sent like
+L</simple_embedding_f>: resolves to the L<Langertha::CallResult> and fails
+with the same error text.
 
 =cut
 
