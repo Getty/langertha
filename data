@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-25T02:23:27Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T02:23:27Z
+created: 2026-09-25T01:43:39Z
+id: 207
+priority: low
+started: 2026-09-25T01:49:37Z
+status: done
+tags:
+- moonshot
+- reasoning
+- capabilities
+title: 'Moonshot kimi-k3: reasoning_effort evtl. akzeptiert, aber Capability engine-weit
+  gecleart'
+updated: 2026-09-25T02:23:27Z
+---
+
+Aus k204 (langertha-wire-worker): Moonshot cleart reasoning_effort in layer 2 fuer jedes Modell; laut Worker wuerde kimi-k3 das Feld akzeptieren -> ein explizit gesetztes reasoning_effort geht still verloren. Vorgehen: langertha-llm-advisor verifiziert per Moonshot-Doku (kimi-k3 / kimi-k2.x reasoning-Parameter, Wire-Name, Werte); falls ja: model-scoped Korrektur (ADR 0019 layer 3) statt engine-weitem Clear, Reasoning::Profile-Eintrag (ADR 0023). Auch MiniMax pruefen. Kein Live-Call ohne Gettys OK.
+
+llm-advisor 2026-09-25 (docs only, no live call). MOONSHOT: CHANGE. kimi-k3 accepts top-level reasoning_effort on POST https://api.moonshot.ai/v1/chat/completions, enum low|high|max, default max, always reasons (cannot be disabled). Sources: platform.kimi.ai/docs/guide/use-reasoning-effort.md; docs/api/models-overview.md (param table: K3 'reasoning_effort low/high/max (default max)', K2.6 and K2.7-code 'Not supported', use thinking instead); docs/api/chat.md schema KimiK3ChatRequest.reasoning_effort enum [low,high,max]. Also: 'switching levels invalidates prefix-cache hits'. K2.x uses thinking only: k2.6 {type:enabled|disabled} (+keep:all); k2.7-code accepts only {type:enabled,keep:all} and errors on disabled. RECOMMENDATION: (1) Drop 'delete reasoning_effort' from the Moonshot around engine_capabilities. Add layer-3 rows to model_capability_corrections: qr/\Akimi-k2\./ => {tool_choice_any=>0, reasoning_effort=>0} (merge with the existing K2 row) and leave kimi-k3 with the flag on. Mind the k204 note: this is the first layer-3 clear of reasoning_effort, so check the gate still behaves. (2) Reasoning::Profile row: model_match qr/\Akimi-k3/ (also matches the OpenRouter 'moonshotai/kimi-k3'? No, \A anchors, so decide deliberately), control effort, wire_format openai, levels [low high max], can_disable 0, disable_form 'absent', with a source string and date. Wire: {model:'kimi-k3', reasoning_effort:'high'}. none/minimal/medium/xhigh are dropped (server default max applies), matching the house drop-not-clamp behavior. (3) The same row fixes MoonshotAnthropic. Kimi Messages API: output_config.effort enum low|high|max, default max (docs/api/messages.md). There is NO thinking request field for K3. Today MoonshotAnthropic emits output_config.effort=<any> + thinking:{type:adaptive}, so medium/xhigh would send an off-enum value. With the profile, anthropic_effort_ok rejects them; can_disable 0 + absent should drop the thinking field (the wire-worker verifies against the t/47 golden rows). SIDE: every current kimi model fixes temperature at 1.0 ('other values return an error'); a user-set temperature 400s. That could be a layer-3 temperature clear. MINIMAX: KEEP the clear for reasoning_effort. MiniMax-M3 has no effort control on /v1/chat/completions. The request schema (platform.minimax.io/docs/api-reference/text/api/openapi-chat-openai.json, fetched 2026-09-25) has only thinking:{type: disabled|adaptive} (default adaptive; M2.x cannot disable) + reasoning_split (output format only). The properties are: model messages max_tokens max_completion_tokens temperature top_p stream stream_options service_tier tools thinking reasoning_split, so tool_choice/response_format are still absent and the rest of the layer-2 clear stays correct. The binary thinking toggle is a different wire shape (not effort) and needs a new reasoning wire mapping (none -> thinking:{type:disabled}), not a layer-3 flag. Also: the MiniMax /anthropic schema (CreateMessageReq) has thinking (default DISABLED there, the opposite of the OpenAI endpoint) but NO output_config, yet MiniMaxAnthropic emits output_config.effort. Follow-up ticket filed.
+
+2026-09-25 02:08 Done on wire-bundle, c5f06c9. Layer-2 clear removed; qr/\Akimi-k2\./ row now {tool_choice_any=>0, reasoning_effort=>0}. Profile qr/\Akimi-k3/ low high max, can_disable 0, absent: Moonshot sends reasoning_effort, MoonshotAnthropic sends output_config.effort for low/high/max and no thinking field. k204 gate checked: supports() applies layer 3, so K2.x sends nothing (thinking_budget included). Side effect: thinking_budget on kimi-k3 now croaks like every non-Gemini-2.5 engine; unknown Moonshot ids now advertise reasoning_effort (passthrough). Temperature not touched. ADR 0019/0009/0023 updates.
+
+2026-09-25 02:16 Review fixes: kimi-k3 row guarded (?!\d) via _openai_profile; K2 correction widened to qr/\Akimi-k2(?!\d)/ (kimi-k2-thinking now clears reasoning_effort and tool_choice_any); MoonshotAnthropic K2.x behavior filed as k215. No golden rows changed.
