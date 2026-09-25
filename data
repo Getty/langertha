@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-25T23:23:19Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:23:19Z
+created: 2026-09-25T22:49:25Z
+id: 335
+priority: low
+started: 2026-09-25T22:51:14Z
+status: done
+tags:
+- ollama
+- gemini
+- models
+title: 'Minor: Ollama->new_openai silently drops tools; clear_models_cache does not
+  reset models; Gemini responseId not mapped to Response.id'
+updated: 2026-09-25T23:23:19Z
+---
+
+Reproduced offline (bug hunt 2026-09-26).
+
+1) lib/Langertha/Engine/Ollama.pm:115-119 new_openai(tools => \@mcp_tools) passes tools to OllamaOpenAI->new, which has no tools attribute (no StrictConstructor), so the list is discarded; the POD promises it is passed on. Fix: drop the parameter and its POD, or map it to what it was meant to be (mcp_servers?).
+
+2) lib/Langertha/Role/Models.pm:70 clear_models_cache clears only _models_cache; the lazy_build models attribute keeps its first value, so $e->models after clear_models_cache is stale although the POD says the next access re-fetches. Repro: subclass with a counting list_models -> models returns m1 before and after clear. Fix: also call $self->clear_models (lazy_build provides the clearer).
+
+3) lib/Langertha/Engine/Gemini.pm:593 chat_response maps modelVersion but not responseId, so Response.id is undef on Gemini while every other engine sets it. Fix: $data->{responseId} ? (id => ...) : (), and the same on the final stream chunk if Stream::Chunk carries an id.
