@@ -124,14 +124,32 @@ sub _extra {
   );
 }
 
+# Each message goes through the engine's own per-message step of chat_messages,
+# so Langertha::Content objects become the engine's content_format blocks
+# (karr k275). The system prompt stays the wrapper's own, not the engine's.
 sub _build_messages {
   my ( $self, @messages ) = @_;
+  my $engine    = $self->engine;
+  my $normalize = $engine->can('_normalize_content_blocks');
   return [
     ($self->has_system_prompt
       ? ({ role => 'system', content => $self->system_prompt })
       : ()),
-    map { ref $_ ? $_ : { role => 'user', content => $_ } } @messages
+    map {
+      my $msg = ref $_ ? $_ : { role => 'user', content => $_ };
+      $normalize ? $engine->$normalize($msg) : $msg;
+    } @messages
   ];
+}
+
+# The _f paths fetch the URL images the engine inlines through its async
+# backend before the build, like the engine's own _f paths (karr k274, k275).
+async sub _build_messages_f {
+  my ( $self, @messages ) = @_;
+  my $engine = $self->engine;
+  @messages = await $engine->_prefetch_inline_images_f(@messages)
+    if $engine->can('_prefetch_inline_images_f');
+  return $self->_build_messages(@messages);
 }
 
 sub _assert_chat_engine {
@@ -199,7 +217,7 @@ C<plugin_after_llm_response> hooks.
 async sub simple_chat_f {
   my ( $self, @messages ) = @_;
   my $engine = $self->_assert_chat_engine;
-  my $conversation = $self->_build_messages(@messages);
+  my $conversation = await $self->_build_messages_f(@messages);
 
   $conversation = await $self->_run_plugin_before_llm_call($conversation, 1);
 
@@ -383,7 +401,7 @@ async sub simple_chat_with_tools_f {
 
   my ($all_tools, $tool_server_map) = $self->_gather_tools;
   my $formatted_tools = $engine->format_tools($all_tools);
-  my $conversation = $self->_build_messages(@messages);
+  my $conversation = await $self->_build_messages_f(@messages);
 
   for my $iteration (1..$self->tool_max_iterations) {
     $conversation = await $self->_run_plugin_before_llm_call($conversation, $iteration);

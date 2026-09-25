@@ -26,7 +26,9 @@ Revision history for Langertha
       before the request is built, instead of blocking the event loop on
       LWP, and a failed fetch fails the Future. New Image methods
       to_responses, to_ollama, to_lmstudio, data_url and ensure_base64_f;
-      to_openai takes inline => 1.
+      to_openai takes inline => 1. Langertha::Chat sends Content objects
+      the way its engine does on every simple_chat* method, instead of
+      failing to encode them.
 
     - LM Studio native (/api/v1/chat) sends text as type text input
       parts, and since that endpoint takes no assistant messages, a
