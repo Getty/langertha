@@ -256,7 +256,11 @@ sub _hermes_stream_calls {
 # text), and a tail that may still turn into a tag is held until the next chunk. With the
 # think tag filter on (Role::ThinkTag), a <think> block passes through as text
 # and a call tag inside it is no call, as chat_f strips thinking before its
-# lift. $flush releases everything held, an unclosed call block as text.
+# lift. Until a think tag is seen, a closing one is an orphan (the chat
+# template opened the thought in the prompt): the text before it is thinking,
+# so the calls closed before it are handed back as text, as chat_f finds none
+# in thinking (k302). $flush releases everything held, an unclosed call block
+# as text.
 sub _hermes_stream_split {
   my ( $self, $state, $text, $flush ) = @_;
   my $buf = \$state->{pending};
@@ -273,19 +277,36 @@ sub _hermes_stream_split {
       last if $at < 0;
       my $block = substr( $$buf, 0, $at + length $close, '' );
       my ( undef, $calls ) = $self->_hermes_split_text($block);
-      if (@$calls) { push @{ $state->{calls} }, @$calls }
-      else         { $out .= $block }
+      if (@$calls) {
+        push @{ $state->{calls} }, @$calls;
+        push @{ $state->{tentative} }, [ $block, scalar @$calls ]
+          if defined $think && !$state->{think_seen};
+      }
+      else { $out .= $block }
       $state->{mode} = 'text';
       next;
     }
     my @marks = $mode eq 'think' ? ( [ "</$think>", 'text' ] )
-      : ( [ "<$tag>", 'call' ], defined $think ? [ "<$think>", 'think' ] : () );
+      : ( [ "<$tag>", 'call' ], defined $think ? [ "<$think>", 'think' ] : (),
+          defined $think && !$state->{think_seen} ? [ "</$think>", 'orphan' ] : () );
     my ( $at, $hit );
     for my $mark (@marks) {
       my $pos = index( $$buf, $mark->[0] );
       ( $at, $hit ) = ( $pos, $mark ) if $pos >= 0 && ( !defined $at || $pos < $at );
     }
+    if ( $hit && $hit->[1] eq 'orphan' ) {
+      # Everything up to here was thinking, so its calls were none.
+      my @blocks = @{ delete $state->{tentative} // [] };
+      my $count  = 0;
+      $count += $_->[1] for @blocks;
+      splice @{ $state->{calls} }, 0, $count;
+      $out .= substr( $$buf, 0, $at, '' ) . join( '', map { $_->[0] } @blocks )
+        . substr( $$buf, 0, length $hit->[0], '' );
+      $state->{think_seen} = 1;
+      next;
+    }
     if ($hit) {
+      $state->{think_seen} = 1 if $hit->[1] eq 'think';
       # A call block stays held from its opening tag on; think tags stream.
       $out .= substr( $$buf, 0, $hit->[1] eq 'call' ? $at : $at + length $hit->[0], '' );
       $state->{mode} = $hit->[1];

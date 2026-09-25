@@ -1133,7 +1133,16 @@ Revision history for Langertha
       stable per-conversation value and check
       $response->usage->cached_tokens for a hit.
 
-0.502     2026-05-15 23:02:10Z
+    - The think tag filter handles a reply whose chat template opened the
+      thought in the prompt (DeepSeek-R1, Qwen3 thinking behind a server
+      without a reasoning parser): everything before a closing </think>
+      without an opening tag goes to thinking instead of content, streamed
+      hermes tool turns included. A reply without think tags is no longer
+      trimmed, so the first line of an indented code answer keeps its
+      indentation; after removed blocks only the whitespace they leave at
+      either end goes.
+
+0.502    2026-05-15 23:02:10Z
 
     - Fix Langertha::Engine::OpenAIResponses to handle function_call as a
       top-level output[] item, which is what the real OpenAI Responses API

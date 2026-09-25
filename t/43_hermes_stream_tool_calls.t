@@ -227,6 +227,28 @@ subtest 'think tags: a call tag inside thinking is no call' => sub {
   }
 };
 
+# The chat template opened the thought in the prompt, so the reply's first
+# think tag is a closing one; a call tag before it is thinking, as chat_f
+# (ThinkTag's orphan rule) sees it (k302).
+subtest 'orphan closing think tag: a call tag before it is no call' => sub {
+  my $text = 'maybe <tool_call>{"name":"nope","arguments":{}}</tool_call></think>'
+    . "Sure.$CALL";
+  my $parity = chat_f_turn( [], $text );
+  is_deeply( call_list( $parity->tool_calls ), [ [ get_weather => { city => 'Berlin' } ] ],
+    'chat_f: only the call after the closing tag' );
+  for my $size ( 1, 3, 7, length $text ) {
+    my $r = stream_turn( [], [ $text =~ /(.{1,$size})/sg ] );
+    is_deeply( call_list( $r->{calls} ), call_list( $parity->tool_calls ), "size $size: calls as chat_f" );
+    is( $r->{content}, 'Sure.', "size $size: content" );
+    is( $r->{content}, $parity->content, "size $size: content as chat_f" );
+    like( $r->{thinking}, qr/maybe <tool_call>/, "size $size: the thinking keeps its text" );
+    is( $r->{thinking}, $parity->thinking, "size $size: thinking as chat_f" );
+  }
+  my $late = stream_turn( [], [ "Sure.$CALL", ' done</think>' ] );
+  is_deeply( call_list( $late->{calls} ), call_list( chat_f_turn( [], "Sure.$CALL done</think>" )->tool_calls ),
+    'a call before a trailing orphan closing tag: as chat_f' );
+};
+
 subtest 'unchanged: no tools, tool_choice none, non-hermes, AKI native' => sub {
   my $r = stream_turn( [], [ $REPLY ], no_tools => 1 );
   is( $r->{seen}, $REPLY, 'hermes without tools: the tags stay in the text' );

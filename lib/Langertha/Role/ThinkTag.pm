@@ -37,8 +37,10 @@ inline with their response text. This role strips those tags and preserves
 the thinking content on the L<Langertha::Response/thinking> attribute.
 
 Composed into L<Langertha::Role::Chat>, so every engine gets it automatically.
-The filter handles both closed pairs (C<E<lt>thinkE<gt>...E<lt>/thinkE<gt>>)
-and unclosed tags where the model stopped mid-thought.
+The filter handles closed pairs (C<E<lt>thinkE<gt>...E<lt>/thinkE<gt>>),
+a closing tag whose opening tag the chat template put into the prompt, and
+unclosed tags where the model stopped mid-thought (see
+L</filter_think_content>). A response without think tags is left untouched.
 
 For APIs that provide reasoning content natively (DeepSeek C<reasoning_content>,
 Anthropic C<thinking> blocks, Gemini C<thought> parts), the thinking is
@@ -77,18 +79,45 @@ L<Langertha::Response/thinking> attribute for inspection. Defaults to C<1>
 sub filter_think_content {
   my ( $self, $text ) = @_;
   return ($text, undef) unless $self->think_tag_filter && defined $text;
-  my $tag = $self->think_tag;
-  my @thinking;
-  # Matched pairs: <think>...</think>
-  $text =~ s{<\Q$tag\E>(.*?)</\Q$tag\E>}{push @thinking, $1; ''}esg;
-  # Unclosed tag: <think>... (rest of text) — model stopped mid-thought
-  if ($text =~ s{<\Q$tag\E>(.*)$}{}s) {
-    push @thinking, $1 if length $1;
+  my ( $open, $close ) = ( '<' . $self->think_tag . '>', '</' . $self->think_tag . '>' );
+  my $first_open  = index( $text, $open );
+  my $first_close = index( $text, $close );
+  # No tag at all: the text is the model's, byte for byte (karr k302).
+  return ($text, undef) if $first_open < 0 && $first_close < 0;
+  my ( @thinking, @kept );
+  my $rest = $text;
+  # Orphan closing tag: the chat template (DeepSeek-R1, Qwen3 thinking) put
+  # the opening tag into the prompt, so the reply starts inside the thought.
+  if ( $first_close >= 0 && ( $first_open < 0 || $first_close < $first_open ) ) {
+    my $thought = substr( $rest, 0, $first_close, '' );
+    substr( $rest, 0, length $close, '' );
+    push @thinking, $thought if length $thought;
+    push @kept, '';
   }
-  $text =~ s/^\s+//;
-  $text =~ s/\s+$//;
+  while ( ( my $at = index( $rest, $open ) ) >= 0 ) {
+    push @kept, substr( $rest, 0, $at, '' );
+    substr( $rest, 0, length $open, '' );
+    my $end = index( $rest, $close );
+    if ( $end < 0 ) {
+      # Unclosed tag: <think>... (rest of text) — model stopped mid-thought
+      push @thinking, $rest if length $rest;
+      $rest = '';
+      last;
+    }
+    # Matched pair: <think>...</think>
+    push @thinking, substr( $rest, 0, $end, '' );
+    substr( $rest, 0, length $close, '' );
+  }
+  push @kept, $rest;
+  # Only the whitespace a removed block leaves at either end goes; the line
+  # after a leading block keeps its indentation.
+  my $filtered = join '', @kept;
+  if ( $kept[0] =~ /\A\s*\z/ ) {
+    $filtered =~ s/\A\s*\n// or $filtered =~ s/\A\s+//;
+  }
+  $filtered =~ s/\s+\z// if $kept[-1] =~ /\A\s*\z/;
   my $thinking = @thinking ? join("\n", @thinking) : undef;
-  return ($text, $thinking);
+  return ($filtered, $thinking);
 }
 
 =method filter_think_content
@@ -96,9 +125,35 @@ sub filter_think_content {
     my ($filtered_text, $thinking) = $engine->filter_think_content($text);
 
 Strips C<E<lt>thinkE<gt>...E<lt>/thinkE<gt>> blocks from C<$text>. Handles
-both closed pairs and unclosed tags (where the model stopped mid-thought).
-Returns the filtered text and the extracted thinking content (or C<undef> if
-none). Returns the original text unchanged when L</think_tag_filter> is false.
+three shapes:
+
+=over
+
+=item * closed pairs, anywhere in the text, each one a thinking block;
+
+=item * an orphan closing tag: a C<E<lt>/thinkE<gt>> with no opening tag
+before it. Chat templates of DeepSeek-R1 and Qwen3 thinking models put the
+opening tag into the prompt, so a server without a reasoning parser returns
+C<reasoning...E<lt>/thinkE<gt>answer>; everything before that first closing
+tag is thinking;
+
+=item * an unclosed opening tag, where the model stopped mid-thought:
+everything from it to the end is thinking.
+
+=back
+
+Nested tags are not balanced (the first closing tag ends a block) and the tag
+match is case-sensitive.
+
+Text without any think tag is returned exactly as given, whitespace included.
+When blocks were removed, only the whitespace they leave at the start or end
+of the text is trimmed; after a leading block, the first content line keeps
+its indentation. Returns the filtered text and the extracted thinking content
+(or C<undef> if none). Returns the original text unchanged when
+L</think_tag_filter> is false.
+
+Streaming callbacks (C<chunk_callback>) see the raw text, tags included; only
+the aggregated content and thinking a streaming call returns are filtered.
 
 =cut
 
@@ -106,7 +161,10 @@ around 'chat_response' => sub {
   my ( $orig, $self, @args ) = @_;
   my $response = $self->$orig(@args);
   return $response unless $self->think_tag_filter;
-  my ($filtered, $thinking) = $self->filter_think_content($response->content);
+  my $content = $response->content;
+  my ($filtered, $thinking) = $self->filter_think_content($content);
+  return $response
+    if !defined $thinking && ( $filtered // '' ) eq ( $content // '' );
   return $response->clone_with(
     content => $filtered,
     defined $thinking ? (thinking => $thinking) : (),

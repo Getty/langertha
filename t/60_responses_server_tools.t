@@ -360,8 +360,10 @@ subtest 'chat_with_tools_f: capture #2 -> echo capture, end to end' => sub {
   ] );
   my $e    = engine( mcp_servers => [$mcp], server_tools => [ { type => 'web_search' } ], _async_http => $mock );
   my $text = $e->chat_with_tools_f($prompt_2)->get;
-  ( my $want_text = capture('responses_web_search_echo')->{output}[0]{content}[0]{text} ) =~ s/\s+\z//;
-  is( $text, $want_text, 'final text of the echo turn (the loop trims it)' );
+  # No think tags, so the think filter leaves the text as sent, trailing
+  # space included (k302).
+  my $want_text = capture('responses_web_search_echo')->{output}[0]{content}[0]{text};
+  is( $text, $want_text, 'final text of the echo turn, as the model sent it' );
   is_deeply( $mcp->calls, [ [ get_weather => { city => 'Greenville, South Carolina' } ] ],
     'exactly one call_tool: the function call, never the search' );
   is( $mock->request_count, 2, 'two requests' );
