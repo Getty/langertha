@@ -85,9 +85,17 @@ contract:
   streams themselves are built from the providers' documented shapes, not captured.
 - **Stream state is per stream.** Both stream paths (`process_stream_data` and
   `chat_stream_realtime_f`) hand `parse_stream_chunk` a fresh HashRef as its third argument, so
-  two concurrent streams on one engine cannot mix fragments and a truncated stream leaves
-  nothing behind. A direct caller that omits it shares an engine-wide fallback. Anthropic's k167
-  `_stream_final_meta` carry predates this and is still engine-wide.
+  two concurrent streams on one engine cannot mix fragments. Anthropic's k167 terminal-metadata
+  carry (`finish_reason` + `usage` replayed from `message_delta` onto `message_stop`) moved into
+  the same state; engine-wide, a second stream's `message_start` wiped the first stream's. A
+  direct caller that omits the state shares an engine-wide fallback, closed by a final
+  `_process_stream_buffer` flush.
+- **A truncated stream is loud, not flushed.** A Chat-Completions call still pending when the
+  stream ends without a `finish_reason` is dropped with one `carp` naming it: its `arguments` may
+  be cut off, and a partial JSON string would decode to `{}` and run the tool with made-up
+  arguments. An empty-string `finish_reason` is no finish. A fragment without `index` is keyed by
+  its `id` (by position only when it has neither), so servers that stream whole calls without
+  `index` keep them apart.
 - **Text-only streams are unchanged.** `finish_reason` is passed through as the provider sends
   it, as on the non-streaming path; `t/43_stream_text_only_pin.t` pins every text-only chunk
   against a snapshot taken before the change.
@@ -95,4 +103,5 @@ contract:
 On the request side, `chat_stream_realtime_f` serializes `Langertha::Tool` objects for the
 engine's `tool_wire_format` (ADR 0001); tool hashes are taken as already in the wire shape and
 pass through, because the `Tool` round trip would drop wire extras (`strict`, `cache_control`).
-`chat_f` still puts `tools` on the wire as given.
+Every tool keeps its place in the list (Gemini's function declarations are grouped into one entry
+where the first object was). `chat_f` still puts `tools` on the wire as given (karr k227).
