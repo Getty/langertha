@@ -238,11 +238,13 @@ has retry_after => (
 =attr retry_after
 
 Maybe[Num] — seconds the provider asks the client to wait before retrying,
-read from the C<retry-after> header in L</raw>. It is a duration whichever
-form the wire uses: delta-seconds (C<8>; a fractional C<1.5> is accepted too)
-is taken as is, an HTTP-date is measured from L</received> (a date already
-past gives C<0>, never a negative wait). C<undef> when the response sent no
-C<retry-after>, or one in neither form (the verbatim value stays in L</raw>).
+read from L</raw>. A numeric C<retry-after-ms> (Azure OpenAI and some
+proxies send it next to C<retry-after>) wins, divided by 1000. Otherwise
+C<retry-after> is read, a duration whichever form the wire uses:
+delta-seconds (C<8>; a fractional C<1.5> is accepted too) is taken as is, an
+HTTP-date is measured from L</received> (a date already past gives C<0>, never
+a negative wait). C<undef> when the response sent neither header, or none in a
+readable form (the verbatim values stay in L</raw>).
 Providers send it mostly on a C<429> or C<503>, which is why the engine records
 the rate limit of an error response before it croaks (see
 L<Langertha::Engine::Remote/rate_limit>).
@@ -317,8 +319,31 @@ sub _build_tokens_reset_after {
 
 sub _build_retry_after {
   my ( $self ) = @_;
-  return _parse_retry_after( $self->raw->{'retry-after'}, $self->received );
+  return _resolve_retry_after( $self->raw, $self->received );
 }
+
+# retry-after-ms (Azure OpenAI; openai-python reads it first) is the more
+# precise answer and wins; Retry-After otherwise (karr k312).
+sub _resolve_retry_after {
+  my ( $raw, $received ) = @_;
+  my $ms = $raw->{'retry-after-ms'};
+  if ( defined $ms ) {
+    ( my $trimmed = $ms ) =~ s/\A\s+|\s+\z//g;
+    return $trimmed / 1000 if $trimmed =~ /\A[0-9]+(?:\.[0-9]+)?\z/;
+  }
+  return _parse_retry_after( $raw->{'retry-after'}, $received );
+}
+
+=func _resolve_retry_after
+
+    my $seconds = Langertha::RateLimit::_resolve_retry_after(\%raw, $received);
+
+The seconds to wait from a L</raw>-shaped hash: C<retry-after-ms> divided by
+1000 when it holds a number, else C<retry-after> via L</_parse_retry_after>.
+Backs L</retry_after> and the retry note in the error messages of
+L<Langertha::Role::HTTP>, so both say the same number.
+
+=cut
 
 sub _parse_retry_after {
   my ( $value, $received ) = @_;
@@ -341,8 +366,7 @@ sub _parse_retry_after {
 Reads a C<Retry-After> value as the seconds to wait: delta-seconds directly, an
 HTTP-date (via L<HTTP::Date>) as its distance from C<$received> (a
 L<Langertha::Moment>, default now), clamped at C<0>. Returns C<undef> for
-anything else. Backs L</retry_after> and the retry note in the error messages
-of L<Langertha::Role::HTTP>.
+anything else. The C<retry-after> half of L</_resolve_retry_after>.
 
 =cut
 
@@ -396,7 +420,7 @@ sub _collect_headers {
   for my $name ( $headers->header_field_names ) {
     next
       unless $name =~ /\A(?:x-ratelimit-|anthropic-ratelimit-|anthropic-priority-|anthropic-fast-|ratelimitbysize-)/i
-      or lc($name) eq 'retry-after';
+      or lc($name) =~ /\Aretry-after(?:-ms)?\z/;
     my $val = $http_response->header($name);
     $raw{ lc $name } = $val if defined $val;
   }
@@ -410,7 +434,8 @@ sub _collect_headers {
 Collects every rate-limit-related response header into a hash keyed by
 lower-cased name — the single source of truth for the L</raw> superset. Matches
 the C<x-ratelimit-> / C<anthropic-ratelimit-> / C<anthropic-priority-> /
-C<anthropic-fast-> / C<ratelimitbysize-> prefixes plus C<retry-after>. The
+C<anthropic-fast-> / C<ratelimitbysize-> prefixes plus C<retry-after> and
+C<retry-after-ms>. The
 wire-envelope roles call this, then normalize the known subset out of the
 result.
 

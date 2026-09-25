@@ -224,13 +224,14 @@ C<plugin_after_llm_response> hooks.
 =cut
 
 # A failed response still updates the engine's rate limit before the die, so
-# a caller can back off from a 429 (karr k300); returns the status text.
-sub _failed_status {
-  my ( $self, $engine, $response ) = @_;
+# a caller can back off from a 429 (karr k300); returns the engine's error
+# text, the same as its sync croak (karr k312).
+sub _failed_message {
+  my ( $self, $engine, $response, $what ) = @_;
   $engine->_update_rate_limit($response) if $engine->can('_update_rate_limit');
-  return $engine->can('_failed_status_line')
-    ? $engine->_failed_status_line($response)
-    : $response->status_line;
+  return $engine->can('_request_failed_message')
+    ? $engine->_request_failed_message( $response, $what )
+    : "" . (ref $engine) . " $what failed: " . $response->status_line;
 }
 
 async sub simple_chat_f {
@@ -245,7 +246,7 @@ async sub simple_chat_f {
     request => $request,
   );
   unless ($response->is_success) {
-    die "" . (ref $engine) . " request failed: " . $self->_failed_status($engine, $response);
+    die $self->_failed_message( $engine, $response, 'request' );
   }
   my $data = $request->response_call->($response);
 
@@ -429,7 +430,7 @@ async sub simple_chat_with_tools_f {
 
     my $response = await $engine->_async_do_request_f(request => $request);
     unless ($response->is_success) {
-      die "" . (ref $engine) . " tool chat request failed: " . $self->_failed_status($engine, $response);
+      die $self->_failed_message( $engine, $response, 'tool chat request' );
     }
 
     my $data = $engine->parse_response($response);

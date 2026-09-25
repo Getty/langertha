@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Retry-After everywhere: Gemini, Ollama, AKI and LM Studio native now
+      report a rate_limit carrying retry_after when a response sends
+      Retry-After or retry-after-ms; retry-after-ms (Azure OpenAI) wins over
+      Retry-After on every engine. A failed chat_f, simple_chat_f or
+      streaming request dies with the same message as the synchronous call,
+      the provider's error body included, on every HTTP backend.
+
     - A chat answer without a choice is no longer an empty Response: an
       OpenAI-compatible 200 body with an error object (as gateways such as
       OpenRouter send) or no choices croaks, naming the engine and the error,

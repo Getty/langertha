@@ -932,7 +932,8 @@ async sub chat_f {
   # in parse_response), so a caller can back off from a 429 (karr k300).
   unless ($response->is_success) {
     $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
-    die "".(ref $self)." request failed: ".$self->_failed_status_line($response);
+    # The sync croak's text, body included (karr k312).
+    die $self->_request_failed_message( $response, 'request' );
   }
 
   my $elapsed = tv_interval($t0);
@@ -1189,6 +1190,7 @@ async sub chat_stream_realtime_f {
   my %stream_state;   # this stream's parse state (tool-call fragments, karr k221)
   my $format = $self->stream_format;
   my $response_status;
+  my $error_content;   # the body of a non-2xx response
   my $t0           = [gettimeofday];
   my $ttft_seconds;
 
@@ -1221,6 +1223,14 @@ async sub chat_stream_realtime_f {
     on_header => sub {
       my ($response) = @_;
       $response_status = $response;
+
+      # A non-2xx body is the provider's error, not a stream: keep it for the
+      # error text (the sync croak shows it, karr k312) instead of parsing it.
+      # Net::Async::HTTP hands the header response without the body.
+      unless ( $response->is_success ) {
+        $error_content = '';
+        return sub { $error_content .= $_[0] if defined $_[0] };
+      }
 
       # Return a callback that handles each body chunk
       return sub {
@@ -1276,7 +1286,9 @@ async sub chat_stream_realtime_f {
   await $request_f if $request_f->is_failed;
 
   unless ($response_status->is_success) {
-    die "".(ref $self)." streaming request failed: ".$self->_failed_status_line($response_status);
+    my $failed = $response_status->clone;
+    $failed->content($error_content) if defined $error_content;
+    die $self->_request_failed_message( $failed, 'streaming request' );
   }
 
   # Process remaining buffer

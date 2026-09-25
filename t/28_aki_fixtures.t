@@ -300,8 +300,9 @@ for my $capture (@K272_CAPTURES) {
 # carry them fails here rather than passing unnoticed.
 #
 # Engine::AKI native is left out on purpose: Remote's default
-# _parse_rate_limit_headers returns undef for it, so the same assertion would
-# hold with or without headers and prove nothing.
+# _parse_rate_limit_headers reads only Retry-After / retry-after-ms (k312), so
+# the same assertion would hold with or without x-ratelimit-* headers and
+# prove nothing.
 
 subtest 'AKI.IO sends no rate-limit headers on either shim' => sub {
   my %engine = (

@@ -121,6 +121,10 @@ latest response. Error responses count: a C<429> (or any other non-2xx) is
 recorded B<before> the request croaks or its future fails, on the synchronous
 and every asynchronous path, so a caller can read C<requests_remaining>, the
 resets and L<Langertha::RateLimit/retry_after> after catching the error.
+Engines whose wire has no rate-limit headers (Gemini, Ollama native, AKI
+native, LM Studio native) still get a rate limit when a response sends
+C<Retry-After> or C<retry-after-ms>: it carries only
+L<Langertha::RateLimit/retry_after> and L<Langertha::RateLimit/raw>.
 
 =cut
 
@@ -146,8 +150,17 @@ sub _update_rate_limit {
   return $rl;
 }
 
+# The fallback for engines without a dialect parser (Gemini, Ollama native,
+# AKI native, LM Studio native): no buckets to normalize, but a Retry-After or
+# retry-after-ms on a 429/503 is still what a caller backs off from, so it
+# gets a RateLimit carrying retry_after and raw. No per-engine parsers (k312).
 sub _parse_rate_limit_headers {
-  return undef;
+  my ( $self, $http_response ) = @_;
+  require Langertha::RateLimit;
+  require Langertha::Moment;
+  my %raw = Langertha::RateLimit::_collect_headers($http_response);
+  return undef unless defined $raw{'retry-after'} || defined $raw{'retry-after-ms'};
+  return Langertha::RateLimit->new( received => Langertha::Moment->now_utc, raw => \%raw );
 }
 
 # Wire-agnostic generation-parameter block shared by every chat dialect

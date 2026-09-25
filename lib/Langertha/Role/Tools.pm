@@ -627,7 +627,7 @@ async sub chat_with_tools_f {
     # (karr k300); a success does it in parse_response.
     unless ($response->is_success) {
       $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
-      die "".(ref $self)." tool chat request failed: ".$self->_failed_status_line($response);
+      die $self->_request_failed_message( $response, 'tool chat request' );
     }
 
     my $data = $self->parse_response($response);

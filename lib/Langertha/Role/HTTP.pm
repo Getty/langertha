@@ -192,15 +192,31 @@ sub _error_response_body {
   return $body;
 }
 
-# The status line of a failed response, with the Retry-After the provider sent
-# as seconds: "429 Too Many Requests (retry after 8s)" (karr k300).
+# The status line of a failed response, with the wait the provider asked for
+# as seconds: "429 Too Many Requests (retry after 8s)" (karr k300). Resolved
+# as RateLimit->retry_after resolves it, retry-after-ms first (karr k312).
 sub _failed_status_line {
   my ( $self, $response ) = @_;
   require Langertha::RateLimit;
-  my $wait = Langertha::RateLimit::_parse_retry_after( scalar $response->header('Retry-After') );
+  my %raw = Langertha::RateLimit::_collect_headers($response);
+  my $wait = Langertha::RateLimit::_resolve_retry_after( \%raw );
   return $response->status_line unless defined $wait;
-  $wait = sprintf( '%.1f', $wait ) if $wait != int $wait;
+  if ( $wait != int $wait ) {
+    $wait = sprintf( '%.3f', $wait );
+    $wait =~ s/\.?0+\z//;
+  }
   return $response->status_line . " (retry after ${wait}s)";
+}
+
+# The one error text of a failed request, whichever backend ran it: the sync
+# croak and every async die use it, so a caller reads the same message
+# everywhere (ADR 0027 parity, karr k312). $what is "request", "streaming
+# request" or "tool chat request".
+sub _request_failed_message {
+  my ( $self, $response, $what ) = @_;
+  my $body = $self->_error_response_body($response);
+  return "".(ref $self)." $what failed: ".$self->_failed_status_line($response)
+    .( length $body ? " - ".$body : "" );
 }
 
 sub parse_response {
@@ -209,10 +225,8 @@ sub parse_response {
   # 429's remaining/reset/retry-after is what a caller backs off from (k300).
   $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   unless ($response->is_success) {
-    my $body = $self->_error_response_body($response);
     $log->errorf("[%s] HTTP %s", ref $self, $response->status_line);
-    croak "".(ref $self)." request failed: ".$self->_failed_status_line($response)
-      .( length $body ? " - ".$body : "" );
+    croak $self->_request_failed_message( $response, 'request' );
   }
   $log->tracef("[%s] Response: %s", ref $self, $response->decoded_content);
   # A 200 that is not JSON (a proxy's HTML page, a truncated body) names the
@@ -238,7 +252,10 @@ structure. On failure croaks with the HTTP status line, and appends the
 provider's response body (whitespace-collapsed and truncated to
 C<$error_body_max_length> characters) so the real cause — e.g. a provider
 JSON error object — is visible in the croak message; when the response sent a
-C<Retry-After>, the status line is followed by C<(retry after Ns)>. If the
+C<Retry-After> or C<retry-after-ms>, the status line is followed by
+C<(retry after Ns)> (the value of L<Langertha::RateLimit/retry_after>). The
+async paths (C<chat_f>, C<simple_chat_f>, C<chat_stream_realtime_f>,
+C<chat_with_tools_f>) fail with exactly this text on every backend. If the
 engine supports rate limiting, it records the rate limit headers via
 C<_update_rate_limit> first, for an error response too, so
 L<Langertha::Engine::Remote/rate_limit> describes the failed response after
@@ -321,9 +338,7 @@ sub execute_streaming_request {
 
   $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   unless ($response->is_success) {
-    my $body = $self->_error_response_body($response);
-    croak "".(ref $self)." streaming request failed: ".$self->_failed_status_line($response)
-      .( length $body ? " - ".$body : "" );
+    croak $self->_request_failed_message( $response, 'streaming request' );
   }
 
   my $chunks = $self->process_stream_data($response->content, $chunk_callback);

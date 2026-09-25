@@ -251,6 +251,24 @@ run in the event loop's read handler). Same result on every backend of ADR 0027 
 `t/12_rate_limit_freshness.t` covers the mocked client, the sync LWP shim and
 `Net::Async::HTTP` against a local daemon.
 
+**Addendum (k312).** (a) *No per-engine parsers.* Gemini, Ollama native, AKI native and
+LM Studio native document no rate-limit headers, so they keep none — but
+`Engine::Remote::_parse_rate_limit_headers`, the base every engine without a dialect
+parser falls back to, now returns a `RateLimit` carrying only `retry_after` and `raw`
+when a response sends `Retry-After` or `retry-after-ms` (any engine that starts sending
+one is covered). Gemini's `RetryInfo.retryDelay` lives in the 429 *body* and stays out of
+scope. (b) *`retry-after-ms` wins.* It is Azure OpenAI's header (not in OpenAI's own
+table; openai-python reads it first): `_collect_headers` keeps it in `raw` next to
+`retry-after`, and `RateLimit::_resolve_retry_after` — the one resolver, behind both
+`retry_after` and the error note — takes a numeric ms value / 1000, else `Retry-After`
+as above. (c) *One error text.* `Role::HTTP::_request_failed_message` builds
+`<engine> <what> failed: <status> (retry after Ns) - <body>`; the sync croaks and the async
+dies of `chat_f`, `simple_chat_f`, `chat_with_tools_f`, `Langertha::Chat` and
+`chat_stream_realtime_f` all use it, so the text no longer depends on the backend (ADR
+0027). The async stream keeps a non-2xx body for that message instead of feeding it to
+the stream parser. `t/12_rate_limit_retry_after.t` compares the texts across the mocked
+client, LWP, the sync shim and `Net::Async::HTTP`.
+
 ## Future work
 
 - **karr k137** — capture real rate-limit response headers across the engine
