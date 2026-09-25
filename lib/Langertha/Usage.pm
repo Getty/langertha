@@ -262,9 +262,11 @@ counts described under L</cached_tokens> and L</cache_write_tokens>.
 =cut
 
 # Immutable merge — returns a new Usage that is the sum of self + other.
-# Cache counts are summed (undef only when neither side reported one). The
-# flag comes from the sides that reported a cache count; when those disagree
-# the sum has no single meaning and the flag is undef (k265).
+# Cache counts are summed (undef only when neither side reported one). When
+# one side counts its cache inside input_tokens (flag 1, or undef with counts)
+# and the other beside it (flag 0), the beside side's cache counts are added to
+# its input_tokens first, so the sum is "inside" throughout and priced without
+# loss (k265).
 sub merge {
   my ($self, $other) = @_;
   return $self unless $other;
@@ -276,16 +278,25 @@ sub merge {
     $cache{$count} += $_ for @seen;
   }
   my @reported = grep { defined $_->cached_tokens || defined $_->cache_write_tokens } $self, $other;
-  my $includes = @reported ? $reported[0]->input_includes_cache : undef;
-  if ( @reported == 2 ) {
-    my $two = $reported[1]->input_includes_cache;
-    $includes = undef unless defined $includes && defined $two && !$includes == !$two;
+  my @beside = grep { defined $_->input_includes_cache && !$_->input_includes_cache } @reported;
+  my $input  = $self->input_tokens + $other->input_tokens;
+  my $includes;
+  if ( @beside && @beside < @reported ) {
+    $input += ( $_->cached_tokens // 0 ) + ( $_->cache_write_tokens // 0 ) for @beside;
+    $includes = 1;
+  }
+  elsif (@beside) {
+    $includes = 0;
+  }
+  elsif (@reported) {
+    # All inside: 1 when every side said so, else undef (which reads as inside).
+    $includes = ( grep { !defined $_->input_includes_cache } @reported ) ? undef : 1;
   }
   return ref($self)->new(
-    input_tokens  => $self->input_tokens  + $other->input_tokens,
+    input_tokens  => $input,
     output_tokens => $self->output_tokens + $other->output_tokens,
     %cache,
-    defined $includes ? ( input_includes_cache => $includes ? 1 : 0 ) : (),
+    defined $includes ? ( input_includes_cache => $includes ) : (),
   );
 }
 
@@ -296,11 +307,13 @@ sub merge {
 Returns a new Usage holding the sum of both: C<input_tokens>, C<output_tokens>,
 and L</cached_tokens> / L</cache_write_tokens> (a side that did not report a
 count adds nothing; the sum stays C<undef> when neither did). L</input_includes_cache>
-comes from the sides that reported a cache count: kept when they agree, C<undef>
-when one counts the cache inside C<input_tokens> and the other beside it — the
-summed C<input_tokens> then means neither, and L</uncached_input_tokens> reads
-C<undef> as "included". Merge Usages of one wire when cost matters. L</raw> is
-not carried over.
+comes from the sides that reported a cache count. When both count it beside
+C<input_tokens> (false) the sum is false. When one counts it inside (true, or
+C<undef>) and the other beside, the beside side's cache counts are added to its
+C<input_tokens> before summing and the sum is true, so pricing the merged Usage
+costs the same as pricing both parts. When both count it inside, the sum is
+true, or C<undef> if either side's flag was C<undef>. L</raw> is not carried
+over.
 
 =cut
 

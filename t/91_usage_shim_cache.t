@@ -139,9 +139,30 @@ subtest 'merge carries cache counts and the flag' => sub {
   is( $with_plain->input_includes_cache, 0, 'flag from the only side that reported a cache count' );
   is( $with_plain->uncached_input_tokens, 12, '5 + 7, cache beside' );
 
-  my $mixed = $flat->merge( $nested->( 65, 64 ) );
-  is( $mixed->cached_tokens, 104, 'counts still summed' );
-  is( $mixed->input_includes_cache, undef, 'inside + beside conflict: flag undef' );
+  my $flat_too = Langertha::Usage->from_hash( { input_tokens => 2, output_tokens => 1,
+    cache_read_input_tokens => 10 } );
+  my $both_beside = $flat->merge($flat_too);
+  is( $both_beside->input_tokens, 7, 'both beside: input_tokens only summed' );
+  is( $both_beside->input_includes_cache, 0, 'both beside: flag stays 0' );
+
+  # Mixed wires: the beside side is normalized to inside before summing, so
+  # pricing the sum costs exactly what pricing the parts costs.
+  my $cache_rates = Langertha::Pricing->new( default_rule => { input_per_million => 3,
+    output_per_million => 15, cached_input_per_million => 0.3, cache_write_per_million => 3.75 } );
+  my $inside = $nested->( 65, 64 );
+  my $undef_inside = Langertha::Usage->new( input_tokens => 30, output_tokens => 1, cached_tokens => 20 );
+  for my $case ( [ 'flag 1', $inside ], [ 'undef flag with counts', $undef_inside ] ) {
+    my ( $label, $in ) = @$case;
+    for my $pair ( [ $flat, $in ], [ $in, $flat ] ) {
+      my $mixed = $pair->[0]->merge( $pair->[1] );
+      is( $mixed->input_includes_cache, 1, "$label + beside: flag 1" );
+      is( $mixed->input_tokens, $in->input_tokens + 5 + 40 + 3, "$label: beside cache folded into input_tokens" );
+      is( $mixed->cached_tokens, $in->cached_tokens + 40, "$label: reads summed" );
+      usd_is( $cache_rates->cost_for( $mixed, 'm' )->total_usd,
+        $cache_rates->cost_for( $flat, 'm' )->total_usd + $cache_rates->cost_for( $in, 'm' )->total_usd,
+        "$label: cost of the sum equals the sum of the costs" );
+    }
+  }
 
   my $none = $plain->merge($plain);
   is( $none->cached_tokens, undef, 'no cache anywhere: undef' );

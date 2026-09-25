@@ -83,7 +83,9 @@ body in `Response.raw` stays unmodified; the key does show in `$response->usage-
 reports the split; with the flat key present the flat key wins).
 
 `Usage->merge` now sums `cached_tokens` and `cache_write_tokens` (`undef` only when neither side
-reported one) and takes the flag from the sides that reported a cache count: kept when they
-agree, `undef` when one counts the cache inside and the other beside, because the summed
-`input_tokens` then means neither. Merging across wires with cache traffic therefore prices
-reads as included; merge Usages of one wire when cost matters.
+reported one) and takes the flag from the sides that reported a cache count. Both beside
+(false): the sum is false and nothing is added. One inside (true, or `undef` with counts) and
+one beside: the beside side's `cached_tokens` and `cache_write_tokens` are added to its
+`input_tokens` before summing and the sum is true — lossless, so pricing the merged Usage
+costs exactly the sum of pricing each part, and the flag describes the sum. Both inside: true,
+or `undef` if either side's flag was `undef` (which reads as inside anyway).
