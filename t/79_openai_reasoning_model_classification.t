@@ -33,7 +33,7 @@ my @REASONING = qw(
   gpt-5 gpt-5-mini gpt-5-nano gpt-5-codex gpt-5-pro
   gpt-5.1 gpt-5.1-codex-max gpt-5.2 gpt-5.3 gpt-5.4
   gpt-5.5 gpt-5.5-pro gpt-5.6 gpt-5.6-luna gpt-5.6-terra gpt-5.7
-  gpt-6 gpt-6-astra
+  gpt-6 gpt-6-astra gpt-6-mini gpt-6.1 gpt-6.2-pro gpt-6.9
 );
 
 my @NON_REASONING = qw(
@@ -112,9 +112,12 @@ for my $chat ( sort keys %CHAT_LIKE ) {
 # id non-reasoning (temperature kept) with the unlisted-id passthrough on every
 # wire. The same guard keeps gemini-2.50 off the Gemini 2.5 budget family and
 # qwen3.10 off the Qwen3.x template vocabulary, and the undotted gpt-6 / o-series
-# rows get the same guard: gpt-60 is not gpt-6, o10 is not the o1 line.
+# rows get the same guard: gpt-60 is not gpt-6, o10 is not the o1 line. The
+# gpt-6 row also stops at one digit after its dot (karr k201): gpt-6.10,
+# gpt-6.20 and gpt-6.100 are not the gpt-6 generation.
 my @MULTI_DIGIT = qw(
   gpt-60 gpt-600 gpt-61-mini o10 o100 o10-mini
+  gpt-6.10 gpt-6.20 gpt-6.100 gpt-6.10-astra
   gpt-5.10 gpt-5.11 gpt-5.19 gpt-5.10-codex-max gpt-5.12-pro gpt-5.10-mini
   gpt-5.20 gpt-5.40 gpt-5.50 gpt-5.60 gpt-5.99
   gpt-5.10-chat gpt-5.10-chat-latest gpt-5.60-chat
@@ -136,6 +139,25 @@ for my $model (@MULTI_DIGIT) {
       is_deeply( $got,
         { Langertha::Reasoning->new( model => 'some-unknown-model', effort => $effort )->to($wire) },
         "$model serializes like an unknown id ($wire, $effort)" );
+    }
+  }
+}
+
+# Single-digit gpt-6.N keeps the full gpt-6 profile (karr k201). The gpt-6
+# generation's doc-sourced ladder -- no none/minimal, 'max' Responses-only --
+# is the best-known truth for its point releases; the uncurated passthrough
+# would send none/minimal and chat 'max' to a generation documented to reject
+# them. Only a second digit after the dot leaves the family (see above).
+for my $model (qw( gpt-6.1 gpt-6.2-pro gpt-6.9 gpt-6-astra gpt-6-mini )) {
+  my $profile = Langertha::Reasoning::Profile->for_model($model);
+  is( $profile->model_match, Langertha::Reasoning::Profile->for_model('gpt-6')->model_match,
+    "$model resolves to the gpt-6 row" );
+  for my $wire (qw( openai responses anthropic gemini ollama )) {
+    for my $effort (qw( none minimal low medium high xhigh max )) {
+      is_deeply(
+        { Langertha::Reasoning->new( model => $model,  effort => $effort )->to($wire) },
+        { Langertha::Reasoning->new( model => 'gpt-6', effort => $effort )->to($wire) },
+        "$model serializes like gpt-6 ($wire, $effort)" );
     }
   }
 }

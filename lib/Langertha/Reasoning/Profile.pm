@@ -197,8 +197,9 @@ has is_reasoning_model => (
 Whether the model is a curated OpenAI reasoning model — one that can reject a
 non-default C<temperature> while reasoning is active. C<1> is set explicitly on
 the o-series, the gpt-5 line (non-chat), the single-digit gpt-5.N lines
-(non-chat) and gpt-6. A multi-digit id such as C<gpt-5.10> matches no gpt-5.N
-family and is an unknown id (karr k196).
+(non-chat) and gpt-6 (with its single-digit gpt-6.N point releases). A
+multi-digit id such as C<gpt-5.10> or C<gpt-6.10> matches no family and is an
+unknown id (karr k196, k201).
 The explicit non-reasoning entries (gpt-4o / gpt-4.1 and every C<gpt-5-chat> /
 C<gpt-5.N-chat> id) carry C<0>, and so does the unlisted-id default: an unknown
 model never classifies as reasoning, because wrongly dropping a caller's
@@ -563,7 +564,12 @@ sub _family_profiles {
     # gpt-6 and gpt-5.6 carry a per-wire split (karr k176): 'max' is
     # Responses-only, so their openai (Chat Completions) set drops max while the
     # responses set (== levels) keeps it. gpt-5.6 live-confirmed, gpt-6 doc-sourced.
-    _openai_profile( qr/\Agpt-6(?!\d)/,
+    # The gpt-6 row also covers its single-digit point releases (gpt-6.1, karr
+    # k201): they keep this doc-sourced ladder rather than an uncurated
+    # passthrough (which would send none/minimal and chat 'max'), so no separate
+    # gpt-6.N row exists. (?!\.\d\d) is the multi-digit guard after the dot:
+    # gpt-6.10 is an unknown id, not gpt-6.
+    _openai_profile( qr/\Agpt-6(?!\d)(?!\.\d\d)/,
       [qw( low medium high xhigh max )],
       openai_levels => [qw( low medium high xhigh )],
       source        => $OPENAI_K176_DOC,
