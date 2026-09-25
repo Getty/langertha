@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-09-25T06:15:45Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T06:15:45Z
+created: 2026-09-25T05:41:33Z
+id: 236
+priority: low
+started: 2026-09-25T06:12:56Z
+status: done
+tags:
+- pod
+- tools
+title: 'ToolChoice POD: only the legacy to_perplexity is documented; to/to_responses/from_hash/constructors
+  undocumented, OpenAIResponses links a missing section'
+updated: 2026-09-25T06:15:45Z
+---
+
+k233 review M2: lib/Langertha/ToolChoice.pm has POD only for to_perplexity (legacy). Document the class (DESCRIPTION, constructors, from_hash, to, per-format to_*), fix the L<Langertha::ToolChoice/to_responses> link from OpenAIResponses.pm:121.
