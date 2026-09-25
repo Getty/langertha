@@ -287,10 +287,13 @@ langertha-raider is installed.
 | Need | Skill |
 |---|---|
 | Engine creation, MCP, plugin pipeline (architecture); Raider usage (sibling dist langertha-raider) | `perl-ai-langertha` |
+| Changing core: capability layers, wire-format tags, envelope roles, adding an engine | `langertha-internals` |
+| Writing / reviewing tests: layers, fixtures, local HTTP daemon, live gating | `langertha-testing` |
 | Moose patterns (attributes, roles, BUILD, immutability) | `getty-perl-moose` |
 | Async (IO::Async, Future, Future::AsyncAwait lifecycle) | `perl-io-async-future` |
 | dist.ini / `[@Author::GETTY]` bundle, POD conventions, next-version | `getty-perl-release-author-getty`, `perl-release-dist-ini` |
 | Commit message conventions | `getty-git-commit-style` |
+| Commit / push cadence, rebase vs merge, branch hygiene | `getty-git-usage` |
 | ADR format + backfill method | `langertha-adr` |
 | GitHub public issues (`gh`) guardrails | `langertha-github-issues` |
 | karr board commands | `kanban-issues-karr-cli` |
