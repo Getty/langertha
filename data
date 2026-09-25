@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T04:09:52Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T04:09:52Z
+created: 2026-09-25T03:41:54Z
+id: 226
+priority: low
+started: 2026-09-25T03:42:34Z
+status: done
+tags:
+- plugins
+- raider
+- public-api
+title: 'Core: oeffentlicher Reader fuer Plugin-Instanzen (raider nutzt _plugin_instances/_plugin_pipeline_tool_call)'
+updated: 2026-09-25T04:09:52Z
+---
+
+Aus k195 (raider-Migration): Raider.pm (~10 Stellen), CLI.pm:1167 rufen _plugin_instances, Raider.pm:1819 _plugin_pipeline_tool_call - beide aus core Role::PluginHost, das Raider selbst komponiert. Core hat keinen oeffentlichen Reader. Ein Rename in core bricht raider Runtime + viele Tests (t/46,47,50,86,87,91). Vorschlag: oeffentliches plugin_instances (ro) + dokumentierter Pipeline-Hook, privat bleibt Alias (Muster ADR 0028).
+
+2026-09-25 03:56 Landed on branch k226 (7e97164): public plugin_instances (ro), plugin_args (ctor key; _plugin_args still accepted, public wins), plugin_pipeline_tool_call_f; private names are aliases. Raider call sites to migrate: lib/Langertha/Raider.pm _plugin_instances at 1538,1594,1626,1709,1742,1813,1938,1973,2098,2117 -> plugin_instances; Raider.pm:1846 _plugin_pipeline_tool_call -> plugin_pipeline_tool_call_f; Raider.pm:2187 POD _plugin_args -> plugin_args; lib/Langertha/Raider/CLI.pm:1167 _plugin_instances -> plugin_instances. Tests: t/46_plugin_situation.t:36, t/47_plugin_trace.t:40, t/50_cli_machine_stream.t:194, t/86_raider_self_tools.t:1031, t/87_raider_plugins.t (_plugin_instances x22, _plugin_pipeline_tool_call 255,260, _plugin_args 350-361), t/91_plugin_config.t (_plugin_instances x13, _plugin_args 130-149). Same lines in worktree k195-198 (87_raider_plugins.t has 18 _plugin_instances there). Bump raider's Langertha requires to the release carrying this. knarr/skeid: no uses. Core Chat/Embedder/ImageGen + core tests still use private names internally (behavior-neutral).
+
+Gemerged. Rest-Minor (nicht blockierend): t/46_public_plugin_hooks.t soll pinnen, dass _plugin_instances=>[...] weiter injiziert und plugin_instances=>[...] NICHT injiziert. raider-Migration auf die oeffentlichen Namen steht im raider-Repo aus.
