@@ -13,6 +13,7 @@ use Langertha::Engine::Anthropic;
 use Langertha::Engine::Gemini;
 use Langertha::Engine::Ollama;
 use Langertha::Engine::NousResearch;
+use Langertha::Engine::AKI;
 use Langertha::ServerTool;
 use Langertha::Tool;
 use Test::MockAsyncHTTP;
@@ -26,6 +27,13 @@ use Test::MockAsyncHTTP;
 # byte -- it carries the extras the value objects do not model
 # (function.strict, cache_control) and the provider built-ins
 # (web_search_20250305, google_search) the Tool door refuses.
+#
+# karr k231: the hermes wire (NousResearch, AKI native) has no tools body key
+# -- tools ride the system prompt. chat_f on hermes is one turn of
+# chat_with_tools_f: the list is rendered into the Role::HermesTools prompt,
+# nothing goes out as `tools`, and <tool_call> blocks in the reply land on
+# Response.tool_calls (ADR 0003). A body `tools` key there is a list the
+# model never sees.
 
 my $json = JSON::MaybeXS->new( utf8 => 1, canonical => 1 );
 
@@ -108,7 +116,7 @@ my %native = (
 );
 
 subtest 'pin: wire-shaped hashes go out byte for byte' => sub {
-  for my $fmt (qw( openai anthropic gemini ollama responses hermes )) {
+  for my $fmt (qw( openai anthropic gemini ollama responses )) {
     is( chat_f_bytes( $fmt, $native{$fmt} ), direct_bytes( $fmt, $native{$fmt} ),
       "$fmt: the chat_f body equals the body chat_request builds from the same hashes" );
     is_deeply( chat_f_tools( $fmt, $native{$fmt} ), $native{$fmt}, "$fmt: every hash verbatim, in order" );
@@ -125,11 +133,7 @@ subtest 'a Langertha::Tool goes out in the wire shape of the engine' => sub {
   }
   is_deeply( chat_f_tools( gemini => [$obj] ), [ { functionDeclarations => [ $obj->to('gemini') ] } ],
     'gemini: wrapped in one functionDeclarations entry' );
-  # hermes: tools ride the prompt (chat_with_tools_f); chat_f leaves the list
-  # alone, so the object goes out through TO_JSON. Pinned unchanged, not
-  # endorsed -- a known gap, karr #231.
-  is_deeply( chat_f_tools( hermes => [$obj] ), [ $obj->to_hash ],
-    'hermes: list unchanged (known gap, karr #231)' );
+  is( chat_f_tools( hermes => [$obj] ), undef, 'hermes: no tools body key (k231)' );
 };
 
 subtest 'a function-tool hash in another shape is converted, per item' => sub {
@@ -144,8 +148,7 @@ subtest 'a function-tool hash in another shape is converted, per item' => sub {
   my $nested = { type => 'function', function => { name => 'mcp', description => 'An MCP tool', parameters => $schema } };
   is_deeply( chat_f_tools( anthropic => [$nested] ), [ $mcp_tool->to('anthropic') ],
     'anthropic: an OpenAI-nested hash is converted' );
-  # Unchanged, not endorsed -- a known gap, karr #231.
-  is_deeply( chat_f_tools( hermes => [$mcp] ), [$mcp], 'hermes: list unchanged (known gap, karr #231)' );
+  is( chat_f_tools( hermes => [$mcp] ), undef, 'hermes: no tools body key (k231)' );
 };
 
 subtest 'a converted hash keeps the extras its target wire takes' => sub {
@@ -186,7 +189,6 @@ subtest 'mixed lists keep the caller order' => sub {
     responses => [ [ $native{responses}[0], $obj, $mcp, $native{responses}[1], $st ],
                    [ $native{responses}[0], $obj->to('responses'), $mcp_tool->to('responses'),
                      $native{responses}[1], $st->to('responses') ] ],
-    hermes    => [ [ $native{hermes}[0], $obj, $mcp ], [ $native{hermes}[0], $obj->to_hash, $mcp ] ],
   );
   for my $fmt ( sort keys %mixed ) {
     my ( $in, $want ) = @{ $mixed{$fmt} };
@@ -238,6 +240,140 @@ subtest 'a Gemini declaration with parametersJsonSchema keeps its schema off Gem
     is_deeply( chat_f_tools( gemini => [$decl] ), [ { functionDeclarations => [$decl] } ],
       "gemini: a $key declaration goes out verbatim" );
   }
+};
+
+# --- hermes (k231) --------------------------------------------------------
+
+# The tools the hermes system prompt carries, decoded from the <tools> block.
+sub prompt_tools {
+  my ($content) = @_;
+  my ($tools_json) = $content =~ m{^<tools>\n(.*?)\n</tools>$}ms or return undef;
+  return $json->decode($tools_json);
+}
+
+sub hermes_body {
+  my ( $tools, %args ) = @_;
+  my ( $engine, $mock ) = engine_for('hermes');
+  $engine->chat_f( messages => ['hi'], tools => $tools, %args )->get;
+  return ( $json->decode( ( $mock->requests )[0]->content ), $engine );
+}
+
+subtest 'hermes: chat_f renders the tools into the system prompt, as chat_with_tools_f' => sub {
+  my $in = [ $native{hermes}[0], $obj, $mcp ];
+  my ( $body, $engine ) = hermes_body($in);
+  ok( !exists $body->{tools}, 'no tools body key' );
+  ok( !exists $body->{parallel_tool_calls}, 'no parallel_tool_calls either' );
+  is( $body->{messages}[0]{role}, 'system', 'a system message leads' );
+  is_deeply( prompt_tools( $body->{messages}[0]{content} ),
+    [ Langertha::Tool->from_hash( $native{hermes}[0] )->to_mcp, $obj->to_mcp, $mcp_tool->to_mcp ],
+    'the prompt carries every tool in MCP shape, in the caller order' );
+  is_deeply( $body->{messages}[1], { role => 'user', content => 'hi' }, 'the user turn follows' );
+
+  # The claim "one turn of chat_with_tools_f": the same body its request builder makes.
+  my $turn = $engine->build_tool_chat_request( $engine->chat_messages('hi'), $engine->format_tools($in) );
+  is_deeply( $body, $json->decode( $turn->content ), 'same body as a chat_with_tools_f turn' );
+
+  my ( $sys_body ) = do {
+    my $mock = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response( $reply{hermes} ) ] );
+    my $e = $make{hermes}->( _async_http => $mock, system_prompt => 'Be terse.' );
+    $e->chat_f( messages => ['hi'], tools => [$obj] )->get;
+    $json->decode( ( $mock->requests )[0]->content );
+  };
+  is( scalar @{ $sys_body->{messages} }, 3, 'with an engine system prompt: three messages' );
+  like( $sys_body->{messages}[0]{content}, qr/<tools>/, 'the tool prompt first' );
+  is_deeply( $sys_body->{messages}[1], { role => 'system', content => 'Be terse.' }, 'then the engine system prompt' );
+
+  my ($empty) = hermes_body( [] );
+  ok( !exists $empty->{tools}, 'tools => []: no tools body key' );
+  is_deeply( $empty->{messages}, [ { role => 'user', content => 'hi' } ], 'tools => []: no tool prompt' );
+};
+
+subtest 'hermes: tool_choice has no wire of its own' => sub {
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my ($auto) = hermes_body( [$obj], tool_choice => 'auto' );
+  ok( !exists $auto->{tool_choice}, 'auto: not in the body' );
+  is( scalar @warnings, 0, 'auto: silent -- it is what the prompt already says' );
+
+  my ($forced) = hermes_body( [$obj], tool_choice => { type => 'tool', name => 'obj' } );
+  ok( !exists $forced->{tool_choice}, 'forced: not in the body' );
+  ok( !exists $forced->{response_format}, 'forced: not rewritten to response_format (ADR 0005)' );
+  like( prompt_tools( $forced->{messages}[0]{content} )->[0]{name}, qr/\Aobj\z/, 'forced: the tool is still offered' );
+  is( scalar @warnings, 1, 'forced: one warning' );
+  like( $warnings[0] // '', qr/tool_choice.*ignored.*hermes/, 'forced: the warning says it is ignored on hermes' );
+};
+
+subtest 'hermes: AKI native puts the prompt in chat_context, no tools key' => sub {
+  my $mock = Test::MockAsyncHTTP->new( responses => [
+    Test::MockAsyncHTTP->mock_json_response( { success => JSON->true, text => 'ok' } ) ] );
+  my $aki = Langertha::Engine::AKI->new( api_key => 'k', _async_http => $mock );
+  $aki->chat_f( messages => ['hi'], tools => [$obj] )->get;
+  my $body = $json->decode( ( $mock->requests )[0]->content );
+  ok( !exists $body->{tools}, 'no tools body key' );
+  my $context = $json->decode( $body->{chat_context} );
+  is_deeply( prompt_tools( $context->[0]{content} ), [ $obj->to_mcp ], 'chat_context leads with the tool prompt' );
+};
+
+subtest 'hermes: <tool_call> blocks in the reply land on Response.tool_calls' => sub {
+  my $text = qq{Adding.\n<tool_call>\n{"name": "obj", "arguments": {"a": 1}}\n</tool_call>};
+  my $reply = { choices => [ { message => { role => 'assistant', content => $text }, finish_reason => 'stop' } ] };
+  my $run = sub {
+    my ( $tools, @engine_args ) = @_;
+    my $mock = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response($reply) ] );
+    my $engine = $make{hermes}->( _async_http => $mock, @engine_args );
+    return $engine->chat_f( messages => ['hi'], $tools ? ( tools => $tools ) : () )->get;
+  };
+
+  my $response = $run->( [$obj] );
+  is( scalar @{ $response->tool_calls }, 1, 'one tool call' );
+  is( $response->tool_call->name, 'obj', 'named as in the tag' );
+  is_deeply( $response->tool_call_args('obj'), { a => 1 }, 'with its arguments' );
+  ok( !$response->tool_call->synthetic, 'the model emitted it -- not synthetic' );
+  is( $response->content, 'Adding.', 'the tag is gone from content' );
+
+  my $plain = $run->(undef);
+  ok( !( $plain->has_tool_calls && @{ $plain->tool_calls } ), 'without tools: nothing lifted' );
+  is( $plain->content, $text, 'without tools: content untouched (simple_chat_f is not a tool turn)' );
+
+  my $custom_text = $text =~ s/tool_call>/function_call>/gr;
+  $reply->{choices}[0]{message}{content} = $custom_text;
+  my $custom = $run->( [$obj], hermes_call_tag => 'function_call' );
+  is( $custom->tool_call && $custom->tool_call->name, 'obj', 'a custom hermes_call_tag is honored' );
+
+  # AKI native already lifts the tags in chat_response (k123): not twice.
+  my $aki_text = $text;
+  my $mock = Test::MockAsyncHTTP->new( responses => [
+    Test::MockAsyncHTTP->mock_json_response( { success => JSON->true, text => $aki_text } ) ] );
+  my $aki = Langertha::Engine::AKI->new( api_key => 'k', _async_http => $mock );
+  my $aki_response = $aki->chat_f( messages => ['hi'], tools => [$obj] )->get;
+  is( scalar @{ $aki_response->tool_calls }, 1, 'AKI: one tool call, not two' );
+  is( $aki_response->content, 'Adding.', 'AKI: content without the tag' );
+};
+
+{
+  # Records what chat_stream_realtime_f hands to chat_stream_request and stops
+  # there: the claim is the request, not the transport.
+  package Test::StopAtHermesStream;
+  use Moose::Role;
+  has seen => ( is => 'rw' );
+  around chat_stream_request => sub {
+    my ( $orig, $self, $messages, %extra ) = @_;
+    $self->seen( [ $messages, \%extra ] );
+    die "stop before sending\n";
+  };
+}
+
+subtest 'hermes: chat_stream_realtime_f renders the tools into the prompt too' => sub {
+  my $engine = Moose::Util::with_traits( 'Langertha::Engine::NousResearch', 'Test::StopAtHermesStream' )
+    ->new( api_key => 'k', model => 'Hermes-4-70B' );
+  ok( !eval { $engine->chat_stream_realtime_f( messages => ['hi'], tools => [ $obj, $mcp ],
+    tool_choice => 'auto' )->get; 1 }, 'stopped at chat_stream_request' );
+  is( $@, "stop before sending\n", 'for the recording stop, not an earlier croak' );
+  my ( $messages, $extra ) = @{ $engine->seen };
+  ok( !exists $extra->{tools}, 'no tools key' );
+  ok( !exists $extra->{tool_choice}, 'no tool_choice key' );
+  is_deeply( prompt_tools( $messages->[0]{content} ), [ $obj->to_mcp, $mcp_tool->to_mcp ],
+    'the prompt carries the tools' );
 };
 
 done_testing;

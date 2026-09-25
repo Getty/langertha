@@ -145,12 +145,45 @@ C<_build_tool_wire_format> to change it.
 sub build_tool_chat_request {
   my ( $self, $conversation, $formatted_tools, %extra ) = @_;
   if ( $self->tool_wire_format eq 'hermes' ) {
-    my $tools_json  = $self->json->encode($formatted_tools);
-    my $tool_prompt = sprintf( $self->hermes_tool_prompt, $tools_json );
-    my @conv = ( { role => 'system', content => $tool_prompt }, @$conversation );
-    return $self->chat_request( \@conv, %extra );
+    return $self->chat_request( $self->_hermes_tool_messages( $conversation, $formatted_tools ), %extra );
   }
   return $self->chat_request( $conversation, tools => $formatted_tools, %extra );
+}
+
+# The hermes wire has no tools body key: the tools ride a leading system
+# message built from hermes_tool_prompt. Shared by the tool loop and by a
+# single chat_f / chat_stream_realtime_f turn (karr k231).
+sub _hermes_tool_messages {
+  my ( $self, $conversation, $formatted_tools ) = @_;
+  my $tool_prompt = sprintf( $self->hermes_tool_prompt, $self->json->encode($formatted_tools) );
+  return [ { role => 'system', content => $tool_prompt }, @$conversation ];
+}
+
+# Splits hermes model text into the text without the call tags and the
+# well-formed calls ({name, arguments} HASHes) the tags carried, honoring
+# hermes_call_tag. Shared by response_tool_calls, response_text_content and
+# chat_f's reply lift (karr k231).
+sub _hermes_split_text {
+  my ( $self, $text ) = @_;
+  my $content = $text // '';
+  my $tag = $self->hermes_call_tag;
+  my @tool_calls;
+  while ( $content =~ m{<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>}sg ) {
+    my $json_str = $1;
+    my $tc = eval { $self->decode_json_text($json_str) };
+    # Guard as Langertha::ToolCall->extract_hermes_from_text does: only a
+    # well-formed call (a HASH carrying a non-empty name) may reach the tool
+    # loop, which then does $tc->{name}/$tc->{arguments}. Valid-but-non-object
+    # JSON ([1,2], a bare string/number) or an object without a name would
+    # otherwise crash the raid ("Not a HASH reference" / "Tool '' not found").
+    # -- karr k163
+    next unless ref($tc) eq 'HASH';
+    next unless defined $tc->{name} && length $tc->{name};
+    push @tool_calls, $tc;
+  }
+  $content =~ s{<\Q$tag\E>.*?</\Q$tag\E>}{}sg;
+  $content =~ s/^\s+|\s+$//g;
+  return ( $content, \@tool_calls );
 }
 
 =method build_tool_chat_request
@@ -183,22 +216,7 @@ sub response_tool_calls {
   if ( $fmt eq 'hermes' ) {
     my $content = $self->hermes_extract_content($data);
     return [] unless $content;
-    my $tag = $self->hermes_call_tag;
-    my @tool_calls;
-    while ( $content =~ m{<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>}sg ) {
-      my $json_str = $1;
-      my $tc = eval { $self->decode_json_text($json_str) };
-      # Guard as Langertha::ToolCall->extract_hermes_from_text does: only a
-      # well-formed call (a HASH carrying a non-empty name) may reach the tool
-      # loop, which then does $tc->{name}/$tc->{arguments}. Valid-but-non-object
-      # JSON ([1,2], a bare string/number) or an object without a name would
-      # otherwise crash the raid ("Not a HASH reference" / "Tool '' not found").
-      # -- karr k163
-      next unless ref($tc) eq 'HASH';
-      next unless defined $tc->{name} && length $tc->{name};
-      push @tool_calls, $tc;
-    }
-    return \@tool_calls;
+    return ( $self->_hermes_split_text($content) )[1];
   }
   return Langertha::ToolCall->locate( $fmt, $data );
 }
@@ -263,11 +281,7 @@ sub response_text_content {
     return $text;
   }
   if ( $fmt eq 'hermes' ) {
-    my $content = $self->hermes_extract_content($data) // '';
-    my $tag = $self->hermes_call_tag;
-    $content =~ s{<\Q$tag\E>.*?</\Q$tag\E>}{}sg;
-    $content =~ s/^\s+|\s+$//g;
-    return $content;
+    return ( $self->_hermes_split_text( $self->hermes_extract_content($data) ) )[0];
   }
   return '';
 }

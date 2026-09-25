@@ -616,10 +616,12 @@ async sub chat_f {
   # have set response_format) and hand them to chat_request under `controls`.
   my $controls = $self->_extract_controls(\%opts);
 
+  my ( $conversation, $hermes_prompted ) =
+    $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
   $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
 
   my $t0 = [gettimeofday];
-  my $request = $self->chat_request( $self->chat_messages(@messages),
+  my $request = $self->chat_request( $conversation,
     ( %$controls ? ( controls => $controls ) : () ),
     %opts );
 
@@ -636,6 +638,15 @@ async sub chat_f {
     $result = $result->clone_with(
       timing => _merge_timing_field( $result->timing, total_seconds => $elapsed ),
     );
+  }
+
+  # One chat_with_tools_f turn on hermes (k231): the <tool_call> blocks the
+  # model wrote go onto Response.tool_calls (ADR 0003), out of content. An
+  # engine whose chat_response already lifted them (AKI native) is left alone.
+  if ( $hermes_prompted && blessed($result) && $result->isa('Langertha::Response')
+       && !( $result->has_tool_calls && @{ $result->tool_calls } ) ) {
+    my ( $clean, $calls ) = $self->_hermes_split_text( $result->content );
+    $result = $result->clone_with( content => $clean, tool_calls => $calls ) if @$calls;
   }
 
   if ( $synth_tool_name && blessed($result) && $result->isa('Langertha::Response') ) {
@@ -722,10 +733,17 @@ another shape (for example an MCP tool with C<inputSchema>) is converted;
 built-ins and unknown typed items go out verbatim for the provider to
 judge. On Gemini all function declarations share one
 C<functionDeclarations> entry. The Responses envelope decides per item
-itself (L<Langertha::Role::ResponsesCompatible>), and on a C<hermes> engine
-the list is left as given -- tools ride the prompt there, via
-L<Langertha::Role::Tools/chat_with_tools_f>. A C<Langertha::ServerTool>
-croaks on an engine that does not C<supports('server_tools')>.
+itself (L<Langertha::Role::ResponsesCompatible>). A
+C<Langertha::ServerTool> croaks on an engine that does not
+C<supports('server_tools')>.
+
+On a C<hermes> engine (L<Langertha::Role::HermesTools>) a C<chat_f> call is
+one turn of L<Langertha::Role::Tools/chat_with_tools_f>: the tools go into a
+leading system message built from C<hermes_tool_prompt>, in MCP shape, and
+the body carries no C<tools> key. C<tool_choice> is never sent there; any
+value other than C<auto> is ignored with a warning, as the prompt cannot
+force or forbid a tool. C<E<lt>tool_callE<gt>> blocks in the reply land on
+L<Langertha::Response/tool_calls> and are removed from C<content>.
 
 The canonical per-request controls (karr #46) are normalized like
 C<messages>/C<tools> instead of being spread as raw target-wire kwargs:
@@ -800,9 +818,10 @@ async sub chat_stream_realtime_f {
   # Same canonical-control extraction as chat_f (karr #46).
   my $controls = $self->_extract_controls(\%opts);
 
+  my ($conversation) = $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
   $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
 
-  my $request = $self->chat_stream_request( $self->chat_messages(@messages),
+  my $request = $self->chat_stream_request( $conversation,
     ( %$controls ? ( controls => $controls ) : () ),
     %opts );
   my @all_chunks;
@@ -913,16 +932,38 @@ async sub chat_stream_realtime_f {
 # already in the wire's shape pass through verbatim (extras and built-ins
 # included), other function-tool hashes convert. Order is caller intent, and
 # an Anthropic cache_control breakpoint caches the prefix of the list.
-# Left alone: an engine without Role::Tools, the hermes wire (tools ride the
-# prompt, via chat_with_tools_f), and the Responses envelope, which already
-# decides per item itself and needs the ServerTool objects for its engine
-# hook and default-tool dedup (_responses_tools_kwarg, k210/k206).
+# Left alone: an engine without Role::Tools, and the Responses envelope,
+# which already decides per item itself and needs the ServerTool objects for
+# its engine hook and default-tool dedup (_responses_tools_kwarg, k210/k206).
+# The hermes wire never gets here: _hermes_prompt_tools took the list off.
 sub _wire_tools {
   my ( $self, $tools ) = @_;
   return $tools unless $self->can('tool_wire_format');
   my $fmt = $self->tool_wire_format;
-  return $tools if $fmt eq 'hermes' || $fmt eq 'responses';
+  return $tools if $fmt eq 'responses';
   return Langertha::Tool->request_list( $fmt, $tools );
+}
+
+# The hermes wire has no tools or tool_choice body key: the tools ride the
+# system prompt (Role::HermesTools). A chat_f / chat_stream_realtime_f turn is
+# built as one chat_with_tools_f turn (karr k231, ADR 0001): the list goes
+# through the same format_tools and prompt builder, and neither key reaches
+# the body. The prompt has no way to force or forbid a tool, so any
+# tool_choice but auto is ignored with a carp. Returns the conversation to
+# send and whether the tool prompt was put in front of it.
+sub _hermes_prompt_tools {
+  my ( $self, $opts, $conversation ) = @_;
+  return ( $conversation, 0 )
+    unless $self->can('tool_wire_format') && $self->tool_wire_format eq 'hermes';
+  my $tools = delete $opts->{tools};
+  if ( exists $opts->{tool_choice} ) {
+    my $choice = Langertha::ToolChoice->from_hash( delete $opts->{tool_choice} );
+    carp "".(ref $self).": tool_choice is ignored on the hermes tool wire "
+      . "(tools ride the system prompt, which cannot force or forbid a tool)"
+      unless $choice && $choice->type eq 'auto';
+  }
+  return ( $conversation, 0 ) unless ref $tools eq 'ARRAY' && @$tools;
+  return ( $self->_hermes_tool_messages( $conversation, $self->format_tools($tools) ), 1 );
 }
 
 sub aggregate_tool_calls {
@@ -1046,7 +1087,10 @@ L<Langertha::Tool> objects are serialized, hashes already in the wire's shape
 hashes (MCP C<inputSchema>, canonical C<input_schema>) are converted, and on
 Gemini all declarations are merged into one C<functionDeclarations> entry.
 C<tool_choice> and any engine-specific extras pass through. Tool calls the
-model streams are collected with L</aggregate_tool_calls>.
+model streams are collected with L</aggregate_tool_calls>. On a C<hermes>
+engine the tools ride the system prompt and C<tool_choice> is dropped, as in
+L</chat_f>; the C<E<lt>tool_callE<gt>> blocks the model writes stay in the
+streamed text.
 
 Returns a L<Future> that resolves to C<($content, \@chunks, \%timing,
 $thinking)> where C<$content> is the full concatenated text, C<\@chunks> the
