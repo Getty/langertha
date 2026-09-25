@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T23:25:39Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:25:39Z
+created: 2026-09-25T22:48:35Z
+id: 329
+priority: medium
+started: 2026-09-25T22:50:43Z
+status: done
+tags:
+- gemini
+- cached-content
+- async
+title: Role::CachedContent *_f methods block on LWP and bypass the async transport
+updated: 2026-09-25T23:25:39Z
+---
+
+Found by reading (bug hunt 2026-09-26); behavior is certain from the code.
+
+lib/Langertha/Role/CachedContent.pm:189, 226, 281, 347, 375: create/get/list/update/delete_cached_content_f are async subs but issue $self->user_agent->request($req) (blocking LWP) instead of $self->_async_do_request_f(request => $req). Effects: they block the IO::Async loop in async callers (the k292 defect class), ignore an injected _async_http (Test::MockAsyncHTTP cannot script them), skip the Net::Async::HTTP timeout handling and the rate-limit-on-failure path (k300). POD (role DESCRIPTION) claims the sync wrappers "delegate to the async versions through the engine IO::Async loop", which is not what happens.
+
+Fix: await $self->_async_do_request_f(request => $req) and feed the response to $req->response_call, as probe_model_capabilities_f does (Role/Capabilities.pm). Tests: mocked-async test that the request goes through the injected client; sync/async parity on an error status.
