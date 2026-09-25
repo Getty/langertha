@@ -55,11 +55,13 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
    - LWP catches a die in the content callback (and a mid-body read failure) and records it as
      `X-Died` on a response that still looks successful. The shim captures the original exception
      (or the `X-Died` text) and **fails** the future with it, sending no `undef` end signal —
-     a truncated stream is never resolved as success. On `Net::Async::HTTP` the die propagates
-     too, but out of the event loop rather than as that request's failed future — a pre-existing
-     async-side gap tracked separately (karr #194).
+     a truncated stream is never resolved as success. On `Net::Async::HTTP` the same die fails
+     that request's future with the original exception too: `chat_stream_realtime_f` catches it
+     in its chunk-sub, so it never unwinds out of the event loop, fails the request and cancels
+     the transfer; other requests on the same loop carry on (karr #194).
    Both are covered by `t/45_sync_http_real_lwp.t`, a real LWP (and `Net::Async::HTTP`) against a
-   forked local daemon, including sync/async parity on a 4xx with a body.
+   forked local daemon, including sync/async parity on a 4xx with a body; the `Net::Async::HTTP`
+   chunk-sub die by `t/45_async_http_stream_die.t`.
 
 2. **One shared selection seam** — `Langertha::Role::AsyncHTTP` — owns the `_async_http` /
    `_async_loop` attributes and the backend choice, ending the duplication: an injected
