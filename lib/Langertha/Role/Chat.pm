@@ -356,6 +356,26 @@ sub _inline_image_error {
     . "or from a local file instead";
 }
 
+has inline_image_fetch_timeout => (
+  isa => 'Int',
+  is => 'ro',
+  default => 30,
+);
+
+=attr inline_image_fetch_timeout
+
+Seconds each URL image fetch may take on the C<_f> paths of an engine that has
+to inline images (see L</content_format>) before the call fails with the
+engine-named inline-image error (C<timed out after 30s>). Defaults to C<30>,
+the timeout of the synchronous fetch in
+L<Langertha::Content::Image/ensure_base64>. It is enforced on the event loop of
+the async backend (L<Langertha::Role::AsyncHTTP/async_loop>); on the
+synchronous LWP fallback, or with an injected client without a C<loop>, the
+client's own timeout applies instead (for the fallback, the C<user_agent>'s).
+C<0> disables it.
+
+=cut
+
 # The _f paths fetch every URL image this engine has to inline through its
 # async backend (_async_http: injected client, Net::Async::HTTP or the sync
 # LWP shim, ADR 0027) before the request is built, all at once, so the build
@@ -363,6 +383,10 @@ sub _inline_image_error {
 # loop (karr k274). Returns @messages, with Gemini's image_url hash parts
 # swapped for the fetched Content::Image they would have become in
 # _gemini_part. A failed fetch fails with the error _content_block croaks.
+# Each fetch races inline_image_fetch_timeout on the backend's loop (karr
+# k276): Net::Async::HTTP has no timeout of its own, so a host that accepts
+# and never answers would stall the call forever. wait_any cancels the loser:
+# the fetch (Net::Async::HTTP closes its connection) or the timer.
 async sub _prefetch_inline_images_f {
   my ( $self, @messages ) = @_;
   my $fmt = $self->content_format;
@@ -402,8 +426,15 @@ async sub _prefetch_inline_images_f {
   return @messages unless @fetch;
 
   my $http = $self->_async_http;
+  my $loop = $self->async_loop;
+  my $secs = $self->inline_image_fetch_timeout;
   await Future->needs_all( map {
-    $_->ensure_base64_f($http)->else( sub {
+    my $url   = $_->url;
+    my $fetch = $_->ensure_base64_f($http);
+    $fetch = Future->wait_any( $fetch, $loop->delay_future( after => $secs )
+      ->then_fail("ensure_base64: failed to fetch $url: timed out after ${secs}s\n") )
+      if $loop && $secs;
+    $fetch->else( sub {
       Future->fail( $self->_inline_image_error( $_[0] ) . "\n" );
     } );
   } @fetch );

@@ -158,3 +158,17 @@ before the synchronous build; the bytes are cached on the image, so the serializ
 failed fetch fails the Future with the error the sync path croaks. The sync methods keep their own
 LWP fetch. The async fetch carries no 30 s timeout of its own: it inherits the backend's, like the
 chat request.
+
+## Update (k276 — the async inline-image fetch times out)
+
+Revises the last sentence of the k274 update: Net::Async::HTTP sets no timeout by default, so an
+image host that accepts and never answers stalled the `_f` call forever. Each prefetch now races
+`inline_image_fetch_timeout` (a `Role::Chat` attribute, default 30 s, like the sync fetch; `0`
+disables it) with `Future->wait_any` against `delay_future` on the backend's loop (`async_loop`).
+On timeout the call fails with the engine-named inline-image error (`… timed out after Ns`), no
+chat request is sent, and the losing fetch is cancelled (Net::Async::HTTP closes its connection);
+a fetch that wins cancels its timer. With no loop (the `SyncHTTP` shim, an injected client without
+`loop`) the race is skipped and the client's own timeout applies — for the shim, the engine
+`user_agent`'s. The chat request itself still has no timeout on Net::Async::HTTP. The attribute is
+separate from `user_agent_timeout` because that one bounds a whole LLM request (often minutes) and
+has no default.
