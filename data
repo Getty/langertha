@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T23:23:03Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:23:03Z
+created: 2026-09-25T22:48:43Z
+id: 331
+priority: medium
+started: 2026-09-25T22:50:51Z
+status: done
+tags:
+- ollama
+- wire
+- content
+title: 'Ollama native: text-part array content sent as an array (no Content object)
+  -> /api/chat rejects it'
+updated: 2026-09-25T23:23:03Z
+---
+
+Reproduced offline (bug hunt 2026-09-26).
+
+lib/Langertha/Role/Chat.pm:263 _normalize_content_blocks returns the message unchanged unless it holds a Langertha::Content object (gemini excepted). For content_format "ollama" an OpenAI-style array of text parts therefore goes out verbatim:
+  $o->chat_request($o->chat_messages({role=>"user", content=>[{type=>"text",text=>"hi"}]}))
+  -> {"messages":[{"content":[{"text":"hi","type":"text"}],"role":"user"}],...}
+Native /api/chat Message.content is a string (api/types.go); the server answers 400 (cannot unmarshal array into string). The ollama branch (lines ~272-290) already flattens text parts and would croak with a clear message on unknown parts, but it is never reached without a Content object. Gateways forwarding OpenAI-shape messages hit this.
+
+Fix: treat fmt eq "ollama" like gemini in the early return (always run the ollama branch for an ARRAY content); decide whether an {type=>"image_url"} hash part is converted through Content::Image (as _gemini_part does) or croaks. Request-building test in t/2x.
