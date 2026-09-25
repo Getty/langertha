@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-25T04:01:30Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T04:01:30Z
+created: 2026-09-25T00:46:17Z
+id: 198
+priority: low
+started: 2026-09-25T03:23:52Z
+status: done
+tags:
+- raider
+- manifest
+- provider-discovery
+title: 'Raider docs: align provider manifest example with core v1 (tools_native, anthropic-compat)'
+updated: 2026-09-25T04:01:30Z
+---
+
+langertha-raider docs/RAIDER-REDESIGN-HANDOFF.md 11.1 and raider ADR 0007 example use the capability name tool_calling; core v1 (ADR 0029, k191) publishes the %ROLE_TO_CAPS name tools_native. The dialect vocabulary also gained anthropic-compat for the /anthropic shims (synthetic tool + forced choice instead of first-party output_config.format), which the raider adapter must handle (conservative path). Done when both raider docs use tools_native and mention anthropic-compat. Work happens in langertha-raider (read-only from core).
+
+2026-09-25 03:37 Done on langertha-raider branch k195-198, commit 1bb... see below
+
+2026-09-25 03:37 Correction to the previous note: raider commit is 21f2772 on langertha-raider branch k195-198 (worktree .claude/worktrees/k195-198, on top of a3a3f78 for k195), not pushed. Handoff 11.1 example now tools_native, plus a paragraph: capability names are core's %ROLE_TO_CAPS, anthropic vs anthropic-compat, raider adapter takes the synthetic tool + forced named tool_choice path on anthropic-compat. Raider ADR 0007 had no JSON example; it gained an Update section (core ADR 0029 vocabulary) with an example model entry using tools_native.
+
+raider-Branch k195-198 reviewt (Ready, Minors behoben 8b2d692) und lokal per ff in langertha-raider main gemerged (nicht gepusht). Raider-Release erst nach Core 0.503.
