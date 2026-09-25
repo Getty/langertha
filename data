@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-25T01:09:22Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:09:22Z
+created: 2026-09-25T00:26:17Z
+id: 197
+priority: low
+started: 2026-09-25T00:36:26Z
+status: done
+tags:
+- usage
+- wire
+- gemini
+- aki
+title: 'Usage: Gemini rename duplicates from_hash, Gemini cached_tokens missing, AKI
+  native counts in from_raw'
+updated: 2026-09-25T01:09:22Z
+---
+
+Follow-up from the k190-192 review (M2, M3; ADR 0028).
+1. Engine/Gemini.pm:406-415 still renames usageMetadata to snake_case in chat_response, although Usage->from_hash now reads promptTokenCount/candidatesTokenCount/totalTokenCount. ADR 0018 tier 1 says the universal door owns the spelling, so drop or simplify the engine rename.
+2. Gemini emits cachedContentTokenCount as usage.cached_content_token_count, which from_hash never reads, so Gemini cached_tokens is always undef. Map cachedContentTokenCount (and/or cached_content_token_count) to cached_tokens.
+3. Usage->from_raw recognizes Ollama top-level prompt_eval_count/eval_count but not AKI native top-level prompt_length/num_generated_tokens (Engine/AKI.pm:298). Decide whether they belong in from_raw (universal door) or stay engine-scoped. Nit: the Ollama probe uses defined, while Engine/Ollama.pm:288 uses truthiness, so prompt_eval_count 0 gives Usage(0) instead of undef.
+
+Done on branch k197. Gemini rename kept: Usage %{} overload serves the engine hash verbatim, so usage->{prompt_tokens}/{cached_content_token_count} are public back-compat keys (CachedContent POD, t/47). from_hash maps both Gemini cache spellings; from_raw reads AKI native counts (incl. num_cached_tokens) and Ollama zero counts follow engine truthiness. No verbatim Gemini chat capture exists in t/data.
+
+Fix round 1: Engine::AKI folds num_cached_tokens into its usage hash (Response->usage->cached_tokens == Response->cached_tokens == 16); from_hash reads flat cached_tokens last; from_raw keeps cache-only AKI bodies; legacy-keys POD note; ADR 0028 update corrected.
+
+2026-09-25 01:01 llm-advisor 2026-09-25: AKI native num_cached_tokens VERIFIED = prefix-cache READ tokens, subset of prompt_length. Live (llama3_8b_chat, identical ~2.8k-token prompt): call1 prompt_length 2825 / num_cached 16; call2 2825 / 2816 (=floor(2825/16)*16, vLLM 16-token block). Same messages via /openai/v1: prompt_tokens 2825, prompt_tokens_details.cached_tokens 2816 -> same number, same cache across faces. Matches vLLM RequestOutput.num_cached_tokens ('tokens with prefix cache hit'), which vLLM maps to prompt_tokens_details.cached_tokens. Not in AKI docs (chat-response page lists no such field). Mapping to Usage.cached_tokens is correct. Minor: Engine/AKI.pm comment claiming native counts differ from /v1 for the same prompt did not reproduce (2825 both faces).
