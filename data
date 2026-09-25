@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T06:24:40Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T06:24:40Z
+created: 2026-09-25T05:52:31Z
+id: 240
+priority: low
+started: 2026-09-25T06:13:02Z
+status: done
+tags:
+- openai
+- streaming
+- tools
+title: OpenAICompatible chat_stream_request ignores parallel_tool_use
+updated: 2026-09-25T06:24:40Z
+---
+
+Found in the k235 audit. OpenAICompatible::chat_request maps controls->{parallel_tool_use} / the engine parallel_tool_use attribute to parallel_tool_calls when tools are present; chat_stream_request does not, so a streamed request (chat_stream_realtime_f) silently drops the setting. k235 made the streaming builder share the tool_choice normalization (_openai_tool_choice_kwarg); parallel_tool_calls needs the same parity, with a request-building test on both builders.
+
+Merged: shared _openai/_responses_parallel_tool_calls_kwarg; follow-up k241.
