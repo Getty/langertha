@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T05:12:16Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T05:12:16Z
+created: 2026-09-25T04:33:09Z
+id: 229
+priority: medium
+started: 2026-09-25T05:12:16Z
+status: done
+tags:
+- skeid
+- streaming
+- bug
+title: 'skeid: text/event-stream ohne chunked wird von Mojos SSE-Parser verschluckt
+  (0 Bytes, ok=1)'
+updated: 2026-09-25T05:12:16Z
+---
+
+Aus k224-Review (reproduziert auf 6751909 und a7245f8, Mojolicious 9.49): ein Upstream mit exakt "Content-Type: text/event-stream" (ohne charset) und ohne chunked Encoding -> Mojos eigener SSE-Parser nimmt den Body, skeids read-Handler bekommt nichts: OpenAI-Face relayt 0 Bytes, Anthropic-Face sendet leere Message, beides ok=1 ohne Tokens. Chunked und "text/event-stream; charset=utf-8" nicht betroffen. Repro: /tmp/claude-1000/-home-getty-dev-langertha/9b3e6b6f-6a4b-438b-ae8d-7a88c3e23ce8/scratchpad/repro_oa.pl. Gehoert aufs skeid-Board.
+
+Fixed in skeid 6903006 (skeid #30): RelayContent subclass disables Mojo's is_sse auto-parse on the relay path; t/39 regression.
