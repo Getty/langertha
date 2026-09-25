@@ -62,3 +62,37 @@ Such calls are recorded on the new `Response.server_tool_calls`
 verbatim, not an instruction and not a second tool-call representation. `ToolCall->locate`
 never returns a server call item (tested against the verbatim OpenAI captures). `synthetic`
 still records provenance only; it never means "don't execute".
+
+## Update (k221 — every dialect's stream delivers its tool calls)
+
+The streaming consequence above held only on paper: the Chat-Completions, Anthropic, Gemini and
+Ollama-native stream parsers read text and thinking and dropped tool calls, so
+`chat_stream_realtime_f` ended a tool-calling turn as an empty success (a gap accepted since
+k171; k212 closed it for the Open-Responses envelope). Now each parser delivers them, under one
+contract:
+
+- **A finished call, on exactly one chunk.** A `Stream::Chunk` never holds a fragment. Where
+  the wire fragments a call, the parser assembles it in per-stream state: Chat-Completions
+  `delta.tool_calls` per `index`, delivered on the chunk that carries `finish_reason`;
+  Anthropic `tool_use` blocks from `content_block_start` + `input_json_delta`, delivered on the
+  block's `content_block_stop`. Gemini `functionCall` parts and Ollama `message.tool_calls`
+  arrive whole and land on the chunk that carries them. A call leaves the state when it is
+  delivered, so `aggregate_tool_calls` only collects and never sees it twice.
+- **Built by the same extractor as the reply.** The assembled fragments are put back into the
+  dialect's reply shape and read by the `ToolCall->extract($fmt, …)` call that `chat_response`
+  makes, so a streamed and a non-streamed reply of one response yield equal `ToolCall`s
+  (ADR 0010). The tests replay the non-streaming captures as the source of truth; the event
+  streams themselves are built from the providers' documented shapes, not captured.
+- **Stream state is per stream.** Both stream paths (`process_stream_data` and
+  `chat_stream_realtime_f`) hand `parse_stream_chunk` a fresh HashRef as its third argument, so
+  two concurrent streams on one engine cannot mix fragments and a truncated stream leaves
+  nothing behind. A direct caller that omits it shares an engine-wide fallback. Anthropic's k167
+  `_stream_final_meta` carry predates this and is still engine-wide.
+- **Text-only streams are unchanged.** `finish_reason` is passed through as the provider sends
+  it, as on the non-streaming path; `t/43_stream_text_only_pin.t` pins every text-only chunk
+  against a snapshot taken before the change.
+
+On the request side, `chat_stream_realtime_f` serializes `Langertha::Tool` objects for the
+engine's `tool_wire_format` (ADR 0001); tool hashes are taken as already in the wire shape and
+pass through, because the `Tool` round trip would drop wire extras (`strict`, `cache_control`).
+`chat_f` still puts `tools` on the wire as given.
