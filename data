@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T02:23:33Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T02:23:33Z
+created: 2026-09-25T01:48:32Z
+id: 208
+priority: low
+started: 2026-09-25T01:49:43Z
+status: done
+tags:
+- llm
+- risk
+- xai
+- reasoning
+title: 'XAI: grok Reasoning::Profile row (none/minimal/max currently pass through
+  to the wire)'
+updated: 2026-09-25T02:23:33Z
+---
+
+From k205 (llm-advisor, 2026-09-25, docs only). Engine::XAI resolves to the unlisted-id passthrough profile, so reasoning_effort none/minimal/max reach chat/completions unchanged (verified offline with chat_request). xAI docs (docs.x.ai/developers/model-capabilities/text/reasoning, updated 2026-09-21): grok-4.7 and grok-4.6 accept low|medium|high|xhigh (default high), grok-4.5 accepts low|medium|high (xhigh is treated as high), and 'Reasoning cannot be disabled'. grok-4.20-multi-agent: effort = agent count. Add a Profile row (ADR 0023), e.g. qr/\Agrok-4\.(?:[6-9]|\d\d)/ => [low medium high xhigh] and grok-4.5 => [low medium high], both wires (chat reasoning_effort, responses reasoning.effort). The response to an off-enum value (400 vs ignored) is not live-verified.
+
+2026-09-25 02:07 Done on branch wire-bundle, 455f4c9. Two Profile rows: qr/\Agrok-4\.[6-9](?!\d)/ => low medium high xhigh, qr/\Agrok-4\.5(?!\d)/ => low medium high, both wires, can_disable 0. Off-set efforts drop (the house behavior), server default high applies. (?!\d) keeps grok-4.20-multi-agent (effort = agent count) an unknown id; grok-4.3 and grok-build-0.1 stay passthrough. t/47 golden: exactly XAI|default effort_none/minimal/max (6 rows). ADR 0023 k208 update. Docs only, not live.
