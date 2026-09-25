@@ -1,0 +1,37 @@
+---
+claimed_at: 2026-09-25T20:58:43Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:58:43Z
+created: 2026-09-25T20:22:10Z
+id: 297
+priority: low
+started: 2026-09-25T20:58:43Z
+status: done
+tags:
+- embedding
+- transcription
+- imagegen
+- question
+- advisor
+title: 'Questions for llm-advisor: embedding/transcription/image provider reality
+  (default model ids, uncovered endpoints)'
+updated: 2026-09-25T20:58:43Z
+---
+
+Uncertain points from the embedding/transcription/imagegen audit — not asserted as bugs, need provider verification:
+1. vLLM / VLLMHook / LlamaCpp / LMStudioOpenAI: default_embedding_model is "default", so embedding_model ignores a caller-set `model` (Role::Embedding falls back to model only when no default_embedding_model exists). Does vLLM accept model="default" on /v1/embeddings, or 404 unless it matches --served-model-name? Same for LM Studio. If it 404s, fall back to `model` when set. (t/65b_vllm_embeddings.t pins "default" deliberately.)
+2. Groq serves /openai/v1/audio/translations; Groq supported_operations lists only createTranscription, and core has no translation method at all though TranscriptionBase/Whisper list createTranslation.
+3. Coverage gaps (features, not bugs): SGLang /v1/embeddings (embedding models), Gemini embedContent/batchEmbedContents, Mistral Voxtral /v1/audio/transcriptions, xAI /v1/images/generations — none composed.
+4. OpenAI image default gpt-image-1: still the right default, and does gpt-image-* reject response_format (POD advertises it)?
+5. OpenAI whisper default whisper-1 vs gpt-4o-transcribe family.
+
+2026-09-25 20:26 llm-advisor 2026-09-25 (public docs/source only, no live calls):
+1 vLLM: main@e440b75 (2026-09-25) pooling _check_model never 404s (unknown model passes; absent model OK). v0.10.0/v0.11.0 embeddings DID 404 'The model `default` does not exist.' unless it matched --served-model-name; model:null/absent always accepted (_is_model_supported: not model_name -> True). => stop sending 'default': send caller model if set, else OMIT model. LM Studio: closed source, docs silent on unknown ids (UNVERIFIED); /api/v0/models tags type=embeddings. Same rule: caller model, else omit. LlamaCpp ignores model -> harmless.
+2 Groq /openai/v1/audio/translations: multipart, whisper-large-v3 only (turbo has no translation), language only 'en', response_format json|verbose_json|text. OpenAI /v1/audio/translations: whisper-1 only; gpt-transcribe 'Translation: Not supported'; whisper-1 removal 2027-02-26 -> OpenAI translation has no successor. Low value; add only as generic createTranslation on TranscriptionBase-shape (Groq/Whisper servers), not OpenAI-centric.
+3 SGLang /v1/embeddings: yes, when launched with an embedding model (--is-embedding for decoder-style). Gemini: v1beta/models/{m}:embedContent / :batchEmbedContents, ids gemini-embedding-001, gemini-embedding-2 (incompatible spaces); taskType/title/outputDimensionality now under embedContentConfig (top-level deprecated); response embedding.values / embeddings[].values. Mistral: POST /v1/audio/transcriptions, OpenAI-shape multipart (also file_url/file_id JSON), model voxtral-mini-latest, extras diarize/context_bias/timestamp_granularities. xAI: POST /v1/images/generations, model grok-imagine-image-2.0, response_format url|b64_json, aspect_ratio + resolution (1k/1.5k/2k); size/quality/style UNSUPPORTED.
+4 OpenAI images: gpt-image-1/-1-mini/-1.5 deprecated 2026-06-02, removal 2026-12-01 -> replacement gpt-image-2; gpt-image-2.5-flare/-sunburst launched 2026-09-08. GPT image models: b64_json always, url unsupported, response_format param -> 400 'Unknown parameter' (documented pattern for gpt-image-1). Change default to gpt-image-2 (or 2.5-flare) and fix POD.
+5 whisper-1 + gpt-4o-transcribe(+mini) deprecated 2026-08-26, removal 2027-02-26 -> gpt-transcribe (file) / gpt-live-transcribe (realtime). Change default to gpt-transcribe; gpt-4o-* only return json response_format.
+Sources: docs.vllm.ai + github vllm-project/vllm; console.groq.com/docs/speech-to-text; developers.openai.com/api/docs/{models,deprecations,models/gpt-transcribe}; ai.google.dev/api/embeddings; docs.mistral.ai/api/endpoint/audio/transcriptions; docs.x.ai imagine + rest-api-reference; docs.sglang.io embeddings.
+
+2026-09-25 20:52 Item 1 done in f13b79d: vLLM/VLLMHook/LlamaCpp/LMStudioOpenAI send embedding_model, else caller model, else no model field.
