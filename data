@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T03:18:13Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:18:13Z
+created: 2026-09-25T02:30:05Z
+id: 218
+priority: low
+started: 2026-09-25T02:31:15Z
+status: done
+tags:
+- llm
+- moonshot
+- structured-output
+title: 'MoonshotAnthropic: Kimi Messages API has native output_config.format (K3);
+  engine still uses the synth-tool shim path'
+updated: 2026-09-25T03:18:13Z
+---
+
+llm-advisor 2026-09-25 (docs only, platform.kimi.ai/docs/api/messages.md): the /anthropic/v1/messages request schema carries output_config.format {type:json_schema, schema} for kimi-k3 ('the model outputs JSON that strictly follows the given JSON Schema'), alongside output_config.effort. Engine::MoonshotAnthropic currently takes the ADR 0005 shim rewrite (synthetic tool + forced tool_choice, which also blocks streaming), like MiniMax/AKI. Consider the first-party-Anthropic native path for kimi-k3 only (layer-3/model-scoped, since K2.x is undocumented on this face). Watch for: K3 + a forced named tool_choice 400s on the chat face (thinking incompatible), so the native path is the better one there. Verify live before flipping (needs Getty OK). Related: k215, ADR 0005.
+
+2026-09-25 02:55 Done on wire-bundle2 905d906: kimi-k3 json_schema -> native output_config.format (closed schema, merged with effort, streams). json_object + K2.x keep synth tool. New _native_structured_output_for_model predicate for request builders; endpoint predicate _native_structured_output unchanged so the manifest dialect stays anthropic-compat. ADR 0005 k218 Update. Doc-only; closed-schema acceptance by Kimi unverified.
