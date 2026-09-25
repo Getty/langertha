@@ -38,6 +38,11 @@ Revision history for Langertha
       describe a chat call to each model, and never copies an API key.
       (ADR 0029.)
 
+    - chat_stream_realtime_f: a die in chunk_callback, or a malformed stream
+      line, fails that request's future with the original exception on every
+      backend; on Net::Async::HTTP other work on the same IO::Async loop is
+      unaffected.
+
     - export_otlp_f no longer aborts the process (a Future::AsyncAwait panic
       about $main::INC) when a coderef hook is in @INC, as PAR and
       custom module loaders install, and the request is still pending.

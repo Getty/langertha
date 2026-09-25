@@ -2,6 +2,7 @@ package Langertha::Role::Chat;
 # ABSTRACT: Role for APIs with normal chat functionality
 our $VERSION = '0.503';
 use Moose::Role;
+use Future;
 use Future::AsyncAwait;
 use Carp qw( carp croak );
 use JSON::MaybeXS;
@@ -786,7 +787,14 @@ async sub chat_stream_realtime_f {
   my $t0           = [gettimeofday];
   my $ttft_seconds;
 
-  await $self->_async_http->do_request(
+  # A die in the chunk-sub (a malformed stream line, or the caller's
+  # chunk_callback) must fail this request's future on every backend. An
+  # event-loop backend (Net::Async::HTTP) runs the chunk-sub inside the loop's
+  # read handler, where a die would unwind out of the loop into whatever is
+  # driving it and leave this request pending (karr k194, ADR 0027).
+  my ( $request_f, $stream_error );
+  my $abort_f = Future->new;
+  $request_f = $self->_async_http->do_request(
     request => $request,
     on_header => sub {
       my ($response) = @_;
@@ -795,18 +803,32 @@ async sub chat_stream_realtime_f {
       # Return a callback that handles each body chunk
       return sub {
         my ($data) = @_;
-        return unless defined $data;  # undef signals end of body
+        return if defined $stream_error;  # already failed; drop the rest
+        return unless defined $data;      # undef signals end of body
 
-        $buffer .= $data;
-        my $chunks = $self->_process_stream_buffer(\$buffer, $format);
-        for my $chunk (@$chunks) {
-          $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
-          push @all_chunks, $chunk;
-          $chunk_callback->($chunk) if $chunk_callback;
-        }
+        my $ok = eval {
+          $buffer .= $data;
+          my $chunks = $self->_process_stream_buffer(\$buffer, $format);
+          for my $chunk (@$chunks) {
+            $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
+            push @all_chunks, $chunk;
+            $chunk_callback->($chunk) if $chunk_callback;
+          }
+          1;
+        };
+        return if $ok;
+        $stream_error = $@ || "streaming callback died\n";
+        # A synchronous backend (Langertha::Request::SyncHTTP) runs the
+        # chunk-sub before do_request returns: die again so it stops reading
+        # and fails its own future with the original exception. Once the
+        # backend has handed back its future, fail ours instead; wait_any then
+        # cancels the transfer.
+        die $stream_error unless $request_f;
+        $abort_f->fail( $stream_error, http => $response, $request );
       };
     },
   );
+  await Future->wait_any( $request_f, $abort_f );
 
   unless ($response_status->is_success) {
     die "".(ref $self)." streaming request failed: ".$response_status->status_line;
@@ -959,6 +981,12 @@ per-chunk C<thinking> deltas by L</aggregate_thinking> so it matches the native
 L<Langertha::Response/thinking> of the non-streaming L</chat_f> on the same
 engine and prompt. The trailing element is additive: callers destructuring only
 the first three keep working.
+
+If C<chunk_callback> dies, or a stream line cannot be parsed, the returned
+future B<fails> with that exception, the rest of the stream is dropped and the
+transfer is stopped. This holds on every HTTP backend: on L<Net::Async::HTTP>
+the exception does not escape the event loop, so other requests on the same
+loop are unaffected (L<Langertha::Role::AsyncHTTP>).
 
 This is the streaming counterpart to L</chat_f>. Unlike L</chat_f> it does
 not apply the forced-tool fallback (rewriting a named C<tool_choice> into a
