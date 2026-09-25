@@ -588,6 +588,8 @@ async sub chat_with_tools_f {
   }
 
   my $formatted_tools = $self->format_tools(\@all_tools);
+  # URL images this engine inlines: fetched async, not by LWP in the loop (k274).
+  @messages = await $self->_prefetch_inline_images_f(@messages);
   my $conversation = $self->chat_messages(@messages);
 
   $log->debugf("[%s] chat_with_tools_f: %d tools from %d MCP servers, max_iterations=%d",

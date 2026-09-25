@@ -7,7 +7,7 @@ use Future::AsyncAwait;
 use Carp qw( carp croak );
 use JSON::MaybeXS;
 use Log::Any qw( $log );
-use Scalar::Util qw( blessed );
+use Scalar::Util qw( blessed refaddr );
 use Time::HiRes qw( gettimeofday tv_interval );
 use Langertha::ToolChoice;
 use Langertha::Tool;
@@ -342,13 +342,72 @@ sub _content_block {
   my $out;
   return $out if eval { $out = $block->$method(@opt); 1 };
   my $err = $@;
-  if ( $block->can('has_url') && $block->has_url && !$block->has_base64 ) {
-    $err =~ s/ at \S+ line \d+.*//s;
-    croak ref($self).": this endpoint takes only inline images (base64 or a data: URL) "
-      . "and the image URL could not be inlined ($err); pass the image as base64 "
-      . "or from a local file instead";
-  }
+  croak $self->_inline_image_error($err)
+    if $block->can('has_url') && $block->has_url && !$block->has_base64;
   die $err;
+}
+
+sub _inline_image_error {
+  my ( $self, $err ) = @_;
+  $err =~ s/ at \S+ line \d+.*//s;
+  $err =~ s/\s+\z//;
+  return ref($self).": this endpoint takes only inline images (base64 or a data: URL) "
+    . "and the image URL could not be inlined ($err); pass the image as base64 "
+    . "or from a local file instead";
+}
+
+# The _f paths fetch every URL image this engine has to inline through its
+# async backend (_async_http: injected client, Net::Async::HTTP or the sync
+# LWP shim, ADR 0027) before the request is built, all at once, so the build
+# finds base64 on the object and does no blocking LWP GET inside the event
+# loop (karr k274). Returns @messages, with Gemini's image_url hash parts
+# swapped for the fetched Content::Image they would have become in
+# _gemini_part. A failed fetch fails with the error _content_block croaks.
+async sub _prefetch_inline_images_f {
+  my ( $self, @messages ) = @_;
+  my $fmt = $self->content_format;
+  return @messages unless $fmt eq 'gemini' || $fmt eq 'ollama' || $fmt eq 'lmstudio'
+    || ( $self->_content_inline_images_only && ( $fmt eq 'openai' || $fmt eq 'responses' ) );
+
+  my ( @out, @fetch, %seen, %by_url );
+  for my $msg (@messages) {
+    unless ( ref $msg eq 'HASH' && ref $msg->{content} eq 'ARRAY' ) {
+      push @out, $msg;
+      next;
+    }
+    my $swapped;
+    my @content;
+    for my $part ( @{ $msg->{content} } ) {
+      my $out = $part;
+      if ( blessed($part) && $part->isa('Langertha::Content::Image') ) {
+        push @fetch, $part
+          if $part->has_url && !$part->has_base64 && !$seen{ refaddr $part }++;
+      }
+      elsif ( $fmt eq 'gemini' && ref $part eq 'HASH' && ( $part->{type} // '' ) eq 'image_url' ) {
+        my $url = ref $part->{image_url} eq 'HASH' ? $part->{image_url}{url} : $part->{image_url};
+        if ( defined $url && length $url && $url !~ m{\Adata:[^;,]+;base64,}s ) {
+          require Langertha::Content::Image;
+          $out = $by_url{$url} //= do {
+            my $img = Langertha::Content::Image->from_url($url);
+            push @fetch, $img;
+            $img;
+          };
+          $swapped = 1;
+        }
+      }
+      push @content, $out;
+    }
+    push @out, $swapped ? { %$msg, content => \@content } : $msg;
+  }
+  return @messages unless @fetch;
+
+  my $http = $self->_async_http;
+  await Future->needs_all( map {
+    $_->ensure_base64_f($http)->else( sub {
+      Future->fail( $self->_inline_image_error( $_[0] ) . "\n" );
+    } );
+  } @fetch );
+  return @out;
 }
 
 =method chat_messages
@@ -802,6 +861,7 @@ async sub chat_f {
   # have set response_format) and hand them to chat_request under `controls`.
   my $controls = $self->_extract_controls(\%opts);
 
+  @messages = await $self->_prefetch_inline_images_f(@messages);
   my ( $conversation, $hermes_prompted ) =
     $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
   $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
@@ -1059,6 +1119,7 @@ async sub chat_stream_realtime_f {
   # Same canonical-control extraction as chat_f (karr #46).
   my $controls = $self->_extract_controls(\%opts);
 
+  @messages = await $self->_prefetch_inline_images_f(@messages);
   my ( $conversation, $hermes_prompted ) =
     $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
   $conversation = $self->_hermes_prompt_schema( $controls, $conversation );

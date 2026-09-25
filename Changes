@@ -21,8 +21,12 @@ Revision history for Langertha
       image items instead of dropping them. On endpoints that take no
       image URLs (Ollama native and /v1, Cerebras, Moonshot, LM Studio
       native) a URL image is fetched and sent inline, and a failed fetch
-      croaks before the request. New Image methods to_responses,
-      to_ollama, to_lmstudio and data_url; to_openai takes inline => 1.
+      croaks before the request. On the _f methods these fetches (Gemini
+      included) run concurrently through the engine's async HTTP backend
+      before the request is built, instead of blocking the event loop on
+      LWP, and a failed fetch fails the Future. New Image methods
+      to_responses, to_ollama, to_lmstudio, data_url and ensure_base64_f;
+      to_openai takes inline => 1.
 
     - LM Studio native (/api/v1/chat) sends text as type text input
       parts, and since that endpoint takes no assistant messages, a

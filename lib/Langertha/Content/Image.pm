@@ -4,6 +4,9 @@ our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 use MIME::Base64 qw( encode_base64 decode_base64 );
+use Future;
+use Future::AsyncAwait;
+use Scalar::Util qw( blessed );
 
 with 'Langertha::Content';
 
@@ -54,7 +57,10 @@ formats:
 Gemini, Ollama native and LM Studio native require inline data, so their
 serializers transparently download a remote URL on first call (cached on the
 object). Engines whose OpenAI-compatible endpoint rejects remote image URLs
-get the same treatment through C<< to_openai( inline => 1 ) >>.
+get the same treatment through C<< to_openai( inline => 1 ) >>. On the C<_f>
+methods of L<Langertha::Role::Chat> the download happens earlier, through the
+engine's async HTTP backend (L</ensure_base64_f>), so the serializers find the
+payload cached and do not block the event loop.
 
 =cut
 
@@ -200,7 +206,36 @@ sub ensure_base64 {
     agent   => 'Langertha-Content-Image/'.$VERSION,
     timeout => 30,
   );
-  my $response = $ua->get($self->url);
+  return $self->_inline_fetched( $ua->get($self->url) );
+}
+
+# Async twin of ensure_base64 (karr k274): the GET goes through $http, any
+# client with the async do_request contract (ADR 0027) -- the engine's
+# _async_http on the _f paths, so a URL image never blocks the event loop on
+# LWP. A transport failure and an error status fail the Future with the text
+# ensure_base64 croaks.
+async sub ensure_base64_f {
+  my ( $self, $http ) = @_;
+  return $self->base64 if $self->has_base64;
+  croak "ensure_base64_f: no url to fetch" unless $self->has_url;
+  croak "ensure_base64_f requires a client with do_request"
+    unless blessed($http) && $http->can('do_request');
+
+  my $url = $self->url;
+  require HTTP::Request;
+  my $request = HTTP::Request->new( GET => $url,
+    [ 'User-Agent' => 'Langertha-Content-Image/'.$VERSION ] );
+  my $response = await $http->do_request( request => $request )->else( sub {
+    my ($err) = @_;
+    $err =~ s/\s+\z//;
+    Future->fail("ensure_base64: failed to fetch $url: $err\n");
+  } );
+  return $self->_inline_fetched($response);
+}
+
+# Stores a fetched HTTP::Response as the inline payload (both doors above).
+sub _inline_fetched {
+  my ( $self, $response ) = @_;
   croak "ensure_base64: failed to fetch ".$self->url.": ".$response->status_line
     unless $response->is_success;
 
@@ -221,6 +256,19 @@ sub ensure_base64 {
 Returns the base64 payload, fetching the URL over HTTP if necessary.
 Populates C<media_type> from the response C<Content-Type> header when the
 image was URL-only. Caches the result on the object.
+
+=cut
+
+=method ensure_base64_f
+
+    my $b64 = await $img->ensure_base64_f($http);
+
+The async L</ensure_base64>: returns a L<Future> of the base64 payload and
+fetches the URL through C<$http>, any client that answers the async
+C<do_request> contract (L<Langertha::Role::AsyncHTTP>), instead of a blocking
+L<LWP::UserAgent>. A transport error or a non-success status fails the Future.
+The C<_f> methods of L<Langertha::Role::Chat> call it with the engine's backend
+for every URL image the engine has to inline, before the request is built.
 
 =cut
 
