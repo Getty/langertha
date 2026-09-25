@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T23:23:11Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:23:11Z
+created: 2026-09-25T22:49:09Z
+id: 333
+priority: medium
+started: 2026-09-25T22:50:59Z
+status: done
+tags:
+- ollama
+- keep-alive
+- wire
+title: 'Ollama keep_alive: the documented ''-1'' (and any bare number) goes out as
+  a JSON string, which Ollama''s Duration parser rejects'
+updated: 2026-09-25T23:23:11Z
+---
+
+Request body reproduced offline; server behavior is source-derived (not live-verified) -> langertha-llm-advisor to confirm, no live call made.
+
+lib/Langertha/Role/KeepAlive.pm:6 keep_alive isa Str, POD example keep_alive => "-1"; :40 get_keep_alive returns it verbatim; lib/Langertha/Engine/Ollama.pm:293 and :539 put it on the wire. keep_alive=>"-1" -> "keep_alive":"-1"; keep_alive=>"300" -> "keep_alive":"300". Ollama api.Duration.UnmarshalJSON runs time.ParseDuration on a JSON string, which fails for a unit-less number ("time: missing unit in duration") except "0"; a JSON number is taken as seconds (negative = forever). So the POD-advertised "keep forever" value makes every chat request fail, while keep_alive => -1 (numeric literal) happens to work.
+
+Fix: in get_keep_alive (or at the Ollama wire), send a value matching /\A-?\d+(?:\.\d+)?\z/ as a number (0 + $v); duration strings ("5m", "-1m") stay strings. no_keep_alive "0" is fine either way but can become 0. Request-building test asserting the JSON type for "-1", "300", "5m".
