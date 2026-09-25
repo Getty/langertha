@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-09-25T19:16:56Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T19:16:56Z
+created: 2026-09-25T19:04:12Z
+id: 280
+priority: low
+started: 2026-09-25T19:16:56Z
+status: done
+tags:
+- vision
+- llm
+- verify
+title: 'image_input: re-verify dated facts and widen XAI (grok-4.x) if docs confirm'
+updated: 2026-09-25T19:16:56Z
+---
+
+Remainder of k270: (1) XAI: do other grok-4.x (4.6, 4.5, 4.3…) accept images per docs.x.ai? widen the allowlist if confirmed. (2) Re-verify fresh facts marked in code comments 2026-09-25: deepseek-flash = V4.1 with vision (since 2026-09-10); mistral-small-latest = Small 4; Mistral dated ids; TSystems vision list (docs-only) and whether /v2/models carries meta_data.input_modalities (would enable a TSystems probe). llm-advisor first, then a small wire-worker change.
+
+2026-09-25 19:08 llm-advisor findings (public docs only, no live calls, read 2026-09-25):
+XAI: every grok-4.x chat model in docs.x.ai catalogue lists input TEXT+IMAGE: grok-4.3 (+grok-4.3-latest), grok-4.5 (+grok-4.5-latest), grok-4.6, grok-4.7, grok-4.20 family (grok-4.20[-reasoning|-non-reasoning]-*, grok-4.20-0309-*, grok-4.20-multi-agent*), grok-build-0.1 (aliases grok-code-fast-1, grok-code-fast). Retired grok-4-0709 / grok-4-fast-* / grok-4-1-fast-* redirect to grok-4.3 since 2026-05-15 (docs.x.ai/developers/migration/may-15-retirement). Models page (updated 2026-09-21) headlines only grok-4.7. => widen to qr/\Agrok-4(?:[.-]|\z)/ plus qr/\Agrok-(?:build-|code-fast)/.
+DeepSeek: confirmed. Pricing table: deepseek-flash = DeepSeek-V4.1-Flash, Vision yes; deepseek-v4-pro = V4-Pro-0813, Vision 'Not supported'. Legacy deepseek-v4-flash and deepseek-v4-flash-vision-exp are served by V4.1-Flash (pricing note + /guides/vision). News 260910: V4.1-Flash native multimodal; from 2026-09-14 04:00 UTC deepseek-v4-pro requests route to V4.1-Flash until V4.1-Pro ships (temporary; keep v4-pro at 0). => add the two legacy aliases.
+Mistral: mistral-small-latest -> mistral-small-2603 (Small 4, text+image per Mistral announcement). Model-card name lists: Medium 3.5 = [mistral-medium-3-5, mistral-medium-3, mistral-medium-latest] (NO dated id on Mistral's card); Large 3 = [mistral-large-2512, mistral-large-latest]; Ministral 3 = [ministral-{3,8,14}b-2512, ministral-{3,8,14}b-latest]. Current table misses mistral-medium-3-5, mistral-medium-3 and ministral-*-latest. Vision guide is stale (still lists retired 2508/2506). Retired: pixtral-*, small-2503/2506, medium-2505/2508 (keep rows, harmless). Probe (capabilities.vision) supersedes when run.
+TSystems: GET /v2/models returns ModelList.data[].meta_data (ModelCard requires meta_data) with ModelMetadata.input_modalities (array of string, nullable) per public OpenAPI at llm-server.llmhub.t-systems.net/openapi.json (Redoc /redoc) and docs /models/ example ('input_modalities': ['text']). Image value spelling undocumented (only 'text' shown) -> match case-insensitively. Probe is feasible (format ~ OpenAI list + meta_data). Docs table: vision = gemma-4-31B-it-FP8, GLM-5.3-Flash-Preview, Mistral-Small-4-119B-2603, Qwen-3.6-35B-FP8, Qwen3.8-27B-FP8-Preview, gpt-5, gpt-5-mini, gpt-5-codex, claude-haiku-4.5, claude-opus-4.6, claude-sonnet-4.6, gemini-3-flash, gemini-3-pro, gemini-3-pro-long-context, gemini-3-pro-image, mistral-medium-3 (+gpt-image-2, image-gen). TEXT-ONLY per docs: gpt-5.4, gpt-5.4-mini, gpt-5.5, gpt-5.6-luna/sol/terra, gemini-3.1-pro(-long-context), gemini-3.5-flash, claude-opus-4.8, claude-opus-5, claude-sonnet-5, claude-fable-5, GLM-5.2, gpt-oss-120b, Nemotron. => current qr/\Agpt-5/i and qr/\Agemini-?3/i OVER-CLAIM; tighten.
+Diff list returned to orchestrator; wire-worker change next.
+
+2026-09-25 19:16 wire-worker: diffs applied in 3a46b86 (branch worktree-agent-a51c349db86adbac7). TSystems probe NOT added (separate decision): per public OpenAPI (llm-server.llmhub.t-systems.net/openapi.json) GET /v2/models carries data[].meta_data.input_modalities (array of string, nullable) — a probe is feasible (OpenAI list + meta_data), image value spelling undocumented so match case-insensitively. No key exists, so any probe stays docs-derived/untested live.
