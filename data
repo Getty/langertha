@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T21:32:22Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:32:22Z
+created: 2026-09-25T20:21:20Z
+id: 292
+priority: medium
+started: 2026-09-25T21:05:38Z
+status: done
+tags:
+- embedding
+- transcription
+- imagegen
+- async
+- parity
+title: Embedding/Transcription/ImageGeneration have no _f variants (sync-only; blocks
+  the loop in async callers)
+updated: 2026-09-25T21:32:22Z
+---
+
+Role::Chat has simple_chat / simple_chat_f / chat_f; Role::Embedding (simple_embedding, Role/Embedding.pm), Role::Transcription (simple_transcription) and OpenAICompatible::simple_image are LWP-only via $self->user_agent->request. Langertha::Embedder and Langertha::ImageGen wrap them sync too (plugin hooks are async but ->get-ed).
+
+Caller impact: langertha-raider calls $engine->simple_embedding inline in the async raid loop (lib/Langertha/Raider.pm:1463, 1597; the comment at 1570 describes the reactor stall / proxy deadlock of k165/k172). knarr/skeid gateways proxying embeddings would have the same issue.
+Consequence for k278: user_agent_timeout reaches these calls only via LWP; once _f variants exist they must go through async_request_f so the k278 timeout applies.
+
+Proposal: simple_embedding_f / simple_transcription_f / simple_image_f built on async_request_f + the existing *_request/*_response (sync/async parity per ADR 0027, same error text on both backends; mocked-async + LocalHTTPDaemon tests). Design question to settle at the same time: these return bare values (vector/text/data), so usage (embeddings/gpt-image usage blocks) and timing (ADR 0011) are dropped — decide whether to keep bare returns or return a small result object; possibly ADR-worthy.
