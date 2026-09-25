@@ -192,6 +192,10 @@ and the model row that wins over it comes after:
     qr/\AMiniMax-M3(?!\d)/ => { reasoning_effort => 1 },
 
 This is the table's existing "later matches win" rule, used for a default-deny. Use it only when
-one model must opt back in to something the rest of the endpoint lacks. A flag that no model on
+one model must opt back in to something the rest of the endpoint lacks. The catch-all must also
+hold without a model: `_apply_model_capability_corrections` used to skip the table when
+`chat_model` was undef or empty, so `model => ''` fell back to the role default and MiniMax sent
+`reasoning_effort` again (review M8). An empty or undef `chat_model` is now matched as `''`;
+only a row that matches the empty string (the catch-all) can fire on it. A flag that no model on
 the endpoint takes stays in layer 2. The other MiniMax clears (`tool_choice_*`,
 `response_format_*`, `parallel_tool_use`) are endpoint-wide and stay in the `around`.

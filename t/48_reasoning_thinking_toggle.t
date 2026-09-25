@@ -64,6 +64,15 @@ for my $model (qw( MiniMax-M2.7 MiniMax-M2.5-highspeed MiniMax-M2 MiniMax-M30 Mi
   ok( !exists $got->{thinking} && !exists $got->{reasoning_effort}, "MiniMax $model: no reasoning field" );
 }
 
+# The catch-all clear holds without a model id too (review M8): an empty
+# chat_model is matched as '' and must not fall back to the role default.
+{
+  my $engine = Langertha::Engine::MiniMax->new( api_key => 'k', model => '' );
+  ok( !$engine->supports('reasoning_effort'), "MiniMax model '': reasoning_effort cleared" );
+  my $got = body( 'Langertha::Engine::MiniMax', 'chat_request', model => '', reasoning_effort => 'high' );
+  ok( !exists $got->{thinking} && !exists $got->{reasoning_effort}, "MiniMax model '': no reasoning field" );
+}
+
 # --- the k204 gate is the role's, not an engine override ---
 is( Langertha::Engine::MiniMax->can('reasoning_kwargs_for'),
   Langertha::Role::ReasoningEffort->can('reasoning_kwargs_for'),

@@ -107,8 +107,11 @@ sub _apply_model_capability_corrections {
   # chat_model is the model that actually carries tools / tool_choice /
   # response_format on the wire (Role::Chat); guard for the rare consumer
   # of engine_capabilities that has no model surface at all.
-  my $model = $self->can('chat_model') ? $self->chat_model : undef;
-  return unless defined $model && length $model;
+  # An empty or undef chat_model is matched as '' rather than skipped, so a
+  # default-deny catch-all row (qr/\A/, Engine::MiniMax, ADR 0019 k209 Update)
+  # holds even for model => ''; every family row needs a real id to match.
+  return unless $self->can('chat_model');
+  my $model = $self->chat_model // '';
   while ( @corrections >= 2 ) {
     my ( $matcher, $overrides ) = splice @corrections, 0, 2;
     my $hit = ref $matcher eq 'Regexp' ? ( $model =~ $matcher )
@@ -143,7 +146,8 @@ engine's API will accept a reasoning-effort field on the request; whether a
 particular model supports reasoning is a separate runtime concern (every
 reasoning field 400s on a non-reasoning model). Engines whose wire never
 accepts the field clear the flag via C<around engine_capabilities>
-(e.g. MiniMax on its OpenAI endpoint, Perplexity).
+(e.g. Perplexity), or per model via L</model_capability_corrections> (e.g.
+MiniMax's OpenAI endpoint, where only C<MiniMax-M3> keeps it).
 
 Prompt caching is request-side-asymmetric, so it gets B<two> flags rather
 than one: C<prompt_cache> means the wire accepts an explicit cache-enable
