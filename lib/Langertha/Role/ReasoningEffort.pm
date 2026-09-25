@@ -91,6 +91,14 @@ C<anthropic>, C<Gemini> to C<gemini>, C<OpenAIResponses> to C<responses>.
 sub reasoning_kwargs_for {
   my ( $self, %args ) = @_;
 
+  # The wire agrees with the capability registry (karr #204, ADR 0009): an
+  # engine that advertises neither reasoning control takes none, so nothing
+  # is sent. Both flags, not reasoning_effort alone -- Gemini 2.5 clears
+  # reasoning_effort per model yet takes thinkingBudget, and its effort croak
+  # (ADR 0023) must stay loud.
+  return ()
+    unless $self->supports('reasoning_effort') || $self->supports('thinking_budget');
+
   # Per-request controls (chat_f, karr #46) beat the engine attributes on a
   # per-key basis: %args may carry effort / thinking_budget (or the canonical
   # control names reasoning_effort / thinking_budget, so the whole controls
@@ -126,10 +134,12 @@ control names C<reasoning_effort> / C<thinking_budget>, so the whole controls
 hash from chat_f can be passed wholesale); keys it does not carry fall back to
 the engine attributes, so a per-request control (chat_f, karr #46) beats the
 configured attribute on a per-key basis. Empty list when neither a per-request
-value nor an attribute is set, or when the value is unsupported on the engine's
-wire. Engines override this to model wire divergence within a shared format
-(e.g. DeepSeek's model-gated split, or MiniMax/Perplexity returning an empty
-list).
+value nor an attribute is set, when the value is unsupported on the engine's
+wire, or when the engine advertises neither C<reasoning_effort> nor
+C<thinking_budget> (L<Langertha::Role::Capabilities/supports>) -- clearing
+those flags is how an engine says it takes no reasoning control, and nothing
+is sent then. Engines override this only to model wire divergence within a
+shared format (e.g. DeepSeek's model-gated split).
 
 =cut
 

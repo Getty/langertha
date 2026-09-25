@@ -118,8 +118,9 @@ sub _build_static_models {[
 # Kimi's OpenAI-compatible endpoint controls reasoning per model family: the
 # K2.x line uses a `thinking` object ({type:enabled|disabled}); kimi-k3 takes
 # a top-level reasoning_effort (low|high|max, server-side default max). This
-# engine clears the capability and never emits a reasoning field — on kimi-k3
-# the server-side default of max then applies. (Wire-level reasoning via
+# engine clears the capability, and Role::ReasoningEffort then emits no
+# reasoning field (it gates on the flag, ADR 0009 k204) — on kimi-k3 the
+# server-side default of max applies. (Wire-level reasoning via
 # MoonshotAnthropic for the Anthropic dialect.)
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
@@ -144,8 +145,6 @@ sub model_capability_corrections {
     qr/\Akimi-k2\./ => { tool_choice_any   => 0 },
   );
 }
-
-sub reasoning_kwargs_for { my ( $self, %args ) = @_; () }
 
 __PACKAGE__->meta->make_immutable;
 

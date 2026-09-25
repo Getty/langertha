@@ -118,7 +118,9 @@ sub _build_static_models {[
 # `parallel_tool_calls` are absent from the schema entirely. Function calling
 # (the `tools` array) is supported, so tools_native stays; the selection,
 # structured-output and parallel knobs are cleared so chat_f never builds a body
-# around fields the wire drops. (Route reasoning via MiniMaxAnthropic.)
+# around fields the wire drops. Clearing reasoning_effort also stops its
+# emission (Role::ReasoningEffort gates on the flag, ADR 0009 k204). (Route
+# reasoning via MiniMaxAnthropic.)
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
@@ -130,8 +132,6 @@ around engine_capabilities => sub {
   ) };
   return $caps;
 };
-
-sub reasoning_kwargs_for { my ( $self, %args ) = @_; () }
 
 __PACKAGE__->meta->make_immutable;
 
