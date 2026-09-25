@@ -1,6 +1,6 @@
 # Design Spec — Provider manifest `/.well-known/langertha.json` (karr k191)
 
-- Status: **draft** (implemented in the same branch, Phase 2)
+- Status: **implemented** (branch k191, Phase 2)
 - Date: 2026-09-25
 - karr: k191 (this) · consumers: langertha-knarr k14 (auto export), langertha-skeid k29 (filtered export), langertha-raider (client)
 - Origin: langertha-raider ADR 0007 "The provider manifest is declarative and lean in v1", handoff §11.1
@@ -105,6 +105,7 @@ All Moose, immutable (`ro`), `make_immutable`, `# ABSTRACT:` + inline POD.
 | `Langertha::Manifest::Endpoint` | `id`, `dialect`, `base_url`, `auth_ref` | `from_hash`, `to_hash`, `is_known_dialect`, class method `known_dialects` |
 | `Langertha::Manifest::Auth` | `id`, `type` | `from_hash`, `to_hash`, `is_known_type`, class method `known_types` |
 | `Langertha::Manifest::Model` | `id`, `endpoint_ref`, `capabilities` (HashRef of 1/0) | `from_hash`, `to_hash`, `supports($cap)` |
+| `Langertha::Manifest::Validation` | — (a Moose role composed by the four classes above; internal, deliberately outside `Langertha::Role::`, not a capability) | `check_manifest_fields`, `is_forbidden_manifest_field`, `check_manifest_id` / `_token` / `_url`, `manifest_bool`, `rethrow_manifest_error` |
 | `Langertha::Manifest::Builder` | `provider_id`, `issuer`, accumulated entries | `add_engine($engine, %opt)`, `add_endpoint`, `add_auth`, `add_model`, `extensions`, `manifest`; class sugar `from_engine($engine, %opt)` |
 
 JSON goes through `JSON::MaybeXS` configured like the house instance
@@ -125,6 +126,9 @@ a path: `Langertha::Manifest: endpoints[0]: unknown field 'foo'`.
    decoder's message.
 2. **Version.** `schema_version` must be the integer `1`. Missing → error; non-integer
    → error; another integer → `unsupported schema_version N (this Langertha reads 1)`.
+   Checked **first**, before the field set: a document of another major version may
+   carry fields v1 does not know, and the useful error is then the version, not
+   "unknown field".
 3. **Kind.** `kind` must be `langertha-provider`.
 4. **Forbidden fields (explicit, before the unknown-field check).** At the top level and
    in every endpoint / auth / model object, a key whose name — split into lower-case
@@ -197,7 +201,7 @@ whose endpoints are their own protocol routes, not engines.
 | `provider_id` (if not given) | engine class: strip `Langertha::Engine::`, else last `::` segment; lower-case (`vLLM` → `vllm`) |
 | `issuer` (if not given) | scheme + host (+ non-default port) of `$engine->url` |
 | endpoint `id` | `%opt{endpoint_id}`, default `chat` |
-| endpoint `dialect` | ordered `isa` table of §5, most specific first; croak if none matches |
+| endpoint `dialect` | ordered `isa` table of §5, most specific first (`dialect_for_engine`); `%opt{dialect}` overrides (third-party engines); croak if none |
 | endpoint `base_url` | `$engine->url` (`%opt{base_url}` overrides — Knarr publishes its public URL, not an internal one) |
 | auth | class-level `api_key_required` / `api_key_env` (`Engine::Remote`): *required* → `api_key` entry (id `%opt{auth_id}` // `api`); *optional* → only if the engine has a key configured (definedness is checked, the value is never read into the manifest); *none* → no auth. `%opt{auth}` = `api_key` / `none` overrides. |
 | models | `%opt{models}` (ArrayRef of ids), default `[ $engine->chat_model ]` |
