@@ -116,7 +116,13 @@ sub new_openai {
   my ( $class, %args ) = @_;
   my $tools = delete $args{tools} || [];
   my $self = $class->new(%args);
-  return $self->openai( tools => $tools );
+  # openai() copies only a few settings from the native engine; every other
+  # argument meant for the returned engine is handed on directly (karr k335).
+  my %accepts = map { $_->init_arg => 1 }
+    grep { defined $_->init_arg } Langertha::Engine::OllamaOpenAI->meta->get_all_attributes;
+  my %pass = map { $_ => $args{$_} } grep { $accepts{$_} && $_ ne 'url' } keys %args;
+  $pass{mcp_servers} = [ @{ $pass{mcp_servers} // [] }, @$tools ] if @$tools;
+  return $self->openai(%pass);
 }
 
 =method new_openai
@@ -124,12 +130,17 @@ sub new_openai {
     my $oai = Langertha::Engine::Ollama->new_openai(
         url   => 'http://localhost:11434',
         model => 'llama3.3',
-        tools => \@mcp_tools,
+        tools => [ $mcp ],
     );
 
 Class method. Constructs a native Ollama engine and immediately returns an
 L<Langertha::Engine::OllamaOpenAI> instance from its C<openai()> method.
-The optional C<tools> list is passed to C<openai()>.
+Every argument the OllamaOpenAI engine accepts (C<mcp_servers>,
+C<tool_max_iterations>, C<response_format>, C<reasoning_effort>, ...) is
+passed on to it; C<url> gets the C</v1> suffix. The optional C<tools> list
+names MCP clients and is added to C<mcp_servers>. Native-only arguments
+(C<keep_alive>, C<seed>, C<context_size>) have no C</v1> counterpart and
+are not passed on.
 
 =cut
 

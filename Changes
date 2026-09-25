@@ -27,6 +27,11 @@ Revision history for Langertha
       same reply: Gemini thought parts stay out of it, and a Mistral
       content-chunk list comes back as text instead of an array reference.
 
+    - Ollama->new_openai passes every argument the OllamaOpenAI engine
+      accepts (mcp_servers, tool_max_iterations, response_format,
+      reasoning_effort, ...) on to it, and its tools list is added to
+      mcp_servers; all of these were silently dropped.
+
     - Ollama keep_alive given as a plain number, also as a string such as
       '-1' or '300', is sent as a JSON number (seconds, negative keeps the
       model loaded); Ollama rejected the string form. Durations with a unit
