@@ -199,3 +199,25 @@ hold without a model: `_apply_model_capability_corrections` used to skip the tab
 only a row that matches the empty string (the catch-all) can fire on it. A flag that no model on
 the endpoint takes stays in layer 2. The other MiniMax clears (`tool_choice_*`,
 `response_format_*`, `parallel_tool_use`) are endpoint-wide and stay in the `around`.
+
+## Update (k219 — an exact-id row re-enables one model inside a family clear)
+
+`Engine::Moonshot` re-enables `reasoning_effort` for `kimi-k2.6` alone, with an exact-id row
+after the K2 family row:
+
+    qr/\Akimi-k2(?!\d)/ => { tool_choice_any => 0, reasoning_effort => 0, temperature => 0 },
+    'kimi-k2.6'         => { reasoning_effort => 1 },
+
+This is the k209 opt-back pattern with a family row where k209 used a catch-all. The later row
+wins. Only the one flag comes back; `tool_choice_any` and `temperature` stay cleared.
+`kimi-k2.6` takes a top-level `thinking` object with `type` `enabled|disabled` on
+`chat/completions` (`KimiK26ChatRequest` schema, kimi-k2-6-quickstart). The engine now opts in
+to the thinking toggle, so the flag reaches the wire as that object (ADR 0023 k219 Update).
+`kimi-k2.7-code` and `kimi-k2.7-code-highspeed` stay cleared. The toggle offers them nothing to
+send: `disabled` is an error, and the guides say not to pass `thinking` at all. They also do not
+agree on whether `{type:'enabled'}` without `keep:'all'` is accepted. A flag that can only ever
+serialize to nothing, or to a form the docs disagree on, stays off. This is unlike
+`MoonshotAnthropic`, where k2.7-code keeps the flag because that face documents `enabled` as
+accepted. Source: platform.kimi.ai `docs/api/models-overview.md`, `docs/api/chat.md`, the K2.6
+and K2.7-code quickstarts, advisor-verified 2026-09-25. This is documentation only and not
+live-verified.

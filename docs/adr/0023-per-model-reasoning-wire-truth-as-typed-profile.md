@@ -386,7 +386,7 @@ Update records it and the choice of where it is serialized.
   SGLang / llama.cpp server, an OpenAI-compatible proxy or another `/anthropic` shim serving a
   bare `MiniMax-M3` or `kimi-k2.6` id does not parse it. An engine opts in with
   `sub _reasoning_thinking_toggle { 1 }` (`Engine::MiniMax`, `Engine::MiniMaxAnthropic`,
-  `Engine::MoonshotAnthropic`; `Engine::Moonshot` when k219 lands). `Role::ReasoningEffort`
+  `Engine::MoonshotAnthropic`; `Engine::Moonshot` since k219). `Role::ReasoningEffort`
   passes that as `Reasoning->new(thinking_toggle => 1)`, and `Reasoning`'s profile resolution
   hides a toggle row from every Reasoning without it: the id resolves to the unlisted-id
   default, so every other engine sends byte-for-byte what it sent before k209 (pinned by
@@ -451,3 +451,31 @@ new mechanism. Source: platform.kimi.ai `docs/api/messages.md` and
 `docs/guide/claude-code-kimi.md`, advisor-verified 2026-09-25. This is documentation only; no
 live call was made. Pinned by `t/48_reasoning_profile_moonshot.t` and the `t/47` golden rows
 for `MoonshotAnthropic` on `kimi-k2.6` and `kimi-k2.7-code`.
+
+## Update (k219 — the Kimi K2 toggle rows reach `chat/completions` through `to_openai`, unchanged)
+
+`Engine::Moonshot` now defines `_reasoning_thinking_toggle`, which completes the list in the
+k209 Update. Kimi's `chat/completions` takes the K2.x toggle as a top-level `thinking` object with
+the same `type` values as the Messages face. On `kimi-k2.6`, `none` sends `{type:'disabled'}` and
+any other level sends `{type:'enabled'}`. Neither `keep`, `reasoning_effort` nor `temperature` is
+sent.
+
+The Profile and the serializers needed no change. The two Kimi K2 rows declare
+`wire_format 'anthropic'`, but `wire_format` is descriptive and not the dispatch key (see the
+attribute's POD). `to_openai` already returns `_thinking_toggle` for any `has_thinking_on` row
+once the endpoint has opted in. On the openai wire the toggle never carries `display`, and
+the object that comes out, `{type}` alone, is the one the chat schema asks for:
+`additionalProperties: false`, `type` required, and `keep` left out, as the advisor recommends.
+The rows keep `wire_format 'anthropic'`. MiniMax's rows already serve both wires under `openai`,
+so the attribute was never a per-wire claim for toggle rows.
+
+`kimi-k2.7-code` resolves to its row on this engine as well, but the capability layer keeps its
+`reasoning_effort` cleared (ADR 0019 k219 Update). The k204 gate therefore sends nothing there,
+and that is the documented path on this face. The k215 Update's open question, whether a
+k2.7-code request with no `thinking` field is accepted, is answered for `chat/completions`: every
+documented k2.7-code example omits it. For `/anthropic` it is still unverified. `kimi-k3` has no
+toggle row and keeps its `reasoning_effort` (k207). `MoonshotAnthropic` is unchanged.
+Source: platform.kimi.ai `docs/api/models-overview.md`, `docs/api/chat.md`,
+`docs/guide/use-thinking-models.md`, the K2.6 and K2.7-code quickstarts, advisor-verified
+2026-09-25. This is documentation only and not live-verified. Pinned by
+`t/48_reasoning_profile_moonshot.t` and the `Moonshot|kimi-k2.6` rows of the `t/47` golden.
