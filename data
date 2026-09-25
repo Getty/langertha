@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T22:12:38Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T22:12:38Z
+created: 2026-09-25T20:28:02Z
+id: 309
+priority: low
+started: 2026-09-25T21:37:08Z
+status: done
+tags:
+- feature
+- embeddings
+- transcription
+- images
+title: 'New endpoints: SGLang embeddings, Gemini embedContent/batchEmbedContents,
+  Mistral Voxtral transcription, xAI image generation'
+updated: 2026-09-25T22:12:38Z
+---
+
+From k297 advisor (sources in note on 297): SGLang /v1/embeddings (Embedding role, caller model else omit); Gemini embedContent/batchEmbedContents (gemini-embedding-001 default; embedContentConfig for taskType/outputDimensionality; ?key= auth; embedding.values / embeddings[].values); Mistral transcription /v1/audio/transcriptions multipart, voxtral-mini-latest, extras diarize/context_bias/timestamp_granularities (update Mistral POD); xAI images /v1/images/generations grok-imagine-image-2.0, response_format url|b64_json, aspect_ratio, resolution, n<=10, NO size/quality/style (own extras). Also: drop createTranslation from TranscriptionBase/Whisper POD or add generic translation_request (Groq whisper-large-v3 only) — low value.
