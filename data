@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-25T21:32:30Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:32:30Z
+created: 2026-09-25T20:21:47Z
+id: 294
+priority: low
+started: 2026-09-25T21:05:45Z
+status: done
+tags:
+- pod
+- embedding
+- transcription
+title: 'POD SYNOPSIS: ->embedding / ->transcription shown as returning vectors/text
+  but they return HTTP requests'
+updated: 2026-09-25T21:32:30Z
+---
+
+Role::Embedding::embedding and Role::Transcription::transcription return a Langertha::Request::HTTP (Role/Embedding.pm, Role/Transcription.pm). SYNOPSIS lines claim otherwise:
+- Engine/OpenAI.pm:33 my $embedding = $openai->embedding(...); :36 my $text = $openai->transcription(...)
+- Engine/Groq.pm:27 my $text = $groq->transcription(...)
+- Engine/Mistral.pm:29 and Engine/Ollama.pm:48 my $embedding = ->embedding($content)
+Also OpenAICompatible image_request POD (OpenAICompatible.pm ~741-749) lists response_format as accepted; gpt-image-* models reject/ignore response_format (always b64_json) per my knowledge — verify with langertha-llm-advisor before rewording.
+Fix: simple_embedding / simple_transcription in SYNOPSIS (langertha-pod-writer).
