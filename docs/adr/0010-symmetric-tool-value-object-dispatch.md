@@ -116,7 +116,8 @@ provider-native choice: it reached the wire through `TO_JSON` in the canonical
 `{type => ...}` shape (wrong on the OpenAI and Responses wires, which take `'none'` /
 `'required'` strings), and on Perplexity a `ToolChoice->none` carped and still sent the tools,
 bypassing the ADR 0020 k233 none-withhold. Every tool_choice entry point — `chat_f`'s ADR 0005
-rewrite and its exclusion signal, the `OpenAICompatible` / `AnthropicCompatible` /
+rewrite and its exclusion signal, `Role::Chat::_hermes_prompt_tools` (the hermes wire, where
+`none` withholds the tools from the prompt, k231), the `OpenAICompatible` / `AnthropicCompatible` /
 `ResponsesCompatible` / Gemini request builders, the `Input::Tools` facade — funnels through
 `from_hash`, so one identity branch there makes the object serialize by `to($fmt)` on every
 wire; no builder learns about objects on its own. `TO_JSON` stays the canonical `to_hash`

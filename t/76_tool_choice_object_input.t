@@ -19,6 +19,7 @@ use Langertha::Engine::Gemini;
 use Langertha::Engine::OpenAIResponses;
 use Langertha::Engine::Perplexity;
 use Langertha::Engine::Cerebras;
+use Langertha::Engine::NousResearch;
 
 # karr k235 / ADR 0001, ADR 0010: the ToolChoice value object is the canonical
 # selection policy, so passing one as tool_choice must mean exactly what the
@@ -85,6 +86,16 @@ subtest 'anthropic wire: object serialized by to(anthropic)' => sub {
                 tool_choice => $choice{$kind}->() ) );
             is_deeply( $body->{tool_choice}, $want{$kind}, "$builder: $kind" );
         }
+        # The cases above cannot tell a fix from a leak: TO_JSON's canonical
+        # shape happens to equal Anthropic's. The parallel_tool_use fold can:
+        # it replaced a non-HASH tool_choice with {type => 'auto'}, so before
+        # k235 a ToolChoice object lost its forced tool here.
+        my $body = body_of( $engine->$builder( $msgs, tools => $engine->format_tools([$tool]),
+            tool_choice => Langertha::ToolChoice->specific('get_weather'),
+            controls    => { parallel_tool_use => 0 } ) );
+        is_deeply( $body->{tool_choice},
+            { type => 'tool', name => 'get_weather', disable_parallel_tool_use => JSON::MaybeXS::true() },
+            "$builder: named + parallel_tool_use => 0 keeps the forced tool" );
     }
 };
 
@@ -133,6 +144,22 @@ subtest 'responses wire (Perplexity): ToolChoice->none withholds the tools (k233
         ok( !( grep { /not one Langertha can read/ } @warns ), "$builder: object is not 'unreadable'" )
             or diag @warns;
     }
+};
+
+subtest 'hermes wire (NousResearch): ToolChoice->none withholds the tools from the prompt (k231)' => sub {
+    my @warns;
+    local $SIG{__WARN__} = sub { push @warns, $_[0] };
+    my $reply = { choices => [ { message => { role => 'assistant', content => 'ok' }, finish_reason => 'stop' } ] };
+    my $mock = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response($reply) ] );
+    my $engine = Langertha::Engine::NousResearch->new( api_key => 'k', model => 'Hermes-4-70B', _async_http => $mock );
+    $engine->chat_f( messages => ['weather?'], tools => [$tool],
+        tool_choice => Langertha::ToolChoice->none )->get;
+    my $body = body_of( ( $mock->requests )[0] );
+    ok( !exists $body->{tools} && !exists $body->{tool_choice}, 'neither key in the body' );
+    is_deeply( $body->{messages}, [ { role => 'user', content => 'weather?' } ], 'no tool prompt' );
+    ok( ( grep { /none.*withheld/ } @warns ), 'carps that the tools were withheld' ) or diag @warns;
+    ok( !( grep { /ignored on the hermes/ } @warns ), 'the object is not read as an ignored choice' )
+        or diag @warns;
 };
 
 subtest 'chat_f: named ToolChoice object drives the ADR 0005 rewrite on Perplexity' => sub {
