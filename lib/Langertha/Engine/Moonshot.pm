@@ -128,14 +128,15 @@ sub _build_static_models {[
 #     advisor 2026-09-25, docs only): kimi-k3 takes a top-level
 #     reasoning_effort (low|high|max, server default max; the accepted set
 #     lives in its Reasoning::Profile row), while the K2.x line takes only the
-#     Kimi `thinking` object. Clear reasoning_effort there, and
+#     Kimi `thinking` object. Clear reasoning_effort there (dotted and
+#     dash-form K2 ids alike, e.g. kimi-k2-thinking), and
 #     Role::ReasoningEffort then sends no reasoning field (the k204 gate).
 # The rows are deliberately distinct per model — that is the discriminating
 # information the flat role-derived row could not carry.
 sub model_capability_corrections {
   return (
     'kimi-k3'       => { tool_choice_named => 0 },
-    qr/\Akimi-k2\./ => { tool_choice_any => 0, reasoning_effort => 0 },
+    qr/\Akimi-k2(?!\d)/ => { tool_choice_any => 0, reasoning_effort => 0 },
   );
 }
 

@@ -36,7 +36,8 @@ my %K3_OK = map { $_ => 1 } qw( low high max );
 # --- OpenAI face (chat/completions) ---
 ok( Langertha::Engine::Moonshot->new( api_key => 'k' )->supports('reasoning_effort'),
   'Moonshot kimi-k3 (default) advertises reasoning_effort' );
-for my $model (qw( kimi-k2.6 kimi-k2.7-code kimi-k2.7-code-highspeed )) {
+# kimi-k2-thinking: a dash-form K2 id is K2 too (thinking object only).
+for my $model (qw( kimi-k2.6 kimi-k2.7-code kimi-k2.7-code-highspeed kimi-k2-thinking )) {
   my $engine = Langertha::Engine::Moonshot->new( api_key => 'k', model => $model );
   ok( !$engine->supports('reasoning_effort'), "Moonshot $model: reasoning_effort cleared (layer 3)" );
   ok( !$engine->supports('tool_choice_any'), "Moonshot $model: tool_choice_any still cleared" );
@@ -74,5 +75,14 @@ my $profile = Langertha::Reasoning::Profile->for_model('kimi-k3');
 is_deeply( $profile->levels, [qw( low high max )], 'kimi-k3 profile: low|high|max' );
 ok( !$profile->can_disable, 'kimi-k3 profile: reasoning cannot be disabled' );
 is( $profile->disable_form, 'absent', 'kimi-k3 profile: off is the absent field' );
+
+# The k196 multi-digit guard: kimi-k30 is an unknown id, while a suffixed or
+# dotted K3 id stays in the family.
+is( Langertha::Reasoning::Profile->for_model('kimi-k30'),
+  Langertha::Reasoning::Profile->for_model(''), 'kimi-k30: unknown id, provider default' );
+for my $id (qw( kimi-k3-turbo kimi-k3.5 )) {
+  is_deeply( Langertha::Reasoning::Profile->for_model($id)->levels, [qw( low high max )],
+    "$id: kimi-k3 family" );
+}
 
 done_testing;

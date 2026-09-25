@@ -653,17 +653,11 @@ sub _family_profiles {
     # sending one. \A-anchored on Moonshot's own ids: OpenRouter's
     # moonshotai/kimi-k3 is deliberately not matched (what an aggregator
     # forwards was not checked). K2.x takes no effort (cleared per model on
-    # the engine).
-    __PACKAGE__->new(
-      model_match    => qr/\Akimi-k3/,
-      control        => 'effort',
-      wire_format    => 'openai',
-      levels         => [qw( low high max )],
-      levels_by_wire => { openai => [qw( low high max )], responses => [qw( low high max )] },
-      can_disable    => 0,
-      disable_form   => 'absent',
-      source         => 'platform.kimi.ai use-reasoning-effort + api/chat + api/messages; k207 2026-09-25 (advisor-verified, doc-sourced not live)',
-    ),
+    # Engine::Moonshot only). (?!\d): kimi-k30 is an unknown id (k196 guard).
+    _openai_profile( qr/\Akimi-k3(?!\d)/,
+      [qw( low high max )],
+      source => 'platform.kimi.ai use-reasoning-effort + api/chat + api/messages; k207 2026-09-25 (advisor-verified, doc-sourced not live)',
+      can_disable => 0, disable_form => 'absent' ),
 
     # Self-hosted Qwen3.x reasoning family (vLLM / SGLang / llama.cpp), matched
     # with or without its HuggingFace org prefix (served ids look like
