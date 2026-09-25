@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-09-25T04:01:17Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T04:01:17Z
+created: 2026-09-25T00:18:50Z
+id: 195
+priority: medium
+started: 2026-09-25T03:23:46Z
+status: done
+tags:
+- raider
+- api
+- cross-dist
+title: 'langertha-raider: migrate off core privates to the k190/k192 public hooks'
+updated: 2026-09-25T04:01:17Z
+---
+
+Core now offers public hooks (worktree branch k190-192, commit 7756f33; spec docs/superpowers/specs/2026-09-25-public-hooks-for-raider-design.md). Raider side, in its own repo:
+1. _async_http->do_request (Raider.pm:859 compress_history_f, :1733 raid_f) -> $engine->async_request_f($request). Same Future<HTTP::Response>, 4xx/5xx resolve.
+2. _async_http->loop (Raider.pm:1555 inline MCP add, :1911 and :2086 wait self-tool delay_future) -> raider owns a loop: lazy overridable attribute defaulting to IO::Async::Loop->new (process-wide loop, the same one the default Net::Async::HTTP backend uses). CLI already has $self->loop; pass it through. Core promises no loop (k192 choice b). Document: when injecting an _async_http client on a non-default loop, pass that loop to Raider.
+3. _langfuse_timestamp (Raider.pm:1718,1763,1821,1858,1925,1951,1987,2000,2129) -> $engine->langfuse_timestamp.
+4. Usage parsing: _extract_prompt_tokens (Raider.pm:831), _langfuse_usage (:1084), Plugin::Trace::_extract_usage (Trace.pm:136) -> Langertha::Usage->from_raw($data) (undef when not reported; input_tokens/output_tokens/total_tokens). Gains Ollama-native counts.
+5. Tests mocking _async_http->loop (t/86_raider_self_tools.t:568,759,935; t/87_raider_plugins.t:312) move to the new names.
+6. Raise the Langertha floor to the release that ships these hooks.
+Private names keep working in core until then.
+
+REVISED after review (k192 now choice a, ADR 0028; commits df106c2, 338c762): core now has $engine->async_loop returning Maybe[loop] (the injected client's loop, the Net::Async::HTTP loop, or undef on the sync fallback or a loop-less client). Raider item 2 becomes: use $engine->async_loop // IO::Async::Loop->new at Raider.pm:1555/1911/2086, NOT a raider-owned singleton default. Under the old plan a foreign-loop backend hung. Additional checklist items: (M4) other reach-ins to migrate or justify: $engine->_plugin_instances (t/87_raider_plugins.t:541-558), $raider->_plugin_instances from Raider/CLI.pm:1102, _plugin_pipeline_tool_call (Raider.pm:1846, raider's own composed Role::PluginHost, defensible), and $engine->_langfuse_batch (t/82_live_raider.t:140). The engine-side calls in tests would break on a core rename. (M6) semantic difference: _extract_prompt_tokens returned undef when usage was present but had no prompt key, while Usage->from_raw returns a Usage with input_tokens == 0. The _last_prompt_tokens guard must treat 0 as not reported (or check > 0). async_request_f: HTTP error statuses resolve on every backend, but a transport failure fails the future on Net::Async::HTTP and resolves as LWP's synthesized 500 on the sync fallback, so keep checking is_success.
+
+2026-09-25 03:37 Raider side done on langertha-raider branch k195-198 (worktree .claude/worktrees/k195-198, based on a13cbe3), commit a3a3f78, not pushed. async_request_f / async_loop // IO::Async::Loop->new (3 sites) / langfuse_timestamp (9) / Usage->from_raw (prompt-token guard: input_tokens > 0). Tests moved to public names; t/87 engine plugin subtests via fire_event_f; t/82 no _langfuse_batch. New tests: foreign-loop + no-loop inline MCP, loop-less raider_wait, M6 guard (red without the > 0 check). Floor stays Langertha 0.503 (cpanfile already). Suite: prove -I core/lib -lr t/ 51 files 544 tests PASS, t/42 and t/82 live skipped. Remaining: Raider.pm/CLI.pm use _plugin_instances and _plugin_pipeline_tool_call of core Role::PluginHost composed into Raider itself (no public reader in core).
+
+raider-Branch k195-198 reviewt (Ready, Minors behoben 8b2d692) und lokal per ff in langertha-raider main gemerged (nicht gepusht). Raider-Release erst nach Core 0.503.
