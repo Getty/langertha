@@ -145,3 +145,31 @@ dotted chat ids (`gpt-5.1-chat-latest`, `gpt-5.2-chat-latest`, `gpt-5.N-chat*`).
 lookahead missed them and would have dropped their temperature. They are now non-reasoning and
 keep it. The effort resolution (2b), the `effort=none` branch (2c) and the k185 no-effort branch
 are unchanged. Verified offline: `t/79_openai_reasoning_model_classification.t`.
+
+## Update (k214 — Kimi fixes temperature per model; a capability-cleared drop now carps)
+
+Every current Kimi chat id fixes `temperature` server-side and answers any other value with HTTP
+400 (`invalid temperature: only 1 is allowed for this model`). `kimi-k3` and
+`kimi-k2.7-code(-highspeed)` take only 1.0; `kimi-k2.6` takes 1.0 with thinking and **only 0.6
+without** (advisor 2026-09-25, `platform.kimi.ai/docs/api/models-overview.md` plus third-party
+400 reports; documentation-derived, not live-verified). Two things follow, and neither is this
+ADR's effort-aware predicate:
+
+- **A static per-model clear, not a runtime predicate.** The Kimi rejection does not depend on
+  reasoning effort, so it is an ADR 0019 layer-3 row on **both** faces (`Engine::Moonshot`,
+  `Engine::MoonshotAnthropic`): `qr/\Akimi-k3(?!\d)/` and `qr/\Akimi-k2(?!\d)/` =>
+  `{ temperature => 0 }`. OpenRouter's `moonshotai/kimi-*` is deliberately not matched.
+- **"temperature=1 passes" does not carry over.** §Decision's rule that the wire default 1 always
+  passes is correct for OpenAI, where 1 is always accepted. On Kimi it is wrong: `kimi-k2.6`
+  without thinking 400s on 1. The capability clear therefore keeps the field off the wire for
+  every value, 1 included. (Latent today, since nothing sends `thinking:{type:disabled}` on the
+  OpenAI face, but live on `MoonshotAnthropic` once k215 maps `none` to `disabled`.)
+
+The one shared change is in both `_temperature_kwargs` gates (`Role::OpenAICompatible`,
+`Role::AnthropicCompatible`): when `supports('temperature')` is false and the caller set a
+temperature (attribute or per-request control) other than 1, the gate now **carps**
+(`dropping temperature=X -- model 'M' does not take a temperature`) instead of dropping silently.
+A dropped 1 stays quiet, for the same noise reason as §Decision. This also covers the Claude
+Opus 4.7+ / 5-series clear (k138), whose drop was silent until now. `Role::ResponsesCompatible`'s
+gate is unchanged (no engine on that wire clears `temperature` per model today). Verified
+offline: `t/79_kimi_temperature_gate.t`.

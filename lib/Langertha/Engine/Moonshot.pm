@@ -82,6 +82,10 @@ server-side when the field is omitted; it always reasons. On C<kimi-k3> the
 engine sends C<reasoning_effort> when it is one of those three values and drops
 any other level, so the server default applies.
 
+B<Temperature:> every current Kimi model fixes C<temperature> server-side and
+rejects other values, so this engine never sends one; a C<temperature> other
+than C<1> is dropped with a warning.
+
 Supports chat, streaming, tool calling, and structured output. Embeddings,
 transcription, and image generation are not supported via this endpoint.
 
@@ -131,12 +135,19 @@ sub _build_static_models {[
 #     Kimi `thinking` object. Clear reasoning_effort there (dotted and
 #     dash-form K2 ids alike, e.g. kimi-k2-thinking), and
 #     Role::ReasoningEffort then sends no reasoning field (the k204 gate).
+#   * Temperature is fixed server-side on every current Kimi id (karr k214,
+#     platform.kimi.ai models overview, advisor 2026-09-25, docs + third-party
+#     400 reports, not live): kimi-k3 and kimi-k2.7-code(-highspeed) take only
+#     1.0, kimi-k2.6 1.0 with thinking and only 0.6 without, anything else is a
+#     400. Not effort-dependent, and 1 is not safe either (k2.6 non-thinking),
+#     so the flag is cleared and the field never goes out (ADR 0025 k214 Update).
 # The rows are deliberately distinct per model — that is the discriminating
 # information the flat role-derived row could not carry.
 sub model_capability_corrections {
   return (
     'kimi-k3'       => { tool_choice_named => 0 },
-    qr/\Akimi-k2(?!\d)/ => { tool_choice_any => 0, reasoning_effort => 0 },
+    qr/\Akimi-k3(?!\d)/ => { temperature => 0 },
+    qr/\Akimi-k2(?!\d)/ => { tool_choice_any => 0, reasoning_effort => 0, temperature => 0 },
   );
 }
 

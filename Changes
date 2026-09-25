@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Moonshot and MoonshotAnthropic no longer send temperature on any Kimi
+      model (kimi-k3, kimi-k2.6, kimi-k2.7-code): Kimi fixes it server-side
+      and rejects other values, and kimi-k2.6 without thinking even rejects
+      1. A dropped caller temperature other than 1 now carps, on these
+      engines and on Claude models that no longer take temperature (Opus 4.7
+      and later), where the drop used to be silent. Taken from Moonshot's
+      documentation, not verified against the live API.
+
     - MiniMaxAnthropic no longer sends output_config.effort, which MiniMax's
       Anthropic-compatible schema does not have. A reasoning_effort still
       sends thinking {type: adaptive}, which turns thinking on. Taken from

@@ -2,7 +2,7 @@ package Langertha::Role::AnthropicCompatible;
 # ABSTRACT: Role for Anthropic-compatible API format
 our $VERSION = '0.503';
 use Moose::Role;
-use Carp qw( croak );
+use Carp qw( croak carp );
 use JSON::MaybeXS;
 use Langertha::ToolChoice;
 use Langertha::Tool;
@@ -379,14 +379,25 @@ sub _merge_output_config_format {
 # Engine::Anthropic clears the `temperature` capability for those via
 # model_capability_corrections (k138), and this gate keeps the field off the
 # wire whenever the selected model rejects it — whether it came from the engine
-# attribute or a per-request control (k135 point 1).
+# attribute or a per-request control (k135 point 1). The same capability clear
+# covers Kimi's /anthropic face, where every current id fixes temperature
+# server-side (karr k214). A caller-set non-default value that the gate drops
+# carps (ADR 0025 k214 Update) -- that drop used to be silent; 1 is dropped
+# quietly.
 sub _temperature_kwargs {
   my ( $self, $controls ) = @_;
-  return () unless $self->supports('temperature');
-  return ( temperature => $controls->{temperature} )
-    if exists $controls->{temperature};
-  return ( temperature => $self->temperature ) if $self->has_temperature;
-  return ();
+  my $temp = exists $controls->{temperature} ? $controls->{temperature}
+           : $self->has_temperature          ? $self->temperature
+           :                                    undef;
+  return () unless defined $temp;
+  unless ( $self->supports('temperature') ) {
+    carp "".( ref $self ).": dropping temperature=$temp -- model '"
+      . ( $self->chat_model // '' )
+      . "' does not take a temperature (rejected or fixed server-side)"
+      if $temp != 1;
+    return ();
+  }
+  return ( temperature => $temp );
 }
 
 # Anthropic has no response_format; emulate via a synthetic tool plus

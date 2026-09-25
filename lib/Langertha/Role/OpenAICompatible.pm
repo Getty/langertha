@@ -311,13 +311,24 @@ sub _max_tokens_key { 'max_tokens' }
 # (dropping the wire default would be a pure-noise warning), and a caller who
 # disables reasoning (reasoning_effort => 'none', where the model accepts it)
 # keeps its temperature.
+#
+# A model that does not take temperature at all (supports('temperature') false:
+# every current Kimi id fixes it server-side, karr k214) never gets the field,
+# not even 1. A caller-set non-default value is dropped with a carp rather than
+# silently (ADR 0025 k214 Update); 1 is dropped quietly.
 sub _temperature_kwargs {
   my ( $self, $controls ) = @_;
-  return () unless $self->supports('temperature');
   my $temp = exists $controls->{temperature} ? $controls->{temperature}
-           : $self->has_temperature          ? $self->temperature
+           : $self->can('has_temperature') && $self->has_temperature ? $self->temperature
            :                                    undef;
   return () unless defined $temp;
+  unless ( $self->supports('temperature') ) {
+    carp "".( ref $self ).": dropping temperature=$temp -- model '"
+      . ( $self->can('chat_model') ? $self->chat_model // '' : '' )
+      . "' does not take a temperature (fixed server-side)"
+      if $temp != 1;
+    return ();
+  }
   if ( $temp != 1
     && $self->can('_temperature_rejected_by_reasoning')
     && $self->_temperature_rejected_by_reasoning($controls) ) {

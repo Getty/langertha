@@ -38,6 +38,9 @@ is C<low>, C<high> or C<max>; any other level is dropped and the server default
 (C<max>) applies. K3 always reasons and Kimi's Messages API has no C<thinking>
 request field for it, so none is sent (C<thinking_display> has no effect).
 
+Kimi fixes C<temperature> server-side on every current model, so none is sent;
+a C<temperature> other than C<1> is dropped with a warning.
+
 Get your API key at L<https://platform.kimi.ai/> and set
 C<LANGERTHA_MOONSHOT_API_KEY> in your environment.
 
@@ -70,6 +73,18 @@ sub _build_static_models {[
   { id => 'kimi-k2.7-code-highspeed' },
   { id => 'kimi-k2.6' },
 ]}
+
+# Temperature is fixed server-side on every current Kimi id (karr k214; see
+# Engine::Moonshot for the sources). Kimi's Messages-API schema has no
+# temperature property at all, and whether /anthropic 400s on one or ignores it
+# is undocumented; the value is fixed either way, so omitting it is always safe
+# (ADR 0025 k214 Update). Same rows as the OpenAI face.
+sub model_capability_corrections {
+  return (
+    qr/\Akimi-k3(?!\d)/ => { temperature => 0 },
+    qr/\Akimi-k2(?!\d)/ => { temperature => 0 },
+  );
+}
 
 __PACKAGE__->meta->make_immutable;
 
