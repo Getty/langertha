@@ -537,6 +537,10 @@ sub chat_response {
   if ( defined( my $error = $self->_openai_choice_error( $data, $choice ) ) ) {
     croak "".(ref $self)." response carried an error: $error";
   }
+  # finish_reason 'error' with no error object anywhere is still a failed
+  # generation, not an answer. -- karr k317
+  croak "".(ref $self)." response ended with finish_reason error"
+    if ( $choice->{finish_reason} // '' ) eq 'error';
   my $msg = $choice->{message} || {};
   # The OpenAI-compatible response envelope is always OpenAI-shaped, even for
   # engines whose tool_wire_format is 'hermes' (their calls ride in the message
@@ -622,8 +626,10 @@ C<"E<lt>engineE<gt> response carried an error: E<lt>messageE<gt> (E<lt>codeE<gt>
 otherwise C<"E<lt>engineE<gt> response contained no choices">. A choice
 carrying an C<error> object, or a top-level C<error> beside a choice whose
 C<finish_reason> is C<error> (OpenRouter reports a provider failure this
-way), croaks the same C<response carried an error>. Only C<choices[0]> is
-read.
+way), croaks the same C<response carried an error>; a C<finish_reason> of
+C<error> with no error object anywhere croaks
+C<"E<lt>engineE<gt> response ended with finish_reason error">. Only
+C<choices[0]> is read.
 
 =cut
 
@@ -794,6 +800,11 @@ sub parse_stream_chunk {
     && defined( my $error = $self->_openai_choice_error( $data, $data->{choices}[0] ) ) ) {
     croak "".(ref $self)." stream carried an error: $error";
   }
+  # The same frame without any error object still ends a failed stream. -- k317
+  if ( ref $data->{choices} eq 'ARRAY' && ref $data->{choices}[0] eq 'HASH'
+    && ( $data->{choices}[0]{finish_reason} // '' ) eq 'error' ) {
+    croak "".(ref $self)." stream ended with finish_reason error";
+  }
 
   # With stream_options.include_usage (OpenAI; vLLM and SGLang emit it too) the
   # usage arrives in a frame of its own after the finish chunk, with an empty
@@ -935,7 +946,9 @@ C<error> object and no choice (a gateway failing mid-stream) croaks
 C<"E<lt>engineE<gt> stream carried an error: E<lt>messageE<gt> (E<lt>codeE<gt>)">,
 which fails the stream; so does a choice carrying an C<error> object, or a
 top-level C<error> beside a choice with C<finish_reason> C<error>
-(OpenRouter's mid-stream failure frame). A C<delta.refusal> fragment lands on the chunk's
+(OpenRouter's mid-stream failure frame). A choice with C<finish_reason>
+C<error> and no error object anywhere croaks
+C<"E<lt>engineE<gt> stream ended with finish_reason error">. A C<delta.refusal> fragment lands on the chunk's
 C<refusal>.
 
 C<delta.tool_calls> fragments are assembled per C<index> (a fragment without

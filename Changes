@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - A finish_reason of error with no error object croaks ("response|stream
+      ended with finish_reason error") instead of passing as a normal finish,
+      and a Gemini stream chunk carrying an error object fails the stream
+      ("stream carried an error: message (code)").
+
     - New engine attribute embedding_dimensions shortens every embedding:
       sent as dimensions on OpenAI-compatible engines and as
       embedContentConfig.outputDimensionality on Gemini, a per-request extra

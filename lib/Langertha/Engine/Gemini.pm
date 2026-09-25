@@ -617,7 +617,10 @@ A blocked prompt (no candidate, C<promptFeedback.blockReason>) is an answer
 with C<content> C<''> and the C<blockReason> as C<finish_reason> (e.g.
 C<SAFETY>). A body with neither croaks, naming the engine and any C<error> it
 carries. On a stream, the blocked prompt's chunk is the final chunk, with
-C<content> C<''> and the C<blockReason> as C<finish_reason>.
+C<content> C<''> and the C<blockReason> as C<finish_reason>. A stream chunk
+with a top-level C<error> object croaks
+C<"E<lt>engineE<gt> stream carried an error: E<lt>messageE<gt> (E<lt>codeE<gt>)">,
+which fails the stream.
 
 =cut
 
@@ -745,6 +748,13 @@ sub parse_stream_chunk {
   my ( $self, $data, $event ) = @_;
 
   require Langertha::Stream::Chunk;
+
+  # An error inside an open stream arrives as a chunk with a top-level `error`
+  # object. Skipping it ended the stream as a short, silent success; the croak
+  # fails the stream, as the OpenAI-compatible parser does. -- karr k317
+  if ( ref $data eq 'HASH' && defined $data->{error} ) {
+    croak "".(ref $self)." stream carried an error: ".$self->_body_error_text( $data->{error} );
+  }
 
   # Gemini streaming format is similar to non-streaming
   my $candidates = $data->{candidates} || [];
