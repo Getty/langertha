@@ -103,6 +103,9 @@ Revision history for Langertha
       Langertha::ToolCall objects (no shipped engine streams Responses tool
       calls yet; XAIResponses will), and a reasoning summary now appears as
       thinking on the final chunk (visible on Perplexity reasoning streams).
+      The final chunk also carries finish_reason like the non-streaming
+      reply, text-only streams included: stop, incomplete for a truncated
+      answer, tool_calls with function calls (new on Perplexity's streams).
       A response.failed or error event fails the stream with the provider's
       message instead of ending it silently. Built from OpenAI's documented
       streaming events, not verified against a live stream.

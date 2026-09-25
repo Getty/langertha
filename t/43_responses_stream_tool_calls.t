@@ -159,15 +159,52 @@ subtest 'response.failed and error fail loudly with the provider message' => sub
     like( $@, qr/stream failed/, 'with a generic message' );
 };
 
-subtest 'Perplexity text-only capture: final chunk unchanged' => sub {
+# karr k222: a text-only stream's final chunk now carries the same
+# finish_reason chat_response reads off the same response object -- 'stop' for
+# a completed message, the message status ('incomplete') for a truncated one --
+# like the Chat-Completions, Anthropic, Gemini and Ollama streams already do on
+# their last chunk. Before k222 it was set only alongside tool calls, so a
+# text-only Responses stream never said how it ended. This is an intended,
+# additive change to Perplexity's final chunk (golden in
+# t/data/stream_text_only_golden.json regenerated for it).
+subtest 'Perplexity text-only capture: final chunk reports stop' => sub {
     my $engine = Langertha::Engine::Perplexity->new( api_key => 'test-key', model => 'sonar' );
-    my $chunks = $engine->process_stream_data( path('t/data/perplexity_agent_stream.sse')->slurp_raw );
+    my $sse    = path('t/data/perplexity_agent_stream.sse')->slurp_raw;
+    my $chunks = $engine->process_stream_data($sse);
     my $final  = $chunks->[-1];
     ok( $final->is_final, 'final chunk present' );
     ok( !$final->has_tool_calls, 'no tool_calls on a text-only stream' );
-    ok( !defined $final->finish_reason, 'no finish_reason added to a text-only stream' );
+    is( $final->finish_reason, 'stop', 'finish_reason stop on a completed text-only stream' );
     ok( !$final->has_thinking, 'no thinking added' );
     is( join( '', map { $_->content } @$chunks ), '7', 'content unchanged' );
+
+    # The same response object read non-streaming gives the same value.
+    my ($completed) = grep { ( $_->{type} // '' ) eq 'response.completed' }
+        map { eval { $json->decode($_) } // () } $sse =~ /^data: (\{.*\})$/mg;
+    my $response = $engine->chat_response( HTTP::Response->new( 200, 'OK',
+        [ 'Content-Type' => 'application/json' ], $json->encode( $completed->{response} ) ) );
+    is( $final->finish_reason, $response->finish_reason, 'stream and chat_response agree' );
+};
+
+subtest 'text-only response.incomplete reports incomplete' => sub {
+    my $engine = Langertha::Engine::Perplexity->new( api_key => 'test-key', model => 'sonar' );
+    # Shape per the documented Responses object: a truncated run ends with
+    # response.incomplete, status incomplete, and the message item's own status
+    # incomplete (no capture of a truncated stream exists).
+    my $resp = {
+        id => 'resp_1', object => 'response', status => 'incomplete',
+        incomplete_details => { reason => 'max_output_tokens' },
+        output => [ { type => 'message', id => 'msg_1', role => 'assistant', status => 'incomplete',
+            content => [ { type => 'output_text', text => 'The ans', annotations => [] } ] } ],
+        usage => { input_tokens => 5, output_tokens => 3, total_tokens => 8 },
+    };
+    my $chunk = $engine->parse_stream_chunk( { type => 'response.incomplete', response => $resp } );
+    ok( $chunk->is_final, 'final' );
+    ok( !$chunk->has_tool_calls, 'no tool calls' );
+    is( $chunk->finish_reason, 'incomplete', 'finish_reason incomplete' );
+    my $response = $engine->chat_response( HTTP::Response->new( 200, 'OK',
+        [ 'Content-Type' => 'application/json' ], $json->encode($resp) ) );
+    is( $chunk->finish_reason, $response->finish_reason, 'same as chat_response' );
 };
 
 # The same contract across the real transport: chat_stream_realtime_f over the

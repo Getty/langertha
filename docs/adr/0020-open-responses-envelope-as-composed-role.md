@@ -199,3 +199,18 @@ blindly: `_responses_merge_citations` merges it with the answer's `url_citation`
 Perplexity is unaffected. (3) `max_output_tokens` is sent only when
 `supports('response_size')` (a no-op for the shipped consumers). The output walker also croaks
 on a client-actionable item it does not map, on the reply and on the stream's final chunk.
+
+## Update (k222 — the stream's final chunk carries the walker's `finish_reason`, text-only too)
+
+The k212 bullet "a text-only stream's final chunk is unchanged" no longer holds, deliberately: the
+final chunk of a Responses stream now carries whatever `finish_reason` the one walker reads off
+the terminal `response` object — `tool_calls` with function calls, `stop` for a completed
+message, the message status (`incomplete`) for a truncated one — so the streamed and the
+non-streamed reply of the same response also agree on it. That matches the other dialects,
+whose streams already end on a chunk carrying the provider's finish reason. The only field that
+changes is `finish_reason`, and only on the final chunk; for Perplexity's text-only streams it is
+additive (`stop` where there was none; golden `t/data/stream_text_only_golden.json` regenerated,
+diff = that one key on the final chunk of each read path). A terminal event whose `output[]` has
+no message item still yields no `finish_reason`, on the stream and on `chat_response` alike.
+Tests: `t/43_responses_stream_tool_calls.t`, `t/43_stream_text_only_pin.t`.
+

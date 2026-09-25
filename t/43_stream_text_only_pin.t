@@ -28,6 +28,10 @@ use Langertha::Engine::Perplexity;
 # process_stream_data path, the chat_stream_realtime_f buffer path fed whole,
 # and the same buffer path fed one byte at a time.
 #
+# Intended changes since: karr k222 added finish_reason 'stop' to the final
+# chunk of the Perplexity capture (the Responses walker's value, as on
+# chat_response); nothing else in the snapshot moved.
+#
 # Regenerate only for an intended change:
 #   LANGERTHA_REGEN_STREAM_GOLDEN=1 prove -l t/43_stream_text_only_pin.t
 

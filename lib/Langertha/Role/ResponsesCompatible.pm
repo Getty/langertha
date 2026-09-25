@@ -503,8 +503,7 @@ C<tool_search_call>) croaks.
 # with it, and parse_stream_chunk reads the response object that the terminal
 # response.completed / response.incomplete event carries, so a streamed and a
 # non-streamed reply of the same response can never disagree about its tool
-# calls or thinking (the stream's final chunk sets finish_reason only when it
-# carries tool calls -- karr k222). Returns a hash: content (concatenated
+# calls, thinking or finish_reason (karr k222). Returns a hash: content (concatenated
 # output_text, '' when none), and -- only when present -- thinking,
 # finish_reason, and tool_calls (ArrayRef of Langertha::ToolCall).
 sub _responses_walk_output {
@@ -774,9 +773,9 @@ sub parse_stream_chunk {
         # is complete and authoritative, and reading only it means a call can
         # never arrive twice. Text is not taken from it: that already streamed as
         # output_text.delta. Thinking is, because no reasoning delta event is
-        # read (drop it here if one ever is). finish_reason is set only when the
-        # reply carries tool calls, which keeps a text-only stream's final chunk
-        # exactly as it was.
+        # read (drop it here if one ever is). finish_reason is the walker's, as
+        # on chat_response: tool_calls, stop for a completed message, or the
+        # message status (incomplete) -- on text-only streams too (karr k222).
         my %out = $self->_responses_walk_output($resp);
         # A search-augmented reply carries its sources as a search_results item
         # in the terminal response.output[] array — the same block
@@ -813,10 +812,8 @@ sub parse_stream_chunk {
             } ) : (),
             defined $cached ? ( cached_tokens => $cached ) : (),
             $citations ? ( citations => $citations ) : (),
-            $out{tool_calls} ? (
-                tool_calls    => $out{tool_calls},
-                finish_reason => $out{finish_reason},
-            ) : (),
+            $out{tool_calls} ? ( tool_calls => $out{tool_calls} ) : (),
+            defined $out{finish_reason} ? ( finish_reason => $out{finish_reason} ) : (),
             defined $out{thinking} ? ( thinking => $out{thinking} ) : (),
         );
     }
@@ -841,9 +838,11 @@ for every other typed event.
 
 The final chunk's C<output[]> is read by the same walker as L</chat_response>:
 the reply's function calls land on it as L<Langertha::Stream::Chunk/tool_calls>
-(collect them with L<Langertha::Role::Chat/aggregate_tool_calls>), together with
-C<finish_reason> C<tool_calls>, and a reasoning summary lands on its
-C<thinking>. The incremental function-call events are not assembled, so a call
+(collect them with L<Langertha::Role::Chat/aggregate_tool_calls>), a reasoning
+summary lands on its C<thinking>, and its C<finish_reason> is the one
+L</chat_response> reports for the same response: C<tool_calls> when the reply
+carries function calls, C<stop> for a completed message, the message status
+(C<incomplete>) for a truncated one. The incremental function-call events are not assembled, so a call
 is delivered exactly once. A C<response.failed> or C<error> event croaks with
 the provider's error code and message, which fails the stream.
 

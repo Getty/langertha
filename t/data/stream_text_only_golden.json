@@ -1411,6 +1411,7 @@
          {
             "cached_tokens" : 0,
             "content" : "",
+            "finish_reason" : "stop",
             "is_final" : 1,
             "model" : "openai/gpt-5.6-luna",
             "raw" : {
@@ -1525,6 +1526,7 @@
          {
             "cached_tokens" : 0,
             "content" : "",
+            "finish_reason" : "stop",
             "is_final" : 1,
             "model" : "openai/gpt-5.6-luna",
             "raw" : {
@@ -1639,6 +1641,7 @@
          {
             "cached_tokens" : 0,
             "content" : "",
+            "finish_reason" : "stop",
             "is_final" : 1,
             "model" : "openai/gpt-5.6-luna",
             "raw" : {
