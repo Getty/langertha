@@ -1,0 +1,18 @@
+---
+claimed_at: 2026-09-25T23:47:35Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:47:35Z
+created: 2026-09-25T23:18:11Z
+id: 337
+priority: medium
+started: 2026-09-25T23:26:55Z
+status: done
+tags:
+- security
+- images
+title: 'Content::Image fetch: max download size + SSRF hook (private address blocking)'
+updated: 2026-09-25T23:47:35Z
+---
+
+From k325: inline image prefetch reads the whole body into memory without a cap - add inline_image_max_bytes (default e.g. 20MB, provider limits are ~20MB) enforced on every backend (LWP max_size, Net::Async::HTTP streaming abort). SSRF: offer an optional inline_image_url_filter callback (or allow_private_hosts=0 default?) to block loopback/link-local/private/metadata addresses incl. after DNS resolution and redirects. Decide defaults; document.
