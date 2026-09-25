@@ -132,6 +132,9 @@ correction directions per family*, and that symmetry gets canonical text:
 | OpenAI (and all subclasses of `OpenAIBase`) | `prompt_cache_key` | `prompt_cache` | OpenAI caches automatically; there is no request-side enable breakpoint. The `prompt_cache_key` is the only knob the wire exposes. |
 | Anthropic (and all subclasses of `AnthropicBase`) | `prompt_cache` | `prompt_cache_key` | Anthropic's `cache_control` block is an *enable breakpoint* per content block. There is no equivalent routing-key field. |
 
+(k200: within the OpenAI family the self-hosted engines additionally delete `prompt_cache_key` —
+see the ADR 0009 Update.)
+
 The direction-pair table is the canonical reference; future per-family
 corrections (e.g. when a new dialect base is added) follow the same rule —
 **delete the inapplicable flag, keep the applicable one, with a comment

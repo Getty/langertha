@@ -174,3 +174,28 @@ would silently drop the first. The resolution is a merge seam:
 `output_config` the generation kwargs already hold. This is the quartet's first shared body
 key; any later concern that also writes `output_config` must merge through the same seam rather
 than assign.
+
+## Update (k200 — `prompt_cache_key` is per-engine within the OpenAI family, and the wire follows the flag)
+
+Point 4 cleared `prompt_cache` on `OpenAIBase` and kept `prompt_cache_key` for the whole
+family. That over-claimed for the self-hosted OpenAI-compatible servers: none of them reads
+OpenAI's routing hint on `/v1/chat/completions`. vLLM's `ChatCompletionRequest` accepts and
+ignores unknown keys (it declares `prompt_cache_key` only on its `/v1/responses` protocol),
+SGLang's drops them, Ollama's `/v1` Go struct has no such field, llama.cpp neither documents
+nor reads it, and LM Studio's documented parameter list omits it. Their prefix-cache levers
+are the `Runtime::Knobs` of ADR 0012. So `vLLM` (and `VLLMHook` by inheritance), `SGLang`,
+`LlamaCpp`, `OllamaOpenAI` and `LMStudioOpenAI` now delete `prompt_cache_key` in their own
+`around engine_capabilities` (ADR 0002 layer 2). There is no shared self-hosted base to hang
+one correction on, so each engine carries it next to its other wire corrections. Cloud
+subclasses keep the flag: OpenAI and OpenRouter document the field; the rest are unverified
+and stay as the base advertises them until their docs or a live test decide.
+
+The second half is new to the quartet: **the wire agrees with the capability**.
+`Role::PromptCache::prompt_cache_kwargs_for` drops `prompt_cache` / `prompt_cache_key`
+(engine attribute or per-request control) when `supports()` is false for it, so clearing a
+cache flag also stops its emission; no per-engine `prompt_cache_kwargs_for` stub is needed
+(unlike the MiniMax/Moonshot `reasoning_kwargs_for` stubs). The drop is silent, like those
+stubs. It is byte-identical for every engine whose flags did not change, and because the
+provider manifest (ADR 0029) reads the same registry, those engines' model entries stop
+publishing `prompt_cache_key` too. ADR 0015's direction-pair table still holds per family;
+this refines "all subclasses of `OpenAIBase`" per engine.
