@@ -1,0 +1,18 @@
+---
+class: standard
+completed: 2026-09-25T08:30:59Z
+created: 2026-09-25T08:29:21Z
+id: 260
+priority: medium
+started: 2026-09-25T08:30:59Z
+status: done
+tags:
+- release
+- changes
+title: 'Changes: Raider-extraction breaking change not labeled as breaking'
+updated: 2026-09-25T08:30:59Z
+---
+
+Pre-release audit (0.502..HEAD -> 0.503). Exactly one feat!: commit since the last tag (0.502): d326f95 "feat!: extract the Raider/Raid layer into langertha-raider" (ADR 0026). It is documented in Changes:379-391 ("Raider extracted to the sibling distribution langertha-raider...") but, unlike the other breaking bullet in this release (Changes:278-283, OpenAIResponses client-executed built-ins, which opens with "Incompatible change:"), the Raider-extraction bullet carries no BREAKING / "Incompatible change:" marker despite removing an entire public subsystem (Langertha::Raider, Langertha::Raid, Raider::Result, the raider_mcp self-tools, etc.) from core. Changes is published verbatim as GitHub release notes (GitHub::CreateRelease, notes_from=ChangeLog per the getty-perl-release-author-getty skill), so a consumer skimming for breaking changes can miss this one. Recommend prefixing the bullet with "Incompatible change:" (or an equivalent marker) for consistency with the other flagged breaking bullet. Editing-only, langertha-pod-writer lane.
+
+2026-09-25 08:30 Duplicate of #258 (created concurrently by another audit instance racing on the same unreleased HEAD, which already cites ADR 0026 and the 0.404 [BREAKING] precedent in more detail). Closing to avoid duplicate tracking.
