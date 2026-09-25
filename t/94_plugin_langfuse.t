@@ -442,6 +442,10 @@ subtest 'Chat with Langfuse + tools creates spans for tool calls' => sub {
       );
     }
 
+    # The tool list and name -> server map, from the real loop helper (k332).
+    sub _tool_loop_tools { Langertha::Role::Tools::_tool_loop_tools(@_) }
+    sub _langertha_carp { Carp::carp($_[1]) }
+
     # The calls a turn runs (karr k324 drops truncated ones); this mock has none.
     sub _tool_loop_calls {
       my ($self, $reply, $data) = @_;

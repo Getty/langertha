@@ -11,6 +11,11 @@ Revision history for Langertha
       response object. On Anthropic, text resources of any MIME type and
       text/* blobs become text documents.
 
+    - The MCP tool loops answer a call to a tool no server offers with an
+      error result "unknown tool NAME" and run the rest of the batch, instead
+      of dying after part of it ran. A tool name two MCP servers offer is
+      declared once, runs on the first server, and warns naming both.
+
     - The MCP tool loops no longer run a tool with empty arguments when the
       reply hit its token limit mid-call. A lone truncated call dies with
       "tool call arguments truncated ...; raise response_size"; beside

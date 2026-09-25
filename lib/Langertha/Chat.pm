@@ -6,6 +6,7 @@ use Future::AsyncAwait;
 use Carp qw( croak );
 use JSON::MaybeXS;
 use Log::Any qw( $log );
+use Langertha::Role::Tools ();
 
 with 'Langertha::Role::PluginHost';
 
@@ -294,15 +295,9 @@ sub _gather_tools {
   my @mcp_servers = @{$self->mcp_servers};
   croak "No MCP servers configured" unless @mcp_servers;
 
-  my ( @all_tools, %tool_server_map );
-  for my $mcp (@mcp_servers) {
-    my $tools = $mcp->list_tools->get;
-    for my $tool (@$tools) {
-      $tool_server_map{$tool->{name}} = $mcp;
-      push @all_tools, $tool;
-    }
-  }
-  return (\@all_tools, \%tool_server_map);
+  # A name two servers offer goes on the wire once, from the first (k332).
+  return $self->engine->_tool_loop_tools(
+    map { [ $_, $_->list_tools->get ] } @mcp_servers );
 }
 
 sub _tool_loop_iteration {
@@ -360,6 +355,15 @@ sub simple_chat_with_tools {
     for my $tc (@tool_calls) {
       my ( $name, $input ) = ( $tc->name, $tc->arguments );
 
+      # A name no server offers is answered with an error result, before any
+      # plugin sees it, so the batch runs to the end and the model can
+      # correct itself (k332). A plugin that renames to one is answered alike.
+      unless ( $tool_server_map->{$name} ) {
+        push @results, { tool_call => $tc,
+          result => Langertha::Role::Tools::_unknown_tool_result($name) };
+        next;
+      }
+
       $log->debugf("[Chat] Calling tool: %s", $name);
 
       # Plugin hook: before tool call (can skip)
@@ -372,8 +376,12 @@ sub simple_chat_with_tools {
       }
       ( $name, $input ) = @plugin_tc;
 
-      my $mcp = $tool_server_map->{$name}
-        or die "Tool '$name' not found on any MCP server";
+      my $mcp = $tool_server_map->{$name};
+      unless ($mcp) {
+        push @results, { tool_call => $tc,
+          result => Langertha::Role::Tools::_unknown_tool_result($name) };
+        next;
+      }
 
       my $result = $mcp->call_tool($name, $input)->else(sub {
         my ( $error ) = @_;
@@ -411,8 +419,10 @@ with the same text, the final text is the reply's C<content>, and the calls
 run are its L<Langertha::Response/tool_calls>. C<plugin_after_llm_response>
 still receives the raw decoded wire body. A failed request dies with
 C<tool chat request failed>, in the sync and the async loop alike. A call
-whose arguments were cut off by the token limit is not run, as in
-L<Langertha::Role::Tools/chat_with_tools_f>.
+whose arguments were cut off by the token limit is not run, a call to an
+unknown tool is answered with an error result (also when a
+C<plugin_before_tool_call> renames it to one), and a tool name two servers
+offer runs on the first, as in L<Langertha::Role::Tools/chat_with_tools_f>.
 
 =cut
 
@@ -448,6 +458,15 @@ async sub simple_chat_with_tools_f {
     for my $tc (@tool_calls) {
       my ( $name, $input ) = ( $tc->name, $tc->arguments );
 
+      # A name no server offers is answered with an error result, before any
+      # plugin sees it, so the batch runs to the end and the model can
+      # correct itself (k332). A plugin that renames to one is answered alike.
+      unless ( $tool_server_map->{$name} ) {
+        push @results, { tool_call => $tc,
+          result => Langertha::Role::Tools::_unknown_tool_result($name) };
+        next;
+      }
+
       my @plugin_tc = await $self->_plugin_pipeline_tool_call($name, $input);
       unless (@plugin_tc) {
         push @results, { tool_call => $tc, result => {
@@ -457,8 +476,12 @@ async sub simple_chat_with_tools_f {
       }
       ( $name, $input ) = @plugin_tc;
 
-      my $mcp = $tool_server_map->{$name}
-        or die "Tool '$name' not found on any MCP server";
+      my $mcp = $tool_server_map->{$name};
+      unless ($mcp) {
+        push @results, { tool_call => $tc,
+          result => Langertha::Role::Tools::_unknown_tool_result($name) };
+        next;
+      }
 
       my $result = await $mcp->call_tool($name, $input)->else(sub {
         Future->done({

@@ -712,20 +712,54 @@ sub _without_refs {
   return $node;
 }
 
+# The tool list a tool loop sends and the server each name runs on, from
+# ( [ $mcp, \@tools ], ... ) in mcp_servers order. A name two servers offer is
+# sent once -- providers reject a request that declares one function twice --
+# and runs on the first server; a carp names both -- karr k332.
+sub _tool_loop_tools {
+  my ( $self, @server_tools ) = @_;
+  my ( @all_tools, %tool_server_map, %server_no );
+  my $label = sub { "MCP server $server_no{ refaddr $_[0] } (" . ref( $_[0] ) . ")" };
+  my $no = 0;
+  for my $pair (@server_tools) {
+    my ( $mcp, $tools ) = @$pair;
+    $server_no{ refaddr $mcp } //= ++$no;
+    for my $tool (@$tools) {
+      my $name = $tool->{name};
+      if ( my $first = $tool_server_map{$name} ) {
+        $self->_langertha_carp( "" . ( ref $self ) . ": tool '$name' is offered by "
+          . $label->($first) . " and " . $label->($mcp) . "; using the first" );
+        next;
+      }
+      $tool_server_map{$name} = $mcp;
+      push @all_tools, $tool;
+    }
+  }
+  return ( \@all_tools, \%tool_server_map );
+}
+
+# The result a tool loop answers a call to a tool no server offers: an error
+# the model can recover from, not a die that loses the batch -- karr k332.
+sub _unknown_tool_result {
+  my ( $name ) = @_;
+  return {
+    content => [ { type => 'text', text => "unknown tool " . ( $name // '' ) } ],
+    isError => JSON->true,
+  };
+}
+
 async sub chat_with_tools_f {
   my ( $self, @messages ) = @_;
 
   croak "No MCP servers configured" unless @{$self->mcp_servers};
 
   # Gather tools from all MCP servers
-  my ( @all_tools, %tool_server_map );
+  my @server_tools;
   for my $mcp (@{$self->mcp_servers}) {
-    my $tools = await $mcp->list_tools;
-    for my $tool (@$tools) {
-      $tool_server_map{$tool->{name}} = $mcp;
-      push @all_tools, $tool;
-    }
+    push @server_tools, [ $mcp, await $mcp->list_tools ];
   }
+  my ( $all_tools, $tool_server_map ) = $self->_tool_loop_tools(@server_tools);
+  my @all_tools = @$all_tools;
 
   my $formatted_tools = $self->format_tools(\@all_tools);
   # URL images this engine inlines: fetched async, not by LWP in the loop (k274).
@@ -761,10 +795,15 @@ async sub chat_with_tools_f {
     for my $tc (@tool_calls) {
       my ( $name, $input ) = ( $tc->name, $tc->arguments );
 
-      $log->debugf("[%s] Calling tool: %s", ref $self, $name);
+      # A name no server offers is answered with an error result, so the
+      # batch runs to the end and the model can correct itself (k332).
+      my $mcp = $tool_server_map->{$name};
+      unless ($mcp) {
+        push @results, { tool_call => $tc, result => _unknown_tool_result($name) };
+        next;
+      }
 
-      my $mcp = $tool_server_map{$name}
-        or die "Tool '$name' not found on any MCP server";
+      $log->debugf("[%s] Calling tool: %s", ref $self, $name);
 
       my $result = await $mcp->call_tool($name, $input)->else(sub {
         my ( $error ) = @_;
@@ -805,6 +844,11 @@ decode (L<Langertha::ToolCall/arguments_undecodable>): if no other call is
 left the loop dies with C<tool call arguments truncated>, otherwise the
 complete calls run, one warning names the dropped ones, and the dropped calls
 are left out of the conversation.
+
+A call to a tool no server offers does not stop the loop: it is answered with
+an error result C<unknown tool NAME>, and the other calls of the turn still
+run. A tool name offered by two servers is sent once and runs on the first
+server in L</mcp_servers>, with a warning naming both.
 
 =cut
 
