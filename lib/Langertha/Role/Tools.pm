@@ -362,6 +362,10 @@ sub response_tool_calls {
   my $fmt = $self->tool_wire_format;
   if ( $fmt eq 'hermes' ) {
     my $content = $self->hermes_extract_content($data);
+    # A call inside the thinking is not a call: split the think-filtered text,
+    # as chat_f and the stream lift do (k302) -- karr k323.
+    ($content) = $self->filter_think_content($content)
+      if $self->can('filter_think_content');
     return [] unless $content;
     return ( $self->_hermes_split_text($content) )[1];
   }
@@ -374,7 +378,8 @@ sub response_tool_calls {
 
 Returns the ArrayRef of raw tool-call structures located in C<$raw_data> for
 this engine's format (via L<Langertha::ToolCall/locate>). For C<hermes>, parses
-the C<E<lt>tool_callE<gt>> XML tags out of the model's text. May be empty.
+the C<E<lt>tool_callE<gt>> XML tags out of the model's text; with
+C<think_tag_filter> on, a call inside the thinking is not returned. May be empty.
 
 =cut
 

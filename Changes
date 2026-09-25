@@ -11,6 +11,11 @@ Revision history for Langertha
       response object. On Anthropic, text resources of any MIME type and
       text/* blobs become text documents.
 
+    - On a Hermes engine with think_tag_filter on, a <tool_call> block
+      inside the model's <think> reasoning is no call: the MCP tool loops do
+      not run it and response_tool_calls does not return it, as chat_f and
+      streaming already treated it.
+
     - Gemini tool declarations send the input schema unchanged as
       parametersJsonSchema instead of parameters, so MCP schemas with
       additionalProperties, $ref or const no longer get a 400. A top-level
