@@ -1,0 +1,38 @@
+---
+claimed_at: 2026-09-25T03:18:07Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:18:07Z
+created: 2026-09-25T02:13:32Z
+id: 215
+priority: low
+started: 2026-09-25T02:31:09Z
+status: done
+tags:
+- moonshot
+- reasoning
+- capabilities
+- llm
+title: 'MoonshotAnthropic: K2.x still sends output_config.effort + thinking adaptive
+  on Kimi''s Messages API'
+updated: 2026-09-25T03:18:07Z
+---
+
+From the wire-bundle review (M2, k207). Engine::Moonshot clears reasoning_effort per model on K2.x (qr/\Akimi-k2(?!\d)/, layer 3), but Engine::MoonshotAnthropic has no such correction: MoonshotAnthropic->new(model=>"kimi-k2.6", reasoning_effort=>"high") advertises reasoning_effort and sends output_config:{effort:high} + thinking:{type:adaptive} (verified offline; this predates k207). The advisor notes document Kimi Messages-API output_config.effort only for K3. Todo: llm-advisor verifies what /anthropic/v1/messages takes on kimi-k2.6 / kimi-k2.7-code (output_config? thinking {type:enabled|disabled|adaptive}? k2.7-code errors on disabled per chat docs). Then likely the same K2 layer-3 correction on MoonshotAnthropic and/or a thinking mapping. ADR 0023 k207 update references this card. No live call without Getty OK.
+
+2026-09-25 02:29 llm-advisor 2026-09-25, docs only, no live call.
+DOCUMENTED /anthropic/v1/messages (platform.kimi.ai/docs/api/messages.md, OpenAPI, fetched 2026-09-25): the MessagesRequest model enum is ONLY kimi-k3. Properties: model, messages, max_tokens, system, stream, stop_sequences, tools, tool_choice, metadata, top-level cache_control, output_config{effort: low|high|max (default max), format:{type:json_schema, schema}}. There is NO thinking and NO temperature property. K2.x on this face is documented only in the Claude Code guide (docs/guide/claude-code-kimi.md, same date): k2.7-code 'Forced on, cannot be turned off'. 'With thinking off, requests to kimi-k2.7-code are rejected with 400 invalid thinking: only type=enabled is allowed for this model.' k2.6 'Optional'. So the endpoint DOES parse thinking.type on K2.x, and on k2.7-code the only value it accepts is 'enabled'.
+CURRENT WIRE IS WRONG FOR K2.x: output_config.effort is a K3-only concept (chat reference: reasoning_effort 'Not supported' on k2.6 and k2.7-code). thinking:{type:'adaptive'} is undocumented for Kimi. On kimi-k2.7-code, 'only type=enabled is allowed' makes adaptive a probable 400.
+RECOMMENDED WIRE PER LINE (MoonshotAnthropic):
+- kimi-k3: keep output_config:{effort:low|high|max} and no thinking field (current Profile row, correct). Note: the Claude Code guide says K3 thinking 'can be turned off' there, which conflicts with the schema. Ignore that until a live check.
+- kimi-k2.7-code / -highspeed: never output_config.effort. Always send thinking:{type:'enabled'} (the only accepted value, and explicit is safe whether or not omission 400s on this face). Never 'disabled' or 'adaptive'.
+- kimi-k2.6: never output_config.effort. reasoning_effort none -> thinking:{type:'disabled'}, any other level -> thinking:{type:'enabled'} (or omit it, the default is enabled). Never 'adaptive'. Once 'disabled' is sent, temperature must be absent: k2.6 non-thinking accepts only 0.6, so land k214 first or together with this.
+- Whether 'enabled' needs budget_tokens (Anthropic's own spec requires it) is unknown. Claude Code sends one. Verify live with one cheap call per K2 id before shipping. Needs Getty's OK.
+IMPLEMENTATION: MoonshotAnthropic gets the same layer-3 row as Engine::Moonshot for the effort part (qr/\Akimi-k2(?!\d)/ => {reasoning_effort=>0, tool_choice_any=>0?}. Check tool_choice 'any' -> Anthropic {type:any} on this face; the K2 chat 'required' ban probably carries over, unverified). The thinking toggle is the same binary-toggle problem as k209 part 1 (MiniMax M3) and the Moonshot chat face (K2 thinking enabled|disabled, also unreachable today). Recommend ONE Profile extension used by all three: control=>'boolean', a thinking_on type (adaptive | enabled), and disable_form 'thinking_disabled', read by an engine-scoped reasoning_kwargs_for. Do not bend Reasoning::to_anthropic's adaptive default, which is correct for first-party Claude.
+SIDE FINDING: Kimi's Messages API supports native output_config.format json_schema (K3). MoonshotAnthropic still takes the /anthropic-shim synth-tool path (ADR 0005). Filed separately.
+
+Side finding filed as k218.
+
+2026-09-25 02:50 Done on wire-bundle2 6fc61fa: k2.7-code -> thinking enabled for every level (none omitted: cannot disable, same as a no-control request); k2.6 none -> disabled, else enabled; no output_config.effort on K2. Other K2 ids cleared on this face. budget_tokens NOT sent, UNVERIFIED (needs one cheap live call per id with Getty OK). tool_choice_any on K2 here not touched (unverified). ADR 0023 k215 Update. Golden: 38 MoonshotAnthropic K2 rows changed, all intended.
+
+2026-09-25 03:08 Review fix d98f315: toggle is opt-in per engine (_reasoning_thinking_toggle on MiniMax, MiniMaxAnthropic, MoonshotAnthropic). UNVERIFIED alongside budget_tokens: (a) kimi-k2.7-code accepts a request with no thinking field (none / bare), (b) thinking.display accepted on Kimi/MiniMax toggles. One cheap live call per K2 id covers all three (needs Getty OK).
