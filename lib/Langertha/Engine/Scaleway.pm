@@ -14,7 +14,7 @@ with 'Langertha::Role::Embedding', 'Langertha::Role::Tools';
 
     my $scw = Langertha::Engine::Scaleway->new(
         api_key => $ENV{LANGERTHA_SCALEWAY_API_KEY},
-        model   => 'llama-3.1-8b-instruct',
+        model   => 'llama-3.3-70b-instruct',
     );
 
     print $scw->simple_chat('Hello from Scaleway!');
@@ -26,9 +26,9 @@ hosted in European data centers. Composes L<Langertha::Role::OpenAICompatible>
 with Scaleway's endpoint (C<https://api.scaleway.ai/v1>) and Bearer auth.
 
 Scaleway is designed as a drop-in replacement for the OpenAI API and is
-EU-act compliant. Available chat models include C<llama-3.1-8b-instruct>
-(default), C<llama-3.3-70b-instruct>, C<mistral-small-3.1-24b-instruct-2503>,
-C<gemma-3-27b-it> and others. Function calling, structured output and
+EU-act compliant. Available chat models include C<llama-3.3-70b-instruct>
+(default), C<mistral-small-3.2-24b-instruct-2506>, C<gemma-3-27b-it> and
+others; see Scaleway's supported-models page for which are still served. Function calling, structured output and
 embeddings are supported; the default embedding model is
 C<qwen3-embedding-8b> (C<bge-multilingual-gemma2> is also served, set it
 with C<embedding_model>).
@@ -54,7 +54,9 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_SCALEWAY_API_KEY or api_key set";
 }
 
-sub default_model { 'llama-3.1-8b-instruct' }
+# llama-3.1-8b-instruct went EOL on Scaleway's serverless tier (supported-models
+# page, 2026-09-25); llama-3.3-70b-instruct is still served (k307).
+sub default_model { 'llama-3.3-70b-instruct' }
 
 # Scaleway's embedding model (supported-models list, llm-advisor 2026-09-25;
 # bge-multilingual-gemma2 is also served). The OpenAI role's
@@ -83,8 +85,8 @@ around engine_capabilities => sub {
 
 # image_input (k266, ADR 0019 k266 Update): Scaleway serves text-only and
 # vision models side by side (llm-advisor, docs only, 2026-09-25). The
-# catch-all first row clears the flag (the default llama-3.1-8b-instruct makes
-# no claim); the vision families re-assert it.
+# catch-all first row clears the flag (the text-only default
+# llama-3.3-70b-instruct makes no claim); the vision families re-assert it.
 sub model_capability_corrections {
   return (
     qr/\A/ => { image_input => 0 },

@@ -56,7 +56,7 @@ my %DEFAULT = (
   Perplexity        => 0,  # sonar
   # allowlisted cloud engines, default model is text-only (Groq has none)
   Cerebras          => 0,  # gpt-oss-120b
-  Scaleway          => 0,  # llama-3.1-8b-instruct
+  Scaleway          => 0,  # llama-3.3-70b-instruct
   TSystems          => 0,  # gpt-oss-120b
   Groq              => 0,  # probed with a neutral id
   # cloud, no claim

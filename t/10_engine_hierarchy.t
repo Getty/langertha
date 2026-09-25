@@ -496,13 +496,13 @@ test_openai_cloud_engine(
   class => 'Langertha::Engine::Scaleway',
   name => 'Scaleway',
   url => 'https://api.scaleway.ai/v1',
-  model => 'llama-3.1-8b-instruct',
+  model => 'llama-3.3-70b-instruct',
   env_var => 'LANGERTHA_SCALEWAY_API_KEY',
   has_tools => 1,
   has_embedding => 1,
   has_response_format => 1,
 );
-is(Langertha::Engine::Scaleway->new(api_key => 'k')->default_model, 'llama-3.1-8b-instruct', 'Scaleway default_model');
+is(Langertha::Engine::Scaleway->new(api_key => 'k')->default_model, 'llama-3.3-70b-instruct', 'Scaleway default_model (k307: llama-3.1-8b-instruct is EOL)');
 
 # --- MiniMax (OpenAI-compatible endpoint) ---
 

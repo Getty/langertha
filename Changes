@@ -10,6 +10,11 @@ Revision history for Langertha
       Response refusal (and Stream::Chunk refusal) carries OpenAI's
       message.refusal and a Responses API refusal part.
 
+    - Scaleway: the default chat model is llama-3.3-70b-instruct;
+      llama-3.1-8b-instruct is no longer served on Scaleway's serverless
+      Generative APIs.
+
+
     - Batch embeddings: simple_embedding([ $a, $b, ... ]) (and the
       Langertha::Embedder wrapper) returns one vector per input, in input
       order, on every OpenAI-compatible engine (ordered by data[].index)
