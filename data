@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T19:25:36Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T19:25:36Z
+created: 2026-09-25T19:17:03Z
+id: 281
+priority: low
+started: 2026-09-25T19:17:42Z
+status: done
+tags:
+- vision
+- probe
+- tsystems
+title: 'TSystems: model metadata probe from /v2/models meta_data.input_modalities
+  (ADR 0032)'
+updated: 2026-09-25T19:25:36Z
+---
+
+From k280: the public OpenAPI (llm-server.llmhub.t-systems.net/openapi.json) documents GET /v2/models returning data[].meta_data with a nullable input_modalities string array. Add a model_metadata_format for TSystems in Langertha::ModelProbe (match 'image' case-insensitively; spelling undocumented) + model_metadata_url; fixture shaped from the OpenAPI schema; docs-derived only (no key, not live-testable — CLAUDE.md).
