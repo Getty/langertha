@@ -31,6 +31,12 @@ prompt template (L</hermes_tool_prompt>), and the response-content extractor
 (L</hermes_extract_content>). Compose it alongside L<Langertha::Role::Tools> and
 set C<_build_tool_wire_format> to C<'hermes'>.
 
+The C<hermes> wire has no C<tools>, C<tool_choice> or C<parallel_tool_calls>
+body key, so the role clears C<tools_native>, C<tool_choice_any>,
+C<tool_choice_named> and C<parallel_tool_use> from
+L<Langertha::Role::Capabilities/engine_capabilities>; C<tools_hermes>,
+C<tool_choice_auto> and C<tool_choice_none> stay.
+
 =cut
 
 has hermes_call_tag => (
@@ -137,6 +143,58 @@ parsing. Defaults to OpenAI response format (C<choices[0].message.content>).
 Override this method in engines with non-OpenAI response structures.
 
 =cut
+
+has hermes_schema_prompt => (
+  is => 'ro',
+  isa => 'Str',
+  lazy => 1,
+  builder => '_build_hermes_schema_prompt',
+);
+
+sub _build_hermes_schema_prompt {
+  return <<'PROMPT';
+You are a helpful assistant that answers in JSON. Here's the json schema you must adhere to:
+<schema>
+%s
+</schema>
+PROMPT
+}
+
+=attr hermes_schema_prompt
+
+The system prompt template for Hermes structured output, in the form of the
+Hermes function-calling prompt format. Must contain a C<%s> placeholder where
+the JSON schema is inserted. L<Langertha::Role::Chat/chat_f> puts it in front
+of the conversation when it rewrites a forced tool into a C<json_schema>
+C<response_format> on the C<hermes> wire, so a backend that ignores
+C<response_format> still sees the schema.
+
+=cut
+
+# The hermes wire puts the JSON schema of a forced-tool rewrite (ADR 0005) into
+# a leading system message as well, as _hermes_tool_messages does with the
+# tools (karr k234).
+sub _hermes_schema_messages {
+  my ( $self, $conversation, $schema ) = @_;
+  my $prompt = sprintf( $self->hermes_schema_prompt, $self->json->encode($schema) );
+  return [ { role => 'system', content => $prompt }, @$conversation ];
+}
+
+# The hermes wire has no tools / tool_choice / parallel_tool_calls body key:
+# the tools ride the system prompt, which cannot force a tool (karr k234,
+# ADR 0002). Composing Role::Tools gives the native flags, so this layer-2 rule
+# clears them for every hermes engine (NousResearch, AKI native; ADR 0016: two
+# consumers from different parents, so the rule lives on the role). Kept:
+# tools_hermes, tool_choice_auto (what the prompt says) and tool_choice_none
+# (chat_f withholds the tools, k231). Deleting only, so the order against an
+# engine's own around engine_capabilities or its model corrections does not
+# matter.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete @{$caps}{qw( tools_native tool_choice_any tool_choice_named parallel_tool_use )};
+  return $caps;
+};
 
 # The tool-format behaviour (format_tools, response_tool_calls,
 # extract_tool_call, response_text_content, format_tool_results,

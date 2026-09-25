@@ -52,6 +52,12 @@ and Anthropic-compatible access via L</anthropic>.
 Streaming is not yet supported in the native API. For streaming, use the
 OpenAI-compatible endpoint via C<< $aki->openai >>.
 
+The native API has no C<tools>, C<tool_choice> or C<response_format> field:
+tools ride the system prompt (Hermes format), which cannot force a tool, so a
+C<tool_choice> other than C<auto> or C<none> is dropped with a warning. To
+force a tool or get structured output, use L<Langertha::Engine::AKIOpenAI>
+(C<< $aki->openai >>).
+
 Get your API key at L<https://aki.io/> and set C<LANGERTHA_AKI_API_KEY>.
 
 B<THIS API IS WORK IN PROGRESS>

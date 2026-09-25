@@ -6,6 +6,7 @@ use Langertha::Engine::OpenAI;
 use Langertha::Engine::Perplexity;
 use Langertha::Engine::Gemini;
 use Langertha::Engine::NousResearch;
+use Langertha::Engine::AKI;
 use Langertha::Engine::Anthropic;
 use Langertha::Engine::MiniMax;
 use Langertha::Engine::Whisper;
@@ -98,13 +99,26 @@ use JSON::MaybeXS;
   ok $caps->{response_size}, 'openai response_size';
 }
 
-# NousResearch composes Tools + HermesTools. Both flags should be on.
-{
-  my $e = Langertha::Engine::NousResearch->new( api_key => 'x' );
+# The hermes wire (NousResearch, AKI native) composes Tools + HermesTools but
+# has no tools / tool_choice body key: the tools ride the system prompt, which
+# cannot force a tool (karr k234, ADR 0002 honesty). Role::HermesTools clears
+# the native flags; auto is what the prompt says, none withholds the tools
+# (k231). With tool_choice_named gone, NousResearch's json_schema flag makes
+# the ADR 0005 forced-tool rewrite fire (t/69_chat_f_wire_tools.t).
+for my $e (
+  Langertha::Engine::NousResearch->new( api_key => 'x' ),
+  Langertha::Engine::AKI->new( api_key => 'x' ),
+) {
+  my $name = lc( ( split /::/, ref $e )[-1] );
   my $caps = $e->engine_capabilities;
-  ok $caps->{tools_native},  'nousresearch tools_native (composes Tools)';
-  ok $caps->{tools_hermes},  'nousresearch tools_hermes (composes HermesTools)';
+  ok $caps->{tools_hermes},       "$name tools_hermes (composes HermesTools)";
+  ok $caps->{tool_choice_auto},   "$name tool_choice_auto (the prompt offers the tools)";
+  ok $caps->{tool_choice_none},   "$name tool_choice_none (the tools are withheld)";
+  ok !$caps->{$_}, "$name no $_ (no native tools wire)"
+    for qw( tools_native tool_choice_any tool_choice_named parallel_tool_use );
 }
+ok( Langertha::Engine::NousResearch->new( api_key => 'x' )->supports('response_format_json_schema'),
+  'nousresearch keeps response_format_json_schema (the rewrite target)' );
 
 # Anthropic: tools + streaming, but no ResponseFormat role yet.
 {

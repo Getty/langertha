@@ -405,7 +405,7 @@ subtest 'Perplexity static models' => sub {
 };
 
 subtest 'NousResearch static models' => sub {
-  plan tests => 5;
+  plan tests => 6;
 
   use_ok('Langertha::Engine::NousResearch');
 
@@ -415,6 +415,8 @@ subtest 'NousResearch static models' => sub {
   is(ref($model_ids), 'ARRAY', 'Returns arrayref');
   ok(scalar(@$model_ids) >= 2, 'Has at least 2 models');
   ok((grep { $_ eq 'Hermes-4-70B' } @$model_ids), 'Contains Hermes-4-70B');
+  # karr k237: Hermes-4.3-36B is served on Nous' own backend next to 4-70B / 4-405B.
+  ok((grep { $_ eq 'Hermes-4.3-36B' } @$model_ids), 'Contains Hermes-4.3-36B');
 
   my $full = $engine->list_models(full => 1);
   is(ref($full->[0]), 'HASH', 'Full mode returns model hashrefs');

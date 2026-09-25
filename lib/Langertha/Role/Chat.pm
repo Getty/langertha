@@ -572,7 +572,7 @@ async sub chat_f {
   # native named-tool-forcing but supports json_schema response_format.
   # Rewrite tools+tool_choice into a response_format and remember the
   # tool name so we can synthesize a tool_calls entry afterwards.
-  my $synth_tool_name;
+  my ( $synth_tool_name, $synth_schema );
   if ( exists $opts{tool_choice}
     && exists $opts{tools}
     && !$self->supports('tool_choice_named')
@@ -596,6 +596,7 @@ async sub chat_f {
           },
         };
         $synth_tool_name = $name;
+        $synth_schema    = $tool->input_schema;
         $log->debugf("[%s] forced-tool fallback: tool '%s' rerouted via response_format",
           ref $self, $name);
       }
@@ -619,6 +620,11 @@ async sub chat_f {
   my ( $conversation, $hermes_prompted ) =
     $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
   $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
+
+  # On the hermes wire the rewritten schema also rides a system message (karr
+  # k234), so a backend that ignores response_format still sees it.
+  $conversation = $self->_hermes_schema_messages( $conversation, $synth_schema )
+    if $synth_tool_name && $self->tool_wire_format eq 'hermes';
 
   my $t0 = [gettimeofday];
   my $request = $self->chat_request( $conversation,
@@ -744,7 +750,9 @@ the body carries no C<tools> key. Only function tools can go into the
 prompt: a built-in or other non-function item croaks there instead of going
 out verbatim. C<tool_choice> is never sent there: C<none> withholds the
 tools (no tool prompt; a warning says so), and any value other than
-C<auto> is ignored with a warning, as the prompt cannot force a tool.
+C<auto> is ignored with a warning, as the prompt cannot force a tool
+(on L<Langertha::Engine::NousResearch> a forced named tool takes the
+C<json_schema> rewrite described below instead).
 C<E<lt>tool_callE<gt>> blocks in the reply land on
 L<Langertha::Response/tool_calls> and are removed from C<content>.
 
@@ -762,11 +770,15 @@ before.
 
 When the caller asks for a forced named tool on an engine that cannot
 do native named-tool-forcing but supports C<json_schema>
-response_format (currently L<Langertha::Engine::Perplexity>), the
+response_format (for example L<Langertha::Engine::Perplexity> and
+L<Langertha::Engine::NousResearch>), the
 request is automatically rewritten to use the JSON Schema path and the
 response is loose-parsed; the resulting L<Langertha::Response> exposes
 the parsed arguments via L<Langertha::Response/tool_call_args> with
-C<synthetic =E<gt> 1> on the synthesized tool_call entry.
+C<synthetic =E<gt> 1> on the synthesized tool_call entry. On the C<hermes>
+wire the schema also goes into a leading system message built from
+L<Langertha::Role::HermesTools/hermes_schema_prompt>, for a backend that
+ignores C<response_format>.
 
 =cut
 

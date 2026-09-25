@@ -49,13 +49,26 @@ Provides access to Nous Research's inference API. Composes
 L<Langertha::Role::OpenAICompatible> with Nous's endpoint
 (C<https://inference-api.nousresearch.com/v1>) and Hermes tool calling.
 
-Available models: C<Hermes-4-70B> (default), C<Hermes-4-405B>.
+Available models: C<Hermes-4-70B> (default), C<Hermes-4-405B>,
+C<Hermes-4.3-36B>.
+
+B<Hermes models only.> The endpoint is a gateway that also routes many
+non-Hermes models (Claude, GPT, Gemini, ...), but this engine speaks the
+Hermes prompt format to every model: tools go into the system prompt and
+C<< <tool_call> >> tags are parsed from the reply. For a non-Hermes model
+slug use an OpenAI-compatible engine, e.g. L<Langertha::Engine::OpenRouter>,
+or L<Langertha::Engine::OpenAIBase> pointed at this URL, which send native
+C<tools>.
 
 Composes L<Langertha::Role::HermesTools> for tool calling. Tool descriptions
 are injected into the system prompt as C<< <tools> >> XML, and
 C<< <tool_call> >> tags are parsed from the model output. No server-side tool
 calling support required. See L<Langertha::Role::HermesTools> for
-customization options.
+customization options. The prompt cannot force a tool, so the engine does not
+claim C<tool_choice_named>; L<Langertha::Role::Chat/chat_f> answers a forced
+tool with a C<json_schema> C<response_format> (the schema also goes into the
+system prompt) and puts the parsed reply on
+L<Langertha::Response/tool_calls> as a synthetic call.
 
 Get your API key at L<https://portal.nousresearch.com/> and set
 C<LANGERTHA_NOUSRESEARCH_API_KEY>.
@@ -84,6 +97,7 @@ sub default_model { 'Hermes-4-70B' }
 sub _build_static_models {[
   { id => 'Hermes-4-70B' },
   { id => 'Hermes-4-405B' },
+  { id => 'Hermes-4.3-36B' },
 ]}
 
 has reasoning => (

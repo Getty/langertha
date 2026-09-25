@@ -34,6 +34,10 @@ use Test::MockAsyncHTTP;
 # nothing goes out as `tools`, and <tool_call> blocks in the reply land on
 # Response.tool_calls (ADR 0003). A body `tools` key there is a list the
 # model never sees.
+#
+# karr k234: the hermes wire claims no tool_choice_named, so on NousResearch
+# (json_schema response_format) a forced tool takes the ADR 0005 rewrite, with
+# the schema also in a Hermes <schema> system prompt.
 
 my $json = JSON::MaybeXS->new( utf8 => 1, canonical => 1 );
 
@@ -295,12 +299,65 @@ subtest 'hermes: tool_choice has no wire of its own' => sub {
   ok( !exists $auto->{tool_choice}, 'auto: not in the body' );
   is( scalar @warnings, 0, 'auto: silent -- it is what the prompt already says' );
 
-  my ($forced) = hermes_body( [$obj], tool_choice => { type => 'tool', name => 'obj' } );
-  ok( !exists $forced->{tool_choice}, 'forced: not in the body' );
-  ok( !exists $forced->{response_format}, 'forced: not rewritten to response_format (ADR 0005)' );
-  like( prompt_tools( $forced->{messages}[0]{content} )->[0]{name}, qr/\Aobj\z/, 'forced: the tool is still offered' );
-  is( scalar @warnings, 1, 'forced: one warning' );
-  like( $warnings[0] // '', qr/tool_choice.*ignored.*hermes/, 'forced: the warning says it is ignored on hermes' );
+  # AKI native has no response_format either, so the ADR 0005 rewrite cannot
+  # fire there (k234): a forced choice is dropped with a warning.
+  my $mock = Test::MockAsyncHTTP->new( responses => [
+    Test::MockAsyncHTTP->mock_json_response( { success => JSON->true, text => 'ok' } ) ] );
+  my $aki = Langertha::Engine::AKI->new( api_key => 'k', _async_http => $mock );
+  $aki->chat_f( messages => ['hi'], tools => [$obj], tool_choice => { type => 'tool', name => 'obj' } )->get;
+  my $forced = $json->decode( ( $mock->requests )[0]->content );
+  ok( !exists $forced->{tool_choice}, 'AKI forced: not in the body' );
+  ok( !exists $forced->{response_format}, 'AKI forced: no response_format to rewrite to' );
+  is( prompt_tools( $json->decode( $forced->{chat_context} )->[0]{content} )->[0]{name}, 'obj',
+    'AKI forced: the tool is still offered' );
+  is( scalar @warnings, 1, 'AKI forced: one warning' );
+  like( $warnings[0] // '', qr/tool_choice.*ignored.*hermes/, 'AKI forced: the warning says it is ignored on hermes' );
+
+  @warnings = ();
+  my ($any) = hermes_body( [$obj], tool_choice => 'any' );
+  ok( !exists $any->{tool_choice} && !exists $any->{response_format}, 'NousResearch any: dropped, not rewritten' );
+  is( scalar @warnings, 1, 'NousResearch any: one warning' );
+};
+
+subtest 'hermes: a forced tool on NousResearch takes the json_schema rewrite (k234, ADR 0005)' => sub {
+  # tool_choice_named is cleared on the hermes wire and NousResearch keeps the
+  # json_schema response_format of OpenAIBase, so chat_f rewrites a forced
+  # tool into response_format and synthesizes the ToolCall from the JSON reply.
+  # A backend that ignores response_format must still see the schema, so it
+  # also rides a system message in the Hermes structured-output prompt form.
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my $reply = { choices => [ { message => { role => 'assistant', content => '{"a": 1}' }, finish_reason => 'stop' } ] };
+  my $mock  = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response($reply) ] );
+  my $engine = $make{hermes}->( _async_http => $mock );
+  my $response = $engine->chat_f( messages => ['hi'], tools => [ $obj, $mcp ],
+    tool_choice => { type => 'tool', name => 'obj' } )->get;
+  my $body = $json->decode( ( $mock->requests )[0]->content );
+
+  ok( !exists $body->{tools} && !exists $body->{tool_choice}, 'neither tools nor tool_choice in the body' );
+  is( $body->{response_format}{type}, 'json_schema', 'response_format json_schema' );
+  is( $body->{response_format}{json_schema}{name}, 'obj', 'named after the forced tool' );
+  is_deeply( $body->{response_format}{json_schema}{schema}, $schema, 'carrying its input schema' );
+
+  is( scalar @{ $body->{messages} }, 2, 'a schema system message, then the user turn' );
+  is( $body->{messages}[0]{role}, 'system', 'the schema prompt leads' );
+  my ($in_prompt) = $body->{messages}[0]{content} =~ m{<schema>\s*(.*?)\s*</schema>}s;
+  ok( defined $in_prompt, 'the schema sits in <schema> tags' );
+  is_deeply( $json->decode( $in_prompt // 'null' ), $schema, 'the same schema' );
+  unlike( $body->{messages}[0]{content}, qr/<tools>/, 'no tool prompt: the rewrite took the tools off' );
+  is_deeply( $body->{messages}[1], { role => 'user', content => 'hi' }, 'the user turn follows' );
+
+  is( scalar @{ $response->tool_calls }, 1, 'one tool call' );
+  is( $response->tool_call->name, 'obj', 'the forced tool' );
+  ok( $response->tool_call->synthetic, 'synthetic' );
+  is_deeply( $response->tool_call_args('obj'), { a => 1 }, 'arguments parsed from the JSON reply' );
+  is( scalar @warnings, 0, 'silent: the choice was honored' );
+
+  my $custom = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response($reply) ] );
+  $make{hermes}->( _async_http => $custom, hermes_schema_prompt => "Schema: %s" )
+    ->chat_f( messages => ['hi'], tools => [$obj], tool_choice => { type => 'tool', name => 'obj' } )->get;
+  like( $json->decode( ( $custom->requests )[0]->content )->{messages}[0]{content}, qr/\ASchema: \{/,
+    'hermes_schema_prompt is the template' );
 };
 
 subtest 'hermes: tool_choice undef is no choice (k231 review)' => sub {
