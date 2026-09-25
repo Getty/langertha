@@ -508,6 +508,19 @@ These classes wrap an engine with optional overrides and plugin lifecycle hooks:
 limit metadata; C<tool_calls> is an ArrayRef of L<Langertha::ToolCall> and
 the single source of truth for both native and synthesized tool calls
 
+=item * L<Langertha::Usage> - Token usage of one call (L<Langertha::Response/usage>),
+normalized across providers, with cache reads/writes and whether the wire
+counts them inside C<input_tokens>
+
+=item * L<Langertha::Pricing> - Model-to-price catalogue that turns a
+L<Langertha::Usage> into a L<Langertha::Cost>, with optional cache rates
+
+=item * L<Langertha::Cost> - Monetary cost of one call (input, output, cache
+read/write, total)
+
+=item * L<Langertha::UsageRecord> - Ledger entry combining a
+L<Langertha::Usage>, its L<Langertha::Cost> and request metadata
+
 =item * L<Langertha::ToolCall> - Canonical tool invocation produced by an
 LLM, with C<synthetic> flag for forced-tool fallbacks
 
@@ -532,6 +545,12 @@ Provider-agnostic vision input
 =item * L<Langertha::ModelProbe> - Reads model-scoped capability facts
 (C<image_input>) from a provider's own model metadata, for
 L<Langertha::Role::Capabilities/probe_model_capabilities_f>
+
+=item * L<Langertha::Manifest> - Provider manifest
+(C</.well-known/langertha.json>) value object, parser and validator
+
+=item * L<Langertha::Manifest::Builder> - Builds a L<Langertha::Manifest>
+offline from configured engines, never copying a secret
 
 =item * L<Langertha::RateLimit> - Normalized rate limit data from HTTP response headers
 

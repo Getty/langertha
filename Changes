@@ -9,21 +9,27 @@ Revision history for Langertha
       claude-2, gemini-1.0-pro), and for the documented vision models on
       DeepSeek, Mistral, XAI, MiniMax, Moonshot, Groq, Cerebras, Scaleway,
       TSystems, the qwen3.6, qwen3.8 and gemma4 models on AKIOpenAI
-      (verified with live image requests) and third-party ids on Perplexity. Gateways, self-hosted
-      servers and the /anthropic shims
+      (verified with live image requests) and third-party ids on
+      Perplexity. Gateways, self-hosted servers and the /anthropic shims
       make no static claim. $engine->probe_model_capabilities_f (sync:
       probe_model_capabilities) reads image_input per model from the
       provider's own metadata on OpenRouter, Mistral, Ollama, OllamaOpenAI,
       LMStudio, LMStudioOpenAI, LlamaCpp and TSystems (the TSystems format
       follows its published OpenAPI schema and is not live-verified); a
-      probed answer beats the static one. With models => 'all' one request
-      learns every model of a catalogue endpoint (OpenRouter, Mistral, LM
-      Studio, TSystems), and
-      $engine->import_learned_capabilities($learned) hands the result to
-      other engine instances on the same endpoint without a request of
-      their own. supports() never probes by itself. The flag never blocks
-      sending an image. Manifests built by Langertha::Manifest::Builder
-      publish it per model, probed answers included.
+      probed answer beats the static one. A learned answer also covers the
+      equivalent id: on Ollama llava and llava:latest find each other, on
+      OpenRouter a variant (:online, :free, ...) falls back to its base
+      id. An Ollama model the server does not have (404) is skipped and
+      the other models are still learned; any other failure, or a success
+      answer that is not JSON, fails with an error naming the engine and
+      stores nothing. With models => 'all' one request learns every model
+      of a catalogue endpoint (OpenRouter, Mistral, LM Studio, TSystems),
+      and $engine->import_learned_capabilities($learned) hands the result
+      to other engine instances on the same endpoint without a request of
+      their own. supports() never probes by itself and leaves the
+      caller's $@ alone. The flag never blocks sending an image. Manifests
+      built by Langertha::Manifest::Builder publish it per model, probed
+      answers included.
 
     - Langertha::Content::Image reaches more wires intact. OpenAIResponses
       and Perplexity send input_text / input_image parts (image_url as a
@@ -65,7 +71,6 @@ Revision history for Langertha
       after Ns" error naming the engine and the URL. Unset, the async
       backend still has no timeout.
 
-
     - LM Studio native (/api/v1/chat) sends text as type text input
       parts, and since that endpoint takes no assistant messages, a
       history with assistant turns is cut to the user turn(s) after the
@@ -80,7 +85,6 @@ Revision history for Langertha
       (text, inline_data, fileData, ...) pass through, and any other
       typed part croaks before the request. A system message with array
       content goes into systemInstruction as its text.
-
 
     - Langertha::Pricing rules take optional cached_input_per_million and
       cache_write_per_million. With either set, cost_for prices each
@@ -108,9 +112,10 @@ Revision history for Langertha
       on Response->tool_calls, with finish_reason tool_calls where it
       was stop. A block that holds no valid call stays in the text, in
       ToolCall->extract_hermes_from_text too, which also takes
-      tag => ... for a custom call tag. tool_choice => 'none' withholds the tools, and a built-in tool
-      croaks there. chat_stream_realtime_f puts the tools in the prompt
-      too and does not stream the <tool_call> blocks: their calls arrive
+      tag => ... for a custom call tag. tool_choice => 'none' withholds
+      the tools, and a built-in tool croaks there. chat_stream_realtime_f
+      puts the tools in the prompt too and does not stream the
+      <tool_call> blocks: their calls arrive
       on the final chunk, and markup still unclosed at the end is
       streamed as text. The Hermes engines no longer claim tools_native,
       tool_choice_any, tool_choice_named or parallel_tool_use.
@@ -234,8 +239,9 @@ Revision history for Langertha
       with the request still warns every time.
 
     - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
-      item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,
-      computer_call, local_shell_call, apply_patch_call and a client-side
+      item the client must answer and Langertha cannot:
+      mcp_approval_request, custom_tool_call, computer_call,
+      local_shell_call, apply_patch_call and a client-side
       tool_search_call. Such a turn used to end as if the model were done.
 
     - Role::ResponsesCompatible sends max_output_tokens only when the engine
@@ -251,7 +257,6 @@ Revision history for Langertha
       tokens actually produced, so this does not raise the cost of a reply
       that fit before. New model_response_size_defaults engine hook. Taken
       from Moonshot's documentation, not verified against the live API.
-
 
     - MoonshotAnthropic on kimi-k3 sends a json_schema response_format
       natively as output_config.format, like first-party Anthropic, instead
@@ -278,8 +283,8 @@ Revision history for Langertha
       same mapping: none on M3 sends thinking {type: disabled} explicitly, and
       minimal now turns thinking on. Other engines serving a MiniMax or Kimi
       model id (vLLM, SGLang, proxies, other /anthropic shims) keep sending
-      reasoning_effort / output_config.effort as before. Taken from MiniMax's documentation, not
-      verified against the live API.
+      reasoning_effort / output_config.effort as before. Taken from
+      MiniMax's documentation, not verified against the live API.
 
     - Moonshot and MoonshotAnthropic no longer send temperature on any Kimi
       model (kimi-k3, kimi-k2.6, kimi-k2.7-code): Kimi fixes it server-side
@@ -354,20 +359,22 @@ Revision history for Langertha
       server-side tool of the wire it formats (see Langertha::ServerTool
       below). The new Langertha::Tool->classify($hash, $fmt) reports the kind
       of tool without croaking, so a gateway can reject a request cleanly.
+
     - Langertha::Tool->from_hash / from_list / format_list now accept the flat
       OpenAI Responses function-tool form, whose name, description and
       parameters sit directly on the tool hash, not only Chat Completions'
       nested function wrapper. It used to return undef and be silently
       dropped on every wire except the Responses envelope, which already
       passed it through verbatim.
+
     - OpenAIResponses decides tool by tool, in any order: flat function tools,
       its server-side tools (see Langertha::ServerTool below) and any other
       typed tool (custom, namespace, types Langertha does not know) go out
-      verbatim, and other
-      function-tool forms are converted. Incompatible change: the
-      client-executed built-ins local_shell, computer, computer_use_preview,
-      apply_patch, a shell outside a container_auto / container_reference
-      environment and tool_search with execution "client" now croak. They used to be sent when listed first, but
+      verbatim, and other function-tool forms are converted. Incompatible
+      change: the client-executed built-ins local_shell, computer,
+      computer_use_preview, apply_patch, a shell outside a container_auto /
+      container_reference environment and tool_search with execution
+      "client" now croak. They used to be sent when listed first, but
       Langertha cannot run them or report their calls, so a shell or
       computer-use loop built on chat_f and Response->raw no longer works.
 
@@ -386,6 +393,7 @@ Revision history for Langertha
       it: their servers ignore OpenAI's cache-routing hint. Use the runtime
       knobs (prefix_cache_salt, cache_prompt, ...) there. Provider manifests
       built from these engines stop publishing it.
+
     - OpenAI: whether a model is a reasoning model, and so may lose a
       non-default temperature, is now decided by
       Langertha::Reasoning::Profile->is_reasoning_model. Dotted chat ids such as
@@ -524,16 +532,17 @@ Revision history for Langertha
       _update_rate_limit) twice per turn.
 
     - The Open-Responses tool-result envelope is wire-correct end to end, so
-      an OpenAIResponses tool loop survives past its first turn. format_tool_results
-      returned an arrayref for the `responses` format and a plain list on
-      every other wire, so the one bogus element landed on the conversation
-      and turn two died with "Not a HASH reference"; the responses branch now
-      returns a list too, echoes the model's output items ahead of the
-      results, and hoists a function_call out of the legacy
-      nested-in-a-message shape (the API only pairs a function_call_output
-      with a top-level function_call). ToolResult->to_responses now emits the
-      Responses input item { type: function_call_output, call_id, output }
-      instead of an { role: tool, ... } chat message.
+      an OpenAIResponses tool loop survives past its first turn.
+      format_tool_results returned an arrayref for the `responses` format
+      and a plain list on every other wire, so the one bogus element
+      landed on the conversation and turn two died with "Not a HASH
+      reference"; the responses branch now returns a list too, echoes the
+      model's output items ahead of the results, and hoists a
+      function_call out of the legacy nested-in-a-message shape (the API
+      only pairs a function_call_output with a top-level function_call).
+      ToolResult->to_responses now emits the Responses input item
+      { type: function_call_output, call_id, output } instead of an
+      { role: tool, ... } chat message.
 
     - A request that combines `tools` with a structured-output
       `response_format` raises a clear local error instead of an opaque
@@ -588,12 +597,13 @@ Revision history for Langertha
       Claude Messages API) takes a `json_schema` structured output natively as
       `output_config.format`, normalizing the schema to a closed one
       (additionalProperties:false on every object that does not close itself,
-      while an additionalProperties that is itself a schema — a map value type —
-      is kept and recursed rather than clobbered to false) since the validator
-      rejects an open schema, merging with output_config.effort rather than clobbering
-      it, and emitting `strict:true`; this also makes json_schema stream. A
-      bare `json_object` has no closed native form, so it routes through a
-      synthesized tool with a forced tool_choice (an open, non-strict tool
+      while an additionalProperties that is itself a schema — a map value
+      type — is kept and recursed rather than clobbered to false) since the
+      validator rejects an open schema, merging with output_config.effort
+      rather than clobbering it, and emitting `strict:true`; this also
+      makes json_schema stream. A bare `json_object` has no closed native
+      form, so it routes through a synthesized tool with a forced
+      tool_choice (an open, non-strict tool
       input_schema) — the same path the legacy /anthropic shim engines use —
       and streaming a json_object croaks rather than sending a request the API
       rejects. Fable 5.1 and Mythos 5.1 400 on forced tool use, so those models
