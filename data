@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T21:04:28Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:04:28Z
+created: 2026-09-25T20:24:04Z
+id: 305
+priority: low
+started: 2026-09-25T20:25:38Z
+status: done
+tags:
+- langfuse
+- memory
+- observability
+title: Role::Langfuse batch grows without bound when enabled from LANGFUSE_* env and
+  langfuse_flush is never called
+updated: 2026-09-25T21:04:28Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). Confirmed by code reading.
+
+lib/Langertha/Role/Langfuse.pm: langfuse_enabled turns on automatically when LANGFUSE_PUBLIC_KEY/SECRET_KEY are in the environment (BUILDARGS + _build_langfuse_enabled), and around simple_chat pushes a trace-create and a generation-create (each holding the full input messages and output) onto _langfuse_batch for every call. Nothing flushes or caps it; only an explicit langfuse_flush clears it. A long-running process (daemon, raider loop) that merely has the env vars set leaks memory proportional to all prompts ever sent, and the eventual flush is one huge POST that Langfuse rejects by size (see the flush ticket).
+
+Fix options: auto-flush at a batch-size threshold, cap the batch (drop oldest with one warning), and/or flush in DEMOLISH. Record the choice in POD.
