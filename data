@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T06:58:05Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-25T06:58:05Z
+created: 2026-09-25T06:52:38Z
+id: 246
+priority: low
+started: 2026-09-25T06:53:18Z
+status: done
+tags:
+- tools
+- capabilities
+title: 'k239/k241 review minors: LMStudio tools=>undef croaks, none-without-tools
+  carp, Hetzner POD, Role::Chat POD engine list'
+updated: 2026-09-25T06:58:05Z
+---
+
+From k239/k241 review: (1) Engine/LMStudio.pm ~301-306 croaks on tools=>undef -> only croak for a non-empty list or a non-ARRAY defined value; test. (2) Role/Chat.pm _gate_tool_choice ~984-988: none with no tools warns 'withheld' -> warn only when tools present (hermes path already does). (3) Hetzner POD (~80-88, ~180) must say tool_choice is no longer sent (all tool_choice_* cleared) while tools still go out; ADR 0002 Update: clarify tools_native does not gate sending tools. (4) Role/Chat.pm ~757-765 POD: say 'where the engine does not supports(tool_choice_<kind>)' instead of an incomplete engine list.
+
+Fixed in 20918e2 on worktree-agent-a5747f84ada382e49; prove -lr t/ PASS (live skipped), perlcritic clean, dzil build OK
