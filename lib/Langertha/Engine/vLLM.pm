@@ -16,6 +16,19 @@ with 'Langertha::Role::Tools',
 # (--speculative-config), not a request knob — see Langertha::Runtime::Knobs.
 sub _build_knob_wire_format { 'vllm' }
 
+# prompt_cache_key (OpenAI's cache-routing hint) is not a field of vLLM's
+# ChatCompletionRequest: the pydantic model accepts extra keys and ignores them
+# with a debug log (vllm/entrypoints/serve/engine/protocol.py; only the
+# /v1/responses protocol declares it; checked 2026-09-25, karr #200). The
+# prefix-cache lever here is cache_salt via RuntimeKnobs, so clear the flag
+# (ADR 0002 layer 2). VLLMHook inherits this.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{prompt_cache_key};
+  return $caps;
+};
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::vLLM;

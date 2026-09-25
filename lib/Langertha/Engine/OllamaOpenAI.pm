@@ -94,11 +94,15 @@ sub _build_supported_operations {[qw( createChatCompletion createEmbedding )]}
 # silently-dropped tool_choice is the dangerous case — the caller believes the
 # tool was forced — so clear every tool_choice flag; tools_native stays (the
 # `tools` array itself works).
+# prompt_cache_key is not a field of Ollama's /v1 ChatCompletionRequest struct
+# (openai/openai.go; Go's decoder drops it) -- only the /v1/responses shim
+# echoes it back as null (checked 2026-09-25, karr #200). Clear it too.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete @{$caps}{ qw(
     tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
+    prompt_cache_key
   ) };
   return $caps;
 };

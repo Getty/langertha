@@ -105,10 +105,14 @@ sub _build_supported_operations {[qw(
 # (docs.sglang.io/docs/advanced_features/tool_parser, verified 2026-09-01).
 # Clear tool_choice_auto and tool_choice_none; tool_choice_named (grammar-backed)
 # and tool_choice_any stay.
+# prompt_cache_key (OpenAI's cache-routing hint) is not a field of SGLang's
+# ChatCompletionRequest, a pydantic model that silently drops unknown keys
+# (python/sglang/srt/entrypoints/openai/protocol.py, checked 2026-09-25, karr
+# #200). Prefix-cache control is cache_salt / extra_key via RuntimeKnobs.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
-  delete @{$caps}{ qw( tool_choice_auto tool_choice_none ) };
+  delete @{$caps}{ qw( tool_choice_auto tool_choice_none prompt_cache_key ) };
   return $caps;
 };
 

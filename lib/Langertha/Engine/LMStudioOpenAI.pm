@@ -103,6 +103,17 @@ sub _build_supported_operations {[qw(
   createEmbedding
 )]}
 
+# LM Studio documents a closed parameter list for /v1/chat/completions
+# (lmstudio.ai/docs/developer/openai-compat/chat-completions) and
+# prompt_cache_key is not on it (checked 2026-09-25, karr #200), so the
+# OpenAI cache-routing hint is not advertised (ADR 0002 layer 2).
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{prompt_cache_key};
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 CAPABILITIES

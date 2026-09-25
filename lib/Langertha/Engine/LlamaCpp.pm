@@ -69,10 +69,15 @@ sub _build_supported_operations {[qw(
 # 2026-09-01). Clear tool_choice_named so chat_f does not believe it can force a
 # specific tool here; the string forms (auto/any->required/none) are parsed and
 # stay.
+# prompt_cache_key (OpenAI's cache-routing hint) is neither documented for the
+# server's /v1/chat/completions (tools/server/README.md) nor read by it (no
+# reference in the source; checked 2026-09-25, karr #200). The server's own
+# prefix-cache levers are cache_prompt / n_cache_reuse / id_slot via
+# RuntimeKnobs, so clear the flag.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
-  delete $caps->{tool_choice_named};
+  delete @{$caps}{ qw( tool_choice_named prompt_cache_key ) };
   return $caps;
 };
 

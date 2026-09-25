@@ -54,7 +54,10 @@ has prompt_cache_key => (
 
 Optional OpenAI C<prompt_cache_key> routing hint. OpenAI prompt caching is
 automatic; this only steers which cache shard is used. No effect on the
-Anthropic wire.
+Anthropic wire. Sent only where C<< $engine->supports('prompt_cache_key') >>;
+the self-hosted OpenAI-compatible engines (vLLM, SGLang, llama.cpp, Ollama,
+LM Studio) do not advertise it and use L<Langertha::Role::RuntimeKnobs> for
+their own prefix-cache controls.
 
 =cut
 
@@ -95,6 +98,14 @@ sub prompt_cache_kwargs_for {
     ( $self->has_prompt_cache_key ? ( prompt_cache_key => $self->prompt_cache_key ) : () ),
     %args,
   );
+  # The wire agrees with the capability registry (karr #200, ADR 0009): a
+  # control the engine does not advertise is not sent, so clearing the flag
+  # in an engine's around engine_capabilities also stops the emission.
+  if ( $self->can('supports') ) {
+    for my $cap (qw( prompt_cache prompt_cache_key )) {
+      delete $merged{$cap} unless $self->supports($cap);
+    }
+  }
   return () unless $merged{prompt_cache} || defined $merged{prompt_cache_key};
   return Langertha::PromptCache->new(
     enable => $merged{prompt_cache},
@@ -113,6 +124,11 @@ carry C<prompt_cache>, C<prompt_cache_ttl> and/or C<prompt_cache_key>; keys it
 does not carry fall back to the engine attributes, so a per-request control
 (chat_f, karr #46) beats the configured attribute on a per-key basis. Empty
 list when nothing applies to the engine's wire (caching off / no key).
+
+A control whose capability the engine does not advertise
+(C<< $engine->supports('prompt_cache_key') >> false, e.g. on the self-hosted
+OpenAI-compatible servers) is dropped silently, so the request body never
+carries a field the capability registry says the wire does not honor.
 
 =cut
 

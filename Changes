@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - vLLM, SGLang, llama.cpp, Ollama (OpenAI-compatible) and LM Studio
+      (OpenAI-compatible) no longer report prompt_cache_key, and no longer send
+      it: their servers ignore OpenAI's cache-routing hint. Use the runtime
+      knobs (prefix_cache_salt, cache_prompt, ...) there. Provider manifests
+      built from these engines stop publishing it.
     - OpenAI: whether a model is a reasoning model, and so may lose a
       non-default temperature, is now decided by
       Langertha::Reasoning::Profile->is_reasoning_model. Dotted chat ids such as
