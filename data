@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T07:59:13Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:59:13Z
+created: 2026-09-25T07:49:25Z
+id: 254
+priority: low
+started: 2026-09-25T07:59:13Z
+status: done
+tags:
+- aki
+- hermes
+- capabilities
+title: AKI native accepts tool_wire_format => 'openai' and then claims tools_native
+  though its body has no tools key
+updated: 2026-09-25T07:59:13Z
+---
+
+From k251: after the HermesTools rule keys on the resolved tag, AKI->new(tool_wire_format=>'openai') claims tools_native, but AKI native's /api/call body has no tools field. A non-hermes tag makes no sense on that endpoint. Fix: AKI native croaks on a tool_wire_format other than hermes at construction (point to AKIOpenAI), or ignores it with a carp. Prefer croak (misconfiguration).
+
+2026-09-25 07:56 Fixed in 7bcce34 on branch worktree-agent-a62aee811f018a489: AKI BUILD croaks on non-hermes tool_wire_format, points to AKIOpenAI. Suite green.
