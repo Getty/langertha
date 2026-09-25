@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T01:10:54Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:10:54Z
+created: 2026-09-20T22:44:31Z
+id: 189
+priority: low
+started: 2026-09-25T01:10:54Z
+status: done
+tags:
+- meta
+- agents
+- skills
+- tooling
+title: Agenten-Team + Skills fuer langertha ueberdenken (mehr/gesplittete Worker,
+  Skills-Reorg)
+updated: 2026-09-25T01:10:54Z
+---
+
+Gettys Gedanke (2026-09-21): (a) brauchen wir mehr Worker fuer langertha? Aktuell nur langertha-worker (+ adr-auditor, llm-advisor). (b) Worker staerker per Skills aufsplitten (z.B. dedizierter test-writer, pod-writer, wire-seam-Spezialist mit je eigenem briefing.skills). (c) die Skills generell ueberarbeiten/pruefen. Eigener Brainstorm, NICHT Teil von k188. Relevante Skills dafuer: getty-agent-team (Team-Setup/Split/briefing), skill-authoring + skill-mining + skill-compressor + getty-skill-library (Skills-Reorg). Anstossen wenn k188 durch ist oder wenn Getty Zeit hat.
+
+Schritt 1 (2026-09-25): langertha-reviewer (read-only, opus) + langertha-async-worker (Transport/Streaming/Future-Lifecycle) angelegt, CLAUDE.md-Delegationstabelle ergaenzt. Offen: test-writer, pod-writer (CLAUDE.md verweist auf nicht existierenden pod-writer), wire-seam-Spezialist, release-checker, Skills-Reorg.
+
+Schritt 2 (2026-09-25): langertha-test-writer + langertha-pod-writer angelegt (toter pod-writer-Verweis in CLAUDE.md behoben). Offen: wire-seam-Spezialist, release-checker, Skills-Reorg (kein Test2-Skill vorhanden, Test-Mechanik steht im Agent-Body).
+
+Schritt 3 (2026-09-25): langertha-wire-worker + langertha-release-checker angelegt, Delegationsregel zeigt auf Spezialisten. Agenten-Teil damit komplett (8 Agenten). Offen: Skills-Reorg (Test2-/Test-Mechanik-Skill? perl-ai-langertha pruefen/splitten, getty-perl-release-author-getty Drift).
