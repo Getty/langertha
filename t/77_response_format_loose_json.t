@@ -1,7 +1,7 @@
 use strict;
 use warnings;
 use utf8;
-use Test::More;
+use Test2::Bundle::More;
 
 # decode_loose_json is now a Role method, callable via $engine->decode_loose_json($text).
 # The test composes the role into a throwaway class so we can call it as a method.

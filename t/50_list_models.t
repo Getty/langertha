@@ -3,7 +3,7 @@
 
 use strict;
 use warnings;
-use Test::More;
+use Test2::Bundle::More;
 use JSON::MaybeXS;
 use Path::Tiny;
 
@@ -49,7 +49,7 @@ sub mock_response {
 subtest 'OpenAI response parsing' => sub {
   plan tests => 4;
 
-  use_ok('Langertha::Engine::OpenAI');
+  ok(eval { require Langertha::Engine::OpenAI; 1 }, 'use Langertha::Engine::OpenAI;') or diag $@;
 
   my $fixture = load_fixture('openai_models.json');
   my $response = mock_response($fixture);
@@ -67,7 +67,7 @@ subtest 'OpenAI response parsing' => sub {
 subtest 'Anthropic response parsing' => sub {
   plan tests => 5;
 
-  use_ok('Langertha::Engine::Anthropic');
+  ok(eval { require Langertha::Engine::Anthropic; 1 }, 'use Langertha::Engine::Anthropic;') or diag $@;
 
   my $fixture = load_fixture('anthropic_models.json');
   my $response = mock_response($fixture);
@@ -86,7 +86,7 @@ subtest 'Anthropic response parsing' => sub {
 subtest 'Gemini response parsing' => sub {
   plan tests => 5;
 
-  use_ok('Langertha::Engine::Gemini');
+  ok(eval { require Langertha::Engine::Gemini; 1 }, 'use Langertha::Engine::Gemini;') or diag $@;
 
   my $fixture = load_fixture('gemini_models.json');
   my $response = mock_response($fixture);
@@ -105,7 +105,7 @@ subtest 'Gemini response parsing' => sub {
 subtest 'Groq response parsing' => sub {
   plan tests => 4;
 
-  use_ok('Langertha::Engine::Groq');
+  ok(eval { require Langertha::Engine::Groq; 1 }, 'use Langertha::Engine::Groq;') or diag $@;
 
   my $fixture = load_fixture('groq_models.json');
   my $response = mock_response($fixture);
@@ -123,7 +123,7 @@ subtest 'Groq response parsing' => sub {
 subtest 'Mistral response parsing' => sub {
   plan tests => 4;
 
-  use_ok('Langertha::Engine::Mistral');
+  ok(eval { require Langertha::Engine::Mistral; 1 }, 'use Langertha::Engine::Mistral;') or diag $@;
 
   my $fixture = load_fixture('mistral_models.json');
   my $response = mock_response($fixture);
@@ -141,7 +141,7 @@ subtest 'Mistral response parsing' => sub {
 subtest 'DeepSeek response parsing' => sub {
   plan tests => 4;
 
-  use_ok('Langertha::Engine::DeepSeek');
+  ok(eval { require Langertha::Engine::DeepSeek; 1 }, 'use Langertha::Engine::DeepSeek;') or diag $@;
 
   my $fixture = load_fixture('deepseek_models.json');
   my $response = mock_response($fixture);
@@ -371,7 +371,7 @@ subtest 'list_models URL correctness for all OpenAICompatible engines' => sub {
 
   for my $e (@engines) {
     my ($class, $expected) = @$e;
-    use_ok($class);
+    ok(eval "require $class; 1", "use $class;") or diag $@;
     my $engine = $class->new(api_key => 'test-key');
     my $request = $engine->list_models_request;
     like($request->uri, $expected, "$class: URL correct (".$request->uri.")");
@@ -391,7 +391,7 @@ subtest 'Mistral list_models_path override' => sub {
 subtest 'Perplexity static models' => sub {
   plan tests => 5;
 
-  use_ok('Langertha::Engine::Perplexity');
+  ok(eval { require Langertha::Engine::Perplexity; 1 }, 'use Langertha::Engine::Perplexity;') or diag $@;
 
   my $engine = Langertha::Engine::Perplexity->new(api_key => 'test-key');
 
@@ -407,7 +407,7 @@ subtest 'Perplexity static models' => sub {
 subtest 'NousResearch static models' => sub {
   plan tests => 6;
 
-  use_ok('Langertha::Engine::NousResearch');
+  ok(eval { require Langertha::Engine::NousResearch; 1 }, 'use Langertha::Engine::NousResearch;') or diag $@;
 
   my $engine = Langertha::Engine::NousResearch->new(api_key => 'test-key');
 
@@ -425,7 +425,7 @@ subtest 'NousResearch static models' => sub {
 subtest 'MiniMax static models' => sub {
   plan tests => 7;
 
-  use_ok('Langertha::Engine::MiniMax');
+  ok(eval { require Langertha::Engine::MiniMax; 1 }, 'use Langertha::Engine::MiniMax;') or diag $@;
 
   my $engine = Langertha::Engine::MiniMax->new(api_key => 'test-key');
 
@@ -445,7 +445,7 @@ subtest 'MiniMax static models' => sub {
 subtest 'Moonshot static models' => sub {
   plan tests => 7;
 
-  use_ok('Langertha::Engine::Moonshot');
+  ok(eval { require Langertha::Engine::Moonshot; 1 }, 'use Langertha::Engine::Moonshot;') or diag $@;
 
   my $engine = Langertha::Engine::Moonshot->new(api_key => 'test-key');
 
@@ -465,7 +465,7 @@ subtest 'Moonshot static models' => sub {
 subtest 'HuggingFace Hub API list_models' => sub {
   plan tests => 7;
 
-  use_ok('Langertha::Engine::HuggingFace');
+  ok(eval { require Langertha::Engine::HuggingFace; 1 }, 'use Langertha::Engine::HuggingFace;') or diag $@;
 
   my $fixture = load_fixture('huggingface_hub_models.json');
   my $mock_ua = MockUA->new([mock_response($fixture), mock_response($fixture)]);
