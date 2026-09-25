@@ -219,6 +219,22 @@ sub locate {
   croak "Langertha::ToolCall: unknown wire format '$fmt'";
 }
 
+=method locate
+
+    my $raw_calls = Langertha::ToolCall->locate( $fmt, $data );
+
+Returns an ArrayRef of the raw tool-call structures in a decoded response for
+the wire C<$fmt>, without parsing them. Only calls the client must execute are
+located; a server-side call item (C<web_search_call>, C<mcp_call>, ...) never
+is (see L<Langertha::ServerToolCall>). On C<responses> it croaks on an output
+item the client must answer that Langertha does not map --
+C<custom_tool_call>, C<computer_call>, C<local_shell_call>,
+C<apply_patch_call>, C<mcp_approval_request>, a C<tool_search_call> with
+C<< execution => 'client' >> -- rather than report no calls. Croaks on an
+unknown C<$fmt>.
+
+=cut
+
 # THE canonical inbound entry point: pull every tool call out of an upstream
 # response for a given wire format (locate + from_fmt). Engines pass their
 # tool_wire_format. Returns a list of ToolCall objects (possibly empty). The
@@ -230,6 +246,20 @@ sub extract {
   return grep { defined }
     map { $class->from_fmt( $fmt, $_ ) } @{ $class->locate( $fmt, $data ) };
 }
+
+=method extract
+
+    my @calls = Langertha::ToolCall->extract( $fmt, $data );
+
+The canonical inbound door: every tool call the client must execute in a
+decoded response, as C<Langertha::ToolCall> objects (possibly none). Built on
+L</locate>, so on the C<responses> wire it B<croaks> on a client-actionable
+output item Langertha cannot map (C<mcp_approval_request>, C<computer_call>,
+C<custom_tool_call>, C<local_shell_call>, C<apply_patch_call>, a client
+C<tool_search_call>) instead of returning an empty list that looks like "the
+model is done". Croaks when C<$fmt> is a reference.
+
+=cut
 
 # Detect the wire format from the top-level shape of a raw response, WITHOUT
 # walking the per-format tool structures (that walking lives only in locate).
@@ -261,6 +291,16 @@ sub extract_sniff {
   my $fmt = $class->sniff_format($data) or return ();
   return $class->extract( $fmt, $data );
 }
+
+=method extract_sniff
+
+    my @calls = Langertha::ToolCall->extract_sniff( $data );
+
+L</extract> for a caller with no wire format in scope: sniffs the format from
+the top-level shape, then extracts. Returns an empty list for an unknown shape.
+Croaks like L</extract>, including on a client-actionable C<responses> item.
+
+=cut
 
 # Hermes-style XML embedded in plain text. Returns ($cleaned_text, \@calls).
 sub extract_hermes_from_text {

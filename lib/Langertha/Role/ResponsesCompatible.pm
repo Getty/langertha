@@ -163,7 +163,7 @@ sub _is_native_responses_tool {
 # has no format_tools, and its tools go out as given.
 sub _responses_tools_kwarg {
     my ( $self, $extra ) = @_;
-    my @server = $self->can('server_tools') ? @{ $self->server_tools } : ();
+    my @server = $self->can('server_tools') ? $self->_responses_default_server_tools($extra->{tools}) : ();
     $extra->{tools} = [ ( ref $extra->{tools} eq 'ARRAY' ? @{ $extra->{tools} } : () ), @server ]
         if @server;
     return unless exists $extra->{tools} && ref $extra->{tools} eq 'ARRAY';
@@ -180,6 +180,41 @@ sub _responses_tools_kwarg {
       :                                      @{ $self->format_tools([$item]) };
     } @{ $extra->{tools} } ];
     return;
+}
+
+# The engine's server_tools defaults, as ServerTool objects, minus every one
+# the request already carries (k206 review I1/M6). Unlike a request's own
+# tools (values open, the provider judges), a default must be a server tool:
+# a bare string, a function tool or an unlisted type croaks here instead of
+# being dropped by format_tools or sent on every request. The request wins:
+# a default is skipped when a request tool is a server tool of the same kind
+# -- same type, and for mcp the same server_label.
+sub _server_tool_kind {
+    my ($st) = @_;
+    my $spec = $st->spec;
+    return $st->type eq 'mcp' ? 'mcp:' . ( $spec->{server_label} // '' ) : $st->type;
+}
+
+sub _responses_default_server_tools {
+    my ( $self, $request_tools ) = @_;
+    my %requested = map {
+        my $st = Langertha::ServerTool->from_hash( responses => $_ );
+        $st ? ( _server_tool_kind($st) => 1 ) : ();
+    } ( ref $request_tools eq 'ARRAY' ? @$request_tools : () );
+    my @defaults;
+    for my $entry ( @{ $self->server_tools } ) {
+        my $st = Langertha::ServerTool->from_hash( responses => $entry );
+        unless ($st) {
+            my $label = !ref $entry          ? "'" . ( $entry // 'undef' ) . "'"
+                      : ref $entry eq 'HASH' ? '{' . join( ',', map { "$_=" . ( ref $entry->{$_} ? '...' : $entry->{$_} // '' ) } sort keys %$entry ) . '}'
+                      :                        ref $entry;
+            croak "".( ref $self ).": server_tools entry $label is not a server tool of the "
+              . "responses wire; pass a Langertha::ServerTool (unlisted => 1 for a type "
+              . "Langertha does not list yet) or a provider-native server tool hash";
+        }
+        push @defaults, $st unless $requested{ _server_tool_kind($st) };
+    }
+    return @defaults;
 }
 
 sub _responses_server_tool_spec {

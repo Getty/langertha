@@ -168,7 +168,21 @@ sub to {
   croak "Langertha::ServerTool: '" . $self->type . "' belongs to the "
     . $self->wire . " wire, not '$fmt'; server tools are provider-native and cannot be translated"
     unless $fmt eq $self->wire;
-  return { %{ $self->spec } };
+  my $spec = $self->spec;
+  # Remote MCP on the Responses wire: OpenAI defaults require_approval to
+  # "always", which answers with an mcp_approval_request the client must
+  # confirm, and Langertha has no approval flow (orchestrator ruling Q2 on
+  # k206). Checked here, on the one door every emission path goes through --
+  # the Responses envelope and Tool->format_list, which sees no engine -- so it
+  # is enforced once (k206 review M3). An engine whose provider does not take
+  # the field (xAI) strips it in its _server_tool_wire_check hook afterwards.
+  if ( $self->type eq 'mcp' && $fmt eq 'responses' ) {
+    my $approval = $spec->{require_approval};
+    croak "Langertha::ServerTool: remote MCP tool '" . ( $spec->{server_label} // '?' )
+      . "' needs require_approval => 'never'; the approval flow is not supported"
+      unless defined $approval && !ref $approval && $approval eq 'never';
+  }
+  return { %$spec };
 }
 
 =method to
@@ -176,7 +190,11 @@ sub to {
     my $hash = $st->to('responses');
 
 Returns a copy of the native hash for the wire the tool belongs to, and croaks
-for any other wire.
+for any other wire. A remote C<mcp> tool on the C<responses> wire also croaks
+unless it says C<< require_approval => 'never' >>: the provider default asks
+the client to approve each call, and Langertha has no approval flow. The check
+lives here so that every path -- an engine request and
+L<Langertha::Tool/format_list> alike -- enforces it.
 
 =cut
 

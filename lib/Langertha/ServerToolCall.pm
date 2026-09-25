@@ -85,7 +85,7 @@ The provider's item, verbatim.
 # Output items of the Responses wire that record a call the provider ran
 # (OpenAI create-response reference, spec k206 section 2.1). A client
 # tool_search_call (execution => 'client') is client-actionable instead, and
-# the walkers croak on it (Langertha::Tool::assert_no_client_item). Anything
+# the walkers croak on it (Langertha::Tool->_croak_on_client_item). Anything
 # else unknown is skipped -- values open; it stays on Response.raw.
 my %RESPONSES_SERVER_ITEM = map { $_ => 1 } qw(
   web_search_call file_search_call code_interpreter_call image_generation_call

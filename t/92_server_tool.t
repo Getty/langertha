@@ -125,6 +125,22 @@ subtest 'Tool->format_list: server tools on their own wire, croak elsewhere' => 
   like( $@, qr/Langertha::ServerTool/, 'and points at the value object that takes it' );
 };
 
+subtest 'remote MCP on the responses wire needs require_approval => never, on every path' => sub {
+  # Enforced by the value object, so Tool->format_list (which sees no engine)
+  # cannot skip it (k206 review M3; orchestrator ruling Q2).
+  my %mcp = ( type => 'mcp', server_label => 'docs', server_url => 'https://mcp.example/sse' );
+  for my $spec ( {%mcp}, { %mcp, require_approval => 'always' },
+                 { %mcp, require_approval => { never => { tool_names => ['a'] } } } ) {
+    my $st = Langertha::ServerTool->from_hash( responses => $spec );
+    ok( $st, 'still recognised (from_hash never croaks)' );
+    ok( !eval { $st->to('responses'); 1 }, 'to(responses) croaks' );
+    like( $@, qr/remote MCP tool 'docs' needs require_approval => 'never'/, 'says why' );
+    ok( !eval { Langertha::Tool->format_list( responses => [$spec] ); 1 }, 'format_list(responses) croaks' );
+  }
+  my $ok = { %mcp, require_approval => 'never' };
+  is_deeply( Langertha::Tool->format_list( responses => [$ok] ), [$ok], "'never' passes" );
+};
+
 subtest 'ServerToolCall: a thin record of one provider-executed call' => sub {
   my $item = { id => 'ws_1', type => 'web_search_call', status => 'completed',
                action => { type => 'search', query => 'perl' } };

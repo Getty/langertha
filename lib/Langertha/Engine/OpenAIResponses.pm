@@ -3,8 +3,6 @@ package Langertha::Engine::OpenAIResponses;
 our $VERSION = '0.503';
 use Moose;
 
-use Carp qw( croak );
-
 extends 'Langertha::Engine::OpenAI';
 
 with 'Langertha::Role::ResponsesCompatible', 'Langertha::Role::ServerTools';
@@ -76,7 +74,7 @@ C<data>.
 A remote C<mcp> tool must say C<< require_approval => 'never' >>: OpenAI's
 default is C<always>, which answers with an C<mcp_approval_request> the client
 has to confirm, and Langertha has no approval flow yet. Anything else croaks
-before the request is sent.
+before the request is sent (checked by L<Langertha::ServerTool/to>).
 
 =head2 Function call output shape
 
@@ -103,25 +101,6 @@ around engine_capabilities => sub {
     delete $caps->{streaming};
     return $caps;
 };
-
-# Remote MCP on OpenAI: require_approval defaults to "always" on the wire, so
-# an mcp tool without it -- or with anything but the plain string 'never' --
-# answers with an mcp_approval_request the client must confirm, and Langertha
-# has no approval flow (orchestrator ruling Q2 on k206). Refuse it before the
-# request is sent, instead of a tool loop that ends silently. xAI, the other
-# Responses provider, does not support the field at all, which is why this is
-# an engine hook and not a rule of the shared wire (spec k206 section 3.5).
-sub _server_tool_wire_check {
-    my ( $self, $server_tool ) = @_;
-    my $spec = $server_tool->to('responses');
-    return $spec unless $server_tool->type eq 'mcp';
-    my $approval = $spec->{require_approval};
-    croak "".( ref $self ).": remote MCP tool '"
-      . ( $spec->{server_label} // '?' ) . "' needs require_approval => 'never'; "
-      . "the approval flow is not supported"
-        unless defined $approval && !ref $approval && $approval eq 'never';
-    return $spec;
-}
 
 __PACKAGE__->meta->make_immutable;
 

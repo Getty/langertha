@@ -60,7 +60,10 @@ sub engine {
 sub body_of {
   my ($req) = @_;
   my $body = $json->decode( $req->content );
-  delete $body->{stream};    # Langertha always states stream => false
+  # The non-streaming builder always states stream => false (a JSON boolean);
+  # the captures left it out, which is the same on the wire.
+  my $stream = delete $body->{stream};
+  ok( JSON::MaybeXS::is_bool($stream) && !$stream, 'the body says stream => false' );
   return $body;
 }
 
@@ -146,6 +149,41 @@ subtest 'remote MCP needs require_approval => never on OpenAI' => sub {
   my $ok = { %mcp, require_approval => 'never' };
   my $req = engine()->chat_request( [ { role => 'user', content => 'x' } ], tools => [$ok] );
   is_deeply( $json->decode( $req->content )->{tools}, [$ok], "'never' goes out verbatim" );
+};
+
+subtest 'engine server_tools must be server tools (fail loud, no silent drop)' => sub {
+  for my $case (
+    [ 'a bare string',   'web_search' ],
+    [ 'a function tool', { name => 'f', input_schema => { type => 'object', properties => {} } } ],
+    [ 'an unknown type', { type => 'foo_search' } ],
+  ) {
+    my ( $label, $entry ) = @$case;
+    ok( !eval { engine( server_tools => [$entry] )->chat_request( [ { role => 'user', content => 'x' } ] ); 1 },
+      "croaks: $label" );
+    like( $@, qr/server_tools entry .* is not a server tool/, 'says why' );
+  }
+  my $unlisted = Langertha::ServerTool->new( wire => 'responses', spec => { type => 'foo_search' }, unlisted => 1 );
+  my $req = engine( server_tools => [$unlisted] )->chat_request( [ { role => 'user', content => 'x' } ] );
+  is_deeply( $json->decode( $req->content )->{tools}, [ { type => 'foo_search' } ],
+    'an unlisted type is sent when wrapped with unlisted => 1' );
+};
+
+subtest 'a server tool in the request replaces the engine default of the same kind' => sub {
+  my $e = engine( server_tools => [
+    { type => 'web_search' },
+    { type => 'mcp', server_label => 'a', server_url => 'https://a', require_approval => 'never' },
+    { type => 'mcp', server_label => 'b', server_url => 'https://b', require_approval => 'never' },
+  ] );
+  my $req = $e->chat_request( [ { role => 'user', content => 'x' } ], tools => [
+    { type => 'web_search', search_context_size => 'high' },
+    Langertha::ServerTool->new( wire => 'responses',
+      spec => { type => 'mcp', server_label => 'a', server_url => 'https://a2', require_approval => 'never' } ),
+  ] );
+  is_deeply( $json->decode( $req->content )->{tools}, [
+    { type => 'web_search', search_context_size => 'high' },
+    { type => 'mcp', server_label => 'a', server_url => 'https://a2', require_approval => 'never' },
+    { type => 'mcp', server_label => 'b', server_url => 'https://b', require_approval => 'never' },
+  ], 'the request wins per type (per server_label for mcp); other defaults stay' );
 };
 
 subtest 'a ServerTool on an engine without server_tools croaks before the request' => sub {
@@ -342,6 +380,11 @@ subtest 'chat_with_tools_f: capture #2 -> echo capture, end to end' => sub {
   is_deeply( [ @input[ 0 .. 2 ] ], [ @{ $want_2->{input} }[ 0 .. 2 ] ],
     'turn 2 echoes the user message, the web_search_call item and the function_call item unchanged' );
   is( $input[3]{type}, 'function_call_output', 'then the function result' );
+  # ToolResult->to('responses') sends the MCP content array as JSON text; the
+  # capture sent the bare JSON string. Both are strings to OpenAI (ADR 0030).
+  is( $input[3]{output},
+    '[{"text":"{\\"city\\":\\"Greenville, South Carolina\\",\\"temp_c\\":18,\\"conditions\\":\\"cloudy\\"}","type":"text"}]',
+    'its output is the MCP content array, JSON-encoded' );
   is( $input[3]{call_id}, 'call_kcSDMmpaoCvPu0AvsvjiwYA0', 'for the function call id' );
   is( scalar @input, 4, 'and nothing else' );
   is_deeply( $sent[1]{tools}, $want_1->{tools}, 'the same tools on the follow-up turn' );
