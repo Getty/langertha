@@ -45,13 +45,14 @@ ok($vllm->does('Langertha::Role::Runtime::MetricsPoll'), 'vLLM composes Runtime:
     '_build_supported_operations contains createChatCompletion');
 }
 
-# Test: default_embedding_model returns 'default' (single-model server, karr #70)
-is($vllm->default_embedding_model, 'default',
-  'default_embedding_model returns default');
+# Test: no fixed embedding model on a single-model server (karr #70, k297:
+# the 'default' placeholder 404s on vLLM 0.10/0.11, so no model is sent)
+is($vllm->default_embedding_model, undef,
+  'default_embedding_model is undef');
 
-# Test: embedding_model resolves to default_embedding_model when unset
-is($vllm->embedding_model, 'default',
-  'embedding_model defaults to default_embedding_model');
+# Test: embedding_model falls back to the caller's model
+is($vllm->embedding_model, 'Qwen/Qwen2.5-3B-Instruct',
+  'embedding_model is the caller-set model when no embedding_model is set');
 
 # Test: tool calling methods available
 ok($vllm->can('format_tools'), 'has format_tools');

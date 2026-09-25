@@ -48,7 +48,8 @@ B<THIS API IS WORK IN PROGRESS>
 =cut
 
 sub default_model { 'default' }
-sub default_embedding_model { 'default' }
+# No fixed embedding model: the caller's model, else no model field (k297).
+sub default_embedding_model { undef }
 
 # LANGERTHA_LLAMACPP_API_KEY is derived from the class name; a local server
 # needs no key, a --api-key-protected `llama-server` does.

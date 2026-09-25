@@ -18,8 +18,16 @@ has embedding_model => (
 sub _build_embedding_model {
   my ( $self ) = @_;
   croak "".(ref $self)." can't handle models!" unless $self->does('Langertha::Role::Models');
-  return $self->default_embedding_model if $self->can('default_embedding_model');
-  return $self->model;
+  return $self->model unless $self->can('default_embedding_model');
+  my $default = $self->default_embedding_model;
+  return $default if defined $default;
+  # No fixed embedding model (self-hosted servers, k297): the caller's model,
+  # never the engine's own placeholder default_model ('default' 404s on older
+  # vLLM); undef leaves the model field out and the server picks.
+  my $model = $self->model;
+  return undef unless defined $model;
+  return undef if $self->can('default_model') && $model eq $self->default_model;
+  return $model;
 }
 
 =attr embedding_model
@@ -27,6 +35,11 @@ sub _build_embedding_model {
 The model name to use for embedding requests. Lazily defaults to
 C<default_embedding_model> if the engine provides it, otherwise falls back
 to the general C<model> attribute from L<Langertha::Role::Models>.
+
+An engine whose C<default_embedding_model> returns C<undef> (the self-hosted
+vLLM, LlamaCpp and LM Studio servers) has no fixed embedding model: it uses
+the C<model> you set, and without one sends no C<model> field, so the
+server embeds with the model it serves.
 
 =cut
 

@@ -131,9 +131,10 @@ C<--enable-auto-tool-choice> and C<--tool-call-parser> matching the model
 
 Composes L<Langertha::Role::Embedding>. vLLM exposes an OpenAI-compatible
 C</v1/embeddings> endpoint when started with an embedding model
-(BAAI/bge-*, intfloat/e5-*, …); pass an explicit C<embedding_model> for
-those setups. C<default_embedding_model> is C<'default'> to match the
-single-model convention.
+(BAAI/bge-*, intfloat/e5-*, …). The request carries C<embedding_model> if
+you set it, else C<model> if you set it, else no C<model> field at all: the
+server embeds with the model it serves. (vLLM 0.10/0.11 answer 404 to a
+C<model> that is not a served name, such as the C<'default'> placeholder.)
 
 =head1 REASONING MODELS
 
@@ -204,7 +205,8 @@ has '+url' => (
 );
 
 sub default_model { 'default' }
-sub default_embedding_model { 'default' }
+# No fixed embedding model: the caller's model, else no model field (k297).
+sub default_embedding_model { undef }
 
 # LANGERTHA_VLLM_API_KEY is derived from the class name; a local server needs
 # no key, a --api-key-protected `vllm serve` does.

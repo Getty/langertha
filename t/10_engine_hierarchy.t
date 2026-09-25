@@ -708,8 +708,8 @@ ok(Langertha::Engine::vLLM->does('Langertha::Role::Runtime::MetricsPoll'), 'vLLM
   my $ops = $v->_build_supported_operations;
   ok((grep { $_ eq 'createEmbedding' } @$ops),
     'vLLM _build_supported_operations contains createEmbedding');
-  is($v->default_embedding_model, 'default',
-    'vLLM default_embedding_model returns default');
+  is($v->default_embedding_model, undef,
+    'vLLM has no fixed default_embedding_model (k297)');
 }
 
 # --- SGLang ---

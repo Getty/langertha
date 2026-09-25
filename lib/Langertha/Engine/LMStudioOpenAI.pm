@@ -83,7 +83,8 @@ defaults to C<lmstudio>.
 =cut
 
 sub default_model { 'default' }
-sub default_embedding_model { 'default' }
+# No fixed embedding model: the caller's model, else no model field (k297).
+sub default_embedding_model { undef }
 
 # Shares the LM Studio key with the native engine (derivation would name the
 # protocol variant); optional, the local server accepts the 'lmstudio' dummy.
