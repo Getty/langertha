@@ -94,43 +94,66 @@ seam (`tool_wire_format`, **Tool**, **ToolCall**, **ToolResult**, **Result envel
   objects already had. The loop's `locate` / `from_fmt` split is kept deliberately (it threads
   raw structures to the result-envelope rebuild) — ADR 0010 records why.
 
-## Update (k210 — only function tools pass the `Tool` door; the Responses envelope decides per item)
+## Update (k210 — only function tools pass the `Tool` door; `classify` names the rest; the Responses envelope decides per item)
 
 The inbound door `Tool->from_hash` had no notion of a tool that is not a function tool. It
-routed any hash by shape, so `{type=>'web_search'}` and Gemini's `{google_search=>{}}` (no
-`name`) returned `undef` and `from_list` / `format_list` dropped them, while Anthropic's
-`{type=>'web_search_20250305', name=>'web_search'}` fell through to `from_anthropic` and became
-a *function* tool with an empty schema. Either way the request lost its meaning without a word.
+routed any hash by shape. So `{type=>'web_search'}`, Gemini's keyed `{google_search=>{}}` and
+`{functionDeclarations=>[…]}` (no `name`) returned `undef`, and `from_list` / `format_list`
+dropped them. Anthropic's `{type=>'web_search_20250305', name=>'web_search'}` fell through to
+`from_anthropic` and became a *function* tool with an empty schema. Either way the request lost
+its meaning without a word.
 
-`from_hash` now lets only function tools through and croaks on everything else. A function tool
-is recognized by its `type`, not by guessing from the rest of the shape: no `type` (canonical,
-MCP, Gemini, Anthropic client tool), `type => 'function'` (OpenAI), or `custom` *with* an
-`input_schema` (Anthropic's explicit spelling of a client tool). "Any other `type` is
-server-side" would be wrong. On `/v1/responses`, `custom`, `namespace`, `local_shell`,
-`computer_use_preview`, `apply_patch`, a local `shell` and a `tool_search` with
-`execution: "client"` all run on the client (llm-advisor against the OpenAI create-response
-reference, k206). So server-side tools are recognized explicitly per wire by
-`Tool->_server_tool_wire`, only so that the croak can name them:
+**One classifier.** `Tool->classify($hash, $fmt)` is public and never croaks. It returns
+`function`, `server`, `client_builtin`, `foreign` (a built-in of a wire other than `$fmt`) or
+`unknown`. In list context it also returns the wire and a label. It is the single source of
+truth: the door croaks from it, `ResponsesCompatible` decides from it, and a sibling gateway can
+map it to a 400 instead of dying (k216). A function tool is recognized by its `type`, not by
+guessing from the rest of the shape: no `type` plus a `name` (canonical, MCP, Gemini, Anthropic
+client tool), `type => 'function'` (OpenAI), or `custom` *with* an `input_schema` (Anthropic's
+explicit client tool).
 
-- responses: `web_search`, `web_search_preview*`, `file_search`, `code_interpreter`,
-  `image_generation`, `mcp`, `x_search`, `collections_search`, and `tool_search` with
-  `execution: "server"`
-- anthropic: the versioned `web_search_*`, `web_fetch_*` and `code_execution_*` types
-- gemini: the keyed `google_search`, `code_execution`, `url_context` and `google_maps`, in both
-  snake and camel case (ADR 0018)
+Built-ins are recognized explicitly per wire, from the provider documentation (spec k206 §3.4;
+llm-advisor against the OpenAI create-response reference). "Any other `type` is server-side"
+would be wrong.
 
-Any other non-function `type` croaks as an unsupported tool type. Every function-tool form the
-door already accepted is pinned in `t/92_tool_input_forms.t`, so the guard cannot swallow one.
-The croak is an interim measure until server-side tools get their own value object (k206). It is
+- responses, server: `web_search` (also dated `web_search_YYYY_MM_DD`), `web_search_preview*`,
+  `file_search`, `code_interpreter`, `image_generation`, `mcp`, `x_search`,
+  `collections_search`, `tool_search` unless `execution: "client"`, and `shell` with a
+  `container_*` environment.
+- responses, client-executed: `local_shell`, `computer`, `computer_use_preview`, `apply_patch`,
+  `shell` with a local environment, and `tool_search` with `execution: "client"`.
+- anthropic: server `web_search_*`, `web_fetch_*`, `code_execution_*`, `tool_search_tool_*`
+  (versioned) and `mcp_toolset`. Client-executed `bash_*`, `text_editor_*`, `computer_*` and
+  `memory_*`.
+- gemini (keyed, snake and camel case, ADR 0018): server `google_search`,
+  `google_search_retrieval`, `code_execution`, `url_context`, `google_maps`,
+  `enterprise_web_search`, `file_search` and `retrieval`. Client-executed `computer_use`.
+
+**The door fails closed.** `from_hash` / `from_list` / `format_list` croak on every category
+except `function`. The messages differ per category: a server-side tool "not supported yet", a
+client-executed built-in "not a server tool", an unsupported `type`, or a hash with no `type`
+and no `name`. Nothing is dropped silently any more. The one exception is the flat Responses
+function form, which `from_openai` still cannot parse; that predates this change and is k217.
+Every function-tool form the door accepted before is pinned in `t/92_tool_input_forms.t`. The
+server-side croak is interim until server-side tools get their own value object (k206). It is
 a croak and not a pass-through because `from_hash`'s callers only ever emit function tools.
 
-`ResponsesCompatible::chat_request` used to format the whole `tools` list only when the *first*
-item had no `type`. A typed item first sent an MCP tool out unformatted (400). An MCP tool first
-dropped a built-in and turned `custom` / `namespace` into function tools. The envelope now
-decides per item (`_is_native_responses_tool`) and keeps the order. A native Responses item goes
-out verbatim, as it already did when it came first: a flat `{type=>'function', name, …}`,
-OpenAI's `custom` (no `input_schema`), `namespace`, or a Responses server-side tool. Every other
-function-tool form (MCP, canonical, OpenAI chat's nested `function`, a `Langertha::Tool`, an
-Anthropic `custom`) is formatted through `format_tools`. Everything else croaks at the door. So
-on this envelope a Responses built-in still reaches the wire. Its output items are still not
-mapped inbound; that is k206.
+**The Responses envelope decides per item, by denylist.** `ResponsesCompatible::chat_request`
+used to format the whole `tools` list only when the *first* item had no `type`. A typed item
+first sent an MCP tool out unformatted (400). An MCP tool first dropped a built-in and turned
+`custom` / `namespace` into function tools. Now each item is decided on its own and the order is
+kept, as spec §3.4 says (`_is_native_responses_tool`). A flat `{type=>'function', …}`, a
+Responses `server` tool, and any typed `unknown` go out verbatim, so the provider judges them
+(values open). That covers `custom`, `namespace`, a `shell` without an environment and future
+server types. Other function-tool forms (MCP, canonical, OpenAI chat's nested `function`, a
+`Langertha::Tool`, an Anthropic `custom`) are formatted. A Responses `client_builtin`, a
+`foreign` built-in, and an untyped nameless hash croak at the door. Known client-executed
+built-ins croak even though they went out verbatim when listed first before this change, per
+the Q3 ruling on k206: their `*_call` output items are not mapped, so the turn would end
+silently. Loop integration for them is future work.
+
+Not yet consistent, and deliberately so: `custom` goes out verbatim, but its `custom_tool_call`
+output is not mapped into `Response.tool_calls` either (`ToolCall` only knows `function_call`).
+So a turn that calls it ends with empty `tool_calls`. The spec keeps `custom` verbatim on
+purpose. The inbound fail-loud for unmapped client-actionable items belongs to k206
+(llm-advisor must-change 1).
