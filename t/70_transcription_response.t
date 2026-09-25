@@ -90,6 +90,19 @@ subtest 'errors still croak with the engine and body' => sub {
   like($@, qr/Whisper request failed: 400 Bad Request - Invalid file format\./, 'message');
 };
 
+# karr k295: Groq answers response_format json with an extra x_groq object
+# (the request id a Groq support ticket asks for). Groq composes the same
+# OpenAICompatible parser; transcription_result must keep the provider's
+# fields, not rebuild a { text } hash. Fixture follows the response example
+# of console.groq.com/docs/api-reference#audio-transcription -- not a capture.
+subtest 'Groq json keeps x_groq' => sub {
+  require Langertha::Engine::Groq;
+  my $groq = Langertha::Engine::Groq->new( api_key => 'gsk-test' );
+  my $http = fixture_http('groq_transcription_json', 'json');
+  is($groq->transcription_response($http), 'Hallo aus Berlin, das ist ein Test der Spracherkennung.', 'text');
+  is($groq->transcription_result($http)->{x_groq}{id}, 'req_01j5vqe3v7fbfb5k0z2r8d9x4n', 'x_groq.id kept');
+};
+
 subtest 'simple_transcription_result round trip' => sub {
   my $body = $data_dir->child('openai_transcription_verbose_json.json')->slurp_raw;
   my $server = Test::LocalHTTPDaemon->start(sub {

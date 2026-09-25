@@ -253,4 +253,45 @@ my $multipart = sub {
   is_deeply($got->{language}, ['en'], 'Whisper server: singular language unchanged');
 }
 
+# karr k295: the Whisper server test above is the only one that looked at the
+# whole request; the hosted engines (OpenAI, Groq, and the $openai->whisper
+# handle) never had their endpoint, Bearer auth or multipart parts checked,
+# so a wrong base URL or a lost Authorization header would only surface as a
+# 401/404 against the paying provider. Expected values follow the providers'
+# API references (platform.openai.com/docs/api-reference/audio,
+# console.groq.com/docs/api-reference#audio-transcription); no live call.
+{
+  require Langertha::Engine::OpenAI;
+  require Langertha::Engine::Groq;
+  my $parts_of = sub {
+    my ( $req ) = @_;
+    return [ map {
+      my ($name) = $_->header('Content-Disposition') =~ /name="([^"]+)"/;
+      my ($filename) = $_->header('Content-Disposition') =~ /filename="([^"]+)"/;
+      [ $name, $filename, $_->content ];
+    } $req->parts ];
+  };
+
+  for my $case (
+    [ 'OpenAI', Langertha::Engine::OpenAI->new( api_key => 'sk-openai' ),
+      'https://api.openai.com/v1/audio/transcriptions', 'Bearer sk-openai', 'gpt-transcribe', 'languages[]' ],
+    [ 'OpenAI->whisper', Langertha::Engine::OpenAI->new( api_key => 'sk-openai' )->whisper,
+      'https://api.openai.com/v1/audio/transcriptions', 'Bearer sk-openai', 'gpt-transcribe', 'languages[]' ],
+    [ 'Groq', Langertha::Engine::Groq->new( api_key => 'gsk-groq' ),
+      'https://api.groq.com/openai/v1/audio/transcriptions', 'Bearer gsk-groq', 'whisper-large-v3', 'language' ],
+  ) {
+    my ( $label, $engine, $uri, $auth, $model, $lang_field ) = @$case;
+    my $req = $engine->transcription($file, language => 'de');
+    is($req->method, 'POST', "$label: POST");
+    is($req->uri, $uri, "$label: transcriptions endpoint of the provider");
+    is($req->header('Authorization'), $auth, "$label: Bearer auth with the engine api_key");
+    like($req->header('Content-Type'), qr{\Amultipart/form-data; boundary="[^"]+"\z}, "$label: multipart Content-Type");
+    is_deeply($parts_of->($req), [
+      [ 'file',     'testfile', 'testxxxx' ],
+      [ $lang_field, undef,    'de' ],
+      [ 'model',    undef,      $model ],
+    ], "$label: file, language (languages[] for gpt-transcribe, k313) and model parts, nothing else");
+  }
+}
+
 done_testing;

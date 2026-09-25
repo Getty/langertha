@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Tests cover the OpenAI, Groq and whisper-handle transcription requests
+      (endpoint, auth, multipart parts) and image answers on documented
+      bodies (several gpt-image b64_json images; a url item with
+      revised_prompt from an OpenAI-compatible server).
+
     - Retry-After everywhere: Gemini, Ollama, AKI and LM Studio native now
       report a rate_limit carrying retry_after when a response sends
       Retry-After or retry-after-ms; retry-after-ms (Azure OpenAI) wins over

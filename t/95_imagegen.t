@@ -390,4 +390,62 @@ subtest 'b64_json-only image response' => sub {
   ok(!exists $images->[0]{url}, 'no url expected');
 };
 
+# karr k295: the MockImageEngine above never runs OpenAICompatible's own
+# image_request / image_response, so the documented contract -- an ArrayRef of
+# the provider's image objects, url or b64_json, revised_prompt kept, every
+# item of an n>1 answer in wire order -- had no test against an OpenAI-shaped
+# body, and nothing checked that the request carries the Bearer key. The
+# fixtures are NOT captures (live calls need approval): they follow
+# platform.openai.com/docs/api-reference/images/create -- the GPT image
+# response example (b64_json + usage) and the Image object schema (url,
+# revised_prompt), which OpenAI-compatible image servers answer with. OpenAI
+# itself no longer serves a url-answering model (dall-e removed 2026-05-12,
+# k313), so the url item is exercised on an OpenAI-compatible URL.
+subtest 'OpenAI image round trip on documented bodies' => sub {
+  require Langertha::Engine::OpenAI;
+  require HTTP::Response;
+  require Path::Tiny;
+  my $data_dir = Path::Tiny::path(__FILE__)->parent->child('data');
+  my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
+  my $fixture = sub {
+    my ( $name ) = @_;
+    my $headers = $json->decode( $data_dir->child("$name.headers.json")->slurp_raw );
+    my $http = HTTP::Response->new(200, 'OK');
+    $http->header( $_ => $headers->{$_} ) for sort keys %$headers;
+    $http->content( $data_dir->child("$name.json")->slurp_raw );
+    return $http;
+  };
+
+  my $gpt = Langertha::Engine::OpenAI->new( api_key => 'sk-img' );
+  my $request = $gpt->image_request( 'Two cats', n => 2 );
+  is($request->uri, 'https://api.openai.com/v1/images/generations', 'images endpoint');
+  is($request->header('Authorization'), 'Bearer sk-img', 'Bearer auth with the engine api_key');
+  is_deeply($json->decode($request->content),
+    { model => 'gpt-image-2', n => 2, prompt => 'Two cats' },
+    'gpt-image-2 body: model, n, prompt -- nothing else');
+
+  my $images = $request->response_call->( $fixture->('openai_image_gpt_image_b64') );
+  is(scalar @$images, 2, 'gpt-image n=2: both images');
+  like($images->[0]{b64_json}, qr/mP8z8BQDwAEhQGAhKmMIQ/, 'first image first');
+  like($images->[1]{b64_json}, qr/mNk\+M9QDwADhgGAWjR9aw/, 'second image second');
+  ok(!grep({ exists $_->{url} } @$images), 'b64_json answer carries no url');
+
+  my $compat = Langertha::Engine::OpenAI->new( api_key => 'local-key',
+    url => 'http://127.0.0.1:8080/v1', image_model => 'flux-schnell' );
+  $request = $compat->image_request( 'A cat in space', response_format => 'url' );
+  is($request->uri, 'http://127.0.0.1:8080/v1/images/generations', 'compatible server: images endpoint under its url');
+  is($request->header('Authorization'), 'Bearer local-key', 'compatible server: Bearer auth');
+  is_deeply($json->decode($request->content),
+    { model => 'flux-schnell', prompt => 'A cat in space', response_format => 'url' },
+    'flux-schnell body: model, prompt, response_format -- nothing else');
+
+  $images = $request->response_call->( $fixture->('openai_compatible_image_url') );
+  is(scalar @$images, 1, 'url answer: one image');
+  is($images->[0]{url}, 'http://127.0.0.1:8080/generated-images/b1946ac92492d2347c6235b4d2611184.png',
+    'url item returned unchanged');
+  like($images->[0]{revised_prompt}, qr/\AA fluffy orange tabby cat floating in outer space/,
+    'revised_prompt kept on the image object');
+  ok(!exists $images->[0]{b64_json}, 'url answer carries no b64_json');
+};
+
 done_testing;
