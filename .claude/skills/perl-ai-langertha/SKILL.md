@@ -95,7 +95,7 @@ every provider. What `chat_f` does per wire:
 | `response_format` | Gemini / Ollama native | `responseJsonSchema` / `format` |
 | `tools` + `response_format` | Groq, Cerebras | croaks |
 
-Perplexity (`/v1/agent`) has no tool calling and no `json_object`; `OpenAIResponses`
+Perplexity (`/v1/agent`) has client function tools (no `tool_choice` / `parallel_tool_calls`) and no `json_object`; `OpenAIResponses`
 (`/v1/responses`) has tools, no streaming. `chat_f` is one turn; MCP loops: `chat_with_tools_f`.
 
 ## Reading a Response
