@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T07:19:37Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:19:37Z
+created: 2026-09-25T07:04:24Z
+id: 248
+priority: low
+started: 2026-09-25T07:05:00Z
+status: done
+tags:
+- aki
+- wire
+- normalize
+title: 'AKIOpenAI returns finish_reason ''stop'' on a tool-call reply (gpt-oss-120b):
+  normalize to tool_calls?'
+updated: 2026-09-25T07:19:37Z
+---
+
+k242 AKI live probe (2026-09-25): AKIOpenAI default model gpt-oss-120b, a tools request, reply had one tool call but finish_reason 'stop'. Check how Langertha surfaces finish_reason on Response / Stream::Chunk and whether callers (chat_with_tools_f loop, knarr, raider) branch on finish_reason vs tool_calls presence. Per house line (normalize wire quirks, don't gatekeep): consider normalizing finish_reason to tool_calls when tool_calls are present and the wire says stop (engine-scoped around chat_response per ADR 0018, or dialect-wide if other OpenAI-compatible servers do the same — vLLM/SGLang with gpt-oss are known to). AKI live calls allowed for verification.
+
+2026-09-25 07:13 Fixed on branch worktree-agent-a7e5e4ede8fb5dcae (59d6511, 67e928d): dialect-tier normalization in Role::OpenAICompatible (non-stream + stream). Live AKI 2026-09-25: non-stream gpt-oss-120b stop+tool_calls reproduced; stream said tool_calls. Sibling notes: knarr Protocol/Anthropic passes finish_reason straight as stop_reason (tool_calls/stop are not Anthropic values); skeid maps raw upstream stop->end_turn with tool_use blocks (reads wire, not Response).
+
+Implemented + tests; needs review
