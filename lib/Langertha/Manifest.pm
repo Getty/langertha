@@ -1,0 +1,347 @@
+package Langertha::Manifest;
+# ABSTRACT: Provider manifest (/.well-known/langertha.json) value object, parser and validator
+our $VERSION = '0.503';
+use Moose;
+use JSON::MaybeXS ();
+use Scalar::Util qw( looks_like_number );
+use Langertha::Manifest::Endpoint;
+use Langertha::Manifest::Auth;
+use Langertha::Manifest::Model;
+with 'Langertha::Manifest::Validation';
+
+=head1 SYNOPSIS
+
+    use Langertha::Manifest;
+
+    # Parse (a JSON string or an already-decoded hashref) -- validated or croaks
+    my $manifest = Langertha::Manifest->from_json($json_text);
+    my $manifest = Langertha::Manifest->from_hash(\%data);
+
+    for my $model ( @{ $manifest->models } ) {
+      my $endpoint = $manifest->endpoint( $model->endpoint_ref );
+      next unless $endpoint->is_known_dialect;
+      printf "%s via %s at %s (tools: %s)\n", $model->id, $endpoint->dialect,
+        $endpoint->base_url, $model->supports('tools_native') ? 'yes' : 'no';
+    }
+
+    # Serialize
+    my $hashref = $manifest->to_hash;
+    my $json    = $manifest->to_json;      # canonical, byte-stable
+
+    # Build one from a configured engine
+    use Langertha::Manifest::Builder;
+    my $manifest = Langertha::Manifest::Builder->from_engine($engine);
+
+=head1 DESCRIPTION
+
+The data model of the provider manifest served at
+C</.well-known/langertha.json>: a declarative description of what a provider
+exposes — endpoints with their wire dialect, auth mechanisms, model ids and
+declared capabilities. Langertha core owns the schema, these value objects,
+the parser/validator and the L<Langertha::Manifest::Builder>; fetching,
+trust, aliases and secret binding belong to the client (langertha-raider),
+publishing to the servers (langertha-knarr, langertha-skeid). Core does no
+network I/O here.
+
+Schema version 1 carries exactly: C<schema_version> (C<1>), C<kind>
+(C<langertha-provider>), C<provider_id>, C<issuer>, C<endpoints>, C<auth>,
+C<models> and C<extensions>. Validation is strict:
+
+=over
+
+=item * a field outside the schema is rejected — at the top level and in
+every endpoint, auth and model entry;
+
+=item * a command-, code-, secret- or prompt-shaped field (C<command>,
+C<exec>, C<engine_class>, C<api_key>, C<secret_path>, C<env>,
+C<system_prompt>, C<mcp_servers>, C<tools>, …) is rejected explicitly with a
+message saying why — a manifest never carries those;
+
+=item * URLs are C<http>/C<https> without userinfo, query or fragment;
+
+=item * ids are unique and every C<auth_ref> / C<endpoint_ref> resolves;
+
+=item * an unknown C<schema_version> is rejected.
+
+=back
+
+C<extensions> is inert: it must be an object, and it is kept and serialized
+exactly as given, never validated or interpreted by core.
+
+A manifest states what the provider B<claims>. It is not a probe result and
+grants no local permission: a model claiming C<tools_native> does not
+authorise running local tools.
+
+=cut
+
+has provider_id => ( is => 'ro', isa => 'Str', required => 1 );
+has issuer      => ( is => 'ro', isa => 'Str', required => 1 );
+
+has endpoints => (
+  is       => 'ro',
+  isa      => 'ArrayRef[Langertha::Manifest::Endpoint]',
+  required => 1,
+);
+
+has auth => (
+  is      => 'ro',
+  isa     => 'ArrayRef[Langertha::Manifest::Auth]',
+  default => sub { [] },
+);
+
+has models => (
+  is      => 'ro',
+  isa     => 'ArrayRef[Langertha::Manifest::Model]',
+  default => sub { [] },
+);
+
+has extensions => (
+  is      => 'ro',
+  isa     => 'HashRef',
+  default => sub { {} },
+);
+
+=attr provider_id
+
+Stable provider slug, C<[a-z0-9][a-z0-9._-]*> (max 128).
+
+=attr issuer
+
+Origin of the publisher, an C<http>/C<https> URL.
+
+=attr endpoints
+
+ArrayRef of L<Langertha::Manifest::Endpoint>; at least one.
+
+=attr auth
+
+ArrayRef of L<Langertha::Manifest::Auth>; may be empty.
+
+=attr models
+
+ArrayRef of L<Langertha::Manifest::Model>; may be empty (a filtered
+manifest can legitimately list none).
+
+=attr extensions
+
+HashRef, inert: kept and serialized untouched, never interpreted.
+
+=cut
+
+use constant SCHEMA_VERSION => 1;
+use constant KIND           => 'langertha-provider';
+
+sub schema_version { return SCHEMA_VERSION }
+sub kind           { return KIND }
+
+=method schema_version
+
+Always C<1>: the only schema version this Langertha reads and writes.
+
+=method kind
+
+Always C<langertha-provider>.
+
+=cut
+
+sub BUILD {
+  my ($self) = @_;
+  $self->manifest_error( 'provider_id must match [a-z0-9][a-z0-9._-]* (max 128), got \''
+    . $self->provider_id . q{'} )
+    unless $self->provider_id =~ /\A[a-z0-9][a-z0-9._-]{0,127}\z/;
+  $self->check_manifest_url( 'issuer', $self->issuer );
+  $self->manifest_error('at least one endpoint is required') unless @{ $self->endpoints };
+
+  my ( %auth, %endpoint, %model );
+  for my $entry ( @{ $self->auth } ) {
+    $self->manifest_error( "duplicate auth id '" . $entry->id . q{'} ) if $auth{ $entry->id }++;
+  }
+  for my $entry ( @{ $self->endpoints } ) {
+    $self->manifest_error( "duplicate endpoint id '" . $entry->id . q{'} ) if $endpoint{ $entry->id }++;
+    $self->manifest_error( "endpoint '" . $entry->id . "': auth_ref '" . $entry->auth_ref
+      . q{' names no auth entry} )
+      if defined $entry->auth_ref && !$auth{ $entry->auth_ref };
+  }
+  for my $entry ( @{ $self->models } ) {
+    $self->manifest_error( "model '" . $entry->id . "': endpoint_ref '" . $entry->endpoint_ref
+      . q{' names no endpoint} )
+      unless $endpoint{ $entry->endpoint_ref };
+    $self->manifest_error( "duplicate model '" . $entry->id . "' on endpoint '"
+      . $entry->endpoint_ref . q{'} )
+      if $model{ $entry->endpoint_ref }{ $entry->id }++;
+  }
+  return;
+}
+
+my $JSON = JSON::MaybeXS->new( utf8 => 1, canonical => 1 );
+
+sub from_json {
+  my ( $class, $text ) = @_;
+  my $data = eval { $JSON->decode($text) };
+  unless ( defined $data || !$@ ) {
+    ( my $err = $@ ) =~ s/\s+at \S+ line \d+\.?\s*\z//s;
+    $class->manifest_error("invalid JSON: $err");
+  }
+  return $class->from_hash($data);
+}
+
+=method from_json
+
+    my $manifest = Langertha::Manifest->from_json($json_bytes);
+
+Decodes UTF-8 JSON text and hands it to L</from_hash>. Croaks on invalid
+JSON and on every validation failure.
+
+=cut
+
+sub from_hash {
+  my ( $class, $data ) = @_;
+  # The version is checked before anything else: a document of another major
+  # version may legitimately carry fields v1 does not know, and the useful
+  # error then is "unsupported version", not "unknown field".
+  $class->manifest_error('must be a JSON object') unless ref $data eq 'HASH';
+  my $version = $data->{schema_version};
+  $class->manifest_error(q{field 'schema_version' is required}) unless defined $version;
+  $class->manifest_error('schema_version: must be an integer')
+    unless !ref $version && looks_like_number($version) && $version =~ /\A[0-9]+\z/;
+  $class->manifest_error( "unsupported schema_version $version (this Langertha reads "
+    . SCHEMA_VERSION . ')' )
+    unless $version == SCHEMA_VERSION;
+  $class->check_manifest_fields( $data,
+    required => [qw( schema_version kind provider_id issuer endpoints )],
+    optional => [qw( auth models extensions )],
+  );
+  $class->manifest_error( q{kind: must be '} . KIND . q{'} )
+    unless !ref $data->{kind} && $data->{kind} eq KIND;
+  $class->manifest_error('extensions: must be a JSON object')
+    if exists $data->{extensions} && ref $data->{extensions} ne 'HASH';
+
+  my %parsed;
+  for my $section (
+    [ endpoints => 'Langertha::Manifest::Endpoint' ],
+    [ auth      => 'Langertha::Manifest::Auth' ],
+    [ models    => 'Langertha::Manifest::Model' ],
+  ) {
+    my ( $name, $entry_class ) = @$section;
+    next unless exists $data->{$name};
+    $class->manifest_error("$name: must be an array") unless ref $data->{$name} eq 'ARRAY';
+    my @entries = @{ $data->{$name} };
+    for my $i ( 0 .. $#entries ) {
+      my $entry = eval { $entry_class->from_hash( $entries[$i] ) };
+      $class->rethrow_manifest_error( "${name}[$i]", $@ ) unless $entry;
+      push @{ $parsed{$name} }, $entry;
+    }
+    $parsed{$name} //= [];
+  }
+
+  return $class->new(
+    provider_id => $data->{provider_id},
+    issuer      => $data->{issuer},
+    %parsed,
+    ( exists $data->{extensions} ? ( extensions => $data->{extensions} ) : () ),
+  );
+}
+
+=method from_hash
+
+    my $manifest = Langertha::Manifest->from_hash(\%data);
+
+Validates a decoded manifest document and returns the object. Croaks with
+C<Langertha::Manifest: E<lt>pathE<gt>: E<lt>reasonE<gt>> on the first
+violation.
+
+=cut
+
+sub endpoint {
+  my ( $self, $id ) = @_;
+  my ($found) = grep { $_->id eq $id } @{ $self->endpoints };
+  return $found;
+}
+
+=method endpoint
+
+    my $endpoint = $manifest->endpoint('chat');
+
+The endpoint with that id, or C<undef>.
+
+=cut
+
+sub auth_entry {
+  my ( $self, $id ) = @_;
+  my ($found) = grep { $_->id eq $id } @{ $self->auth };
+  return $found;
+}
+
+=method auth_entry
+
+    my $auth = $manifest->auth_entry( $endpoint->auth_ref );
+
+The auth entry with that id, or C<undef>.
+
+=cut
+
+sub models_for_endpoint {
+  my ( $self, $id ) = @_;
+  return grep { $_->endpoint_ref eq $id } @{ $self->models };
+}
+
+=method models_for_endpoint
+
+    my @models = $manifest->models_for_endpoint('chat');
+
+The model entries served on that endpoint.
+
+=cut
+
+sub to_hash {
+  my ($self) = @_;
+  return {
+    schema_version => SCHEMA_VERSION,
+    kind           => KIND,
+    provider_id    => $self->provider_id,
+    issuer         => $self->issuer,
+    endpoints      => [ map { $_->to_hash } @{ $self->endpoints } ],
+    auth           => [ map { $_->to_hash } @{ $self->auth } ],
+    models         => [ map { $_->to_hash } @{ $self->models } ],
+    extensions     => $self->extensions,
+  };
+}
+
+=method to_hash
+
+The manifest as a plain Perl data structure, ready for any JSON encoder.
+Capability values are JSON booleans; C<extensions> is returned as given.
+
+=cut
+
+sub to_json {
+  my ($self) = @_;
+  return $JSON->encode( $self->to_hash );
+}
+
+=method to_json
+
+UTF-8 JSON with sorted keys (canonical), so the output is byte-stable and
+C<from_json> → C<to_json> is the identity.
+
+=cut
+
+sub TO_JSON { shift->to_hash }
+
+__PACKAGE__->meta->make_immutable;
+
+=seealso
+
+=over
+
+=item * L<Langertha::Manifest::Builder> - Builds a manifest from configured engines
+
+=item * L<Langertha::Manifest::Endpoint>, L<Langertha::Manifest::Auth>, L<Langertha::Manifest::Model> - The entries
+
+=item * L<Langertha::Role::Capabilities> - The capability vocabulary
+
+=back
+
+=cut
+
+1;

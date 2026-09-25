@@ -25,6 +25,17 @@ Revision history for Langertha
       Such bodies used to yield zero usage; figures built on it (for example
       skeid's usage and cost metrics) now show the real counts.
 
+    - New: the provider manifest served at /.well-known/langertha.json, as
+      Langertha::Manifest (with ::Endpoint, ::Auth, ::Model) and
+      Langertha::Manifest::Builder. Schema version 1 describes endpoints (wire
+      dialect such as openai-chat, anthropic, gemini, ollama, responses),
+      auth mechanisms, model ids and their declared capabilities, and nothing
+      else: unknown fields are rejected, and command, code, secret and prompt
+      fields are rejected explicitly; extensions pass through untouched.
+      Parse from JSON or a hashref, serialize back losslessly. The Builder
+      turns a configured engine into a manifest offline, with capabilities
+      from engine_capabilities per model, and never copies an API key.
+
     - The async _f methods gained a synchronous LWP fallback: when
       Net::Async::HTTP is not installed (and no client is injected), HTTP runs
       synchronously and returns an already-complete Future, so the _f methods
