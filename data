@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T04:56:15Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T04:56:15Z
+created: 2026-09-25T03:53:50Z
+id: 228
+priority: low
+started: 2026-09-25T04:13:56Z
+status: done
+tags:
+- raider
+- async
+title: 'raider: Multi-Engine-Raider kann haengen (inline MCP auf engine-Loop, Requests
+  auf active_engine/compression_engine)'
+updated: 2026-09-25T04:56:15Z
+---
+
+Aus k195-Review (M4, vorbestehend): die inline MCP sitzt auf $self->engine->async_loop, Requests laufen aber auf active_engine bzw. compression_engine. Haben diese Engines unterschiedliche Loops (z.B. injizierte Clients auf fremden Loops), wartet ein Raid auf Futures zweier Loops -> Hang. Fix im raider-Repo: MCP pro aktivem Engine-Loop anbinden oder alle Engines auf einen Loop zwingen/validieren (croak bei Mismatch). Gehoert aufs raider-Board, hier als Handoff.
+
+2026-09-25 04:20 raider branch k228 (worktree langertha-raider/.claude/worktrees/k228), commit 540fdd4: design (b) - Raider::_check_engine_loops croaks at raid_f/respond_f start when engine/compression_engine/engine_catalog engines resolve to different loops (async_loop // IO::Async::Loop->new). Red test reproduced the hang (compression_engine on loop L1 first, turn on L2 -> TIMEOUT). Not pushed. Pre-existing on raider main: t/55 and t/56 fail (Test::Raider::SeqEngine lacks async_request_f since k195).
+
+raider k228 (540fdd4, e2d8618 SeqEngine-Fix, 23ac88f raider ADR 0016) reviewt (Ready) und lokal per ff in raider main gemerged (nicht gepusht). Suite 55 Dateien gruen.
