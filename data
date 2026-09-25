@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T03:15:01Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:15:01Z
+created: 2026-09-25T02:26:07Z
+id: 217
+priority: low
+started: 2026-09-25T03:00:53Z
+status: done
+tags:
+- tools
+- wire
+- bug
+title: Tool->from_hash drops the flat Responses function tool form
+updated: 2026-09-25T03:15:01Z
+---
+
+Pre-existing, found in the k210 review (M4). Tool->from_hash({type=>"function", name=>"x", parameters=>{...}}) returns undef: the type=>function branch goes to from_openai, which needs the nested {function=>{...}} wrapper. from_list/format_list therefore drop the flat Responses form silently on every wire except the Responses envelope (which passes it verbatim). Reached via format_list, chat_f forced-tool fallback (Role/Chat.pm from_hash map) and sibling callers (skeid). Tool->classify already reports it as "function". Fix: accept the flat form in from_openai (normalize, ADR 0018 tier 1) and add the row to the format_list loop in t/92_tool_input_forms.t (currently only its classify result is pinned).
+
+Fixed in 1587dfe (branch k217, worktree): from_openai now reads name/description/parameters from $hash->{function} when it is a hash, else from $hash itself (ADR 0018 tier 1). t/92_tool_input_forms.t: flat form added to the accepted-forms table + a subtest comparing format_list output flat vs nested on every wire. ADR 0001 amended (k217 Update), Changes entry added. prove -lr t/: 7938 tests pass (live t/8x skipped, no keys). perlcritic clean. dzil build && dzil clean verified -- initial Changes wording had nested curly braces that broke Text::Template/NextRelease, rewritten without braces.
