@@ -140,10 +140,20 @@ subtest 'vLLM with a url and no key' => sub {
 
 subtest 'vLLM placeholder model id is not published' => sub {
   my $engine = Langertha::Engine::vLLM->new( url => 'http://gpu01.lan:8000/v1' );
-  my $m = Langertha::Manifest::Builder->from_engine($engine);
+  my @warnings;
+  my $m = do {
+    local $SIG{__WARN__} = sub { push @warnings, @_ };
+    Langertha::Manifest::Builder->from_engine($engine);
+  };
   is_deeply $m->models, [], 'the placeholder "default" is skipped';
+  is scalar @warnings, 1, 'one warning for the model-less endpoint';
+  like $warnings[0], qr/placeholder model 'default'.*published without models.*pass models =>/,
+    'the warning says what happened and what to pass';
   is scalar @{ $m->endpoints }, 1, 'the endpoint is still published';
-  my $with = Langertha::Manifest::Builder->from_engine( $engine, models => ['qwen3'] );
+  my $with = do {
+    local $SIG{__WARN__} = sub { fail "unexpected warning: @_" };
+    Langertha::Manifest::Builder->from_engine( $engine, models => ['qwen3'] );
+  };
   is $with->models->[0]->id, 'qwen3', 'models => publishes explicit ids';
 };
 
@@ -161,8 +171,10 @@ subtest 'Ollama native' => sub {
   is $m->endpoint('chat')->auth_ref, undef, 'local Ollama needs no auth';
   is $m->issuer, 'http://localhost:11434', 'issuer';
   is scalar @{ $m->models }, 2, 'two models';
-  ok $m->models->[1]->supports('context_size'), 'context_size is a chat-call control';
-  ok !$m->models->[1]->supports($_), "no $_ claim" for qw( keep_alive embedding );
+  # num_ctx (context_size) and keep_alive are server-side allocation and
+  # residency of the Ollama host, not facts about the model.
+  ok $engine->supports($_), "engine supports $_" for qw( context_size keep_alive );
+  ok !$m->models->[1]->supports($_), "no $_ claim" for qw( context_size keep_alive embedding );
 };
 
 subtest 'model-less engines work when models are given, untouched' => sub {
@@ -262,7 +274,7 @@ subtest 'every engine capability is classified' => sub {
   # classified -- it can neither leak onto model entries nor vanish silently.
   my %NOT_MODEL_SCOPED = map { $_ => 1 } qw(
     embedding transcription image_generation
-    runtime_metrics prefix_caching keep_alive cached_content
+    runtime_metrics prefix_caching keep_alive cached_content context_size
   );
   ok !( grep { $NOT_MODEL_SCOPED{$_} } keys %ALLOWED ), 'the two lists are disjoint';
   my %seen;

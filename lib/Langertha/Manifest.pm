@@ -67,7 +67,8 @@ prints them);
 
 =item * ids are unique and every C<auth_ref> / C<endpoint_ref> resolves;
 
-=item * C<schema_version> must be the JSON integer C<1>; any other version
+=item * C<schema_version> must be a JSON number whose value is C<1> (C<1>,
+C<1.0> and C<1e0> alike, on every JSON backend; the string C<"1"> is not); any other version
 is rejected before anything else is checked.
 
 =back
@@ -249,10 +250,10 @@ sub _from_hash {
   $class->_error('must be a JSON object') unless ref $data eq 'HASH';
   my $version = $data->{schema_version};
   $class->_error(q{field 'schema_version' is required}) unless defined $version;
-  # A JSON integer -- not the string "1", not 1.0 -- checked on the value as
-  # decoded, before anything stringifies it.
+  # A JSON number with a whole value (1, 1.0, 1e0 -- the same verdict on every
+  # JSON backend), never a string ("1"), checked before anything numifies it.
   $class->_error('schema_version: must be an integer (a JSON number, not a string)')
-    unless $class->_is_integer($version);
+    unless $class->_is_whole_number($version);
   $class->_error( "unsupported schema_version $version (this Langertha reads "
     . SCHEMA_VERSION . ')' )
     unless $version == SCHEMA_VERSION;

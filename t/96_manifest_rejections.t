@@ -6,6 +6,7 @@ use warnings;
 
 use Test2::Bundle::More;
 use JSON::MaybeXS ();
+use Module::Runtime ();
 
 use Langertha::Manifest;
 
@@ -75,9 +76,54 @@ rejects sub { $_[0]{schema_version} = '1' },
 ok !eval { Langertha::Manifest->from_json( json_of( base_doc() ) =~ s/"schema_version":1/"schema_version":"1"/r ); 1 },
   'rejected: version as a JSON string';
 like $@, qr/must be an integer/, '  message: version as a JSON string';
-ok !eval { Langertha::Manifest->from_json( json_of( base_doc() ) =~ s/"schema_version":1/"schema_version":1.0/r ); 1 },
-  'rejected: version as a JSON float 1.0';
-like $@, qr/must be an integer/, '  message: version as a JSON float';
+{
+  # A numified Perl string carries a numeric slot too; its text still gives
+  # it away.
+  my $doc = base_doc();
+  $doc->{schema_version} = '1abc';
+  { no warnings 'numeric'; my $numified = $doc->{schema_version} + 0; }
+  ok !eval { Langertha::Manifest->from_hash($doc); 1 }, 'rejected: numified Perl string "1abc"';
+  like $@, qr/must be an integer/, '  message: numified string';
+}
+
+# The verdict on schema_version and capability booleans must not depend on
+# which JSON backend decoded the document: JSON::PP and Cpanel::JSON::XS
+# disagree on whether 1e0 is an integer or a float.
+my @decoders;
+for my $backend (qw( JSON::PP Cpanel::JSON::XS )) {
+  next unless eval { Module::Runtime::require_module($backend); 1 };
+  push @decoders, [ $backend => $backend->new->utf8 ];
+}
+ok scalar @decoders, 'at least one JSON backend available';
+for my $case (
+  [ '1'     => 1, 'integer 1' ],
+  [ '1.0'   => 1, 'float 1.0' ],
+  [ '1e0'   => 1, 'exponent 1e0' ],
+  [ '10e-1' => 1, 'exponent 10e-1' ],
+  [ '"1"'   => 0, 'JSON string "1"' ],
+  [ '1.5'   => 0, 'non-whole 1.5' ],
+  [ '2'     => 0, 'other major 2' ],
+  [ 'true'  => 0, 'JSON true' ],
+) {
+  my ( $literal, $accepted, $name ) = @$case;
+  my $json = json_of( base_doc() ) =~ s/"schema_version":1/"schema_version":$literal/r;
+  for my $decoder (@decoders) {
+    my ( $backend, $codec ) = @$decoder;
+    my $ok = eval { Langertha::Manifest->from_hash( $codec->decode($json) ); 1 };
+    is !!$ok, !!$accepted, "$backend: schema_version $name " . ( $accepted ? 'accepted' : 'rejected' )
+      or diag $@;
+  }
+}
+for my $case ( [ '1' => 1 ], [ '0' => 1 ], [ '1.0' => 1 ], [ '"1"' => 0 ], [ '2' => 0 ] ) {
+  my ( $literal, $accepted ) = @$case;
+  my $json = json_of( base_doc() ) =~ s/"streaming":true/"streaming":$literal/r;
+  for my $decoder (@decoders) {
+    my ( $backend, $codec ) = @$decoder;
+    my $ok = eval { Langertha::Manifest->from_hash( $codec->decode($json) ); 1 };
+    is !!$ok, !!$accepted, "$backend: capability value $literal " . ( $accepted ? 'accepted' : 'rejected' )
+      or diag $@;
+  }
+}
 rejects sub { $_[0]{kind} = 'openapi' }, qr/kind: must be 'langertha-provider'/, 'wrong kind';
 rejects sub { delete $_[0]{kind} }, qr/kind.*required/, 'missing kind';
 

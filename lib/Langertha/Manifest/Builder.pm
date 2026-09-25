@@ -2,7 +2,7 @@ package Langertha::Manifest::Builder;
 # ABSTRACT: Build a provider manifest from configured engines (offline, never copies a secret)
 our $VERSION = '0.503';
 use Moose;
-use Carp qw( croak );
+use Carp qw( carp croak );
 use Scalar::Util qw( blessed );
 use URI;
 use Langertha::Manifest;
@@ -65,7 +65,8 @@ of the key is looked at — its value never enters the manifest.
 =item * B<models> — C<models =E<gt> [...]> when given. Otherwise the
 engine's configured model; a placeholder id (C<default>, which the
 self-hosted engines use for "whatever the server loaded", or an empty id)
-is skipped rather than published, and an engine with no model at all
+is skipped rather than published (with a warning, since the endpoint then
+lists no models), and an engine with no model at all
 croaks asking for C<models>.
 
 =item * B<capabilities> — C<engine_capabilities> evaluated B<per model>
@@ -128,8 +129,9 @@ HashRef passed into the manifest's C<extensions> (deep-copied there).
 #   - client-side or server-management features (runtime_metrics is
 #     Langertha's own Prometheus scrape, prefix_caching the self-hosted
 #     cache knobs, keep_alive Ollama's model residency, cached_content
-#     Gemini's cache-resource lifecycle) are not provider claims about a
-#     model either, and would be wrong behind a proxy's public URL.
+#     Gemini's cache-resource lifecycle, context_size Ollama's server-side
+#     num_ctx allocation) are not provider claims about a model either, and
+#     would be wrong behind a proxy's public URL.
 # A capability added to %ROLE_TO_CAPS later is NOT published until it is
 # added here (t/96_manifest_builder.t forces that decision).
 my @MODEL_CAPABILITIES = qw(
@@ -141,7 +143,7 @@ my @MODEL_CAPABILITIES = qw(
   response_format_json_object response_format_json_schema
   reasoning_effort thinking_budget
   temperature seed
-  system_prompt response_size context_size
+  system_prompt response_size
   prompt_cache prompt_cache_key
 );
 my %MODEL_CAPABILITY = map { $_ => 1 } @MODEL_CAPABILITIES;
@@ -159,12 +161,13 @@ C<tool_choice_any>, C<tool_choice_none>, C<tool_choice_named>,
 C<parallel_tool_use>), structured output (C<response_format_json_object>,
 C<response_format_json_schema>), reasoning (C<reasoning_effort>,
 C<thinking_budget>), sampling and request controls (C<temperature>,
-C<seed>, C<system_prompt>, C<response_size>, C<context_size>) and the
+C<seed>, C<system_prompt>, C<response_size>) and the
 request-side prompt-cache controls (C<prompt_cache>, C<prompt_cache_key>).
 
 Engine-level and client-side flags are never published on a model:
 C<embedding>, C<transcription>, C<image_generation>, C<runtime_metrics>,
-C<prefix_caching>, C<keep_alive>, C<cached_content>. (The registry has no
+C<prefix_caching>, C<keep_alive>, C<cached_content>, C<context_size> (Ollama's
+server-side C<num_ctx> allocation, like C<keep_alive>). (The registry has no
 vision/image-input flag yet; one would belong here.)
 
 This filters only what the Builder B<emits>. A parsed manifest accepts any
@@ -268,6 +271,10 @@ sub add_engine {
     # "default" is the self-hosted engines' placeholder for "whatever the
     # server loaded" -- not a model id worth publishing.
     @model_ids = grep { defined && length && $_ ne 'default' } $model_id;
+    carp 'Langertha::Manifest::Builder: ' . ref($engine) . ' has only the placeholder model '
+      . q{'} . ( $model_id // '' ) . q{'} . "; endpoint '" . ( $opt{endpoint_id} // 'chat' )
+      . q{' is published without models (pass models => [...] to list them)}
+      unless @model_ids;
   }
 
   my $auth_type = $opt{auth} // _auth_type_for($probe);

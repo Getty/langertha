@@ -153,21 +153,28 @@ sub _sv_flags {
   return B::svref_2object( \$value )->FLAGS;
 }
 
-# True for a value that carries a numeric (integer) slot: a decoded JSON
-# number, a Perl numeric literal -- also one that has since been printed
-# (IOK plus a cached string). A decoded JSON string ("1") has only a string
-# slot and is not a number; the check reads the flags before anything
-# numifies the value.
-sub _is_integer {
-  my ( $class, $value ) = @_;
-  return 0 if !defined $value || ref $value;
-  return ( _sv_flags($value) & B::SVp_IOK ) ? 1 : 0;
-}
+# Is this a NUMBER, not a string? Backend-independent: JSON::PP and
+# Cpanel::JSON::XS disagree on whether 1e0 decodes to an integer or a float,
+# so the test is "has a numeric slot" (IOK or NOK), and -- when a string is
+# cached on it too (a printed number, or a numified string) -- the string must
+# be a plain JSON number. A decoded JSON string ("1") has only a string slot
+# and fails; a numified Perl string like "1abc" fails on its text.
+my $JSON_NUMBER_RE = qr/\A-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?\z/;
 
 sub _is_number {
   my ( $class, $value ) = @_;
   return 0 if !defined $value || ref $value;
-  return ( _sv_flags($value) & ( B::SVp_IOK | B::SVp_NOK ) ) ? 1 : 0;
+  my $flags = _sv_flags($value);
+  return 0 unless $flags & ( B::SVp_IOK | B::SVp_NOK );
+  return 0 if ( $flags & B::SVp_POK ) && $value !~ $JSON_NUMBER_RE;
+  return 1;
+}
+
+# A number whose value is whole: 1, 1.0 and 1e0 alike, on every backend.
+sub _is_whole_number {
+  my ( $class, $value ) = @_;
+  return 0 unless $class->_is_number($value);
+  return $value == int($value) ? 1 : 0;
 }
 
 # A boolean is a JSON boolean, \1 / \0, or the NUMBERS 1 / 0. A JSON string
