@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T06:02:11Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T06:02:11Z
+created: 2026-09-25T05:12:42Z
+id: 231
+priority: low
+started: 2026-09-25T05:28:09Z
+status: done
+tags:
+- tools
+- hermes
+- wire
+title: chat_f on hermes engines sends canonical to_hash tools to an OpenAI-shaped
+  endpoint
+updated: 2026-09-25T06:02:11Z
+---
+
+From k227 review M3: chat_f(tools=>[$obj]) on NousResearch / AKI native (tool_wire_format hermes) sends tools in the canonical to_hash shape; _wire_tools deliberately leaves hermes alone and t/69_chat_f_wire_tools.t pins the unchanged body as a known gap. Decide: carp and point to chat_with_tools_f, or shape into the OpenAI tools shape / hermes system-prompt template.
+
+Merged: chat_f on hermes = one chat_with_tools_f turn; none withholds; follow-ups #234 caps, #237 Nous scope.
