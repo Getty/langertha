@@ -123,9 +123,11 @@ Override in an engine to use a provider-specific spec (e.g., Mistral).
 =cut
 
 sub default_embedding_model { 'text-embedding-3-large' }
-# whisper-1 and gpt-image-1 are deprecated by OpenAI (removal 2027-02-26 and
-# 2026-12-01); their successors are the defaults (k308).
-sub default_transcription_model { 'gpt-transcribe' }
+# gpt-image-1 is removed by OpenAI on 2026-10-23 (gpt-image-1-mini, -1.5 and
+# chatgpt-image-latest on 2026-12-01); gpt-image-2 is the default (k308, k313).
+# whisper-1 is the transcription alias OpenAI-compatible servers accept;
+# Engine::OpenAI overrides it with the OpenAI-only gpt-transcribe (k313).
+sub default_transcription_model { 'whisper-1' }
 sub default_image_model { 'gpt-image-2' }
 
 # Dynamic model listing
@@ -620,6 +622,17 @@ sub transcription_operation_id { 'createTranscription' }
 sub transcription_request {
   my ( $self, $file, %extra ) = @_;
   my $filename = delete $extra{filename};
+  # A list goes out as repeated languages[] parts (k286 convention), never as
+  # a file spec. gpt-transcribe takes only that plural field, so a singular
+  # language is folded into it for that model (k313).
+  my @languages = map { ref $_ eq 'ARRAY' ? @$_ : defined $_ ? ($_) : () }
+    delete @extra{qw( languages languages[] )};
+  my $model = exists $extra{model} ? $extra{model} : $self->transcription_model;
+  if ( defined $model && $model =~ /\Agpt-transcribe/ && defined $extra{language} ) {
+    my $language = delete $extra{language};
+    push @languages, $language unless grep { $_ eq $language } @languages;
+  }
+  $extra{'languages[]'} = \@languages if @languages;
   return $self->generate_request( $self->transcription_operation_id, sub { $self->transcription_response(shift) },
     file => $self->transcription_file_part( $file, $filename ),
     $self->transcription_model ? ( model => $self->transcription_model ) : (),
@@ -634,8 +647,13 @@ sub transcription_request {
 Generates an OpenAI-format transcription request for the given audio (a path,
 C<\$bytes> or a filehandle; C<filename> in C<%extra> names the upload, see
 L<Langertha::Role::Transcription/transcription_file_part>).
-Uses C<transcription_model> (default: C<gpt-transcribe>). Returns an HTTP
-request object.
+Uses C<transcription_model> (default: C<whisper-1>; C<gpt-transcribe> on
+L<Langertha::Engine::OpenAI>). Returns an HTTP request object.
+
+C<< languages => [ 'de', 'en' ] >> is sent as repeated C<languages[]> fields.
+C<gpt-transcribe> takes only that plural field, so for a C<gpt-transcribe*>
+model a C<language> you pass is sent as C<languages[]> too (merged into
+C<languages> if both are given); other models get C<language> as given.
 
 C<gpt-transcribe> (and the older C<gpt-4o-transcribe> /
 C<gpt-4o-mini-transcribe>) answer only C<< response_format => 'json' >>, which
@@ -958,7 +976,7 @@ sub image_operation_id { 'createImage' }
 sub image_request {
   my ( $self, $prompt, %extra ) = @_;
   # GPT image models always answer b64_json and reject response_format with a
-  # 400 "Unknown parameter"; dall-e-* still takes it (k308).
+  # 400 "Unknown parameter" (k308).
   my $model = exists $extra{model} ? $extra{model} : $self->image_model;
   if ( defined $model && $model =~ /\Agpt-image/ && exists $extra{response_format} ) {
     delete $extra{response_format};
@@ -983,8 +1001,7 @@ through as given. Returns an HTTP request object.
 
 GPT image models (C<gpt-image-*>) always return the image as C<b64_json> and
 reject C<response_format>, so a C<response_format> in C<%extra> is dropped
-with a warning for them; C<dall-e-*> models still take
-C<< response_format => 'url' >> or C<'b64_json'>.
+with a warning for them.
 
 =cut
 

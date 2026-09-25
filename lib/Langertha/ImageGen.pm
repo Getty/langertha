@@ -19,9 +19,9 @@ with 'Langertha::Role::PluginHost';
 
     my $image_gen = Langertha::ImageGen->new(
         engine  => $engine,
-        model   => 'dall-e-3',
+        model   => 'gpt-image-2',
         size    => '1024x1024',
-        quality => 'hd',
+        quality => 'high',
         plugins => ['Langfuse'],
     );
 
@@ -75,11 +75,11 @@ C<image_model> via C<%extra> pass-through.
 
 =attr size
 
-Optional image size (e.g. C<'1024x1024'>, C<'1792x1024'>).
+Optional image size (e.g. C<'1024x1024'>, C<'1536x1024'>).
 
 =attr quality
 
-Optional quality setting (e.g. C<'standard'>, C<'hd'>).
+Optional quality setting (e.g. C<'low'>, C<'medium'>, C<'high'> for GPT image models).
 
 =cut
 

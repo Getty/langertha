@@ -33,7 +33,7 @@ sub _build_supported_operations {[qw(
     has '+url' => ( default => 'https://api.example.com/v1' );
 
     sub _build_api_key { $ENV{MY_API_KEY} || die "MY_API_KEY required" }
-    sub default_model { 'whisper-1' }
+    sub default_transcription_model { 'whisper-large-v3' }   # optional
 
     __PACKAGE__->meta->make_immutable;
 
@@ -53,6 +53,14 @@ C<whisper> attribute that returns a TranscriptionBase configured for
 the OpenAI cloud (sharing the parent's C<api_key> and C<url>) so
 chat-side code can grab a transcription handle without re-stating the
 credentials.
+
+C<transcription_model> defaults to C<whisper-1>, the model name
+OpenAI-compatible transcription servers widely accept. OpenAI's newer
+C<gpt-transcribe> is only the default on L<Langertha::Engine::OpenAI> and its
+C<whisper> handle, since other servers do not know it. A subclass for a server
+that wants another default overrides C<default_transcription_model>
+(L<Langertha::Engine::Whisper> returns C<''> and lets the server choose); a
+caller can always pass C<transcription_model>.
 
 =cut
 

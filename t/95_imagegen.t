@@ -26,7 +26,7 @@ use Langertha::ImageGen;
   package MockImageEngine;
   use Moose;
 
-  has model => (is => 'ro', default => 'dall-e-3');
+  has model => (is => 'ro', default => 'gpt-image-2');
   has image_model => (is => 'ro', lazy => 1, default => sub { $_[0]->model });
   has user_agent => (is => 'ro', default => sub { MockImageUserAgent->new });
 
@@ -83,17 +83,17 @@ subtest 'ImageGen with all options' => sub {
   my $engine = MockImageEngine->new;
   my $ig = Langertha::ImageGen->new(
     engine  => $engine,
-    model   => 'dall-e-2',
+    model   => 'gpt-image-1-mini',
     size    => '512x512',
-    quality => 'standard',
+    quality => 'medium',
   );
 
   ok($ig->has_model, 'has model');
-  is($ig->model, 'dall-e-2', 'model value');
+  is($ig->model, 'gpt-image-1-mini', 'model value');
   ok($ig->has_size, 'has size');
   is($ig->size, '512x512', 'size value');
   ok($ig->has_quality, 'has quality');
-  is($ig->quality, 'standard', 'quality value');
+  is($ig->quality, 'medium', 'quality value');
 };
 
 subtest 'simple_image delegates to engine without overrides' => sub {
@@ -105,33 +105,33 @@ subtest 'simple_image delegates to engine without overrides' => sub {
     url => 'https://example.com/default.png',
     revised_prompt => 'A cat',
   }, 'got image result');
-  is($engine->last_request_model, 'dall-e-3', 'used engine default model');
+  is($engine->last_request_model, 'gpt-image-2', 'used engine default model');
 };
 
 subtest 'simple_image with model override' => sub {
   my $engine = MockImageEngine->new;
   my $ig = Langertha::ImageGen->new(
     engine => $engine,
-    model  => 'dall-e-2',
+    model  => 'gpt-image-1-mini',
   );
 
   my $result = $ig->simple_image('A dog');
   ok($result, 'got result');
-  is($engine->last_request_model, 'dall-e-2', 'used overridden model');
+  is($engine->last_request_model, 'gpt-image-1-mini', 'used overridden model');
 };
 
 subtest 'simple_image with size and quality overrides' => sub {
   my $engine = MockImageEngine->new;
   my $ig = Langertha::ImageGen->new(
     engine  => $engine,
-    size    => '1792x1024',
-    quality => 'hd',
+    size    => '1536x1024',
+    quality => 'high',
   );
 
   $ig->simple_image('A landscape');
   my $extra = $engine->last_request_extra;
-  is($extra->{size}, '1792x1024', 'size in extra');
-  is($extra->{quality}, 'hd', 'quality in extra');
+  is($extra->{size}, '1536x1024', 'size in extra');
+  is($extra->{quality}, 'high', 'quality in extra');
 };
 
 subtest 'simple_image dies on engine without ImageGeneration role' => sub {
@@ -147,22 +147,22 @@ subtest 'multiple ImageGen share same engine' => sub {
 
   my $hd = Langertha::ImageGen->new(
     engine  => $engine,
-    quality => 'hd',
+    quality => 'high',
     size    => '1024x1024',
   );
 
   my $fast = Langertha::ImageGen->new(
     engine  => $engine,
-    model   => 'dall-e-2',
+    model   => 'gpt-image-1-mini',
     size    => '256x256',
   );
 
   $hd->simple_image('HD image');
-  is($engine->last_request_extra->{quality}, 'hd', 'hd quality');
+  is($engine->last_request_extra->{quality}, 'high', 'high quality');
   is($engine->last_request_extra->{size}, '1024x1024', 'hd size');
 
   $fast->simple_image('Fast image');
-  is($engine->last_request_model, 'dall-e-2', 'fast model');
+  is($engine->last_request_model, 'gpt-image-1-mini', 'fast model');
   is($engine->last_request_extra->{size}, '256x256', 'fast size');
 };
 
@@ -297,7 +297,7 @@ subtest 'ImageGen with real OpenAI engine builds correct request' => sub {
   );
 
   ok($engine->does('Langertha::Role::ImageGeneration'), 'OpenAI has ImageGeneration role');
-  is($engine->image_model, 'gpt-image-2', 'default image_model (k308: gpt-image-1 is removed 2026-12-01)');
+  is($engine->image_model, 'gpt-image-2', 'default image_model (k308: gpt-image-1 is removed 2026-10-23)');
 
   # Build request without sending
   my $request = $engine->image_request('A cat in space');
@@ -322,24 +322,25 @@ subtest 'ImageGen wrapper with OpenAI engine overrides model' => sub {
 
   my $ig = Langertha::ImageGen->new(
     engine  => $engine,
-    model   => 'dall-e-3',
+    model   => 'gpt-image-1.5',
     size    => '1024x1024',
-    quality => 'hd',
+    quality => 'high',
   );
 
   # Build request via the wrapper (captures the request before sending)
   my $request = $engine->image_request('A landscape', $ig->_extra);
   my $body = JSON::MaybeXS->new->decode($request->content);
-  is($body->{model}, 'dall-e-3', 'model overridden to dall-e-3');
+  is($body->{model}, 'gpt-image-1.5', 'model overridden to gpt-image-1.5');
   is($body->{size}, '1024x1024', 'size passed through');
-  is($body->{quality}, 'hd', 'quality passed through');
+  is($body->{quality}, 'high', 'quality passed through');
   is($body->{prompt}, 'A landscape', 'prompt set');
 };
 
 # karr k308: GPT image models always answer b64_json and reject
 # response_format with a 400 "Unknown parameter", so image_request must never
 # send it for them -- also when the caller passes it (dropped with a warning).
-# dall-e-* still takes it. The b64_json-only answer must come back as images.
+# Other models (on OpenAI-compatible servers, which may accept it) still get
+# it as passed (k313). The b64_json-only answer must come back as images.
 subtest 'GPT image models never get response_format' => sub {
   require Langertha::Engine::OpenAI;
   my $engine = Langertha::Engine::OpenAI->new( api_key => 'test-key' );
@@ -363,14 +364,15 @@ subtest 'GPT image models never get response_format' => sub {
   ok(!exists $body->{response_format}, 'per-call gpt-image-1.5: response_format dropped');
   is($body->{model}, 'gpt-image-1.5', 'per-call model sent');
 
-  my $dalle = Langertha::Engine::OpenAI->new( api_key => 'test-key', image_model => 'dall-e-3' );
+  my $compat = Langertha::Engine::OpenAI->new( api_key => 'test-key',
+    url => 'http://127.0.0.1:8080/v1', image_model => 'flux-schnell' );
   @warnings = ();
   $body = do {
     local $SIG{__WARN__} = sub { push @warnings, @_ };
-    $decode->( $dalle->image_request( 'A cat', response_format => 'b64_json' ) );
+    $decode->( $compat->image_request( 'A cat', response_format => 'b64_json' ) );
   };
-  is($body->{response_format}, 'b64_json', 'dall-e-3 keeps response_format');
-  is(scalar @warnings, 0, 'no warning for dall-e-3');
+  is($body->{response_format}, 'b64_json', 'non-GPT image model keeps response_format');
+  is(scalar @warnings, 0, 'no warning for a non-GPT image model');
 };
 
 subtest 'b64_json-only image response' => sub {

@@ -51,7 +51,9 @@ my $server = Test::LocalHTTPDaemon->start( sub {
     my $file = $parts{file};
     my ($filename) = $file->header('Content-Disposition') =~ /filename="([^"]*)"/;
     my $intact = $file->content eq $AUDIO ? 'intact' : 'CORRUPT';
-    return json_response({ text => "$filename $intact " . $parts{model}->content . ' ' . $parts{language}->content });
+    # gpt-transcribe gets the caller's language as languages[] (k313).
+    my $language = $parts{'languages[]'} // $parts{language};
+    return json_response({ text => "$filename $intact " . $parts{model}->content . ' ' . $language->content });
   }
   if ( $path =~ m{/images/generations\z} ) {
     my $body = $json->decode( $request->content );

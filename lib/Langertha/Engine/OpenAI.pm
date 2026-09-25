@@ -94,6 +94,11 @@ sub _build_api_key {
 
 sub default_model { 'gpt-5.6-terra' }
 
+# OpenAI removes whisper-1 on 2027-02-26; its successor gpt-transcribe exists
+# only on OpenAI, so only this engine (and its whisper handle) defaults to it
+# (k308, k313).
+sub default_transcription_model { 'gpt-transcribe' }
+
 # image_input (k266, ADR 0019 k266 Update): every modern OpenAI chat model is a
 # vision model (llm-advisor, docs only, 2026-09-25), so the family keeps the
 # role-derived flag and only the text-only legacy / non-chat ids clear it.

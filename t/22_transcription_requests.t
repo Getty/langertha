@@ -185,4 +185,72 @@ my $multipart = sub {
     '', 'Whisper server keeps its empty default (server picks the model)');
 }
 
+# karr k313: gpt-transcribe exists only on OpenAI. Groq, faster-whisper /
+# speaches, LocalAI and other OpenAI-compatible servers do not know it, so only
+# Engine::OpenAI (and its whisper handle) defaults to it; the shared
+# OpenAI-compatible default -- TranscriptionBase and any third-party subclass
+# of it -- is the widely accepted whisper-1 alias.
+{
+  require Langertha::Engine::TranscriptionBase;
+  my $base = Langertha::Engine::TranscriptionBase->new( url => 'http://x/v1', api_key => 'k' );
+  is($base->transcription_model, 'whisper-1',
+    'TranscriptionBase defaults to whisper-1, not the OpenAI-only gpt-transcribe');
+  {
+    package My::ThirdPartyTranscriber;
+    use Moose;
+    extends 'Langertha::Engine::TranscriptionBase';
+    __PACKAGE__->meta->make_immutable;
+  }
+  is(My::ThirdPartyTranscriber->new( url => 'http://x/v1', api_key => 'k' )->transcription_model,
+    'whisper-1', 'a third-party TranscriptionBase subclass inherits whisper-1');
+  is(Langertha::Engine::OpenAI->new( api_key => 'k' )->whisper->transcription_model,
+    'gpt-transcribe', 'OpenAI whisper handle still gpt-transcribe');
+}
+
+# karr k313: gpt-transcribe takes `languages` (a list; multipart languages[]),
+# not the singular `language`, and the two must not both be sent. A caller's
+# language => 'de' must reach gpt-transcribe as languages[]; a languages
+# ArrayRef must become repeated languages[] parts (not a file spec). Other
+# models keep the singular field.
+{
+  my $fields = sub {
+    my ( $req ) = @_;
+    my %values;
+    my $body = $req->content;
+    push @{ $values{$1} }, $2 while $body =~ /name="([^"]+)"\r\n\r\n(.*?)\r\n--/sg;
+    return \%values;
+  };
+  my $openai = Langertha::Engine::OpenAI->new( api_key => 'k' );
+
+  my $got = $fields->( $openai->transcription($file, language => 'de') );
+  is_deeply($got->{'languages[]'}, ['de'], 'gpt-transcribe: language sent as languages[]');
+  ok(!exists $got->{language}, 'gpt-transcribe: no singular language field');
+
+  $got = $fields->( $openai->transcription($file, languages => [qw( de en )]) );
+  is_deeply($got->{'languages[]'}, [qw( de en )], 'gpt-transcribe: languages ArrayRef as repeated languages[]');
+  unlike($openai->transcription($file, languages => [qw( de en )])->content, qr/name="languages";/,
+    'gpt-transcribe: languages never sent as a file part');
+
+  $got = $fields->( $openai->transcription($file, language => 'fr', languages => [qw( de fr )]) );
+  is_deeply($got->{'languages[]'}, [qw( de fr )], 'gpt-transcribe: language merged into languages, no duplicate');
+  ok(!exists $got->{language}, 'gpt-transcribe: never both fields');
+
+  $got = $fields->( $openai->whisper->transcription($file, language => 'de') );
+  is_deeply($got->{'languages[]'}, ['de'], 'whisper handle (gpt-transcribe): languages[]');
+
+  $got = $fields->( $openai->transcription($file, model => 'gpt-transcribe-2026-07-28', language => 'de') );
+  is_deeply($got->{'languages[]'}, ['de'], 'per-call gpt-transcribe snapshot: languages[]');
+
+  $got = $fields->( $openai->transcription($file, model => 'whisper-1', language => 'de') );
+  is_deeply($got->{language}, ['de'], 'per-call whisper-1: singular language unchanged');
+  ok(!exists $got->{'languages[]'}, 'per-call whisper-1: no languages[]');
+
+  my $gpt4o = Langertha::Engine::OpenAI->new( api_key => 'k', transcription_model => 'gpt-4o-transcribe' );
+  $got = $fields->( $gpt4o->transcription($file, language => 'de') );
+  is_deeply($got->{language}, ['de'], 'gpt-4o-transcribe: singular language unchanged');
+
+  $got = $fields->( $whisper->transcription($file, language => 'en') );
+  is_deeply($got->{language}, ['en'], 'Whisper server: singular language unchanged');
+}
+
 done_testing;

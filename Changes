@@ -9,6 +9,18 @@ Revision history for Langertha
       streaming request dies with the same message as the synchronous call,
       the provider's error body included, on every HTTP backend.
 
+    - OpenAI: the default image model is gpt-image-2 and the default
+      transcription model is gpt-transcribe, also for the whisper handle
+      (gpt-image-1 and whisper-1 are being retired). Other OpenAI-compatible
+      engines and TranscriptionBase subclasses default to whisper-1.
+      image_request never sends response_format for gpt-image-* models,
+      which reject it and always answer b64_json; one passed in is dropped
+      with a warning. gpt-transcribe answers response_format json only; pass
+      transcription_model => 'whisper-1' for verbose_json, srt or vtt. It
+      takes languages instead of language: a language you pass is sent as
+      languages[] for it, and languages => [...] is sent as languages[] for
+      every model.
+
     - A chat answer without a choice is no longer an empty Response: an
       OpenAI-compatible 200 body with an error object (as gateways such as
       OpenRouter send) or no choices croaks, naming the engine and the error,
@@ -16,14 +28,6 @@ Revision history for Langertha
       by promptFeedback reports its blockReason as finish_reason. New
       Response refusal (and Stream::Chunk refusal) carries OpenAI's
       message.refusal and a Responses API refusal part.
-
-    - OpenAI: the default image model is gpt-image-2 and the default
-      transcription model is gpt-transcribe, also for the whisper handle
-      (gpt-image-1 and whisper-1 are being retired). image_request never
-      sends response_format for gpt-image-* models, which reject it and
-      always answer b64_json; one passed in is dropped with a warning.
-      gpt-transcribe answers response_format json only; pass
-      transcription_model => 'whisper-1' for verbose_json, srt or vtt.
 
     - Scaleway: the default chat model is llama-3.3-70b-instruct;
       llama-3.1-8b-instruct is no longer served on Scaleway's serverless
