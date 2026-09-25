@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - MoonshotAnthropic on kimi-k2.6 and kimi-k2.7-code no longer sends
+      output_config.effort or thinking {type: adaptive}, which Kimi documents
+      for kimi-k3 only. reasoning_effort now sends thinking {type: enabled};
+      none sends {type: disabled} on kimi-k2.6 and nothing on kimi-k2.7-code,
+      which cannot turn thinking off. Other K2 ids take no reasoning control
+      on this endpoint. No budget_tokens is sent with enabled; whether Kimi
+      requires one there is not verified. Taken from Moonshot's
+      documentation, not verified against the live API.
+
     - MiniMax: on MiniMax-M3, reasoning_effort now reaches the wire as
       MiniMax's thinking toggle: none sends thinking {type: disabled}, any
       other level {type: adaptive}. Every level gives the same depth. The

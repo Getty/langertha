@@ -393,3 +393,37 @@ Update records it and the choice of where it is serialized.
   `openapi-responses.json`, advisor-verified 2026-09-25. This is documentation only and not
   live-verified. Pinned by `t/48_reasoning_thinking_toggle.t` and the regenerated
   `t/47_reasoning_capability_gate.t` golden rows.
+
+## Update (k215 — Kimi K2.x toggle rows on `MoonshotAnthropic`; supersedes the k207 note's "still sends")
+
+The k207 Update left `MoonshotAnthropic` sending `output_config.effort` and an `adaptive`
+`thinking` block on K2.x. Kimi's Messages API documents `output_config.effort` for `kimi-k3` only.
+On K2.x the endpoint parses `thinking.type` (Claude Code guide): `kimi-k2.7-code` accepts only
+`enabled` ("400 invalid thinking: only type=enabled is allowed for this model"), `kimi-k2.6`
+takes `enabled|disabled`, and `adaptive` is undocumented for Kimi. Two k209 thinking-toggle rows
+now carry that:
+
+- `qr/\Akimi-k2\.7-code(?:-highspeed)?\z/`: `thinking_on 'enabled'`, `can_disable 0`,
+  `disable_form 'absent'`. Every level sends `{type:'enabled'}`. `none` omits the field, as on
+  every row that cannot disable, and the server keeps thinking on. The brief asked for
+  `enabled` to be sent always. It is sent for every level. For `none` it is omitted, because an
+  omitted field on this model is exactly what a request without any reasoning control sends.
+- `qr/\Akimi-k2\.6\z/`: `thinking_on 'enabled'`, `can_disable 1`, `disable_form
+  'thinking_disabled'`. `none` sends `{type:'disabled'}`; any other level sends `{type:'enabled'}`.
+
+Neither row has `levels`, so no `output_config.effort` goes out. The rows are `\z`-anchored to
+Kimi's documented ids so that AKI.IO's hosted `kimi-k2.7-code-1100b` on `AKIAnthropic`, which is
+another provider's API, keeps its previous wire. `MoonshotAnthropic` clears `reasoning_effort` for
+every K2 id (`qr/\Akimi-k2(?!\d)/`, the same row as `Engine::Moonshot`) and re-enables it for the
+two documented ids, the ADR 0019 k209 opt-back pattern. The sunset `kimi-k2.5` and the dash-form
+`kimi-k2-thinking` therefore send nothing on this face. `Engine::Moonshot` still clears
+`reasoning_effort` on K2, so the rows reach nothing on `chat/completions` there. Turning the
+chat-face toggle on is a one-row capability change, left as future work.
+
+**Unverified:** Anthropic's own spec requires `budget_tokens` with `type:'enabled'`, and
+Claude Code sends one. Whether Kimi's endpoint requires it is undocumented. No `budget_tokens`
+is sent. If a live check shows it is required, the fix is a budget on the toggle's on-form, not a
+new mechanism. Source: platform.kimi.ai `docs/api/messages.md` and
+`docs/guide/claude-code-kimi.md`, advisor-verified 2026-09-25. This is documentation only; no
+live call was made. Pinned by `t/48_reasoning_profile_moonshot.t` and the `t/47` golden rows
+for `MoonshotAnthropic` on `kimi-k2.6` and `kimi-k2.7-code`.

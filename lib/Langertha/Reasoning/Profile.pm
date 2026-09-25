@@ -498,6 +498,9 @@ my $XAI_K208_DOC = 'docs.x.ai/developers/model-capabilities/text/reasoning; k208
 # karr k209: MiniMax chat/completions + /anthropic request schemas, advisor
 # 2026-09-25 — doc-sourced, NOT live-probed.
 my $MINIMAX_K209_DOC = 'platform.minimax.io openapi-chat-openai.json + openapi-chat-anthropic.json; k209 2026-09-25 (advisor-verified, doc-sourced not live)';
+# karr k215: Kimi Messages API + Claude Code guide, advisor 2026-09-25 —
+# doc-sourced, NOT live-probed (budget_tokens on `enabled` unverified).
+my $KIMI_K215_DOC = 'platform.kimi.ai docs/api/messages.md + docs/guide/claude-code-kimi.md; k215 2026-09-25 (advisor-verified, doc-sourced not live; budget_tokens unverified)';
 # $levels is the superset a family accepts on the `responses` (Responses API)
 # wire; $extra{openai_levels} is the narrower Chat Completions set, defaulting to
 # $levels when the two wires agree. The k176 per-wire max split is exactly this
@@ -737,6 +740,32 @@ sub _family_profiles {
       disable_form => 'absent',
       thinking_on  => 'adaptive',
       source       => $MINIMAX_K209_DOC,
+    ),
+    # Kimi K2.x (karr k215; platform.kimi.ai api/messages + guide/claude-code-kimi,
+    # advisor 2026-09-25, doc-sourced not live): thinking {type: enabled|disabled},
+    # no effort (output_config.effort is K3-only). kimi-k2.7-code(-highspeed) is
+    # forced on ("only type=enabled is allowed"), kimi-k2.6 can disable. Whether
+    # `enabled` needs budget_tokens on the Messages face is UNVERIFIED; none is
+    # sent. \z-anchored to Kimi's documented ids: AKI.IO's hosted
+    # kimi-k2.7-code-1100b is a different API and is not matched. Reached on
+    # MoonshotAnthropic; Engine::Moonshot still clears reasoning_effort on K2.
+    __PACKAGE__->new(
+      model_match  => qr/\Akimi-k2\.7-code(?:-highspeed)?\z/,
+      control      => 'boolean',
+      wire_format  => 'anthropic',
+      can_disable  => 0,
+      disable_form => 'absent',
+      thinking_on  => 'enabled',
+      source       => $KIMI_K215_DOC,
+    ),
+    __PACKAGE__->new(
+      model_match  => qr/\Akimi-k2\.6\z/,
+      control      => 'boolean',
+      wire_format  => 'anthropic',
+      can_disable  => 1,
+      disable_form => 'thinking_disabled',
+      thinking_on  => 'enabled',
+      source       => $KIMI_K215_DOC,
     ),
     # Self-hosted Qwen3.x reasoning family (vLLM / SGLang / llama.cpp), matched
     # with or without its HuggingFace org prefix (served ids look like

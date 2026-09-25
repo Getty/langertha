@@ -85,4 +85,67 @@ for my $id (qw( kimi-k3-turbo kimi-k3.5 )) {
     "$id: kimi-k3 family" );
 }
 
+# --- karr k215: MoonshotAnthropic on K2.x ---
+# Kimi's Messages API documents output_config.effort for kimi-k3 only; on K2.x it
+# parses thinking.type (Claude Code guide): kimi-k2.7-code accepts only
+# `enabled` ("400 invalid thinking: only type=enabled is allowed"), kimi-k2.6
+# takes enabled|disabled. `adaptive` is undocumented for Kimi. So K2 gets the
+# thinking toggle and never an effort: k2.6 none -> disabled, any level ->
+# enabled; k2.7-code any level -> enabled, none omitted (it cannot disable).
+# Whether `enabled` needs budget_tokens there is UNVERIFIED -- none is sent.
+# Advisor 2026-09-25, documentation only, no live call.
+my %TOGGLE = (
+  'kimi-k2.6'                => 1,
+  'kimi-k2.7-code'           => 0,
+  'kimi-k2.7-code-highspeed' => 0,
+);
+for my $model ( sort keys %TOGGLE ) {
+  my $can_off = $TOGGLE{$model};
+  ok( Langertha::Engine::MoonshotAnthropic->new( api_key => 'k', model => $model )
+      ->supports('reasoning_effort'), "MoonshotAnthropic $model: reasoning_effort (the toggle) advertised" );
+  for my $builder (qw( chat_request chat_stream_request )) {
+    for my $effort (qw( none minimal low medium high xhigh max )) {
+      my $engine = Langertha::Engine::MoonshotAnthropic->new(
+        api_key => 'k', model => $model, reasoning_effort => $effort );
+      my $got = $json->decode( $engine->$builder( @MSG, controls => {} )->content );
+      my $want = $effort ne 'none' ? { type => 'enabled' }
+               : $can_off          ? { type => 'disabled' }
+               :                     undef;
+      ok( !exists $got->{output_config}, "MoonshotAnthropic $model $builder '$effort': no output_config" );
+      is_deeply( $got->{thinking}, $want, "MoonshotAnthropic $model $builder '$effort': thinking "
+        . ( $want ? $want->{type} : 'absent' ) );
+      ok( !exists $got->{temperature}, "MoonshotAnthropic $model $builder '$effort': no temperature" );
+    }
+  }
+  ok( !exists body( 'Langertha::Engine::MoonshotAnthropic', model => $model )->{thinking},
+    "MoonshotAnthropic $model: no reasoning control, no thinking field" );
+  is_deeply( body( 'Langertha::Engine::MoonshotAnthropic', model => $model,
+      controls => { reasoning_effort => 'high' } )->{thinking},
+    { type => 'enabled' }, "MoonshotAnthropic $model: a per-request control reaches the wire" );
+}
+
+# K2 ids outside the documented pair (sunset kimi-k2.5, dash-form kimi-k2-thinking)
+# take no effort on this face and have no documented toggle: nothing is sent.
+for my $model (qw( kimi-k2.5 kimi-k2-thinking )) {
+  my $engine = Langertha::Engine::MoonshotAnthropic->new( api_key => 'k', model => $model );
+  ok( !$engine->supports('reasoning_effort'), "MoonshotAnthropic $model: reasoning_effort cleared" );
+  my $got = body( 'Langertha::Engine::MoonshotAnthropic', model => $model, reasoning_effort => 'high' );
+  ok( !exists $got->{output_config} && !exists $got->{thinking}, "MoonshotAnthropic $model: no reasoning field" );
+}
+
+# The toggle rows are anchored on Kimi's own ids: AKI.IO's hosted
+# kimi-k2.7-code-1100b is not Kimi's API and keeps its previous wire.
+ok( !Langertha::Reasoning::Profile->for_model('kimi-k2.7-code-1100b')->has_thinking_on,
+  'kimi-k2.7-code-1100b (AKI.IO): no Kimi toggle row' );
+my $p26 = Langertha::Reasoning::Profile->for_model('kimi-k2.6');
+is( $p26->thinking_on, 'enabled', 'kimi-k2.6 profile: on is thinking {type: enabled}' );
+is( $p26->disable_form, 'thinking_disabled', 'kimi-k2.6 profile: off is thinking {type: disabled}' );
+ok( !Langertha::Reasoning::Profile->for_model('kimi-k2.7-code')->can_disable,
+  'kimi-k2.7-code profile: cannot disable' );
+
+# The chat face is unchanged: Engine::Moonshot still clears reasoning_effort on
+# K2, so the shared rows send nothing there (a chat-face toggle is future work).
+ok( !exists body( 'Langertha::Engine::Moonshot', model => 'kimi-k2.6', reasoning_effort => 'none' )->{thinking},
+  'Moonshot kimi-k2.6: still no thinking field on chat/completions' );
+
 done_testing;

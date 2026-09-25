@@ -38,6 +38,14 @@ is C<low>, C<high> or C<max>; any other level is dropped and the server default
 (C<max>) applies. K3 always reasons and Kimi's Messages API has no C<thinking>
 request field for it, so none is sent (C<thinking_display> has no effect).
 
+On the K2.x line Kimi takes no effort here, only a C<thinking> toggle, so
+C<reasoning_effort> becomes C<< thinking =E<gt> { type =E<gt> 'enabled' } >>
+for any level; C<none> sends C<< { type =E<gt> 'disabled' } >> on
+C<kimi-k2.6> and nothing on C<kimi-k2.7-code>, which cannot turn thinking off.
+Every level gives the same depth. No C<budget_tokens> is sent with
+C<enabled>; whether Kimi requires one there has not been verified against the
+live API. Other K2 ids take no reasoning control on this endpoint.
+
 Kimi fixes C<temperature> server-side on every current model, so none is sent;
 a C<temperature> other than C<1> is dropped with a warning.
 
@@ -79,10 +87,18 @@ sub _build_static_models {[
 # temperature property at all, and whether /anthropic 400s on one or ignores it
 # is undocumented; the value is fixed either way, so omitting it is always safe
 # (ADR 0025 k214 Update). Same rows as the OpenAI face.
+#
+# Reasoning on K2.x (karr k215, docs/api/messages.md + the Claude Code guide,
+# advisor 2026-09-25, docs only): output_config.effort is K3-only, so the K2
+# line takes no effort -- the flag is cleared for every K2 id. The two
+# documented ids opt back in, because this face parses a thinking toggle for
+# them (kimi-k2.6 enabled|disabled, kimi-k2.7-code enabled only); their
+# Reasoning::Profile rows send it instead of an effort (ADR 0023 k215 Update).
 sub model_capability_corrections {
   return (
     qr/\Akimi-k3(?!\d)/ => { temperature => 0 },
-    qr/\Akimi-k2(?!\d)/ => { temperature => 0 },
+    qr/\Akimi-k2(?!\d)/ => { temperature => 0, reasoning_effort => 0 },
+    qr/\Akimi-k2\.(?:6|7-code(?:-highspeed)?)\z/ => { reasoning_effort => 1 },
   );
 }
 
