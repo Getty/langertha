@@ -37,6 +37,14 @@ C<models[].capabilities.vision>. Facts are keyed by C<key> and by the C<id> of
 each C<loaded_instances> entry. Entries without C<capabilities> (embedding
 models) give no fact.
 
+=item * C<tsystems> - T-Systems AI Foundation Services C<GET /v2/models>,
+C<data[].meta_data.input_modalities>, a nullable array of strings; C<image> in
+it, matched case-insensitively because the spelling is not documented, means
+the model sees images. Facts are keyed by C<id>. An entry without
+C<meta_data> or with a missing or null C<input_modalities> gives no fact.
+Shaped from the provider's public OpenAPI document only: no key exists to
+verify it live.
+
 =item * C<ollama> - C<POST /api/show> with C<{ model }>, one request per model;
 the C<capabilities> array (C<vision> in it means the model sees images). A
 server too old to report C<capabilities> gives no fact.
@@ -77,6 +85,7 @@ my %FORMAT = (
   openrouter => { method => 'GET',  extract => \&_extract_openrouter, catalogue => 1 },
   mistral    => { method => 'GET',  extract => \&_extract_mistral,    catalogue => 1 },
   lmstudio   => { method => 'GET',  extract => \&_extract_lmstudio,   catalogue => 1 },
+  tsystems   => { method => 'GET',  extract => \&_extract_tsystems,   catalogue => 1 },
   ollama     => { method => 'POST', extract => \&_extract_ollama, per_model => 1 },
   llamacpp   => { method => 'GET',  extract => \&_extract_llamacpp },
 );
@@ -121,7 +130,7 @@ body names the model); false when one request answers for the whole server.
     Langertha::ModelProbe->is_catalogue('llamacpp');     # 0
 
 True when one document names every model it describes (C<openrouter>,
-C<mistral>, C<lmstudio>), so a single probe can learn the whole catalogue
+C<mistral>, C<lmstudio>, C<tsystems>), so a single probe can learn the whole catalogue
 (C<< models => 'all' >>). False for C<ollama> (one model per request) and
 C<llamacpp> (the document does not name its model).
 
@@ -249,6 +258,19 @@ sub _extract_lmstudio {
       map { ref $_ eq 'HASH' ? $_->{id} : () }
         @{ ref $model->{loaded_instances} eq 'ARRAY' ? $model->{loaded_instances} : [] } );
     $facts{$_} //= { image_input => $vision } for grep { _id_ok($_) } @ids;
+  }
+  return \%facts;
+}
+
+sub _extract_tsystems {
+  my ( $data ) = @_;
+  my %facts;
+  for my $model ( @{ ref $data->{data} eq 'ARRAY' ? $data->{data} : [] } ) {
+    next unless ref $model eq 'HASH' && ref $model->{meta_data} eq 'HASH';
+    my $in = $model->{meta_data}{input_modalities};
+    next unless ref $in eq 'ARRAY' && _id_ok( $model->{id} );
+    my $vision = _bool( grep { defined && !ref && lc eq 'image' } @$in );
+    $facts{ $model->{id} } //= { image_input => $vision };
   }
   return \%facts;
 }

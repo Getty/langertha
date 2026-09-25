@@ -94,6 +94,13 @@ sub model_capability_corrections {
   );
 }
 
+# Model metadata probe (k281, ADR 0032): GET {url}/models (the /v2 base) lists
+# data[].meta_data.input_modalities. DOCS ONLY: the shape is from the public
+# OpenAPI document (llm-server.llmhub.t-systems.net/openapi.json); no key
+# exists to see a real answer.
+sub model_metadata_format { 'tsystems' }
+sub model_metadata_url    { $_[0]->url . $_[0]->list_models_path }
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

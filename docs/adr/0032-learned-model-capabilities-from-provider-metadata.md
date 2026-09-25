@@ -169,3 +169,23 @@ the engine owns (proxies, rewritten base URLs). The caller already decides when 
 acceptable (Rationale, "opt-in, not lazy"); it now also decides which instances share. Facts are
 keyed by model id, not endpoint, so importing into an engine on a different endpoint is the
 caller's error to avoid.
+
+## Update (k281 — TSystems probe: `tsystems` format from the public OpenAPI, docs-derived)
+
+The Future-work TSystems item is done. The public OpenAPI document of the LLM server
+(`llm-server.llmhub.t-systems.net/openapi.json`) does give the response schema the docs page
+lacked: `GET /v2/models` returns `data[].meta_data` with a nullable `input_modalities` array of
+strings. `Engine::TSystems` now declares `model_metadata_format` `tsystems` and
+`model_metadata_url` = `{url}{list_models_path}` (the engine base already ends in `/v2`, so this
+is the documented `/v2/models`). `ModelProbe` reads it as a catalogue (`is_catalogue`, so
+`models => 'all'` works): facts keyed by `id`; `image` in the list means the model sees images,
+**matched case-insensitively** because the schema types the entries as strings without fixing
+their spelling (ADR 0018, normalize, don't gatekeep); a missing `meta_data`, or a missing or
+`null` `input_modalities`, gives no fact, so the static table (catch-all no-claim plus the
+documented vision rows, k266/k280) keeps answering for that model.
+
+Documentation-derived only: no TSystems key exists (CLAUDE.md), the fixture
+`t/data/tsystems_models_probe.json` is shaped from the schema, not captured, and model ids are
+matched exactly (the docs spell ids inconsistently; the static rows are case-insensitive, the
+learned lookup is not). Revisit the id matching if a real answer ever shows ids that differ
+from what callers configure.

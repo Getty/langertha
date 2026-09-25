@@ -67,6 +67,11 @@ my $server = Test::LocalHTTPDaemon->start( sub {
       unless ( $req->header('Authorization') // '' ) eq 'Bearer or-key';
     return json_response( fixture('openrouter_models_probe.json') );
   }
+  if ( $path eq '/tsi/v2/models' && $method eq 'GET' ) {
+    return json_response( '{"detail":"Unauthorized"}', 401 )
+      unless ( $req->header('Authorization') // '' ) eq 'Bearer tsi-key';
+    return json_response( fixture('tsystems_models_probe.json') );
+  }
   return json_response( fixture('mistral_models_probe.json') )
     if $path eq '/mistral/v1/models' && $method eq 'GET';
   return json_response( fixture('mistral_models.json') )
@@ -129,7 +134,6 @@ subtest 'engines without a probe resolve to {} without a request' => sub {
   for my $engine (
     Langertha::Engine::OpenAI->new( api_key => 'k', _async_http => $forbidden ),
     Langertha::Engine::Anthropic->new( api_key => 'k', _async_http => $forbidden ),
-    Langertha::Engine::TSystems->new( api_key => 'k', _async_http => $forbidden ),
   ) {
     is $engine->model_metadata_format, undef, ref($engine) . ': no metadata format';
     is_deeply $engine->probe_model_capabilities, {}, ref($engine) . ': empty result';
@@ -202,6 +206,46 @@ for my $backend ( [ default => sub { () } ], [ sync => sub { ( _async_http => sy
         llava => { image_input => 1 }, 'llama3.3' => { image_input => 0 },
       }, ref($e) . ': facts merge into the store';
     }
+  };
+
+  # karr k281: TSystems AIFS documents GET /v2/models with a nullable
+  # data[].meta_data.input_modalities string array in its public OpenAPI
+  # (llm-server.llmhub.t-systems.net/openapi.json). DOCS ONLY: no key exists,
+  # so the fixture is shaped from that schema, not captured. The static
+  # table (catch-all no-claim + documented vision rows) stays the answer
+  # for every model the document does not describe.
+  subtest "TSystems ($label): /v2/models meta_data.input_modalities" => sub {
+    my $e = Langertha::Engine::TSystems->new(
+      url => "$base/tsi/v2", api_key => 'tsi-key', model => 'Llama-3.3-70B-Instruct', $http->() );
+    is $e->model_metadata_format, 'tsystems', 'format tag';
+    is $e->model_metadata_url, "$base/tsi/v2/models", 'the /v2 models list of the engine url';
+    is +Langertha::Engine::TSystems->new( api_key => 'k' )->model_metadata_url,
+      'https://llm-server.llmhub.t-systems.net/v2/models', 'default: the documented GET /v2/models';
+    is claims($e), 0, 'static catch-all: no claim for Llama 3.3';
+    my $learned = $e->probe_model_capabilities;
+    is_deeply $learned, {
+      'gemma-4-31b-it'      => { image_input => 1 },
+      'gpt-oss-120b'        => { image_input => 0 },
+      'Qwen3.6-35B-A3B-FP8' => { image_input => 1 },
+    }, 'image matched case-insensitively; null input_modalities, empty or null meta_data give no fact';
+    is claims($e), 0, 'a model with null input_modalities keeps its static answer';
+
+    my $gemma = Langertha::Engine::TSystems->new( api_key => 'k', model => 'gemma-4-31b-it', _async_http => $forbidden );
+    $gemma->import_learned_capabilities($learned);
+    is claims($gemma), 1, 'gemma-4 claims from the learned fact';
+    my $oss = Langertha::Engine::TSystems->new( api_key => 'k', model => 'gpt-oss-120b', _async_http => $forbidden );
+    $oss->import_learned_capabilities($learned);
+    is claims($oss), 0, 'gpt-oss-120b learned as text-only';
+    my $static_yes = Langertha::Engine::TSystems->new( api_key => 'k', model => 'gemma-4-31b-it',
+      _async_http => $forbidden );
+    is claims($static_yes), 1, 'unprobed: the static gemma-4 row already claims';
+    $static_yes->import_learned_capabilities( { 'gemma-4-31b-it' => { image_input => 0 } } );
+    is claims($static_yes), 0, 'a provider no beats the static yes';
+
+    is_deeply $e->probe_model_capabilities( models => 'all' ), $learned, "models => 'all' reads the same catalogue";
+    my $bad = Langertha::Engine::TSystems->new( url => "$base/tsi/v2", api_key => 'wrong', $http->() );
+    like error_of( sub { $bad->probe_model_capabilities } ), qr/Langertha::Engine::TSystems model metadata probe failed: 401/,
+      'the Bearer key is sent (a wrong key is refused)';
   };
 
   subtest "LlamaCpp ($label): /props modalities.vision" => sub {
@@ -446,8 +490,9 @@ subtest "models => 'all' needs a catalogue document" => sub {
       ref($e) . ': croaks before any request';
   }
   my $o = 'Langertha::ModelProbe';
-  is_deeply { map { $_ => $o->is_catalogue($_) } qw( openrouter mistral lmstudio ollama llamacpp ) },
-    { openrouter => 1, mistral => 1, lmstudio => 1, ollama => 0, llamacpp => 0 }, 'is_catalogue per format';
+  is_deeply { map { $_ => $o->is_catalogue($_) } qw( openrouter mistral lmstudio tsystems ollama llamacpp ) },
+    { openrouter => 1, mistral => 1, lmstudio => 1, tsystems => 1, ollama => 0, llamacpp => 0 },
+    'is_catalogue per format';
   my $e = Langertha::Engine::OpenAI->new( api_key => 'k', _async_http => $forbidden );
   is_deeply $e->probe_model_capabilities( models => 'all' ), {}, 'an engine without a probe still resolves to {}';
 };

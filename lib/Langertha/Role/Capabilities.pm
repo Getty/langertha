@@ -334,7 +334,7 @@ send a request.
 
 Without C<models>, the probe asks about C<chat_model> (nothing when no model is
 configured). Endpoints that describe every model in one document (OpenRouter,
-Mistral, LM Studio) are fetched once and every model they describe is learned;
+Mistral, LM Studio, TSystems) are fetched once and every model they describe is learned;
 Ollama's C</api/show> is asked once per model; llama.cpp's C</props> describes
 the one loaded model, so its fact is stored for every id that was asked about.
 
@@ -355,7 +355,8 @@ fact and keeps its static answer.
 Engines that implement a probe: L<Langertha::Engine::OpenRouter>,
 L<Langertha::Engine::Mistral>, L<Langertha::Engine::Ollama>,
 L<Langertha::Engine::OllamaOpenAI>, L<Langertha::Engine::LMStudio>,
-L<Langertha::Engine::LMStudioOpenAI> and L<Langertha::Engine::LlamaCpp>. On
+L<Langertha::Engine::LMStudioOpenAI>, L<Langertha::Engine::LlamaCpp> and
+L<Langertha::Engine::TSystems> (documentation-derived, not live-verified). On
 every other engine the method exists and resolves to an empty HashRef without
 a request.
 

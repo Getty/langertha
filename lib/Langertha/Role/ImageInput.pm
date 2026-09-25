@@ -45,7 +45,7 @@ makes no static claim.
 The static answer can be replaced by what the provider says about its own
 models: L<Langertha::Role::Capabilities/probe_model_capabilities_f> reads the
 metadata endpoint of OpenRouter, Mistral, Ollama, OllamaOpenAI, LMStudio,
-LMStudioOpenAI and LlamaCpp and stores C<image_input> per model on the engine
+LMStudioOpenAI, LlamaCpp and TSystems and stores C<image_input> per model on the engine
 instance (ADR 0032). Nothing probes implicitly.
 
 The flag is advisory. Nothing blocks or strips an image when it is false; an

@@ -14,9 +14,11 @@ Revision history for Langertha
       make no static claim. $engine->probe_model_capabilities_f (sync:
       probe_model_capabilities) reads image_input per model from the
       provider's own metadata on OpenRouter, Mistral, Ollama, OllamaOpenAI,
-      LMStudio, LMStudioOpenAI and LlamaCpp; a probed answer beats the
-      static one. With models => 'all' one request learns every model of
-      a catalogue endpoint (OpenRouter, Mistral, LM Studio), and
+      LMStudio, LMStudioOpenAI, LlamaCpp and TSystems (the TSystems format
+      follows its published OpenAPI schema and is not live-verified); a
+      probed answer beats the static one. With models => 'all' one request
+      learns every model of a catalogue endpoint (OpenRouter, Mistral, LM
+      Studio, TSystems), and
       $engine->import_learned_capabilities($learned) hands the result to
       other engine instances on the same endpoint without a request of
       their own. supports() never probes by itself. The flag never blocks
