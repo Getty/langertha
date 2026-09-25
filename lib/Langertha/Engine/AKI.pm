@@ -293,10 +293,11 @@ sub chat_response {
   # OpenAI/Anthropic shapes, so normalize to the keys Langertha::Usage->from_hash
   # understands. num_cached_tokens is the same quantity as cached_tokens; it rides
   # in the usage hash so Response->usage->cached_tokens carries it and
-  # Response->cached_tokens is lifted off that Usage (karr k197). The
-  # native counts differ from the /v1 OpenAI shim for the same prompt (prompt_length
-  # 37 vs prompt_tokens 64), so trust $response->model for which model answered.
-  # -- karr k126
+  # Response->cached_tokens is lifted off that Usage (karr k197). It counts
+  # prefix-cache *reads* (a subset of prompt_length, vLLM 16-token blocks, often
+  # non-zero even on a first call); native and /v1 report the same numbers for
+  # identical messages (live-verified 2026-09-25). Trust $response->model for which
+  # model answered. -- karr k126, k197
   my $usage = {
     defined $data->{prompt_length}        ? ( prompt_tokens     => $data->{prompt_length} )        : (),
     defined $data->{num_generated_tokens} ? ( completion_tokens => $data->{num_generated_tokens} ) : (),
