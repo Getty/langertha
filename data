@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-09-25T20:46:54Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:46:54Z
+created: 2026-09-25T20:23:23Z
+id: 302
+priority: medium
+started: 2026-09-25T20:25:16Z
+status: done
+tags:
+- thinktag
+- response
+- reasoning
+- bug
+title: 'ThinkTag: orphan </think> (template-injected opening tag) leaks reasoning
+  into content; every response is whitespace-trimmed even without tags'
+updated: 2026-09-25T20:46:54Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). REPRODUCED offline (vLLM engine chat_response, think_tag_filter default on).
+
+lib/Langertha/Role/ThinkTag.pm:83-89 (filter_think_content), applied by around chat_response on every engine.
+
+1) Orphan closing tag: chat templates of DeepSeek-R1 and Qwen3-thinking put the opening <think> into the generation prompt, so a server without a reasoning parser returns "reasoning...\n</think>\n\nAnswer". Only matched pairs and an unclosed OPENING tag are handled. Repro: content "Let me think about it.\n</think>\n\nThe answer is 4." -> content unchanged (reasoning + stray </think> in content), thinking undef.
+   Fix: if no opening tag is present but a closing tag is, treat everything before the first </tag> as thinking.
+2) Unconditional trim: s/^\s+// and s/\s+$// run even when no tag was found, so every response on every engine is altered. Repro: "    def f():\n        return 1\n" -> "def f():\n        return 1" (first-line indentation of code/indented markdown lost).
+   Fix: only trim the whitespace adjacent to removed tag blocks, and return the Response untouched (no clone_with) when no tag matched.
+3) Minor: nested <think>a<think>b</think>c</think>done -> content "c</think>done", thinking "a<think>b"; tag match is case-sensitive (<Think> passes through). Low priority, note only.
+Also: chunk_callback receives the raw <think> text during streaming; only the final aggregate is filtered (by design today, worth a POD line).
+
+2026-09-25 20:40 Fixed on branch worktree-agent-a40bf6155c5d15d37 commit 38c09a3: orphan </think> -> thinking, tagless text untouched, hermes stream splitter parity. t/60 assertion updated (loop no longer trims). Nested/case-sensitive documented, unchanged.
