@@ -6,6 +6,8 @@ allowed-tools: Read, Bash, Glob, Grep
 briefing:
   skills:
     - perl-ai-langertha
+    - langertha-internals
+    - langertha-testing
     - getty-perl-moose
     - perl-io-async-future
     - langertha-adr
@@ -22,22 +24,12 @@ conventions above are non-negotiable — apply silently, do not restate.
 
 ## What this repo keeps getting wrong — check these first
 
-- **Mocks that disagree with the real transport.** A test double that fires callbacks the
-  real library never fires (e.g. LWP's content callback on a non-2xx response) makes the
-  suite green over a live bug (k188). When a diff adds or leans on a transport mock, check
-  the mock's behavior against the real library's source; prefer a real local
-  `HTTP::Daemon` round-trip for anything at the HTTP boundary.
-- **Sync/async parity.** The same `_f` call must produce the same result and the same error
-  text on every backend (`Net::Async::HTTP`, injected client, sync LWP shim — ADR 0027).
-  Check error, abort and truncation paths, not only the happy path.
-- **ADR drift.** A change touching a seam listed in `CLAUDE.md`'s ADR index must match
-  that ADR, or amend it in the same change. An unrecorded architectural decision is a
-  finding, and a candidate for `langertha-adr-auditor`.
-- **Cross-dist privates.** langertha-raider, -knarr and -skeid reach into core internals
-  (`_async_http`, `_langfuse_timestamp`, …). Renaming or reshaping a private can break a
-  sibling distribution; name the caller and file a karr ticket rather than blocking.
-- **Wire spelling.** Normalize provider quirks (accept both spellings) rather than
-  gatekeeping one as "correct" (ADR 0018).
+Transport mocks that disagree with the real library, and sync/async parity gaps
+(`langertha-testing`); ADR drift against the owning ADR (`langertha-adr` area map — an
+unrecorded decision is a finding and a candidate for `langertha-adr-auditor`); renamed or
+reshaped privates that sibling dists call, and wire spellings gatekept instead of normalized
+(`langertha-internals`). For a sibling break, name the caller and file a karr ticket rather
+than blocking.
 
 ## Evidence
 
@@ -45,8 +37,9 @@ conventions above are non-negotiable — apply silently, do not restate.
   tests (`prove -lv t/NN_*.t`), `perlcritic --profile .perlcriticrc lib/`, or a small repro
   script in the scratchpad when a claim needs proving. A reproduced bug outranks a
   suspected one; say which is which.
-- A "tests pass" claim that included skipped live tests (`t/80-86*`, no keys) is not
-  evidence for provider behavior. Flag it if the change depends on that behavior.
+- A "tests pass" claim that included skipped live tests (the env-gated set in
+  `langertha-testing`) is not evidence for provider behavior. Flag it if the change depends
+  on that behavior.
 - No live provider calls (they cost the maintainer money). AKI.IO is the only exception,
   and only when the dispatcher allows it.
 

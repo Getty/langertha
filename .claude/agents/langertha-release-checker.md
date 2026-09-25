@@ -40,8 +40,9 @@ first).
    entry, and a breaking change is called out. The file contains no literal double
    open-brace other than `{{$NEXT}}`.
 5. **Build + test.** Run `dzil build` then `dzil clean`, and `dzil test` (or `prove -lr t/`,
-   which is recursive). Report skipped live tests (`t/80-89`, no keys) as skipped, not as
-   passed. Also run `perlcritic --profile .perlcriticrc lib/ bin/ maint/`.
+   which is recursive). Report skipped live tests (the files gated on a `TEST_LANGERTHA_*`
+   env var in their `BEGIN` block) as skipped, not as passed. Also run
+   `perlcritic --profile .perlcriticrc lib/ bin/ maint/`.
 6. **Docs front door.** `prove -lv t/79_pod_catalogue.t` passes. The engine map in
    `CLAUDE.md` names every engine that ships.
 7. **ADRs.** Every ADR referenced from `Changes` or POD exists, and the `CLAUDE.md` ADR index
