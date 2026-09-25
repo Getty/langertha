@@ -3,9 +3,11 @@ package Langertha::Engine::OpenAIResponses;
 our $VERSION = '0.503';
 use Moose;
 
+use Carp qw( croak );
+
 extends 'Langertha::Engine::OpenAI';
 
-with 'Langertha::Role::ResponsesCompatible';
+with 'Langertha::Role::ResponsesCompatible', 'Langertha::Role::ServerTools';
 
 =head1 SYNOPSIS
 
@@ -46,6 +48,36 @@ Structured output goes under C<text.format> (a flat json_schema, not the
 Chat-Completions nested shape); the Responses API has no C<response_format>
 param. See L<Langertha::Role::ResponsesCompatible/_responses_format_kwargs>.
 
+=head2 Server-side tools
+
+OpenAI's hosted tools (C<web_search>, C<file_search>, C<code_interpreter>,
+C<image_generation>, remote C<mcp>, ...) are supported: this engine composes
+L<Langertha::Role::ServerTools>, so C<supports('server_tools')> is true. Pass
+them per request in C<tools> (native hashes or L<Langertha::ServerTool>
+objects, mixed freely with function tools), or once on the engine:
+
+    my $engine = Langertha::Engine::OpenAIResponses->new(
+        api_key      => $ENV{OPENAI_API_KEY},
+        model        => 'gpt-5.6-luna',
+        server_tools => [ { type => 'web_search' } ],
+    );
+    my $r = $engine->simple_chat('What is the current stable Perl 5 release?');
+    say $_->{url} for @{ $r->citations // [] };
+
+The provider runs them within the request. What it did lands on
+L<Langertha::Response/server_tool_calls>, the C<url_citation> annotations of
+the answer on L<Langertha::Response/citations>; neither ever reaches
+L<Langertha::Response/tool_calls>, so C<chat_with_tools_f> executes only
+function calls and echoes the server items back unchanged on the next turn.
+The search sources of a C<web_search_call> (request them with
+C<< include => ['web_search_call.action.sources'] >>) stay on that call's
+C<data>.
+
+A remote C<mcp> tool must say C<< require_approval => 'never' >>: OpenAI's
+default is C<always>, which answers with an C<mcp_approval_request> the client
+has to confirm, and Langertha has no approval flow yet. Anything else croaks
+before the request is sent.
+
 =head2 Function call output shape
 
 The Responses API emits C<function_call> as a top-level C<output[]> item
@@ -72,6 +104,25 @@ around engine_capabilities => sub {
     return $caps;
 };
 
+# Remote MCP on OpenAI: require_approval defaults to "always" on the wire, so
+# an mcp tool without it -- or with anything but the plain string 'never' --
+# answers with an mcp_approval_request the client must confirm, and Langertha
+# has no approval flow (orchestrator ruling Q2 on k206). Refuse it before the
+# request is sent, instead of a tool loop that ends silently. xAI, the other
+# Responses provider, does not support the field at all, which is why this is
+# an engine hook and not a rule of the shared wire (spec k206 section 3.5).
+sub _server_tool_wire_check {
+    my ( $self, $server_tool ) = @_;
+    my $spec = $server_tool->to('responses');
+    return $spec unless $server_tool->type eq 'mcp';
+    my $approval = $spec->{require_approval};
+    croak "".( ref $self ).": remote MCP tool '"
+      . ( $spec->{server_label} // '?' ) . "' needs require_approval => 'never'; "
+      . "the approval flow is not supported"
+        unless defined $approval && !ref $approval && $approval eq 'never';
+    return $spec;
+}
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 SEE ALSO
@@ -79,6 +130,8 @@ __PACKAGE__->meta->make_immutable;
 =over
 
 =item * L<Langertha::Role::ResponsesCompatible> - the Open-Responses wire envelope
+
+=item * L<Langertha::Role::ServerTools> / L<Langertha::ServerTool> - server-side tools
 
 =item * L<Langertha::Engine::OpenAI> - Chat Completions endpoint (for non-reasoning models)
 

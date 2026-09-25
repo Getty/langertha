@@ -447,6 +447,9 @@ C<E<lt>tool_callE<gt>> XML tags for models without native API tool support
 
 =item * L<Langertha::Role::ParallelToolUse> - Parallel tool calling control
 
+=item * L<Langertha::Role::ServerTools> - Provider-native server-side tools
+(C<server_tools> capability and per-engine defaults)
+
 =item * L<Langertha::Role::ImageGeneration> - Image generation
 
 =item * L<Langertha::Role::KeepAlive> - Keep-alive duration for local models
@@ -514,6 +517,12 @@ C<to_perplexity>)
 serializers (C<to_openai>, C<to_anthropic>, C<to_gemini>, C<to_mcp>,
 C<to_json_schema>) and accepting constructors (C<from_openai>,
 C<from_anthropic>, C<from_mcp>, C<from_gemini>, C<from_hash>)
+
+=item * L<Langertha::ServerTool> - Provider-native server-side tool (web
+search, file search, remote MCP, ...), pinned to its C<tool_wire_format>
+
+=item * L<Langertha::ServerToolCall> - Record of a tool call the provider ran
+itself, on L<Langertha::Response/server_tool_calls> (never on C<tool_calls>)
 
 =item * L<Langertha::Content> / L<Langertha::Content::Image> -
 Provider-agnostic vision input

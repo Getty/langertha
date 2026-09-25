@@ -3,6 +3,7 @@ package Langertha::Response;
 our $VERSION = '0.503';
 use Moose;
 use Langertha::Moment;
+use Langertha::ServerToolCall;
 use Langertha::ToolCall;
 use Langertha::Usage;
 
@@ -397,6 +398,12 @@ has tool_calls => (
   predicate => 'has_tool_calls',
 );
 
+has server_tool_calls => (
+  is        => 'ro',
+  isa       => 'Maybe[ArrayRef[Langertha::ServerToolCall]]',
+  predicate => 'has_server_tool_calls',
+);
+
 has probes => (
   is        => 'ro',
   isa       => 'Maybe[HashRef]',
@@ -531,6 +538,20 @@ sub tool_call_args {
   return $tc->arguments;
 }
 
+=attr server_tool_calls
+
+ArrayRef of L<Langertha::ServerToolCall> records: the tool calls the
+B<provider> ran itself during this request (a C<web_search_call>, an
+C<mcp_call>, ...), in wire order, when there were any. They are deliberately
+B<not> on L</tool_calls>, which lists only calls the client must execute, so
+C<chat_with_tools_f> and C<chat_f> callers never try to run a web search
+themselves (ADR 0003 Update k206, ADR 0030). Each record carries the item
+verbatim in C<data>. Set by the Responses wire
+(L<Langertha::Engine::OpenAIResponses>); C<undef> elsewhere. Survives
+L</clone_with>.
+
+=cut
+
 =attr rate_limit
 
 Optional L<Langertha::RateLimit> object with rate limit information from the
@@ -554,7 +575,12 @@ of source HashRefs (each typically carrying C<url>, C<title>, and where
 available C<snippet>/C<date>). Populated by search-augmented engines that lift
 them out of the raw payload — L<Langertha::Engine::Perplexity> extracts the
 Agent API's C<search_results> block here (the classic Sonar top-level
-C<citations[]> is gone). C<undef> for every engine that does not report
+C<citations[]> is gone), and the Responses wire adds the answer's
+C<url_citation> annotations as C<< { url, title, start_index, end_index } >>
+(the url verbatim, including OpenAI's C<?utm_source=openai>). One page is
+listed once: entries are deduplicated by url, compared without C<utm_*>
+query parameters, keeping the first entry and filling in only fields it
+lacks. C<undef> for every engine that does not report
 citations. Survives L</clone_with> so it is preserved through C<E<lt>thinkE<gt>>
 tag filtering.
 

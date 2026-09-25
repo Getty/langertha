@@ -75,6 +75,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::ParallelToolUse'  => [qw( parallel_tool_use )],
   'Langertha::Role::Runtime::MetricsPoll' => [qw( runtime_metrics )],
   'Langertha::Role::RuntimeKnobs'    => [qw( prefix_caching )],
+  'Langertha::Role::ServerTools'      => [qw( server_tools )],
 );
 
 sub engine_capabilities {
@@ -166,6 +167,12 @@ C<extra_key>) — B<not> that prefix caching is on. Whether the server actually
 caches is launch state the client cannot observe (vLLM C<--enable-prefix-caching>,
 SGLang C<--enable-mixed-prefill> / C<--enable-prefix-caching>, llama.cpp
 C<--cache_prompt>); the flag only says the request body may carry the knobs.
+
+C<server_tools> (from C<Langertha::Role::ServerTools>) means B<the wire accepts
+provider-native server-side tool entries in C<tools>> (C<web_search>,
+C<file_search>, remote C<mcp>, ...; see L<Langertha::ServerTool>). It is one
+flag on purpose: which tool types a model honors is a fast-moving provider
+vocabulary, not a capability.
 
 =cut
 

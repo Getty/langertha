@@ -145,6 +145,7 @@ my @MODEL_CAPABILITIES = qw(
   temperature seed
   system_prompt response_size
   prompt_cache prompt_cache_key
+  server_tools
 );
 my %MODEL_CAPABILITY = map { $_ => 1 } @MODEL_CAPABILITIES;
 
@@ -162,7 +163,9 @@ C<parallel_tool_use>), structured output (C<response_format_json_object>,
 C<response_format_json_schema>), reasoning (C<reasoning_effort>,
 C<thinking_budget>), sampling and request controls (C<temperature>,
 C<seed>, C<system_prompt>, C<response_size>) and the
-request-side prompt-cache controls (C<prompt_cache>, C<prompt_cache_key>).
+request-side prompt-cache controls (C<prompt_cache>, C<prompt_cache_key>), and
+C<server_tools> (the wire accepts provider-native server-side tools; I<which>
+types is not published).
 
 Engine-level and client-side flags are never published on a model:
 C<embedding>, C<transcription>, C<image_generation>, C<runtime_metrics>,

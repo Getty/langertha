@@ -11,6 +11,7 @@ use Scalar::Util qw( blessed );
 use Time::HiRes qw( gettimeofday tv_interval );
 use Langertha::ToolChoice;
 use Langertha::Tool;
+use Langertha::ServerTool;
 use Langertha::Role::Capabilities;
 
 requires qw(
@@ -564,6 +565,9 @@ async sub chat_f {
   my $messages = delete $opts{messages} // [];
   my @messages = ref $messages eq 'ARRAY' ? @$messages : ($messages);
 
+  # A Langertha::ServerTool needs a wire that takes server-side tools (k206).
+  Langertha::ServerTool->check_engine( $self, $opts{tools} );
+
   # Auto-fallback: forced named tool on an engine that cannot do
   # native named-tool-forcing but supports json_schema response_format.
   # Rewrite tools+tool_choice into a response_format and remember the
@@ -766,6 +770,9 @@ async sub chat_stream_realtime_f {
 
   croak "".(ref $self)." does not support streaming"
     unless $self->can('chat_stream_request');
+
+  # A Langertha::ServerTool needs a wire that takes server-side tools (k206).
+  Langertha::ServerTool->check_engine( $self, $opts{tools} );
 
   # Provider mutual-exclusion guard (karr #148) — streaming path. Same per-model
   # seam as chat_f; the streaming flag lets a rule refuse a combination that is

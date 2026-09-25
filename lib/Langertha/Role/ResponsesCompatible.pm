@@ -8,7 +8,10 @@ use Langertha::Tool;
 use Langertha::ToolCall;
 use Langertha::ToolChoice;
 use Langertha::Response;
+use Langertha::ServerTool;
+use Langertha::ServerToolCall;
 use Langertha::Usage;
+use Scalar::Util qw( blessed );
 
 =head1 SYNOPSIS
 
@@ -143,6 +146,59 @@ sub _is_native_responses_tool {
         && ref $item->{function} ne 'HASH' ) ? 1 : 0;
 }
 
+# Shapes the `tools` kwarg in place, for both request builders. The engine's
+# default server_tools (Role::ServerTools) are appended to the request's own
+# tools, then every item is decided on its own, so a mixed list keeps every
+# tool in both orders (karr k210):
+#   - a server-side tool (a Langertha::ServerTool, or a hash ServerTool
+#     recognises for 'responses') goes out as its native hash after the
+#     engine's _server_tool_wire_check hook -- only on an engine that
+#     supports('server_tools'); a ServerTool object croaks anywhere else
+#     (k206, ADR 0030);
+#   - a native Responses item goes out verbatim (see _is_native_responses_tool);
+#   - every other function-tool form (MCP inputSchema, canonical input_schema,
+#     OpenAI chat's nested function, a Langertha::Tool) is formatted to the
+#     flat shape, and anything that is neither croaks in Langertha::Tool.
+# Guarded by can(): a lean consumer that composes no Role::Tools (Perplexity)
+# has no format_tools, and its tools go out as given.
+sub _responses_tools_kwarg {
+    my ( $self, $extra ) = @_;
+    my @server = $self->can('server_tools') ? @{ $self->server_tools } : ();
+    $extra->{tools} = [ ( ref $extra->{tools} eq 'ARRAY' ? @{ $extra->{tools} } : () ), @server ]
+        if @server;
+    return unless exists $extra->{tools} && ref $extra->{tools} eq 'ARRAY';
+    my $server_ok = $self->supports('server_tools');
+    $extra->{tools} = [ map {
+        my $item = $_;
+        croak "".( ref $self ).": '" . $item->type . "' is a Langertha::ServerTool, "
+          . "and this engine does not supports('server_tools')"
+            if !$server_ok && blessed $item && $item->isa('Langertha::ServerTool');
+        my $st = $server_ok ? Langertha::ServerTool->from_hash( responses => $item ) : undef;
+        $st                                ? $self->_responses_server_tool_spec($st)
+      : !$self->can('format_tools')        ? $item
+      : _is_native_responses_tool($item)   ? $item
+      :                                      @{ $self->format_tools([$item]) };
+    } @{ $extra->{tools} } ];
+    return;
+}
+
+sub _responses_server_tool_spec {
+    my ( $self, $st ) = @_;
+    $st->to('responses');    # croaks for a server tool of another wire
+    return $self->_server_tool_wire_check($st);
+}
+
+# max_output_tokens only where the wire takes it: a per-request max_tokens
+# control beats the engine's response_size. Gated on supports('response_size')
+# so an engine or a model whose wire rejects the field (a layer-2/3
+# correction, ADR 0002/0019) never sends it (spec k206 section 4, Q2 ruling).
+sub _responses_max_tokens_kwargs {
+    my ( $self, $controls ) = @_;
+    return () unless $self->supports('response_size');
+    return ( max_output_tokens => $controls->{max_tokens} ) if exists $controls->{max_tokens};
+    return $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : ();
+}
+
 sub chat_request {
     my ( $self, $messages, %extra ) = @_;
 
@@ -161,19 +217,7 @@ sub chat_request {
         }
     }
 
-    # A native Responses tool goes out verbatim (see _is_native_responses_tool).
-    # Every other function-tool form (MCP inputSchema, canonical input_schema,
-    # OpenAI chat's nested function, a Langertha::Tool) is formatted to the flat
-    # shape, and anything that is neither croaks in Langertha::Tool. Decided per
-    # item, not by the first one, so a mixed list keeps every tool in both
-    # orders (karr k210). Guarded by can(): a lean consumer that composes no
-    # Role::Tools (Perplexity) never receives tools, and has no format_tools.
-    if ( exists $extra{tools} && ref $extra{tools} eq 'ARRAY'
-      && $self->can('format_tools') ) {
-        $extra{tools} = [ map {
-            _is_native_responses_tool($_) ? $_ : @{ $self->format_tools([$_]) }
-        } @{$extra{tools}} ];
-    }
+    $self->_responses_tools_kwarg(\%extra);
 
     # parallel_tool_use -> parallel_tool_calls (only when tools present).
     if ( exists $extra{tools} && !exists $extra{parallel_tool_calls} ) {
@@ -206,9 +250,7 @@ sub chat_request {
         $self->_responses_model_kwargs,
         $self->has_system_prompt ? ( instructions => $self->system_prompt ) : (),
         scalar(@input) ? ( input => \@input ) : (),
-        exists $controls->{max_tokens}
-            ? ( max_output_tokens => $controls->{max_tokens} )
-            : ( $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : () ),
+        $self->_responses_max_tokens_kwargs($controls),
         defined $response_format
             ? $self->_responses_format_kwargs($response_format)
             : (),
@@ -339,6 +381,8 @@ sub chat_response {
     my $data = $self->parse_response($response);
 
     my %out = $self->_responses_walk_output($data);
+    my %extra = $self->_responses_extra_fields($data);
+    my $citations = $self->_responses_merge_citations( delete $extra{citations}, $out{citations} );
 
     # Normalize usage to chat-style keys (Langertha::Usage / Goldmine read
     # prompt_tokens/completion_tokens off the %{} overload), while carrying the
@@ -380,8 +424,10 @@ sub chat_response {
         # if unreadable rather than failing the whole reply.
         defined $data->{created_at} ? ( created => $data->{created_at} ) : (),
         $out{tool_calls} ? ( tool_calls => $out{tool_calls} ) : (),
+        $out{server_tool_calls} ? ( server_tool_calls => $out{server_tool_calls} ) : (),
         defined $out{thinking} ? ( thinking => $out{thinking} ) : (),
-        $self->_responses_extra_fields($data),
+        $citations ? ( citations => $citations ) : (),
+        %extra,
     );
 }
 
@@ -393,6 +439,16 @@ Walks the C<output[]> array (C<message> / C<reasoning> / top-level
 C<function_call>), normalizes usage, maps C<created_at> to
 L<Langertha::Response/created>, and returns a L<Langertha::Response>. Extra
 provider fields come from L</_responses_extra_fields>.
+
+Server-side call items (C<web_search_call>, C<file_search_call>, C<mcp_call>,
+...) land on L<Langertha::Response/server_tool_calls>, never on
+L<Langertha::Response/tool_calls>. The C<url_citation> annotations of the
+answer are merged with any C<citations> from L</_responses_extra_fields> onto
+L<Langertha::Response/citations> (hook entries first, one entry per page; see
+L</_responses_merge_citations>). An output item the client must answer and
+Langertha cannot (C<mcp_approval_request>, C<computer_call>,
+C<custom_tool_call>, C<local_shell_call>, C<apply_patch_call>, a client
+C<tool_search_call>) croaks.
 
 =cut
 
@@ -407,10 +463,12 @@ provider fields come from L</_responses_extra_fields>.
 sub _responses_walk_output {
     my ( $self, $data ) = @_;
 
-    my ( $text, @tc_data, $finish_reason, $thinking );
+    my ( $text, @tc_data, $finish_reason, $thinking, @citations );
 
     for my $item ( @{ $data->{output} // [] } ) {
         next unless ref($item) eq 'HASH';
+        # A client-actionable item Langertha does not map croaks (k206).
+        Langertha::Tool->_croak_on_client_item($item);
         my $type = $item->{type} // '';
 
         if ( $type eq 'reasoning' ) {
@@ -430,6 +488,7 @@ sub _responses_walk_output {
                 my $block_type = $block->{type} // '';
                 if ( $block_type eq 'output_text' ) {
                     $text .= ( $block->{text} // '' );
+                    push @citations, _url_citations( $block->{annotations} );
                 }
                 elsif ( $block_type eq 'function_call' ) {
                     push @tc_data, $block;
@@ -455,13 +514,83 @@ sub _responses_walk_output {
         $finish_reason = 'tool_calls';
     }
 
+    my @server_calls = Langertha::ServerToolCall->extract( responses => $data );
+
     return (
         content => $text // '',
         defined $thinking      ? ( thinking      => $thinking )      : (),
         defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
         @tc_data ? ( tool_calls => [ map { $self->_parse_function_call($_) } @tc_data ] ) : (),
+        @server_calls ? ( server_tool_calls => \@server_calls ) : (),
+        @citations ? ( citations => \@citations ) : (),
     );
 }
+
+# The url_citation annotations of one output_text block, normalized to
+# { url, title?, start_index?, end_index? } (spec k206 section 3.6); other
+# annotation types (file_citation, ...) are left on raw. The url is kept
+# verbatim -- OpenAI appends ?utm_source=openai -- and only the dedup key in
+# _responses_merge_citations ignores it.
+sub _url_citations {
+    my ($annotations) = @_;
+    return () unless ref $annotations eq 'ARRAY';
+    my @out;
+    for my $ann (@$annotations) {
+        next unless ref $ann eq 'HASH' && ( $ann->{type} // '' ) eq 'url_citation';
+        next unless defined $ann->{url} && !ref $ann->{url} && length $ann->{url};
+        push @out, { map { defined $ann->{$_} && !ref $ann->{$_} ? ( $_ => $ann->{$_} ) : () }
+            qw( url title start_index end_index ) };
+    }
+    return @out;
+}
+
+# The dedup key of a citation url: the url without utm_* query parameters.
+# OpenAI's url_citation carries ?utm_source=openai while its search sources
+# list the same page with and without it, so the tracking parameter must not
+# make one page two citations. Every other query parameter still counts --
+# ?page=2 is another page. The stored url is never rewritten.
+sub _citation_key {
+    my ($url) = @_;
+    my ( $base, $query, $fragment ) = $url =~ /\A([^?#]*)(?:\?([^#]*))?(#.*)?\z/s;
+    return $url unless defined $base;
+    my @keep = grep { length && !/\Autm_[^=]*(?:=|\z)/i } split /&/, ( $query // '' );
+    return $base . ( @keep ? '?' . join( '&', @keep ) : '' ) . ( $fragment // '' );
+}
+
+sub _responses_merge_citations {
+    my ( $self, $hook, $annotations ) = @_;
+    # No annotations: the hook's list goes out exactly as it came, so a
+    # consumer whose payload has none (Perplexity) is unchanged.
+    return ( ref $hook eq 'ARRAY' && @$hook ? $hook : undef )
+        unless ref $annotations eq 'ARRAY' && @$annotations;
+    my ( @out, %at );
+    for my $entry ( ( ref $hook eq 'ARRAY' ? @$hook : () ), @$annotations ) {
+        my $url = ref $entry eq 'HASH' ? $entry->{url} : undef;
+        my $key = defined $url && !ref $url ? _citation_key($url) : undef;
+        if ( defined $key && exists $at{$key} ) {
+            my $seen = $out[ $at{$key} ];
+            exists $seen->{$_} or $seen->{$_} = $entry->{$_} for keys %$entry;
+            next;
+        }
+        push @out, ref $entry eq 'HASH' ? { %$entry } : $entry;
+        $at{$key} = $#out if defined $key;
+    }
+    return \@out;
+}
+
+=method _responses_merge_citations
+
+    my $citations = $engine->_responses_merge_citations( $hook_citations, $annotation_citations );
+
+Merges the C<citations> a consumer's L</_responses_extra_fields> returned with
+the C<url_citation> annotations the walker collected. Hook entries come first,
+then annotations, in wire order. One page is listed once: the dedup key is the
+C<url> without C<utm_*> query parameters (OpenAI's C<?utm_source=openai>), the
+first entry wins, and a later duplicate only fills in fields the first one
+lacks. The stored C<url> is never rewritten. Without annotations the hook's
+list is returned unchanged. Returns C<undef> when there is nothing.
+
+=cut
 
 sub _parse_function_call {
     my ( $self, $block ) = @_;
@@ -499,6 +628,8 @@ sub chat_stream_request {
         }
     }
 
+    $self->_responses_tools_kwarg(\%extra);
+
     my @input;
     for my $msg (@$messages) {
         next if ( $msg->{role} // '' ) eq 'system';
@@ -515,9 +646,7 @@ sub chat_stream_request {
         $self->_responses_model_kwargs,
         $self->has_system_prompt ? ( instructions => $self->system_prompt ) : (),
         scalar(@input) ? ( input => \@input ) : (),
-        exists $controls->{max_tokens}
-            ? ( max_output_tokens => $controls->{max_tokens} )
-            : ( $self->get_response_size ? ( max_output_tokens => $self->get_response_size ) : () ),
+        $self->_responses_max_tokens_kwargs($controls),
         defined $response_format
             ? $self->_responses_format_kwargs($response_format)
             : (),
@@ -608,6 +737,7 @@ sub parse_stream_chunk {
         # divergence hook (the base envelope returns none) so a streamed reply
         # surfaces citations too, on the final chunk (karr #158).
         my %extra = $self->_responses_extra_fields($resp);
+        my $citations = $self->_responses_merge_citations( $extra{citations}, $out{citations} );
         # Surface the prefix-cache read count and (Perplexity) cost off the
         # terminal usage, symmetric to the non-streaming chat_response (k159).
         # cached_tokens is parsed by Langertha::Usage->from_hash -- the same value
@@ -635,7 +765,7 @@ sub parse_stream_chunk {
                     ? ( cost => $usage->{cost} ) : () ),
             } ) : (),
             defined $cached ? ( cached_tokens => $cached ) : (),
-            $extra{citations} ? ( citations => $extra{citations} ) : (),
+            $citations ? ( citations => $citations ) : (),
             $out{tool_calls} ? (
                 tool_calls    => $out{tool_calls},
                 finish_reason => $out{finish_reason},
