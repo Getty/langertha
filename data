@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-25T17:56:50Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T17:56:50Z
+created: 2026-09-25T17:48:26Z
+id: 275
+priority: medium
+started: 2026-09-25T17:49:07Z
+status: done
+tags:
+- chat
+- content
+- vision
+title: 'Langertha::Chat wrapper: simple_chat_f / simple_chat_with_tools_f never serialize
+  Content objects (no chat_messages)'
+updated: 2026-09-25T17:56:50Z
+---
+
+From k274: the Langertha::Chat wrapper's simple_chat_f / simple_chat_with_tools_f bypass chat_messages, so Content::Image (and other Content objects) in messages are not serialized per engine content_format (and no inline prefetch). Route them through the same message normalization as the engine paths; tests with an image through the wrapper on openai/anthropic/gemini engines.
+
+Ready for review
+
+2026-09-25 17:55 Fixed in f4e1563 on branch worktree-agent-a247ca055de26933f: _build_messages uses engine _normalize_content_blocks, _f paths prefetch via _prefetch_inline_images_f. t/93_chat_content_objects.t.
+
+Ready for review
