@@ -133,8 +133,9 @@ would be wrong.
 **The door fails closed.** `from_hash` / `from_list` / `format_list` croak on every category
 except `function`. The messages differ per category: a server-side tool "not supported yet", a
 client-executed built-in "not a server tool", an unsupported `type`, or a hash with no `type`
-and no `name`. Nothing is dropped silently any more. The one exception is the flat Responses
-function form, which `from_openai` still cannot parse; that predates this change and is k217.
+and no `name`. Nothing is dropped silently any more. ~~The one exception is the flat Responses
+function form, which `from_openai` still cannot parse; that predates this change and is k217.~~
+**Resolved — see the k217 Update.**
 Every function-tool form the door accepted before is pinned in `t/92_tool_input_forms.t`. The
 server-side croak is interim until server-side tools get their own value object (k206). It is
 a croak and not a pass-through because `from_hash`'s callers only ever emit function tools.
@@ -158,3 +159,17 @@ output is not mapped into `Response.tool_calls` either (`ToolCall` only knows `f
 So a turn that calls it ends with empty `tool_calls`. The spec keeps `custom` verbatim on
 purpose. The inbound fail-loud for unmapped client-actionable items belongs to k206
 (llm-advisor must-change 1).
+
+## Update (k217 — `from_openai` accepts the flat Responses function form too)
+
+`from_openai` required the Chat Completions nesting (`{type=>'function', function=>{name,
+description, parameters}}`) and returned `undef` for the OpenAI Responses API's flat form
+(`{type=>'function', name, description, parameters}`) — `classify` already reported the flat
+form as `function`, but the door dropped it anyway, so `from_hash` / `from_list` /
+`format_list` silently lost it on every wire except the Responses envelope (which already
+passed it through verbatim). `from_openai` now reads `name` / `description` / `parameters`
+from `$hash->{function}` when that is a hash, and from `$hash` itself otherwise, so both shapes
+resolve to the same `Langertha::Tool` (value-object inbound door, ADR 0018 tier 1); the nested
+form's behavior is unchanged. `t/92_tool_input_forms.t` pins the flat form through the same
+table as every other accepted form and checks its `format_list` output is identical to the
+nested form's on every wire.

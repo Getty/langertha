@@ -31,8 +31,12 @@ sub from_openai {
   my ($class, $hash) = @_;
   return undef unless ref($hash) eq 'HASH';
   return undef unless ($hash->{type} // '') eq 'function';
-  my $fn = $hash->{function} || {};
-  return undef unless ref($fn) eq 'HASH';
+  # Chat Completions nests the function fields under `function`; the
+  # Responses API's flat form puts name/description/parameters directly on
+  # the tool hash (k217). Normalize both here (ADR 0018 tier 1: the
+  # value-object inbound door), so the nested shape still wins whenever it
+  # is actually present.
+  my $fn = ref( $hash->{function} ) eq 'HASH' ? $hash->{function} : $hash;
   my $name = $fn->{name} // '';
   return undef unless length $name;
   return $class->new(

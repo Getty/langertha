@@ -33,6 +33,12 @@ Revision history for Langertha
       with neither type nor name (such as a functionDeclarations wrapper). The
       new Langertha::Tool->classify($hash, $fmt) reports the kind of tool
       without croaking, so a gateway can reject a request cleanly.
+    - Langertha::Tool->from_hash / from_list / format_list now accept the flat
+      OpenAI Responses function-tool form, whose name, description and
+      parameters sit directly on the tool hash, not only Chat Completions'
+      nested function wrapper. It used to return undef and be silently
+      dropped on every wire except the Responses envelope, which already
+      passed it through verbatim.
     - OpenAIResponses decides tool by tool, in any order: flat function tools,
       its server-side tools and any other typed tool (custom, namespace, hosted
       shell, types Langertha does not know) go out verbatim, and other

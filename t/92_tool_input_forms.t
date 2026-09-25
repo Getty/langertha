@@ -17,12 +17,18 @@ use Langertha::Tool;
 my $schema = { type => 'object', properties => { city => { type => 'string' } } };
 my $empty  = { type => 'object', properties => {} };
 
+my $nested_openai = { type => 'function', function => { name => 'w', description => 'd', parameters => $schema } };
+my $flat_openai   = { type => 'function', name => 'w', description => 'd', parameters => $schema };
+
 my @forms = (
   [ 'Langertha::Tool object',
     Langertha::Tool->new( name => 'w', description => 'd', input_schema => $schema ),
     $schema ],
   [ 'OpenAI chat {type=>function, function=>{...}}',
-    { type => 'function', function => { name => 'w', description => 'd', parameters => $schema } },
+    $nested_openai,
+    $schema ],
+  [ 'OpenAI Responses flat {type=>function, name, parameters}',
+    $flat_openai,
     $schema ],
   [ 'MCP {name, inputSchema}',
     { name => 'w', description => 'd', inputSchema => $schema },
@@ -62,10 +68,18 @@ for my $row (@forms) {
   };
 }
 
-# The flat Responses function form is a function tool too. from_hash does not
-# parse it yet (it is only passed through verbatim by the Responses envelope);
-# that pre-existing gap is karr k217, so only its class is pinned.
-is( scalar Langertha::Tool->classify( { type => 'function', name => 'w', parameters => $schema } ),
-  'function', 'flat Responses function tool classifies as function' );
+# k217: the flat Responses function form and the nested OpenAI chat form
+# describe the same tool, so from_hash must resolve both to an identical
+# Langertha::Tool -- checked here by comparing their wire output on every
+# format, not just the schema each parses to in the table above.
+subtest 'flat Responses function form == nested OpenAI chat form on every wire' => sub {
+  for my $fmt (qw( openai anthropic gemini ollama responses hermes )) {
+    is_deeply(
+      Langertha::Tool->format_list( $fmt, [$flat_openai] ),
+      Langertha::Tool->format_list( $fmt, [$nested_openai] ),
+      "format_list($fmt) flat == nested",
+    );
+  }
+};
 
 done_testing;
