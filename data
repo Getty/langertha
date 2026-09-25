@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T07:14:14Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:14:14Z
+created: 2026-09-25T06:47:39Z
+id: 245
+priority: medium
+started: 2026-09-25T07:04:53Z
+status: done
+tags:
+- sglang
+- llm
+- risk
+- capabilities
+title: 'SGLang: forced tool_choice (required/named) + response_format is rejected
+  server-side (400) — needs an exclusion'
+updated: 2026-09-25T07:14:14Z
+---
+
+Found during k244 (llm-advisor, 2026-09-25, source only). sglang main @ 0fb699ac03e2 python/sglang/srt/entrypoints/openai/protocol.py L1172-1189 (ValueError added in 307a90f6d3, 2026-08-18; widened by 17ba2c2e7c 2026-09-15): when a tool-call constraint exists AND response_format/regex/ebnf is set AND tool_choice is 'required' or a named ToolChoice, the request fails with 'tool_choice required or a named tool cannot be combined with response_format...' (except parsers whose constraint is full_assistant_ebnf). tool_choice auto + response_format only logs a warning. Langertha::Engine::SGLang claims tool_choice_named + response_format_json_schema, so chat_f does no ADR 0005 rewrite and sends both -> opaque 400. Per ADR 0024 this is an engine-scoped model_capability_exclusions rule on SGLang, but the exclusion coderef today only receives has_tools/response_format/streaming — it needs the resolved tool_choice kind (forced vs auto/none) to avoid over-croaking tools+auto+response_format, which SGLang accepts. Seam change -> langertha-wire-worker. Alternative: route forced+response_format through the synthetic path. Done = croak (or rewrite) before the wire, test in t/2x, ADR 0024 Update.
+
+Merged 65ff21f: tool_choice_forced exclusion key + SGLang all-models croak; over-croaks for full_assistant_ebnf parsers (server-side, invisible). Follow-up #249 (engine-level response_format not checked).
