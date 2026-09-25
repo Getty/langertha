@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T21:29:52Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:29:52Z
+created: 2026-09-25T20:22:52Z
+id: 300
+priority: medium
+started: 2026-09-25T21:05:22Z
+status: done
+tags:
+- rate-limit
+- response
+- http
+- bug
+title: 'Rate limit: a response without headers gets the previous response''s RateLimit;
+  429/error responses never update rate_limit (reset + retry-after lost)'
+updated: 2026-09-25T21:29:52Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). REPRODUCED offline (Groq engine, hand-built HTTP::Response).
+
+1) Stale carry-over: lib/Langertha/Engine/Remote.pm:138 only stores the parsed RateLimit if ($rl); a response without rate-limit headers leaves _last_rate_limit at the previous one, and Role::Chat simple_chat (Chat.pm ~491) / chat_f (~985) then clone THAT onto the new Response. Repro: r1 with x-ratelimit-remaining-requests: 100, r2 with no headers -> engine->rate_limit->requests_remaining is still 100 and would be attached to r2. Response.rate_limit must describe the response it sits on.
+   Fix: _update_rate_limit clears _last_rate_limit (set undef) when the response carries none.
+
+2) Error responses skip the update: Role/HTTP.pm:136 croaks before _update_rate_limit (Role/HTTP.pm:139), and chat_f / Chat::simple_chat_f die on !is_success before response_call. A 429 is exactly the response whose x-ratelimit-reset-* / anthropic-ratelimit-*-reset and retry-after matter, yet after catching the error engine->rate_limit still shows the last successful (stale) values. Repro: 429 with remaining 0, reset 7.66s, retry-after 8 -> engine->rate_limit remaining=100, no retry-after in raw.
+   Fix: call _update_rate_limit before the is_success croak in parse_response and in the async paths (chat_f, simple_chat_f, streaming) so a caller can back off from engine->rate_limit after the exception. Consider parity for chat_stream_realtime_f, which never updates rate_limit at all.
