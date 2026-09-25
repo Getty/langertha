@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T23:31:32Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:31:32Z
+created: 2026-09-25T22:48:29Z
+id: 328
+priority: low
+started: 2026-09-25T22:53:13Z
+status: done
+tags:
+- tools
+- gemini
+- ollama
+- advisor
+title: 'Tool results drop the correlation key the wire offers: Gemini functionResponse.id,
+  Ollama tool_name'
+updated: 2026-09-25T23:31:32Z
+---
+
+ToolCall->from_gemini reads functionCall.id (ToolCall.pm:135) but Role/Tools.pm:462-468 builds the Gemini ToolResult with name only and ToolResult::to_gemini emits no id. Two parallel calls to the same function (fc-1, fc-2) come back as two functionResponse parts with identical name and no id. Similarly ToolResult::to_ollama emits {role:tool,content} without tool_name (Ollama docs show tool_name on tool messages), so parallel results cannot be matched on Ollama native.
+
+Repro: format_tool_results(gemini) for calls {id:fc-1,name:echo},{id:fc-2,name:echo} -> parts [{functionResponse:{name:echo,response:{result:r1}}},{functionResponse:{name:echo,response:{result:r2}}}].
+
+Fix: pass id => functionCall.id into the Gemini ToolResult and emit functionResponse.id when non-empty; pass name into the Ollama ToolResult and emit tool_name. Advisor check on current Gemini/Ollama docs first (documentation-derived).
+
+2026-09-25 22:52 llm-advisor (2026-09-26, docs+source, no live call): GEMINI - FunctionResponse.id is documented in v1beta AND v1 discovery docs (generativelanguage.googleapis.com/$discovery/rest?version=v1beta: FunctionResponse props willContinue,scheduling,name,id,parts,response) and google-genai types.py: 'The id of the function call this response is for. Populated by the client to match the corresponding function call id.' FunctionCall.id: 'If populated, the client [must] return the response with the matching id.' Function-calling guide (ai.google.dev/gemini-api/docs/generate-content/function-calling, updated 2026-09-16): 'Gemini 3 now always returns a unique id with every functionCall. Include this exact id in your functionResponse.' Gemini 3.5 Flash dev guide: 'Every FunctionResponse must include the id from the corresponding FunctionCall.' -> on Gemini 3.x the missing id is a correctness bug, not cosmetics (same-name parallel calls get mis-mapped; newest guides call it mandatory). name stays Required. RULING: pass id => functionCall.id, emit functionResponse.id only when non-empty (2.5 models may send no id; do not invent one). OLLAMA - ollama/ollama api/types.go Message has ToolName json:tool_name AND ToolCallID json:tool_call_id; ToolCall has ID json:id, and server/routes.go generates toolCalls[i].ID on /api/chat responses; template.go exposes both to model chat templates. docs/capabilities/tool-calling.mdx examples all send {role:tool, tool_name, content} (incl. a parallel example with repeated names, relying on order). /api/chat OpenAPI page lists only role/content/images/tool_calls (docs lag the Go struct). Missing tool_name: request still accepted (omitempty) but templates that render the tool name get nothing; with same-name parallel calls, only order correlates results. RULING: emit tool_name (from call name) AND tool_call_id (from tool_calls[].id when present) - both are omitempty-safe; keep result order == call order.
