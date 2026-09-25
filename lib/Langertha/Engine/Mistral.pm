@@ -26,7 +26,8 @@ with map { 'Langertha::Role::'.$_ } qw(
 
     print $mistral->simple_chat('Say something nice');
 
-    my $embedding = $mistral->embedding($content);
+    my $vector = $mistral->simple_embedding($content);
+    # async: await $mistral->simple_embedding_f($content)
 
 =head1 DESCRIPTION
 

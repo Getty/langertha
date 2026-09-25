@@ -24,7 +24,8 @@ with map { 'Langertha::Role::'.$_ } qw(
     print $groq->simple_chat('Say something nice');
 
     # Audio transcription
-    my $text = $groq->transcription('/path/to/audio.mp3');
+    my $text = $groq->simple_transcription('/path/to/audio.mp3');
+    # async: await $groq->simple_transcription_f(...)
 
 =head1 DESCRIPTION
 

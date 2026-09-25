@@ -30,6 +30,10 @@ Revision history for Langertha
       HTTP-date), and the error message names it: "429 Too Many Requests
       (retry after 8s)".
 
+    - The OpenAI, Groq, Mistral and Ollama SYNOPSIS show simple_embedding /
+      simple_transcription (and the _f variants) for vectors and
+      transcripts; embedding / transcription only build the HTTP request.
+
     - Async embeddings, transcription and image generation:
       simple_embedding_f, simple_transcription_f,
       simple_transcription_result_f and simple_image_f (and

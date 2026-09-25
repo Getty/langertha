@@ -45,7 +45,8 @@ with map { 'Langertha::Role::'.$_ } qw(
 
     print $ollama->simple_chat('Say something nice');
 
-    my $embedding = $ollama->embedding($content);
+    my $vector = $ollama->simple_embedding($content);
+    # async: await $ollama->simple_embedding_f($content)
 
     # Get OpenAI-compatible API access to Ollama
     my $ollama_openai = $ollama->openai;

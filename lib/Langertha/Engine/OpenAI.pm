@@ -30,10 +30,10 @@ with map { 'Langertha::Role::'.$_ } qw(
     print $response;
 
     # Embeddings
-    my $embedding = $openai->embedding('Some text to embed');
+    my $vector = $openai->simple_embedding('Some text to embed');
 
     # Transcription (Whisper)
-    my $text = $openai->transcription('/path/to/audio.mp3');
+    my $text = $openai->simple_transcription('/path/to/audio.mp3');
 
     # Async with Future::AsyncAwait
     use Future::AsyncAwait;
@@ -41,6 +41,7 @@ with map { 'Langertha::Role::'.$_ } qw(
     async sub ask_gpt {
         my $response = await $openai->simple_chat_f('What is Perl?');
         say $response;
+        my $vector = await $openai->simple_embedding_f('Some text to embed');
     }
 
 =head1 DESCRIPTION
