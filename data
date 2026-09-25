@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T00:35:33Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T00:35:33Z
+created: 2026-09-24T19:40:24Z
+id: 190
+priority: medium
+started: 2026-09-25T00:10:45Z
+status: done
+tags:
+- raider
+- api
+title: Oeffentliche Hooks statt Privatzugriffen aus langertha-raider (_async_http,
+  _langfuse_timestamp, Usage)
+updated: 2026-09-25T00:35:33Z
+---
+
+Von langertha-raider (ADR-Review 2026-09-24): Raider greift auf private Core-API zu: _async_http 5x (Raider.pm:858,1560,1738,1916,2091), _langfuse_timestamp 9x; provider-spezifisches Usage-Parsing dreifach selbst gebaut (Raider.pm x2, Plugin::Trace). Bitte gezielte oeffentliche API: HTTP-Zugriff fuer async Requests, Zeit/Trace-Event-Hook, normalisierte Usage aus Responses. Erst die tatsaechlichen Aufrufer inventarisieren, kein allgemeiner Framework-Umbau. Keine Rueckabhaengigkeit auf Raider (ADR 0026).
+
+Implemented on branch k190-192 (6775d37 spec, 7756f33 feat): async_request_f, langfuse_timestamp, Usage->from_raw (+ Gemini camelCase in from_hash). Privates kept. Raider migration: k195.
