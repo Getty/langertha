@@ -103,6 +103,10 @@ sub _is_deepseek_v3 {
 # deepseek-v4-pro-only high|max clamp (drop low) was reversed by DeepSeek —
 # V4 Pro service continues unchanged after 2026-09-14 — and is gone. Unknown
 # future V4 ids get the same flat set.
+#
+# This override replaces Role::ReasoningEffort::reasoning_kwargs_for and so
+# bypasses its supports()-gate (karr k204, ADR 0009): harmless while DeepSeek
+# never clears reasoning_effort -- if it ever does, add the same gate here.
 sub reasoning_kwargs_for {
   my ( $self, %args ) = @_;
   # A per-request reasoning_effort control (chat_f, karr #46) beats the

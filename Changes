@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Role::ReasoningEffort::reasoning_kwargs_for now returns nothing unless
+      the engine supports reasoning_effort or thinking_budget (the registry
+      gate, as for prompt_cache_key). The MiniMax and Moonshot per-engine
+      stubs are gone; request bodies are unchanged for every shipped engine.
+      A third-party engine that clears reasoning_effort (and thinking_budget)
+      in engine_capabilities now stops sending reasoning fields.
+
     - vLLM, SGLang, llama.cpp, Ollama (OpenAI-compatible) and LM Studio
       (OpenAI-compatible) no longer report prompt_cache_key, and no longer send
       it: their servers ignore OpenAI's cache-routing hint. Use the runtime
