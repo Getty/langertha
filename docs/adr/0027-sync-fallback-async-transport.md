@@ -64,17 +64,27 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
      on_read of connection while idle", again out of the loop. So the cancel runs on the next loop
      iteration (`$loop->later`), and the future fails once the transfer has ended; if the response
      completed within that read there is nothing to cancel. A client whose futures carry no loop
-     is drained instead. Limit: cancelling a `Net::Async::HTTP` request closes its connection, and
-     with the client defaults Langertha uses (`pipeline => 1`, `max_connections_per_host => 1`)
-     a third concurrent request on the same engine can already be pipelined behind the aborted
-     one on that keep-alive connection; it then fails with `Connection closed`. Requests through
-     other engines, and later requests on the same one, are unaffected.
+     is drained instead, and so is one whose `loop` has no `later` (another event system's loop);
+     the original exception wins over a transport failure the stop provokes (karr #199).
+     Cancelling a `Net::Async::HTTP` request closes its connection. With the library default
+     `pipeline => 1` a concurrent request on the same engine was pipelined behind the aborted one
+     on that keep-alive connection and failed with `Connection closed`; since karr #199 the
+     client Langertha builds sets `pipeline => 0`, so a queued request waits in the client's
+     queue and gets a fresh connection when the aborted one closes. `max_connections_per_host`
+     stays at the library default of 1 (overridable through `NET_ASYNC_HTTP_MAXCONNS`): LLM
+     requests are long and a pipelined request waits behind the stream anyway (HTTP/1.1
+     answers pipelined requests in order), so
+     dropping pipelining costs no concurrency Langertha had; raising the connection limit would
+     be a new concurrency promise and is left to an injected client. An injected client keeps
+     its own settings.
    Both are covered by `t/45_sync_http_real_lwp.t`, a real LWP (and `Net::Async::HTTP`) against a
    forked local daemon, including sync/async parity on a 4xx with a body; the `Net::Async::HTTP`
    chunk-sub die by `t/45_async_http_stream_die.t`, in three framings (paced chunks, a chunked
    burst and a `Content-Length` body in one read), each followed by a request on the same engine.
-   The pipelining limit was reproduced against a keep-alive daemon, which the shared test daemon
-   (`Connection: close` on every response) cannot exercise.
+   The pipelining case, and connection reuse after an abort, are covered by
+   `t/45_async_http_keepalive.t` against the shared test daemon's `keep_alive` mode (the default
+   mode sends `Connection: close` on every response and cannot exercise either); the two
+   injected-client edges by `t/45_stream_abort_client_future.t`.
 
 2. **One shared selection seam** — `Langertha::Role::AsyncHTTP` — owns the `_async_http` /
    `_async_loop` attributes and the backend choice, ending the duplication: an injected
