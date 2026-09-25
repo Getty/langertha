@@ -203,7 +203,9 @@ Revision history for Langertha
     - OpenAI-compatible engines report finish_reason tool_calls when a reply
       has tool calls but the server said stop, as AKI.IO does for gpt-oss-120b.
       This applies to streamed replies too. The server's value stays in raw,
-      and length and every other finish_reason pass through unchanged.
+      and length and every other finish_reason pass through unchanged. A
+      streamed chunk with an empty finish_reason no longer counts as the
+      final chunk or reports that empty value; the stream goes on.
 
     - Streamed tool calls are no longer lost on Chat-Completions, Anthropic,
       Gemini and Ollama-native streams: each call arrives once, as the same
@@ -245,10 +247,6 @@ Revision history for Langertha
       output_config.effort only for low, high or max and no longer sends a
       thinking field. Taken from Moonshot's documentation, not verified
       against the live API.
-
-    - XAI: the default model is now grok-4.7, xAI's current flagship (same
-      context, pricing and parameters as grok-4.6 on chat/completions). Pass
-      model => 'grok-4.6' to keep the previous default.
 
     - XAI: reasoning_effort reaches the wire only with a level grok accepts:
       low, medium, high or xhigh on grok-4.6 and later, low, medium or high on
@@ -376,19 +374,22 @@ Revision history for Langertha
       your own async client by injecting _async_http at construction; the
       poll_metrics/export_otlp sync wrappers drive its loop. (ADR 0027.)
 
-    - Raider extracted to the sibling distribution langertha-raider. The autonomous
-      agent (Langertha::Raider, Raider::Result) and the Raid orchestration layer
-      (Langertha::Raid, Raid::Loop/Parallel/Sequential) move there under their own
-      names. Langertha::Result stays as a reserved-namespace stub — its implementation
-      folded into the self-contained Langertha::Raider::Result — so CPAN keeps indexing
-      it under Langertha. Langertha::RunContext and Langertha::Role::Runnable stay in
-      core as dependency-free generic primitives (a structured run context and the
-      run_f execution contract), decoupled from Raider. Core keeps the seams Raider
-      builds on (Role::Tools, Role::PluginHost, Langertha::Plugin) and the lazy
+    - Incompatible change: Raider extracted to the sibling distribution
+      langertha-raider; install it (cpanm Langertha::Raider) to keep using
+      Raider or Raid. The autonomous agent (Langertha::Raider, Raider::Result)
+      and the Raid orchestration layer (Langertha::Raid,
+      Raid::Loop/Parallel/Sequential) move there under their own names.
+      Langertha::Result stays as a reserved-namespace stub — its
+      implementation folded into the self-contained Langertha::Raider::Result
+      — so CPAN keeps indexing it under Langertha. Langertha::RunContext and
+      Langertha::Role::Runnable stay in core as dependency-free generic
+      primitives (a structured run context and the run_f execution contract),
+      decoupled from Raider. Core keeps the seams Raider builds on
+      (Role::Tools, Role::PluginHost, Langertha::Plugin) and the lazy
       `use Langertha qw( Raider )` sugar, which loads Langertha::Raider once
-      langertha-raider is installed. mcp_servers is now documented as a duck-typed
-      ArrayRef of Net::Async::MCP-compatible clients. Requirements: Net::Async::MCP
-      dropped.
+      langertha-raider is installed. mcp_servers is now documented as a
+      duck-typed ArrayRef of Net::Async::MCP-compatible clients. Requirements:
+      Net::Async::MCP dropped. (ADR 0026.)
 
     - Tool wire-translation is a single source of truth in the Langertha::Tool
       / ToolCall / ToolResult / ToolChoice value objects, keyed by a per-engine
@@ -568,12 +569,11 @@ Revision history for Langertha
       flat reasoning_effort none|low|high|max uniformly, including
       deepseek-v4-pro and unknown V4 ids; legacy V3.2:
       `thinking:{type:enabled}`); MiniMax (OpenAI endpoint) and Perplexity
-      clear the capability and never emit it. Moonshot's OpenAI endpoint
-      controls reasoning via a Kimi-specific `thinking` object rather than
-      reasoning_effort, so that engine clears the capability too — route
-      reasoning through MoonshotAnthropic instead, where kimi-k3's
-      server-side default is documented as 'max' (deliberately not wired as
-      a role default). Ollama's GPT-OSS family takes graded level strings
+      clear the capability and never emit it. Moonshot shapes it
+      model-gated (see the Moonshot entry above): kimi-k3 sends
+      reasoning_effort low|high|max, kimi-k2.6 sends Kimi's `thinking`
+      toggle, and kimi-k2.7-code and the rest of the K2 family clear the
+      capability. Ollama's GPT-OSS family takes graded level strings
       (low|medium|high|max, with none/minimal floored to low — GPT-OSS
       always reasons, there's no "off") on the top-level `think` field, not
       the nested `options.think`, which Ollama silently ignores.
@@ -735,16 +735,12 @@ Revision history for Langertha
       not a Moose class (the one documented exception, since Time::Moment is
       an XS type that blesses from inside its constructors). (ADR 0017.)
 
-    - Langertha::Response and Langertha::Result (and Raider::Result through
-      @ISA) are now always true in boolean context (overload bool => 1).
-      Both classes previously overloaded only `""` with fallback => 1, so
-      Perl derived boolean from the content string — an object whose content
-      was empty or the literal '0' evaluated false. That silently dropped
-      every tool-call-only Response and, worse, every Raider question, pause
-      and abort Result (their message lives in content, not text), so
-      `if (my $r = $raider->raid(...))` discarded exactly the results a
-      caller must handle. The `""` contract is untouched — stringify, eq and
-      concat behave exactly as before.
+    - Langertha::Response is now always true in boolean context (overload
+      bool => 1). It previously overloaded only `""` with fallback => 1, so
+      Perl derived boolean from the content string — a Response whose
+      content was empty or the literal '0' evaluated false, which silently
+      dropped every tool-call-only Response. The `""` contract is untouched
+      — stringify, eq and concat behave exactly as before.
 
     - Several streaming and response-parsing edge cases are now handled
       instead of dying or silently losing data: the async SSE/NDJSON reader
@@ -817,42 +813,6 @@ Revision history for Langertha
       (IO::Async::Loop->await returns the future itself, so the wrappers
       were missing ->get and died on "Not an ARRAY reference").
 
-    - MCP tool calling now speaks the current protocol revision
-      (2026-07-28) via a new Langertha::MCP::Client, a temporary subclass of
-      Net::Async::MCP: the upstream module hardcodes the obsolete initialize
-      handshake and sends no _meta, while current MCP servers require
-      protocolVersion + clientCapabilities _meta on every request and no
-      longer implement initialize at all. The subclass sends server/discover
-      with the right _meta and carries it on every subsequent call. Every
-      MCP instantiation site in the distribution uses it; revert once
-      upstream ships a fix.
-
-    - Raider: a raid paused by an interactive self-tool (raider_ask_user
-      etc.) mid-way through a parallel-tool batch no longer re-runs the tool
-      calls that already completed before it, and no longer drops the
-      self-tools queued after it. The continuation now carries only the
-      calls after the pausing one, and respond_f's resume loop mirrors the
-      main loop, so side effects fire exactly once and every tool_use ends
-      with exactly one tool_result — the previous behaviour produced
-      duplicate side effects and a duplicate tool_result per id, which
-      strict providers (Anthropic) reject with a 400.
-
-    - Raider session history now renders per wire shape instead of assuming
-      every entry is a scalar: a tool_call / tool_result turn carries its
-      structured block through the archive, so history replayed into a later
-      raid (and the embedding text derived from it) no longer stringifies or
-      drops those turns. A new clear_session_history method empties
-      session_history and the parallel _session_embeddings array together,
-      preserving their 1:1 invariant that a bare reset left stale; the
-      embedding-search path guards on a length match and falls back safely if
-      the two ever drift.
-
-    - Raider: a plugin's plugin_before_llm_call no longer diverges from the
-      conversation a paused raid resumes with. A plugin that returns a fresh
-      conversation arrayref now updates the continuation state, so respond_f
-      keeps every assistant and tool_result message accumulated before the
-      pause instead of reverting to the pre-plugin array.
-
     - chat_f now normalizes a canonical set of per-request controls instead
       of spreading them as raw target-wire kwargs: previously only
       messages/tools/tool_choice were normalized, so temperature/max_tokens/
@@ -922,10 +882,9 @@ Revision history for Langertha
       drift-check test now flags future catalog changes.
 
       New Langertha::Engine::XAI for xAI Grok via the OpenAI-compatible
-      endpoint (LANGERTHA_XAI_API_KEY) — default model is now grok-4.6
-      (500K context), the current flagship; grok-4.3 (1M context, the
-      original default) became a cheaper mid-tier and grok-4.5 (500K) also
-      joined the line-up, both still selectable via `model`.
+      endpoint (LANGERTHA_XAI_API_KEY) — default model grok-4.7 (500K
+      context), xAI's current flagship; older ids such as grok-4.6, grok-4.5
+      or grok-4.3 stay selectable via `model` while the API serves them.
 
       New Langertha::Engine::Moonshot and ::MoonshotAnthropic for Moonshot
       AI Kimi, mirroring the MiniMax dual-engine pair — Moonshot on the
