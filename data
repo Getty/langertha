@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T03:17:55Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:17:55Z
+created: 2026-09-25T02:13:03Z
+id: 214
+priority: low
+started: 2026-09-25T02:30:56Z
+status: done
+tags:
+- moonshot
+- temperature
+title: 'Moonshot/Kimi: temperature != 1.0 wird abgelehnt - Engine sollte das abfangen'
+updated: 2026-09-25T03:17:55Z
+---
+
+Aus k207-Advisor-Note (langertha-llm-advisor, 2026-09-25, Doku-basiert, nicht live): jedes aktuelle Kimi-Modell lehnt temperature != 1.0 ab. Engine::Moonshot/MoonshotAnthropic senden temperature ungefiltert. Vorgehen analog ADR 0025 (temperature-Gate: drop+carp bei Nicht-Default, temperature=1 passiert), aber per Modellfamilie; erst llm-advisor bestaetigen lassen, welche kimi-IDs betroffen sind. Kein Live-Call ohne Gettys OK.
+
+2026-09-25 02:29 llm-advisor 2026-09-25, docs plus third-party error reports, no live call.
+AFFECTED IDS (platform.kimi.ai/docs/api/models-overview.md, fetched 2026-09-25: 'Fixed means … passing any other value returns an error, so do not pass it explicitly'): kimi-k3 fixed at 1.0. kimi-k2.7-code and kimi-k2.7-code-highspeed fixed at 1.0 (same constraints). kimi-k2.6 fixed at 1.0 in thinking mode and 0.6 in NON-thinking mode ('other values return an error'). The sunset kimi-k2.5 behaved the same way (reddit r/kilocode 2026-02-03). Those are all the chat ids Kimi currently lists. top_p (0.95), n (1) and the penalties (0) are fixed too, but Langertha does not send them.
+400, NOT A CLAMP: HTTP 400 invalid_request_error with 'invalid temperature: only 1 is allowed for this model' or '… only 0.6 is allowed …' (github cline/cline#10544 2026-05-04; HKUDS/nanobot#4961; MoonshotAI/kimi-cli#1924 2026-04-17; lobe-chat#14122; promptfoo moonshot docs). Kimi's errors page maps invalid parameters to 400 invalid_request_error.
+MoonshotAnthropic: the Messages API schema (docs/api/messages.md, same date) has NO temperature property at all and documents only kimi-k3. Whether /anthropic 400s or ignores a temperature is NOT documented. Assume the same backend validation. Omitting the field is always safe because the value is fixed server-side.
+CAUTION ON THE ADR 0025 SHAPE: 'temperature=1 passes' is WRONG for kimi-k2.6 non-thinking, where 1 gets a 400 and only 0.6 is accepted. Moonshot cannot send thinking:{type:disabled} today (reasoning_effort is cleared on K2), so this is latent, but it becomes real once k215 or a thinking mapping lands. Also, unlike OpenAI the rejection does not depend on effort, so ADR 0025's runtime, effort-aware predicate is overkill.
+RECOMMEND: (1) A static per-model clear (ADR 0019 layer 3) on BOTH faces: 'kimi-k3' => {…, temperature=>0}, qr/\Akimi-k2(?!\d)/ => {…, temperature=>0}. That covers k2.6, k2.7-code(-highspeed), k2.5 and k2-thinking. Never emit temperature on any current Kimi id, including 1. (2) Get the drop+carp in one shared place: in both _temperature_kwargs gates (Role::OpenAICompatible, Role::AnthropicCompatible), when a caller-set temperature is present, != 1 and supports('temperature') is false, carp 'dropping temperature=X: model fixes it server-side'. The same carp then also covers Anthropic Opus 4.7+ (k138 clear), which is silent today. That behavior change needs an ADR 0025 Update. (3) Do not match OpenRouter's moonshotai/kimi-* (aggregator, unchecked). (4) Tests: a request-building test that k3, k2.6 and k2.7-code send no temperature at 0.7 or at 1, and that the carp fires only for != 1.
+
+2026-09-25 02:38 Done on wire-bundle2 8a83757: kimi-k3/K2 temperature cleared on Moonshot + MoonshotAnthropic (layer 3, never sent incl. 1); carp in both _temperature_kwargs gates for a dropped non-default value (covers Opus 4.7+ too). ADR 0025 k214 Update. ResponsesCompatible gate untouched (parallel branch). Doc-derived, not live.
