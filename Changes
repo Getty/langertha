@@ -10,10 +10,17 @@ Revision history for Langertha
       Response refusal (and Stream::Chunk refusal) carries OpenAI's
       message.refusal and a Responses API refusal part.
 
+    - OpenAI: the default image model is gpt-image-2 and the default
+      transcription model is gpt-transcribe, also for the whisper handle
+      (gpt-image-1 and whisper-1 are being retired). image_request never
+      sends response_format for gpt-image-* models, which reject it and
+      always answer b64_json; one passed in is dropped with a warning.
+      gpt-transcribe answers response_format json only; pass
+      transcription_model => 'whisper-1' for verbose_json, srt or vtt.
+
     - Scaleway: the default chat model is llama-3.3-70b-instruct;
       llama-3.1-8b-instruct is no longer served on Scaleway's serverless
       Generative APIs.
-
 
     - Batch embeddings: simple_embedding([ $a, $b, ... ]) (and the
       Langertha::Embedder wrapper) returns one vector per input, in input

@@ -54,7 +54,8 @@ output, text+image input, knowledge cutoff 2026-04-30), C<gpt-5.6-terra>
 (default, balances intelligence and cost — the GPT-5.6 successor of the former
 mini tier), C<gpt-5.6> (Sol, frontier), C<gpt-5.6-luna> (cost-sensitive,
 successor of the former nano tier), C<text-embedding-3-large> (embeddings),
-C<whisper-1> (transcription).
+C<gpt-transcribe> (transcription, default), C<gpt-image-2> (image generation,
+default).
 
 Dynamic model listing is supported via L<Langertha::Role::Models/list_models>.
 Results are cached for C<models_cache_ttl> seconds (default: 3600).
@@ -202,7 +203,7 @@ sub _build_whisper {
 =attr whisper
 
 Lazy-built L<Langertha::Engine::TranscriptionBase> instance bound to
-this engine's C<api_key>, C<url>, C<transcription_model> (C<whisper-1>
+this engine's C<api_key>, C<url>, C<transcription_model> (C<gpt-transcribe>
 unless set), C<user_agent_agent> and C<user_agent_timeout>, so it
 transcribes exactly as C<< $openai->simple_transcription >> does.
 Useful when you have an OpenAI engine handy and want a focused

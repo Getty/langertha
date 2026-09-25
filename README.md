@@ -843,7 +843,7 @@ my $vec = $embedder->simple_embedding('some text');
 # Image generation wrapper
 my $imagegen = Langertha::ImageGen->new(
     engine  => $openai,
-    model   => 'gpt-image-1',
+    model   => 'gpt-image-2',
     size    => '1024x1024',
     quality => 'high',
 );
@@ -895,7 +895,7 @@ my $images = $openai->simple_image('A viking with an axe in pixel art');
 # Returns arrayref of image objects with url or b64_json
 ```
 
-Default model is `gpt-image-1`. Pass `size`, `quality`, or `n` as extra arguments.
+Default model is `gpt-image-2`, which always answers `b64_json`. Pass `size`, `quality`, or `n` as extra arguments.
 
 ## Transcription (Whisper)
 
@@ -929,7 +929,7 @@ For a focused transcription handle reusing the chat engine's credentials
 ```perl
 my $text = $openai->whisper->simple_transcription('recording.ogg');
 # $openai->whisper is a Langertha::Engine::TranscriptionBase bound to
-# the parent's api_key/url, with transcription_model 'whisper-1'.
+# the parent's api_key/url and transcription_model ('gpt-transcribe' unless set).
 ```
 
 ## Engine Capabilities

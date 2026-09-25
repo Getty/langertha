@@ -136,7 +136,7 @@ my $multipart = sub {
 
 # karr k293: $openai->whisper is sold as "the same engine, focused on
 # transcription" -- it must not silently fall back to LWP's 180s timeout, the
-# TranscriptionBase User-Agent or whisper-1 when the parent says otherwise.
+# TranscriptionBase User-Agent or the default model when the parent says otherwise.
 {
   require Langertha::Engine::OpenAI;
   my $openai = Langertha::Engine::OpenAI->new(
@@ -154,8 +154,35 @@ my $multipart = sub {
   is($w->api_key, 'k', 'whisper: parent api_key');
 
   my $plain = Langertha::Engine::OpenAI->new( api_key => 'k' )->whisper;
-  is($plain->transcription_model, 'whisper-1', 'whisper: whisper-1 when the parent sets no model');
+  is($plain->transcription_model, 'gpt-transcribe', 'whisper: gpt-transcribe when the parent sets no model');
   ok(!$plain->has_user_agent_timeout, 'whisper: no timeout when the parent sets none');
+}
+
+# karr k308: OpenAI removes whisper-1 (and gpt-4o-*transcribe) on 2027-02-26;
+# the OpenAI default is its successor gpt-transcribe. gpt-transcribe answers
+# response_format json only, so no request may carry a defaulted
+# response_format (verbose_json / srt would be a 400) -- only what the caller
+# passes. Groq and self-hosted Whisper keep their own defaults.
+{
+  require Langertha::Engine::OpenAI;
+  require Langertha::Engine::Groq;
+  my $openai = Langertha::Engine::OpenAI->new( api_key => 'k' );
+  is($openai->transcription_model, 'gpt-transcribe', 'OpenAI default transcription_model');
+  my $req = $openai->transcription($file);
+  my ($model) = $req->content =~ /name="model"\r\n\r\n(.*?)\r\n--/s;
+  is($model, 'gpt-transcribe', 'OpenAI transcription request sends gpt-transcribe');
+  unlike($req->content, qr/name="response_format"/, 'no defaulted response_format');
+  unlike($req->content, qr/name="timestamp_granularities/, 'no defaulted timestamp_granularities');
+  unlike($openai->whisper->transcription($file)->content, qr/name="response_format"/,
+    'whisper handle: no defaulted response_format');
+  my $explicit = $openai->transcription($file, response_format => 'text');
+  like($explicit->content, qr/name="response_format"\r\n\r\ntext\r\n/,
+    'a caller-set response_format is sent as given');
+
+  is(Langertha::Engine::Groq->new( api_key => 'k' )->transcription_model,
+    'whisper-large-v3', 'Groq keeps whisper-large-v3');
+  is(Langertha::Engine::Whisper->new( url => $whisper_testurl )->transcription_model,
+    '', 'Whisper server keeps its empty default (server picks the model)');
 }
 
 done_testing;

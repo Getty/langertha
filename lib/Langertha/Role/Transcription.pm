@@ -141,7 +141,9 @@ sub simple_transcription_result {
 
 Like L</simple_transcription>, but returns the whole parsed answer as a
 HashRef (see L<Langertha::Role::OpenAICompatible/transcription_result>)
-instead of only the text.
+instead of only the text. C<verbose_json> and word timestamps need a model
+that offers them (C<whisper-1>, Groq, Whisper servers); OpenAI's default
+C<gpt-transcribe> answers C<json> only.
 
 =cut
 

@@ -123,8 +123,10 @@ Override in an engine to use a provider-specific spec (e.g., Mistral).
 =cut
 
 sub default_embedding_model { 'text-embedding-3-large' }
-sub default_transcription_model { 'whisper-1' }
-sub default_image_model { 'gpt-image-1' }
+# whisper-1 and gpt-image-1 are deprecated by OpenAI (removal 2027-02-26 and
+# 2026-12-01); their successors are the defaults (k308).
+sub default_transcription_model { 'gpt-transcribe' }
+sub default_image_model { 'gpt-image-2' }
 
 # Dynamic model listing
 
@@ -632,8 +634,16 @@ sub transcription_request {
 Generates an OpenAI-format transcription request for the given audio (a path,
 C<\$bytes> or a filehandle; C<filename> in C<%extra> names the upload, see
 L<Langertha::Role::Transcription/transcription_file_part>).
-Uses C<transcription_model> (default: C<whisper-1>). Returns an HTTP
+Uses C<transcription_model> (default: C<gpt-transcribe>). Returns an HTTP
 request object.
+
+C<gpt-transcribe> (and the older C<gpt-4o-transcribe> /
+C<gpt-4o-mini-transcribe>) answer only C<< response_format => 'json' >>, which
+is what the API sends when no C<response_format> is given; Langertha never
+defaults one. C<verbose_json>, C<srt>, C<vtt> and
+C<timestamp_granularities[]> need a model that supports them, such as
+C<whisper-1> on OpenAI or a Whisper server; a C<response_format> you pass is
+sent as given.
 
 =cut
 
@@ -947,6 +957,14 @@ sub image_operation_id { 'createImage' }
 
 sub image_request {
   my ( $self, $prompt, %extra ) = @_;
+  # GPT image models always answer b64_json and reject response_format with a
+  # 400 "Unknown parameter"; dall-e-* still takes it (k308).
+  my $model = exists $extra{model} ? $extra{model} : $self->image_model;
+  if ( defined $model && $model =~ /\Agpt-image/ && exists $extra{response_format} ) {
+    delete $extra{response_format};
+    carp "".(ref $self)." image_request: $model does not take response_format"
+      . " (it always answers b64_json); dropped";
+  }
   return $self->generate_request( $self->image_operation_id, sub { $self->image_response(shift) },
     model  => $self->image_model,
     prompt => $prompt,
@@ -959,9 +977,14 @@ sub image_request {
     my $request = $engine->image_request($prompt, %extra);
 
 Generates an OpenAI-format image generation request for the given
-C<$prompt>. Uses C<image_model> (default: C<gpt-image-1>). Accepts
-optional C<size>, C<quality>, C<n>, C<response_format> via C<%extra>.
-Returns an HTTP request object.
+C<$prompt>. Uses C<image_model> (default: C<gpt-image-2>). Accepts
+optional C<model>, C<size>, C<quality> and C<n> via C<%extra>, passed
+through as given. Returns an HTTP request object.
+
+GPT image models (C<gpt-image-*>) always return the image as C<b64_json> and
+reject C<response_format>, so a C<response_format> in C<%extra> is dropped
+with a warning for them; C<dall-e-*> models still take
+C<< response_format => 'url' >> or C<'b64_json'>.
 
 =cut
 
@@ -981,8 +1004,8 @@ sub image_response {
     my $images = $engine->image_response($http_response);
 
 Parses an OpenAI-format image generation response. Returns an ArrayRef
-of image objects, each with C<url> or C<b64_json> and optionally
-C<revised_prompt>. Croaks, naming the engine and any C<error> in the
+of image objects, each with C<url> or C<b64_json> (GPT image models answer
+C<b64_json> only) and optionally C<revised_prompt>. Croaks, naming the engine and any C<error> in the
 body, when the response carries no image.
 
 =cut

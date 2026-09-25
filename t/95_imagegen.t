@@ -297,7 +297,7 @@ subtest 'ImageGen with real OpenAI engine builds correct request' => sub {
   );
 
   ok($engine->does('Langertha::Role::ImageGeneration'), 'OpenAI has ImageGeneration role');
-  is($engine->image_model, 'gpt-image-1', 'default image_model');
+  is($engine->image_model, 'gpt-image-2', 'default image_model (k308: gpt-image-1 is removed 2026-12-01)');
 
   # Build request without sending
   my $request = $engine->image_request('A cat in space');
@@ -308,7 +308,8 @@ subtest 'ImageGen with real OpenAI engine builds correct request' => sub {
   # Check request body
   my $body = JSON::MaybeXS->new->decode($request->content);
   is($body->{prompt}, 'A cat in space', 'prompt in body');
-  is($body->{model}, 'gpt-image-1', 'model in body');
+  is($body->{model}, 'gpt-image-2', 'model in body');
+  ok(!exists $body->{response_format}, 'no response_format for a GPT image model');
 };
 
 subtest 'ImageGen wrapper with OpenAI engine overrides model' => sub {
@@ -333,6 +334,58 @@ subtest 'ImageGen wrapper with OpenAI engine overrides model' => sub {
   is($body->{size}, '1024x1024', 'size passed through');
   is($body->{quality}, 'hd', 'quality passed through');
   is($body->{prompt}, 'A landscape', 'prompt set');
+};
+
+# karr k308: GPT image models always answer b64_json and reject
+# response_format with a 400 "Unknown parameter", so image_request must never
+# send it for them -- also when the caller passes it (dropped with a warning).
+# dall-e-* still takes it. The b64_json-only answer must come back as images.
+subtest 'GPT image models never get response_format' => sub {
+  require Langertha::Engine::OpenAI;
+  my $engine = Langertha::Engine::OpenAI->new( api_key => 'test-key' );
+  my $decode = sub { JSON::MaybeXS->new->decode( $_[0]->content ) };
+
+  my @warnings;
+  my $body = do {
+    local $SIG{__WARN__} = sub { push @warnings, @_ };
+    $decode->( $engine->image_request( 'A cat', response_format => 'url', size => '1024x1024' ) );
+  };
+  ok(!exists $body->{response_format}, 'default gpt-image-2: caller response_format dropped');
+  is($body->{size}, '1024x1024', 'other extras still pass');
+  is(scalar @warnings, 1, 'the drop warns once');
+  like($warnings[0] // '', qr/gpt-image-2 does not take response_format/, 'warning names the model');
+
+  @warnings = ();
+  $body = do {
+    local $SIG{__WARN__} = sub { push @warnings, @_ };
+    $decode->( $engine->image_request( 'A cat', model => 'gpt-image-1.5', response_format => 'b64_json' ) );
+  };
+  ok(!exists $body->{response_format}, 'per-call gpt-image-1.5: response_format dropped');
+  is($body->{model}, 'gpt-image-1.5', 'per-call model sent');
+
+  my $dalle = Langertha::Engine::OpenAI->new( api_key => 'test-key', image_model => 'dall-e-3' );
+  @warnings = ();
+  $body = do {
+    local $SIG{__WARN__} = sub { push @warnings, @_ };
+    $decode->( $dalle->image_request( 'A cat', response_format => 'b64_json' ) );
+  };
+  is($body->{response_format}, 'b64_json', 'dall-e-3 keeps response_format');
+  is(scalar @warnings, 0, 'no warning for dall-e-3');
+};
+
+subtest 'b64_json-only image response' => sub {
+  require Langertha::Engine::OpenAI;
+  require HTTP::Response;
+  my $engine = Langertha::Engine::OpenAI->new( api_key => 'test-key' );
+  # Documented GPT image answer shape: data[].b64_json, no url, plus usage.
+  my $res = HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'application/json' ],
+    '{"created":1790000000,"background":"opaque","output_format":"png","size":"1024x1024","quality":"high",'
+    . '"data":[{"b64_json":"iVBORw0KGgo="}],'
+    . '"usage":{"input_tokens":10,"output_tokens":4160,"total_tokens":4170}}' );
+  my $images = $engine->image_response($res);
+  is(scalar @$images, 1, 'one image');
+  is($images->[0]{b64_json}, 'iVBORw0KGgo=', 'b64_json returned');
+  ok(!exists $images->[0]{url}, 'no url expected');
 };
 
 done_testing;
