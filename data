@@ -1,0 +1,29 @@
+---
+claimed_at: 2026-09-25T20:55:04Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:55:04Z
+created: 2026-09-25T20:19:57Z
+id: 286
+priority: high
+started: 2026-09-25T20:23:09Z
+status: done
+tags:
+- transcription
+- http
+- encoding
+- bug
+title: 'Multipart (transcription) bodies: text fields/filenames not UTF-8 encoded,
+  boundary header can mismatch body, ArrayRef params treated as file paths'
+updated: 2026-09-25T20:55:04Z
+---
+
+Role::HTTP::generate_multipart_body (lib/Langertha/Role/HTTP.pm:49-53) hands %args straight to HTTP::Request::Common::form_data; generate_http_request sets the Content-Type header with the fixed $boundary (HTTP.pm:72-73) and calls $request->content(generate_multipart_body(...)) in LIST context (HTTP.pm:87).
+
+Reproduced offline (Whisper engine, no network):
+1. Character-string text field from a `use utf8` caller: prompt=>"Grüße" goes out as Latin-1 bytes 47 72 fc df 65 (server reads mojibake); prompt=>"Grüße ☃" croaks "HTTP::Message content must be bytes at Role/HTTP.pm line 87". The JSON path encodes via json->utf8, the multipart path does not -> encoding differs by content type.
+2. Decoded (character) file path with non-ASCII name: Grüße.wav -> filename="Gr\xfc\xdfe.wav" (Latin-1); snow☃.wav -> same "must be bytes" croak.
+3. Boundary mismatch: form_data regenerates the boundary when a part contains it (or uses a random one under $HTTP::Request::Common::DYNAMIC_FILE_UPLOAD) and returns ($content,$boundary); content() only takes the first, the header keeps "XyXLaXyXngXyXerXyXthXyXaXyX". Repro: prompt=>"x XyXLaXyXngXyXerXyXthXyXaXyX y" -> header boundary=XyXLa..., body starts with --KRCW...
+4. Any ArrayRef value is a file spec for form_data: timestamp_granularities[] => [qw(word segment)] croaks "Can't open file word". Multi-valued fields (OpenAI timestamp_granularities[], include[]) cannot be sent at all.
+
+Fix: encode non-ref values with Encode::encode("UTF-8",...) when utf8::is_utf8 (or always for character strings); for the file part pass an explicit UTF-8-encoded filename (second element); take ($content,$boundary) from form_data and set the Content-Type header from the returned boundary; expand ArrayRef values of non-file keys into repeated pairs (file key stays the only file spec). Tests: t/22_transcription_requests.t extensions (UTF-8 prompt bytes, wide filename, boundary collision, repeated field).
