@@ -400,7 +400,8 @@ provider fields come from L</_responses_extra_fields>.
 # with it, and parse_stream_chunk reads the response object that the terminal
 # response.completed / response.incomplete event carries, so a streamed and a
 # non-streamed reply of the same response can never disagree about its tool
-# calls, thinking, or finish_reason. Returns a hash: content (concatenated
+# calls or thinking (the stream's final chunk sets finish_reason only when it
+# carries tool calls -- karr k222). Returns a hash: content (concatenated
 # output_text, '' when none), and -- only when present -- thinking,
 # finish_reason, and tool_calls (ArrayRef of Langertha::ToolCall).
 sub _responses_walk_output {

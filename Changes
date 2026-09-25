@@ -46,6 +46,16 @@ Revision history for Langertha
       silently. Built from OpenAI's documented streaming events, not verified
       against a live stream.
 
+    - The Open-Responses stream parser (Role::ResponsesCompatible) reads the
+      terminal response.completed event with the same walker as the
+      non-streaming reply: function calls arrive on the final chunk as
+      Langertha::ToolCall objects (no shipped engine streams Responses tool
+      calls yet; XAIResponses will), and a reasoning summary now appears as
+      thinking on the final chunk (visible on Perplexity reasoning streams).
+      A response.failed or error event fails the stream with the provider's
+      message instead of ending it silently. Built from OpenAI's documented
+      streaming events, not verified against a live stream.
+
     - MiniMaxAnthropic no longer sends output_config.effort, which MiniMax's
       Anthropic-compatible schema does not have. A reasoning_effort still
       sends thinking {type: adaptive}, which turns thinking on. Taken from

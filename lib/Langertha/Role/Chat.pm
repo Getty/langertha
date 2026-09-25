@@ -900,10 +900,11 @@ fragmented tool-call deltas (OpenAI's C<delta.tool_calls> stream,
 Anthropic's C<input_json_delta>) into a finished L<Langertha::ToolCall>
 on the chunk belongs in C<parse_stream_chunk>. Today only the
 Open-Responses envelope (L<Langertha::Role::ResponsesCompatible>) delivers
-streamed tool calls, read off its terminal C<response.completed> event; the
-Chat-Completions and Anthropic dialects do not assemble their deltas yet, so
-on those this helper returns an empty list — use the non-streaming path when
-you need tool calls there.
+streamed tool calls, read off its terminal C<response.completed> event, and no
+shipped engine streams through it with tools yet. The Chat-Completions,
+Anthropic, Gemini and Ollama-native parsers do not assemble their tool-call
+deltas (karr k221), so on those this helper returns an empty list — use the
+non-streaming path when you need tool calls there.
 
 =cut
 

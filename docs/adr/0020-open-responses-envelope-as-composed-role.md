@@ -158,7 +158,8 @@ The envelope's `output[]` walker is now a single method, `_responses_walk_output
 paths read through it: `chat_response` walks the whole response, and `parse_stream_chunk`
 walks the `response` object that the terminal `response.completed` / `response.incomplete`
 event carries. A streamed and a non-streamed reply of the same response therefore cannot
-disagree about their tool calls (ADR 0003), thinking or `finish_reason`. Before this, the stream
+disagree about their tool calls (ADR 0003) or thinking. `finish_reason` still differs on a
+text-only stream (the final chunk carries none unless it has tool calls — karr k222). Before this, the stream
 parser read only text deltas and usage, and streamed function calls were lost — harmless while
 `OpenAIResponses` opts out of streaming and Perplexity streams without tools, but a streaming
 Responses consumer with function tools (XAIResponses, k206) would have ended its tool loop
@@ -172,7 +173,10 @@ silently.
   streamed as `output_text.delta`); a reasoning summary is, since no reasoning delta is read.
 - **A text-only stream's final chunk is unchanged.** `finish_reason` is set on the final chunk
   only when it carries tool calls (then `tool_calls`), so Perplexity's streams keep the chunks
-  they had.
+  they had. No shipped engine streams Responses tool calls yet (Perplexity has no tool calling,
+  OpenAIResponses does not stream); XAIResponses (k206) is the first consumer. A stream carrying
+  two terminal events would deliver the calls twice — the documented events do not allow that;
+  the k206 xAI stream capture must confirm it.
 - **`response.failed` and `error` fail the stream.** Both are terminal and carry no reply, so
   `parse_stream_chunk` croaks with the provider's error code and message (the LMStudio parser's
   pattern), which fails the `chat_stream_realtime_f` future on every backend (ADR 0027) instead of
