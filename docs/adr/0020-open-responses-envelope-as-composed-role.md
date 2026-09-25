@@ -271,3 +271,13 @@ both body builders, which now run it *after* `_responses_tools_kwarg`):
 
 `ToolChoice->to_perplexity` (the old Sonar `/chat/completions` string forms) stays public, now
 documented as legacy; the Agent API has no `tool_choice`. Tests: `t/68_perplexity_function_tools.t`.
+
+## Update (k239 — the tool_choice rule moved to Role::Chat)
+
+The k213/k233 `tool_choice` rule is no longer Responses-only: it is
+`Role::Chat::_gate_tool_choice`, which `_responses_tool_choice_kwarg` now calls before it
+serializes with `to('responses')`, as do the OpenAI-compatible, Ollama native and LM Studio
+native builders (ADR 0002 k239 Update). One behavior differs on this envelope: an undefined
+`tool_choice` is deleted where the engine claims no `tool_choice_*` (Perplexity) instead of going
+out as `null`. `_responses_parallel_tool_calls_kwarg` calls the shared
+`_parallel_tool_calls_kwarg`, which adds a carp when a set `parallel_tool_use` is dropped (k241).

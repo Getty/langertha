@@ -79,3 +79,35 @@ the ADR 0016 placement. It only deletes, so its order against an engine's own `a
 layer-3 corrections does not change the result. It is not a layer-3 row: `tool_wire_format` is
 per engine, so a per-model `tools_native` would misdescribe the wire. Pinned in
 `t/78_engine_capabilities.t`.
+
+## Update (k239, k241 — field emission follows the claimed capability)
+
+A cleared flag used to steer only `chat_f`'s rewrite: the request builders still put the field
+on the body. Ollama native and Ollama's `/v1` accept an unknown `tool_choice` or
+`parallel_tool_calls`, ignore it and answer 200, so the caller believed a tool was forced. Now
+the claimed capability also gates emission on the tool-selection axis:
+
+- **`tool_choice`** — one rule in `Role::Chat::_gate_tool_choice` (the ADR 0020 k213/k233 rule,
+  generalized), used by `OpenAICompatible`, `ResponsesCompatible`, Ollama native and LM Studio
+  native. A kind the engine does not `supports('tool_choice_<kind>')` is not sent: `auto` and
+  `undef` drop silently, `none` withholds the request's tools with a carp, a forced choice drops
+  with a carp. An unreadable choice passes through only where some `tool_choice_*` is claimed.
+  The builder serializes what the rule returns with `ToolChoice->to($fmt)`.
+- **`parallel_tool_calls`** — `Role::Chat::_parallel_tool_calls_kwarg`, shared by the Chat
+  Completions and Responses envelopes, emits only where `supports('parallel_tool_use')`. A value
+  the caller set (control or attribute) that the gate drops carps, the ADR 0025 drop+carp;
+  nothing set stays silent. An explicit `parallel_tool_calls` kwarg is wire intent and passes.
+
+Layer-2 clears that go with it: Ollama native drops `tool_choice_*` and `parallel_tool_use`
+(tools_native stays, so a forced named tool in `chat_f` takes the ADR 0005 `format` rewrite);
+Gemini (no parallel knob in `ToolConfig`) and OllamaOpenAI drop `parallel_tool_use`. LM Studio
+native composes no `Role::Tools` and croaks on a non-empty `tools` list.
+
+One deliberate exception: Hetzner clears its tool flags because nothing confirms the gateway
+honors them, not because the field is absent. It overrides `_openai_tool_choice_kwarg` and
+keeps serializing a `tool_choice` the caller passes, so an unverified flag does not cost a
+choice the wire may accept. Where an OpenAI-compatible engine clears a `tool_choice_*` kind for
+a documented reason (MiniMax and OllamaOpenAI: no field; llama.cpp: named downgraded to auto;
+Moonshot per model: 400; SGLang: auto and none undocumented, so auto drops as the default and
+none withholds the tools), the gate applies. Tests: `t/76_tool_choice_capability_gate.t`,
+`t/76_parallel_tool_use_capability_gate.t`.

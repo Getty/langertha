@@ -126,3 +126,11 @@ for logging (Langfuse), never a wire form. The same audit found that
 went out verbatim); both builders now share `_openai_tool_choice_kwarg`. Native engines with no
 wire-level tool_choice serializer (Ollama native, AKI native, LMStudio native) still pass any
 tool_choice through untouched — pre-existing, tracked as karr k239.
+
+## Update (k239 — native engines no longer pass tool_choice through)
+
+The k235 note above is resolved: Ollama native and LM Studio native decide a `tool_choice`
+through `Role::Chat::_gate_tool_choice` and, claiming no `tool_choice_*`, never send one. They
+classify with `ToolChoice->from_hash` only; `to('ollama')` still croaks, as there is no such
+wire form. AKI native is a hermes engine: `chat_f` takes the tools and `tool_choice` off the
+request before the builder (k231, k234).
