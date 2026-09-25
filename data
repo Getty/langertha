@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T20:55:12Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:55:12Z
+created: 2026-09-25T20:20:15Z
+id: 287
+priority: medium
+started: 2026-09-25T20:23:17Z
+status: done
+tags:
+- transcription
+- bug
+- pod
+title: 'simple_transcription($audio_bytes) is documented but croaks: transcription_request
+  always treats input as a file path'
+updated: 2026-09-25T20:55:12Z
+---
+
+Role::Transcription POD (lib/Langertha/Role/Transcription.pm:58) documents `$engine->simple_transcription($audio_bytes, language => "en")` and "audio file path or content". OpenAICompatible::transcription_request (lib/Langertha/Role/OpenAICompatible.pm:487-493) always sends `file => [ $file ]`, which form_data opens as a path.
+
+Repro (offline): Langertha::Engine::Whisper->new(url=>"http://h/v1")->transcription("RIFF\0\x01\xff\xfeWAVEdata") -> warning "Invalid \0 character in pathname for open" then croak "Can't open file RIFF..." (Role/HTTP.pm:52).
+
+Fix: accept in-memory audio explicitly (e.g. a SCALAR ref, or a filename=>/content=> option) and emit `file => [ undef, $filename, Content => $bytes, "Content-Type" => ... ]`; the filename matters because OpenAI/Groq sniff the format from its extension, so require/derive one (default e.g. audio.bin is rejected by OpenAI; audio.wav/mp3 must be caller-supplied). Or: drop the claim from the POD. Guessing "not -f => bytes" is fragile; prefer explicit API. Add a request-building test.
