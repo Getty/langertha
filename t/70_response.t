@@ -150,6 +150,7 @@ $gemini_http->content($json->encode({
     totalTokenCount => 11,
   },
   modelVersion => 'gemini-2.5-flash-preview-04-17',
+  responseId => 'mCvJaNXTBvqd1dkPx6WbwAQ',
 }));
 $gemini_http->header('Content-Type' => 'application/json');
 
@@ -161,6 +162,9 @@ is($gemini_resp->finish_reason, 'STOP', 'Gemini finish_reason extracted');
 is($gemini_resp->prompt_tokens, 8, 'Gemini prompt_tokens normalized');
 is($gemini_resp->completion_tokens, 3, 'Gemini completion_tokens normalized');
 is($gemini_resp->total_tokens, 11, 'Gemini total_tokens normalized');
+# karr k335: every other engine fills Response.id from the wire's response id;
+# Gemini's is responseId. Without it id is undef on Gemini alone.
+is($gemini_resp->id, 'mCvJaNXTBvqd1dkPx6WbwAQ', 'Gemini id from responseId');
 
 # --- Ollama chat_response returns Response ---
 

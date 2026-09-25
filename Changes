@@ -2,6 +2,10 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - clear_models_cache also resets the models attribute, so the next access
+      to models fetches the list again. Gemini responses fill Response.id from
+      responseId.
+
     - LM Studio native streaming keeps the model's reasoning: reasoning.delta
       events fill the chunks' thinking, so aggregate_thinking returns the same
       text a non-streamed call puts on Response.thinking.

@@ -70,6 +70,7 @@ has _models_cache => (
 sub clear_models_cache {
   my ($self) = @_;
   $self->_clear_models_cache;
+  $self->clear_models;   # the lazy models attribute rebuilds on next access
   return;
 }
 
@@ -77,8 +78,9 @@ sub clear_models_cache {
 
     $engine->clear_models_cache;
 
-Clears the internal models list cache, forcing a fresh fetch on the next
-access to C<models>.
+Clears the internal models list cache and resets the C<models> attribute, so
+the next access to C<models> (or C<list_models>) fetches again. A C<models>
+list passed to the constructor is dropped as well.
 
 =cut
 

@@ -590,6 +590,7 @@ sub chat_response {
   return Langertha::Response->new(
     content       => $text,
     raw           => $data,
+    $data->{responseId} ? ( id => $data->{responseId} ) : (),
     $data->{modelVersion} ? ( model => $data->{modelVersion} ) : (),
     defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
     $usage ? ( usage => $usage ) : (),

@@ -525,4 +525,28 @@ subtest 'list_models guard for unsupported operations' => sub {
   ok(!$nous->can_operation('listModels'), 'NousResearch does not support listModels operation');
 };
 
+# karr k335: models is a lazy_build attribute filled from list_models. The POD
+# promises clear_models_cache forces a fresh fetch on the next access to
+# models, so it must reset that attribute too, not only the private cache hash
+# -- otherwise a long-lived engine never sees models added on the server.
+{
+  package CountingModelsEngine;
+  use Moose;
+  extends 'Langertha::Engine::OpenAI';
+  my $calls = 0;
+  sub calls { $calls }
+  sub list_models { $calls++; return [ "m$calls" ] }
+  __PACKAGE__->meta->make_immutable;
+}
+
+subtest 'clear_models_cache resets the models attribute' => sub {
+  my $engine = CountingModelsEngine->new( api_key => 'test-key' );
+  is_deeply($engine->models, ['m1'], 'first access fetches');
+  is_deeply($engine->models, ['m1'], 'second access is cached');
+  is($engine->calls, 1, 'list_models called once');
+  $engine->clear_models_cache;
+  is_deeply($engine->models, ['m2'], 'access after clear_models_cache fetches again');
+  is($engine->calls, 2, 'list_models called a second time');
+};
+
 done_testing;
