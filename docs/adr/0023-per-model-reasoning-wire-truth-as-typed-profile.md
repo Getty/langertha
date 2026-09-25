@@ -371,16 +371,36 @@ Update records it and the choice of where it is serialized.
   thinking on). Both are `control 'boolean'` with no `levels`. The Kimi K2 rows land with k215.
 - **Serialization in `Langertha::Reasoning`, not in engine overrides.** `to_openai` and
   `to_anthropic` return the toggle, and nothing else, when the resolved profile
-  `has_thinking_on`. `display` rides along on an on toggle on the anthropic wire only. The
+  `has_thinking_on`. `display` rides along on an on toggle on the anthropic wire only; whether
+  MiniMax and Kimi accept it there is unverified (it is a first-party Anthropic field, kept
+  because `MiniMaxAnthropic` already sent it before k209). The
   advisor and the k209 brief suggested an engine-scoped `reasoning_kwargs_for` on
   `Engine::MiniMax` (the DeepSeek precedent). That was rejected as the larger design. It would
   need one override per engine (MiniMax, MoonshotAnthropic, later Moonshot) that repeats the same
   per-model regexes, and this ADR moved that per-model truth out of code and into the Profile. A
   replacing `reasoning_kwargs_for` also bypasses the role's ADR 0009 k204 `supports()` gate, as
-  DeepSeek's comment warns. With the branch in `Reasoning`, the engines add only capability rows,
-  the k204 gate stays the role's, and every face that speaks a toggle row's model id gets the same
-  wire. The rows are `\A`-anchored on the providers' own ids, so aggregator ids
-  (`minimax/minimax-m3`, `moonshotai/kimi-*`) never turn into a toggle.
+  DeepSeek's comment warns. With the branch in `Reasoning`, the engines add only capability rows
+  and the k204 gate stays the role's.
+- **The toggle is opt-in per endpoint (review I1).** The `thinking` object is the spelling of
+  MiniMax's cloud API and Kimi's Messages face, not a property of the model: a self-hosted vLLM /
+  SGLang / llama.cpp server, an OpenAI-compatible proxy or another `/anthropic` shim serving a
+  bare `MiniMax-M3` or `kimi-k2.6` id does not parse it. An engine opts in with
+  `sub _reasoning_thinking_toggle { 1 }` (`Engine::MiniMax`, `Engine::MiniMaxAnthropic`,
+  `Engine::MoonshotAnthropic`; `Engine::Moonshot` when k219 lands). `Role::ReasoningEffort`
+  passes that as `Reasoning->new(thinking_toggle => 1)`, and `Reasoning`'s profile resolution
+  hides a toggle row from every Reasoning without it: the id resolves to the unlisted-id
+  default, so every other engine sends byte-for-byte what it sent before k209 (pinned by
+  `t/48_reasoning_thinking_toggle_scope.t` against bodies generated from 4e7f9d8, and by
+  foreign-engine rows in the t/47 golden). An engine predicate was chosen over a dedicated
+  `reasoning_wire_format` value to keep ADR 0009's tag set clean: the tag names the envelope a
+  reasoning field is placed in (`openai`, `anthropic`, ...), and the toggle occurs inside two of
+  them, so a tag would need an `openai`×toggle and an `anthropic`×toggle variant, and every
+  existing `to_openai`/`to_anthropic` fallback for the engine's non-toggle ids (`kimi-k3` on
+  `MoonshotAnthropic`) would have to be re-dispatched from the new tags. The predicate is one
+  orthogonal bit on the one wire tag the engine already declares, the same shape as
+  `_native_structured_output` (ADR 0005) and `_temperature_rejected_by_reasoning` (ADR 0025).
+  The rows are also `\A`-anchored on the providers' own ids, so aggregator ids
+  (`minimax/minimax-m3`, `moonshotai/kimi-*`) never match a toggle row either.
 - **Consequences.** `Engine::MiniMax` re-enables `reasoning_effort` for M3 only (ADR 0019 k209
   Update). `MiniMax-M3` gets `{type:'disabled'}` for `none` and `{type:'adaptive'}` for every other
   level on `chat/completions`, where nothing was sent before. The same rows now reach
@@ -405,7 +425,10 @@ now carry that:
 
 - `qr/\Akimi-k2\.7-code(?:-highspeed)?\z/`: `thinking_on 'enabled'`, `can_disable 0`,
   `disable_form 'absent'`. Every level sends `{type:'enabled'}`. `none` omits the field, as on
-  every row that cannot disable, and the server keeps thinking on. The brief asked for
+  every row that cannot disable, and the server keeps thinking on. **Unverified:** that the
+  endpoint accepts a k2.7-code request with no `thinking` field at all (the Claude Code guide
+  only says thinking *off* is rejected); if omission 400s, bare requests without any reasoning
+  control are broken too, and the fix belongs on the bare path. The brief asked for
   `enabled` to be sent always. It is sent for every level. For `none` it is omitted, because an
   omitted field on this model is exactly what a request without any reasoning control sends.
 - `qr/\Akimi-k2\.6\z/`: `thinking_on 'enabled'`, `can_disable 1`, `disable_form
@@ -420,7 +443,8 @@ two documented ids, the ADR 0019 k209 opt-back pattern. The sunset `kimi-k2.5` a
 `reasoning_effort` on K2, so the rows reach nothing on `chat/completions` there. Turning the
 chat-face toggle on is a one-row capability change, left as future work.
 
-**Unverified:** Anthropic's own spec requires `budget_tokens` with `type:'enabled'`, and
+**Unverified:** `display` on these toggles (see the k209 Update). Anthropic's own spec requires
+`budget_tokens` with `type:'enabled'`, and
 Claude Code sends one. Whether Kimi's endpoint requires it is undocumented. No `budget_tokens`
 is sent. If a live check shows it is required, the fix is a budget on the toggle's on-form, not a
 new mechanism. Source: platform.kimi.ai `docs/api/messages.md` and

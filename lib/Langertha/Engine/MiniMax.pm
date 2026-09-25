@@ -154,6 +154,11 @@ sub model_capability_corrections {
   );
 }
 
+# This endpoint speaks the `thinking` on/off toggle (ADR 0023 k209 Update): the
+# thinking-toggle Reasoning::Profile rows serialize as the toggle only on an
+# engine that opts in here; the same model id elsewhere keeps its effort wire.
+sub _reasoning_thinking_toggle { 1 }
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

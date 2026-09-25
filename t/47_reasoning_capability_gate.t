@@ -27,8 +27,13 @@ use Module::Runtime qw( require_module );
 my $canon  = JSON::MaybeXS->new->canonical(1)->utf8(1);
 my $golden = path('t/data/reasoning_capability_gate_bodies.json');
 
+# The foreign-engine rows with a bare MiniMax / Kimi id (vLLM MiniMax-M3 and
+# kimi-k2.6, AKIAnthropic kimi-k2.7-code, OpenAIResponses MiniMax-M3) pin that
+# the thinking-toggle Profile rows stay invisible off the engines that opt in
+# (karr k209 review I1): one per reasoning wire the toggle serializes on, plus
+# responses.
 my %ENGINES = (
-  AKIAnthropic      => [ undef ],
+  AKIAnthropic      => [ undef, 'kimi-k2.7-code' ],
   AKIOpenAI         => [ undef ],
   Anthropic         => [ undef, 'claude-opus-4-8', 'claude-fable-5-1' ],
   Cerebras          => [ undef ],
@@ -48,7 +53,7 @@ my %ENGINES = (
   NousResearch      => [ undef ],
   OllamaOpenAI      => [ 'qwen3' ],
   OpenAI            => [ undef, 'gpt-6-astra', 'gpt-5.5-pro', 'gpt-4o-mini' ],
-  OpenAIResponses   => [ undef, 'gpt-5.5-pro' ],
+  OpenAIResponses   => [ undef, 'gpt-5.5-pro', 'MiniMax-M3' ],
   OpenRouter        => [ 'openai/gpt-5.6' ],
   Perplexity        => [ undef ],
   Replicate         => [ 'meta/llama-3-8b' ],
@@ -57,7 +62,7 @@ my %ENGINES = (
   TSystems          => [ undef ],
   VLLMHook          => [ undef ],
   XAI               => [ undef ],
-  vLLM              => [ undef ],
+  vLLM              => [ undef, 'MiniMax-M3', 'kimi-k2.6' ],
 );
 
 # name => [ constructor args, per-request controls ]

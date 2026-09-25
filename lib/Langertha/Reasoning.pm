@@ -135,6 +135,25 @@ form would be ambiguous.
 
 =cut
 
+has thinking_toggle => (
+  is      => 'ro',
+  isa     => 'Bool',
+  default => 0,
+);
+
+=attr thinking_toggle
+
+Whether the target endpoint speaks the C<thinking> on/off toggle (MiniMax's
+cloud API, Kimi's Messages face; karr k209/k215). Set by
+L<Langertha::Role::ReasoningEffort/reasoning_kwargs_for> from the engine's
+opt-in. Only when it is true does a thinking-toggle profile
+(L<Langertha::Reasoning::Profile/thinking_on>) serialize as the toggle; when
+false (the default) the same model id serializes exactly like the unlisted-id
+passthrough, because a self-hosted server or proxy serving a bare
+C<MiniMax-M3> / C<kimi-k2.6> id does not parse the toggle.
+
+=cut
+
 # The resolved reasoning profile (Langertha::Reasoning::Profile) for the
 # configured model — the single source for what the model's wire accepts. All
 # per-model gating (openai ladder, gemini clamp, fable-class, budget-vs-effort
@@ -148,10 +167,16 @@ has _profile => (
   builder  => '_build_profile',
 );
 
+# A thinking-toggle row is the wire truth of the endpoint that opted in
+# (thinking_toggle), not of the model id: on every other endpoint it is
+# invisible and the id resolves like any unlisted id (review I1).
 sub _build_profile {
   my ( $self ) = @_;
-  return Langertha::Reasoning::Profile->for_model(
+  my $profile = Langertha::Reasoning::Profile->for_model(
     $self->has_model ? $self->model : '' );
+  return Langertha::Reasoning::Profile->for_model('')
+    if $profile->has_thinking_on && !$self->thinking_toggle;
+  return $profile;
 }
 
 # Build-time wire-truth gate: exactly one native control per generation, never
@@ -206,12 +231,16 @@ at C<high>.
 
 =cut
 
-# A thinking-toggle model (Profile thinking_on, karr k209/k215) takes a
-# `thinking` object with an on/off type and no effort level, on both the openai
-# and the anthropic wire: none -> off where the model can disable (else the
-# field is omitted), any other level -> the model's on-type. thinking_display
-# rides along on the anthropic wire only, never on an off toggle; a
-# display-only request turns the toggle on, as the adaptive path does.
+# A thinking-toggle model (Profile thinking_on, karr k209/k215) on an endpoint
+# that opted in (thinking_toggle: MiniMax, MiniMaxAnthropic, MoonshotAnthropic)
+# takes a `thinking` object with an on/off type and no effort level, on both the
+# openai and the anthropic wire: none -> off where the model can disable (else
+# the field is omitted), any other level -> the model's on-type. On any other
+# endpoint the same id serializes like the passthrough default (review I1).
+# thinking_display rides along on the anthropic wire only, never on an off
+# toggle; a display-only request turns the toggle on, as the adaptive path does.
+# Whether MiniMax / Kimi accept `display` there is unverified (it is a
+# first-party Anthropic field; kept because MiniMaxAnthropic sent it before k209).
 sub _thinking_toggle {
   my ( $self, $with_display ) = @_;
   my $profile = $self->_profile;
@@ -257,11 +286,14 @@ configured L</model> does not accept yields an empty list on B<both> wires —
 they can never diverge. Empty list when no L</effort> is set.
 
 A B<thinking-toggle> model (its profile has
-L<Langertha::Reasoning::Profile/thinking_on>: MiniMax-M3 / M2.x, Kimi K2.x)
-takes no effort field on C<to_openai>: it gets
+L<Langertha::Reasoning::Profile/thinking_on>: MiniMax-M3 / M2.x, Kimi K2.x),
+serialized for an endpoint that opted in with L</thinking_toggle>, takes no
+effort field on C<to_openai>: it gets
 C<< thinking =E<gt> { type =E<gt> ... } >> instead — C<disabled> for C<none>
 where the model can turn thinking off, the model's on-type (C<adaptive> or
 C<enabled>) for any other level. Every level gives the same depth there.
+Without L</thinking_toggle> the same model id is serialized like any unlisted
+id.
 
 =cut
 
@@ -303,9 +335,11 @@ C<thinking> key — thinking is always on and C<type:disabled> 400s there — an
 therefore cannot carry a C<display> either. Empty list when neither an
 Anthropic-supported effort nor a C<thinking_display> is present.
 
-A B<thinking-toggle> model gets only the C<thinking> toggle described under
-L</to_openai> (no C<output_config.effort>), with C<display> added to an on
-toggle when L</thinking_display> is set.
+A B<thinking-toggle> model on an opted-in endpoint (L</thinking_toggle>) gets
+only the C<thinking> toggle described under L</to_openai> (no
+C<output_config.effort>), with C<display> added to an on toggle when
+L</thinking_display> is set (whether MiniMax and Kimi accept C<display> there is
+not verified).
 
 =cut
 

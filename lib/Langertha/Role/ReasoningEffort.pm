@@ -119,6 +119,12 @@ sub reasoning_kwargs_for {
     ( exists $merged{thinking_budget} ? ( thinking_budget => $merged{thinking_budget} ) : () ),
     ( exists $merged{thinking_display} ? ( thinking_display => $merged{thinking_display} ) : () ),
     ( $self->can('chat_model') ? ( model => $self->chat_model ) : () ),
+    # The thinking on/off toggle (MiniMax, Kimi's Messages face) is an
+    # endpoint's spelling, not a model's: an engine opts in with
+    # _reasoning_thinking_toggle, every other engine serializes a toggle
+    # model's id like any unlisted id (ADR 0023 k209 Update, review I1).
+    ( $self->can('_reasoning_thinking_toggle') && $self->_reasoning_thinking_toggle
+      ? ( thinking_toggle => 1 ) : () ),
   )->to( $self->reasoning_wire_format );
 }
 
@@ -139,7 +145,10 @@ wire, or when the engine advertises neither C<reasoning_effort> nor
 C<thinking_budget> (L<Langertha::Role::Capabilities/supports>) -- clearing
 those flags is how an engine says it takes no reasoning control, and nothing
 is sent then. Engines override this only to model wire divergence within a
-shared format (e.g. DeepSeek's model-gated split).
+shared format (e.g. DeepSeek's model-gated split). An engine whose endpoint
+speaks the C<thinking> on/off toggle (MiniMax, MiniMaxAnthropic,
+MoonshotAnthropic) opts in by defining C<_reasoning_thinking_toggle> as true;
+see L<Langertha::Reasoning/thinking_toggle>.
 
 =cut
 

@@ -14,9 +14,10 @@ Revision history for Langertha
       for kimi-k3 only. reasoning_effort now sends thinking {type: enabled};
       none sends {type: disabled} on kimi-k2.6 and nothing on kimi-k2.7-code,
       which cannot turn thinking off. Other K2 ids take no reasoning control
-      on this endpoint. No budget_tokens is sent with enabled; whether Kimi
-      requires one there is not verified. Taken from Moonshot's
-      documentation, not verified against the live API.
+      on this endpoint. No budget_tokens is sent with enabled. Not verified:
+      whether Kimi requires budget_tokens there, accepts thinking.display, or
+      accepts a kimi-k2.7-code request with no thinking field. Taken from
+      Moonshot's documentation, not verified against the live API.
 
     - MiniMax: on MiniMax-M3, reasoning_effort now reaches the wire as
       MiniMax's thinking toggle: none sends thinking {type: disabled}, any
@@ -24,7 +25,9 @@ Revision history for Langertha
       M2.x models still send nothing, since they cannot turn thinking off. A
       thinking_budget on MiniMax-M3 now croaks. MiniMaxAnthropic follows the
       same mapping: none on M3 sends thinking {type: disabled} explicitly, and
-      minimal now turns thinking on. Taken from MiniMax's documentation, not
+      minimal now turns thinking on. Other engines serving a MiniMax or Kimi
+      model id (vLLM, SGLang, proxies, other /anthropic shims) keep sending
+      reasoning_effort / output_config.effort as before. Taken from MiniMax's documentation, not
       verified against the live API.
 
     - Moonshot and MoonshotAnthropic no longer send temperature on any Kimi
