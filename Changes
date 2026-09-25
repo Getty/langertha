@@ -15,9 +15,15 @@ Revision history for Langertha
       Langertha::Usage->from_raw($body) reads usage from a raw provider body
       (usage, Gemini usageMetadata, response.usage, Ollama native counts),
       returning undef when none is reported. Usage->from_hash also reads
-      Gemini's camelCase counts. Core promises no event loop: a caller that
-      needs one uses IO::Async::Loop->new, the loop the default backend shares.
-      The private _async_http and _langfuse_timestamp keep working.
+      Gemini's camelCase counts. $engine->async_loop returns the active async
+      backend's event loop, or undef on the sync fallback or a loop-less client:
+      core promises no loop, so use $engine->async_loop // IO::Async::Loop->new.
+      The private _async_http and _langfuse_timestamp keep working. (ADR 0028.)
+
+    - Langertha::Usage->from_response on a raw response body now also reads
+      Gemini usageMetadata, Ollama's native top-level counts and response.usage.
+      Such bodies used to yield zero usage; figures built on it (for example
+      skeid's usage and cost metrics) now show the real counts.
 
     - The async _f methods gained a synchronous LWP fallback: when
       Net::Async::HTTP is not installed (and no client is injected), HTTP runs

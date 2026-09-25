@@ -13,6 +13,8 @@ BEGIN {
 }
 
 use Future;
+use Future::AsyncAwait;
+use LWP::UserAgent;
 use HTTP::Request;
 use HTTP::Response;
 use Langertha::Usage;
@@ -71,14 +73,54 @@ subtest 'async_request_f: works over the SyncHTTP fallback backend' => sub {
   is( $f->get->content, 'sync body', 'resolves with the sync response' );
 };
 
-subtest 'loop: core offers none; the default backend shares IO::Async::Loop->new' => sub {
-  ok( !engine_with()->can('async_loop'), 'no public loop accessor is promised' );
-  skip_all 'Net::Async::HTTP not installed'
-    unless eval { require Net::Async::HTTP; require IO::Async::Loop; 1 };
-  my $engine = engine_with();
-  is( $engine->_async_http->loop, IO::Async::Loop->new,
-    'a caller bringing IO::Async::Loop->new shares the default backend loop' );
+subtest 'async_loop: undef where the backend has no loop (Maybe[loop])' => sub {
+  is( engine_with( _async_http => RecordingClient->new )->async_loop, undef,
+    'an injected client without ->loop: undef' );
+  require Langertha::Request::SyncHTTP;
+  my $sync = Langertha::Request::SyncHTTP->new( user_agent => LWP::UserAgent->new );
+  is( engine_with( _async_http => $sync )->async_loop, undef, 'the sync fallback: undef, no loop promised' );
 };
+
+SKIP: {
+  skip 'Net::Async::HTTP not installed', 2
+    unless eval { require Net::Async::HTTP; require IO::Async::Loop; require IO::Async::Loop::Poll; 1 };
+
+  subtest 'async_loop: the loop the active backend runs on' => sub {
+    my $default = engine_with();
+    is( $default->async_loop, $default->_async_loop, 'default backend: the loop it was added to' );
+    is( $default->async_loop, IO::Async::Loop->new, 'which by default is the process-wide loop' );
+
+    my $foreign = IO::Async::Loop::Poll->new;
+    isnt( $foreign, IO::Async::Loop->new, 'test setup: a loop that is not the singleton' );
+
+    my $http = Net::Async::HTTP->new;
+    $foreign->add($http);
+    my $injected = engine_with( _async_http => $http );
+    is( $injected->async_loop, $foreign, 'injected client on a foreign loop: THAT loop' );
+
+    my $ctor = engine_with( _async_loop => $foreign );
+    is( $ctor->async_loop, $foreign, '_async_loop constructor arg: the default backend sits on it' );
+    $foreign->remove($_) for grep { $_->loop } $http, $ctor->_async_http;
+  };
+
+  subtest 'async_loop: a timer on it completes inside a chain driven by the backend loop' => sub {
+    my $foreign = IO::Async::Loop::Poll->new;
+    my $http = Net::Async::HTTP->new;
+    $foreign->add($http);
+    my $engine = engine_with( _async_http => $http );
+    my $chain = (async sub {
+      await $foreign->delay_future( after => 0.01 );   # stands in for the engine's HTTP
+      await $engine->async_loop->delay_future( after => 0.01 );
+      return 'done';
+    })->();
+    local $SIG{ALRM} = sub { die "hang: timer on a loop nobody drives\n" };
+    alarm 5;
+    my $result = eval { $chain->get };
+    alarm 0;
+    is( $result, 'done', 'no hang: one loop drives both awaits' );
+    $foreign->remove($http);
+  };
+}
 
 subtest 'langfuse_timestamp: public "now" in the Langfuse ISO format' => sub {
   my $engine = engine_with();

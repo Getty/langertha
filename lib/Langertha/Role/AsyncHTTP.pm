@@ -98,35 +98,83 @@ Sends a prepared L<HTTP::Request> (for example from C<chat_request> or
 C<build_tool_chat_request>) through the engine's selected backend
 (L</_async_http>) and returns a L<Future> that resolves to the
 L<HTTP::Response>. This is the public face of the C<do_request> contract, for
-callers outside core that assemble their own requests: it behaves identically
-on an injected client, L<Net::Async::HTTP> and the synchronous fallback
-(where the returned future is already complete).
+callers outside core that assemble their own requests. On the synchronous
+fallback the returned future is already complete.
 
-An HTTP error status B<resolves> the future — check C<is_success> on the
-response; only a transport failure fails it. Any extra named options (such as
-C<on_header> for streaming) are passed to C<do_request> unchanged. The backend
-object itself is not exposed; see L</EVENT LOOP> for the loop question.
+An HTTP error status (4xx/5xx) B<resolves> the future on every backend: check
+C<is_success> on the response. A B<transport-level> failure (connection
+refused, DNS, timeout) is B<not> uniform across backends: on
+L<Net::Async::HTTP> it B<fails> the future with the socket error, while on the
+synchronous fallback it B<resolves> with the 500 response LWP synthesizes
+(C<500 Can't connect ...>, header C<Client-Warning: Internal response>) — the
+future does not fail. Either way the call did not succeed, so always check
+C<is_success>; do not rely on a failed future alone to catch a dead endpoint.
+See ADR 0027 for the parity scope.
+
+Any extra named options (such as C<on_header> for streaming) are passed to
+C<do_request> unchanged. The backend object itself is not exposed; see
+L</async_loop> for the event loop.
+
+=cut
+
+sub async_loop {
+  my ($self) = @_;
+  my $http = $self->_async_http;
+  return $http->can('loop') ? $http->loop : undef;
+}
+
+=method async_loop
+
+    my $loop = $engine->async_loop // IO::Async::Loop->new;
+    $loop->add($notifier);
+    await $loop->delay_future( after => 2 );
+
+Returns the event loop of the active async backend (L</_async_http>), or
+C<undef> — a C<Maybe[loop]>. Core promises no loop (see L</EVENT LOOP>):
+
+=over 4
+
+=item * an injected client that has a C<loop> method: that client's loop,
+whatever loop the caller put it on;
+
+=item * the default L<Net::Async::HTTP> backend: the loop it was added to
+(L</_async_loop>);
+
+=item * the synchronous fallback (L<Langertha::Request::SyncHTTP>) or an
+injected client without a C<loop> method: C<undef>.
+
+=back
+
+Calling it selects the backend if that has not happened yet (so on a clean
+install it may emit the one-time fallback warning). Code that needs a loop for
+its own notifiers or timers should use this loop when it is defined, so its
+futures and the engine's HTTP futures are driven by the same loop; awaiting
+futures from two different loops in one chain can hang.
 
 =cut
 
 =head1 EVENT LOOP
 
 Core promises no event loop: L<IO::Async> is only recommended, an injected
-client may run on any loop, and the synchronous fallback runs on none. There is
-deliberately no public loop accessor. A caller that needs a loop of its own
-(to add notifiers, run timers, ...) brings it, and should obtain it with
-C<< IO::Async::Loop->new >>: that constructor returns the process-wide loop,
-which is also the one the default L<Net::Async::HTTP> backend is added to (see
-L</_async_loop>), so both share one loop. A caller that injects an
-L</_async_http> client on a different loop hands that same loop to whatever
-else needs one.
+client may run on any loop, and the synchronous fallback runs on none.
+L</async_loop> reports the backend's loop when there is one and C<undef>
+otherwise. When it is C<undef> a caller that needs a loop brings its own,
+typically C<< IO::Async::Loop->new >> (the process-wide loop).
+
+The backend's loop is not necessarily the process-wide one: an injected
+L</_async_http> client can live on any loop, and L</_async_loop> is itself a
+constructor argument (C<< _async_loop => $my_loop >>), in which case the
+default L<Net::Async::HTTP> backend is added to that loop. L</async_loop>
+returns the right loop in all of these cases.
 
 =attr _async_loop
 
 The L<IO::Async::Loop> the real-async client is added to. Built lazily and
 B<only> on the L<Net::Async::HTTP> path; the sync fallback never touches it,
 so no event loop is created when running synchronously. The default is
-C<< IO::Async::Loop->new >>, the process-wide loop (see L</EVENT LOOP>).
+C<< IO::Async::Loop->new >>, the process-wide loop; it can be passed at
+construction to put the default backend on another loop (see L</EVENT LOOP>).
+Use L</async_loop> to read the backend's loop.
 
 =cut
 
