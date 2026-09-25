@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T23:20:47Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:20:47Z
+created: 2026-09-25T22:47:22Z
+id: 321
+priority: medium
+started: 2026-09-25T22:49:30Z
+status: done
+tags:
+- tools
+- errors
+- sync-async
+title: 'Tool loop swallows error-in-body 200s: chat_with_tools_f returns '''' where
+  chat_f croaks (k301/k311/k317 bypass)'
+updated: 2026-09-25T23:20:47Z
+---
+
+Role/Tools.pm:633-643 (and Chat.pm _tool_loop_iteration ~l.330 + simple_chat_with_tools_f ~l.435) read the raw body via parse_response, never chat_response, so the k301/k311/k317 error guards do not run. A 200 with {"error":{...}}, a choice with finish_reason error + error object, choices:[] or Gemini promptFeedback.blockReason yields no tool calls -> response_text_content -> the loop RETURNS an empty string as the final answer.
+
+Repro (offline, MockAsyncHTTP): body {"error":{"message":"upstream overloaded","code":502}} -> chat_with_tools_f returns ""; chat_f on the same body dies "response carried an error: upstream overloaded (502)". Same for finish_reason error, choices:[], Gemini {promptFeedback:{blockReason:SAFETY}}.
+
+Fix: after parse_response in all three loops, run the same body-error checks chat_response runs (factor them out of the dialect chat_response into a helper callable on raw $data, e.g. $self->_croak_on_body_error($data)), then continue with response_tool_calls. Regression test per dialect (openai, gemini, anthropic, responses) in t/6x.
