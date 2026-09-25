@@ -7,6 +7,9 @@ use Time::HiRes qw( gettimeofday );
 use Carp qw( croak );
 use JSON::MaybeXS ();
 use Future;
+use Langertha::Role::Langfuse ();
+use Langertha::ToolCall;
+use Langertha::Usage;
 use Scalar::Util qw( blessed refaddr weaken );
 
 extends 'Langertha::Plugin';
@@ -51,6 +54,16 @@ plugin events to automatically create traces, generations, and spans.
 
 Unlike L<Langertha::Role::Langfuse> (which lives on the engine), this plugin
 works on any PluginHost and does not require engine-level configuration.
+
+Each LLM call becomes a generation carrying the model that answered (the
+engine's C<chat_model> when the answer names none), the token usage (input,
+output, total; plus C<inputCost> / C<outputCost> / C<totalCost> when
+L</pricing> is set), the conversation sent, the answer (its text, and its tool
+calls as L<Langertha::ToolCall> hashes), and C<completionStartTime> when the
+response reports a time to first token. The conversation is a JSON-safe
+snapshot taken before the call: a L<Langertha::Content::Image> appears as its
+compact description, and inline image data (a C<data:> URL or a long bare
+base64 string) is replaced by its size, so traces never carry image bytes.
 
 =cut
 
@@ -281,6 +294,29 @@ has _iter_start => (
   isa => 'Maybe[Str]',
 );
 
+has _iter_start_hires => (
+  is  => 'rw',
+  isa => 'Maybe[ArrayRef]',
+);
+
+has _iter_input => (
+  is => 'rw',
+);
+
+has pricing => (
+  is        => 'ro',
+  isa       => 'Langertha::Pricing',
+  predicate => 'has_pricing',
+);
+
+=attr pricing
+
+Optional L<Langertha::Pricing>. When set and it has a rule for the model
+that answered, each LLM generation's C<usage> also carries C<inputCost>,
+C<outputCost> and C<totalCost> (USD) computed from the reported tokens.
+
+=cut
+
 has _json => (
   is      => 'ro',
   lazy    => 1,
@@ -360,6 +396,8 @@ sub create_generation {
       $opts{end_time}             ? ( endTime            => $opts{end_time} )           : (),
       $opts{parent_observation_id}? ( parentObservationId => $opts{parent_observation_id} ) : (),
       $opts{model_parameters}     ? ( modelParameters    => $opts{model_parameters} )   : (),
+      defined $opts{completion_start_time}
+        ? ( completionStartTime => $opts{completion_start_time} ) : (),
     },
   });
   return $id;
@@ -464,8 +502,7 @@ sub _flush_engine {
 
 sub _send_f {
   my ( $self, %args ) = @_;
-  require Langertha::Role::Langfuse;
-  return Langertha::Role::Langfuse->_langfuse_send_chunks_f( %args, engine => $self->_flush_engine );
+  return Langertha::Role::Langfuse->_langfuse_send_chunks_f( %args, engine => scalar $self->_flush_engine );
 }
 
 # auto_flush from inside an async hook: start the flush and return at once.
@@ -494,7 +531,6 @@ sub flush {
     $loop->await_all(@pending) if $loop;
   }
   my %args = $self->_flush_args or return;
-  require Langertha::Role::Langfuse;
   my @responses = Langertha::Role::Langfuse->_langfuse_send_chunks_f(%args)->get;
   return $responses[-1];
 }
@@ -541,10 +577,120 @@ synchronous fallback, it runs like L</flush>.
 
 =cut
 
+# Deep copy through the encoder: JSON-safe, and a Langertha::Content::Image
+# becomes its compact TO_JSON description (never the image data). A Chat
+# hands the hooks messages already in the engine's wire shape, where an image
+# is a data: URL or a bare base64 string; those are shortened too, or every
+# trace would carry every image once per iteration (as karr k273 for TO_JSON).
+sub _json_safe {
+  my ( $self, $data ) = @_;
+  return $data unless ref $data;
+  my $copy = eval { $self->_json->decode( $self->_json->encode($data) ) };
+  return $data unless defined $copy;
+  my $walk;
+  $walk = sub {
+    my ($node) = @_;
+    my @slots = ref $node eq 'HASH' ? ( map { \$node->{$_} } keys %$node )
+              : ref $node eq 'ARRAY' ? ( map { \$_ } @$node ) : ();
+    for my $slot (@slots) {
+      if ( ref $$slot ) { $walk->($$slot); next }
+      next unless defined $$slot;
+      if ( $$slot =~ m{\A(data:[^;,]+;base64,)(.*)\z}s ) {
+        $$slot = $1 . '[' . _base64_bytes($2) . ' bytes omitted]';
+      }
+      elsif ( length $$slot >= 512 && $$slot =~ m{\A[A-Za-z0-9+/]+={0,2}\z} ) {
+        $$slot = '[base64: ' . _base64_bytes($$slot) . ' bytes omitted]';
+      }
+    }
+  };
+  $walk->($copy);
+  undef $walk;
+  return $copy;
+}
+
+sub _base64_bytes {
+  my ($b64) = @_;
+  $b64 =~ s/\s+//g;
+  my $pad = $b64 =~ /(=+)\z/ ? length $1 : 0;
+  return int( length($b64) * 3 / 4 ) - $pad;
+}
+
+sub _host_engine {
+  my ( $self ) = @_;
+  my $host = $self->host or return;
+  return $host->engine if $host->can('engine') && blessed( $host->engine );
+  return $host;
+}
+
+# model, usage (+ cost), output and completionStartTime of one LLM answer
+# (karr k304), from a Langertha::Response or, in the tool loop, the raw
+# decoded provider body. Observability must never break the call: anything
+# that cannot be read is left out.
+sub _generation_details {
+  my ( $self, $data ) = @_;
+  my $engine = $self->_host_engine;
+  my ( $model, $usage, $output, $completion_start );
+
+  if ( blessed($data) && $data->isa('Langertha::Response') ) {
+    $model = $data->model if $data->has_model;
+    $usage = $data->usage if $data->has_usage && blessed( $data->usage );
+    my @calls = $data->has_tool_calls ? @{ $data->tool_calls } : ();
+    $output = @calls
+      ? { content => $data->content, tool_calls => [ map { $_->to_hash } @calls ] }
+      : $data->content;
+    my $start = $self->_iter_start_hires;
+    $completion_start = Langertha::Role::Langfuse->_langfuse_iso_after( $start, $data->ttft_seconds )
+      if $start && $data->has_ttft;
+  }
+  elsif ( ref $data eq 'HASH' ) {
+    $model = $data->{model} if defined $data->{model} && !ref $data->{model};
+    $usage = Langertha::Usage->from_raw($data);
+    $output = eval {
+      my $text = $engine->response_text_content($data);
+      # The canonical ToolCall shape when the engine names its wire (as on
+      # the Response path), else the raw structures the engine locates.
+      my $calls = $engine->can('tool_wire_format')
+        ? [ map { $_->to_hash } Langertha::ToolCall->extract( $engine->tool_wire_format, $data ) ]
+        : $self->_json_safe( $engine->response_tool_calls($data) );
+      ref $calls eq 'ARRAY' && @$calls ? { content => $text, tool_calls => $calls } : $text;
+    } if $engine && $engine->can('response_text_content') && $engine->can('response_tool_calls');
+    $output = $self->_json_safe($data) unless defined $output;
+  }
+  else {
+    $output = $data;
+  }
+
+  $model //= $engine->chat_model if $engine && $engine->can('chat_model');
+
+  my $usage_hash;
+  if ($usage) {
+    $usage_hash = {
+      input  => $usage->input_tokens,
+      output => $usage->output_tokens,
+      total  => $usage->total_tokens,
+    };
+    if ( $self->has_pricing && $self->pricing->rule_for($model) ) {
+      my $cost = $self->pricing->cost_for( $usage, $model );
+      $usage_hash->{inputCost}  = $cost->input_usd + $cost->cache_read_usd + $cost->cache_write_usd;
+      $usage_hash->{outputCost} = $cost->output_usd;
+      $usage_hash->{totalCost}  = $cost->total_usd;
+    }
+  }
+
+  return (
+    defined $model   ? ( model  => $model )  : (),
+    $usage_hash      ? ( usage  => $usage_hash ) : (),
+    defined $output  ? ( output => $output ) : (),
+    defined $completion_start ? ( completion_start_time => $completion_start ) : (),
+  );
+}
+
 sub reset_trace {
   my ( $self ) = @_;
   $self->_trace_id(undef);
   $self->_iter_start(undef);
+  $self->_iter_start_hires(undef);
+  $self->_iter_input(undef);
 }
 
 =method reset_trace
@@ -584,11 +730,15 @@ async sub plugin_before_llm_call {
   my ( $self, $conversation, $iteration ) = @_;
   return $conversation unless $self->enabled;
 
+  # A snapshot: the tool loop keeps pushing onto $conversation, and the
+  # events are only encoded at flush time.
+  my $input = $self->_json_safe($conversation);
+
   # Create trace on first iteration (or if no trace exists)
   if (!$self->_trace_id) {
     $self->_trace_id($self->create_trace(
       name => $self->trace_name,
-      input => $conversation,
+      input => $input,
       $self->has_user_id    ? ( user_id    => $self->user_id )    : (),
       $self->has_session_id ? ( session_id => $self->session_id ) : (),
       $self->has_tags       ? ( tags       => $self->tags )       : (),
@@ -597,6 +747,8 @@ async sub plugin_before_llm_call {
   }
 
   $self->_iter_start(_timestamp());
+  $self->_iter_start_hires([gettimeofday]);
+  $self->_iter_input($input);
   return $conversation;
 }
 
@@ -604,13 +756,13 @@ async sub plugin_after_llm_response {
   my ( $self, $data, $iteration ) = @_;
   return $data unless $self->enabled;
 
-  # Create generation event
-  my $end_time = _timestamp();
   $self->create_generation(
     trace_id   => $self->_trace_id,
     name       => "generation-$iteration",
     start_time => $self->_iter_start,
-    end_time   => $end_time,
+    end_time   => _timestamp(),
+    input      => $self->_iter_input,
+    $self->_generation_details($data),
   );
 
   # Update trace output (last update wins via upsert)
