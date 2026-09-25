@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-25T08:37:08Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T08:37:08Z
+created: 2026-09-25T08:31:15Z
+id: 262
+priority: high
+started: 2026-09-25T08:37:08Z
+status: done
+tags:
+- release
+- changes
+title: 'Changes: two more Raider-extraction-era staleness spots (Result bool overload,
+  orphaned Raider-internal bullets)'
+updated: 2026-09-25T08:37:08Z
+---
+
+Found alongside #256/#258 (same Raider-extraction reconciliation sweep, pre-release audit of 0.502..HEAD -> 0.503):
+
+1. Changes:738-747 — "Langertha::Response and Langertha::Result (and Raider::Result through @ISA) are now always true in boolean context (overload bool => 1)." True for Response (lib/Langertha/Response.pm:10-16, confirmed: use overload with 'bool' => sub { 1 }). FALSE for Result as shipped: lib/Langertha/Result.pm is now a bare reserved-namespace stub — package statement, POD, "1;", nothing else. No `use overload`, no class body, no @ISA. The bool-overload behavior for the old Result semantics (final/question/pause/abort) now lives only in langertha-raider's Langertha::Raider::Result. Fix: reword to drop the "(and Raider::Result through @ISA)" claim about core Result, or note explicitly it is now Raider::Result-only (a langertha-raider concern, not core's).
+
+2. Changes:830-838, 840-848, 850-855 — three "Raider:" bullets (a paused raid no longer re-runs completed parallel-tool calls; session history renders per wire shape instead of stringifying; a plugin's plugin_before_llm_call no longer diverges from a resumed conversation). All describe fixes to Raider-internal code. Raider no longer ships in core (extracted to langertha-raider, ADR 0026, this same cycle). Checked langertha-raider/Changes: none of these three fixes are mentioned there. So a core-only reader sees fixes for a subsystem the 0.503 tarball does not contain, and a langertha-raider reader never learns their install carries these fixes. Fix: move/summarize into langertha-raider/Changes (cross-reference the core commits that predate the extraction if worth keeping), trim or drop from core/Changes.
+
+Both are editing-only (langertha-pod-writer lane per CLAUDE.md delegation table). Re-run dzil build after editing per house memory note on Changes edits.
