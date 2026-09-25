@@ -119,7 +119,7 @@ sub extract {
   my ( $class, $format, $data, $models ) = @_;
   my $spec = $class->_format($format);
   return {} unless ref $data eq 'HASH';
-  my $facts = $spec->{extract}->( $data, [ grep { defined && length } @{ $models // [] } ] );
+  my $facts = $spec->{extract}->( $data, [ grep { _id_ok($_) } @{ ref $models eq q{ARRAY} ? $models : [] } ] );
   return $facts;
 }
 
@@ -156,6 +156,44 @@ LM Studio C</api/v1/models>, llama.cpp C</props>).
 
 =cut
 
+sub lookup_ids {
+  my ( $class, $format, $model ) = @_;
+  $class->_format($format);
+  return () unless _id_ok($model);
+  my @ids = ($model);
+  if ( $format eq 'ollama' ) {
+    # Ollama names without a tag mean :latest (llava == llava:latest).
+    if    ( $model =~ /\A(.+):latest\z/ ) { push @ids, $1 }
+    elsif ( $model !~ /:/ )              { push @ids, "$model:latest" }
+  }
+  elsif ( $format eq 'openrouter' ) {
+    # A routing variant (:online, :free, :nitro, :floor, :thinking, ...) is
+    # the base model's capabilities; used only when the variant itself is
+    # not listed.
+    push @ids, $1 if $model =~ m{\A([^:]+/[^:]+):[A-Za-z0-9._-]+\z};
+  }
+  return @ids;
+}
+
+=method lookup_ids
+
+    my @ids = Langertha::ModelProbe->lookup_ids( ollama => 'llava' );
+    # ('llava', 'llava:latest')
+
+The store keys, in order, under which a fact for C<$model> may have been
+learned: the exact id first, then the format's equivalent spelling. For
+C<ollama> a missing tag is C<:latest> (C<llava> and C<llava:latest> find each
+other). For C<openrouter> a routing variant suffix (C<openai/gpt-4o:online>,
+C<:free>, C<:nitro>, ...) falls back to the base id when the variant itself was
+not listed. Other formats match exactly. A non-string or empty id gives an
+empty list.
+
+=cut
+
+# Only a non-empty plain string is a model id; a reference or an empty
+# string is never a store key.
+sub _id_ok { return defined $_[0] && !ref $_[0] && length $_[0] ? 1 : 0 }
+
 sub _bool { return $_[0] ? 1 : 0 }
 
 sub _extract_openrouter {
@@ -166,7 +204,7 @@ sub _extract_openrouter {
     my $in = $model->{architecture}{input_modalities};
     next unless ref $in eq 'ARRAY';
     my $vision = _bool( grep { defined && $_ eq 'image' } @$in );
-    for my $id ( grep { defined && length } $model->{id}, $model->{canonical_slug} ) {
+    for my $id ( grep { _id_ok($_) } $model->{id}, $model->{canonical_slug} ) {
       $facts{$id} //= { image_input => $vision };
     }
   }
@@ -180,9 +218,9 @@ sub _extract_mistral {
     next unless ref $model eq 'HASH' && ref $model->{capabilities} eq 'HASH';
     next unless exists $model->{capabilities}{vision};
     my $fact = { image_input => _bool( $model->{capabilities}{vision} ) };
-    $by_id{ $model->{id} } = $fact if defined $model->{id} && length $model->{id};
+    $by_id{ $model->{id} } = $fact if _id_ok( $model->{id} );
     for my $alias ( @{ ref $model->{aliases} eq 'ARRAY' ? $model->{aliases} : [] } ) {
-      $by_alias{$alias} //= { %$fact } if defined $alias && length $alias;
+      $by_alias{$alias} //= { %$fact } if _id_ok($alias);
     }
   }
   return { %by_alias, %by_id };
@@ -198,7 +236,7 @@ sub _extract_lmstudio {
     my @ids = ( $model->{key},
       map { ref $_ eq 'HASH' ? $_->{id} : () }
         @{ ref $model->{loaded_instances} eq 'ARRAY' ? $model->{loaded_instances} : [] } );
-    $facts{$_} //= { image_input => $vision } for grep { defined && length } @ids;
+    $facts{$_} //= { image_input => $vision } for grep { _id_ok($_) } @ids;
   }
   return \%facts;
 }

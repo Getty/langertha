@@ -150,6 +150,8 @@ sub _capability_model {
   my ( $self ) = @_;
   return undef unless $self->can('chat_model');
   my $model;
+  # supports() must not leave the chat_model croak behind in the caller's $@.
+  local $@;
   my $ok = eval { $model = $self->chat_model; 1 };
   return $ok ? $model : undef;
 }
@@ -167,8 +169,14 @@ sub _apply_learned_model_capabilities {
   my $learned = $self->_learned_model_capabilities;
   return unless %$learned;
   my $model = $self->_capability_model;
-  return unless defined $model && ref $learned->{$model} eq 'HASH';
-  my $facts = $learned->{$model};
+  return unless defined $model && !ref $model && length $model;
+  # Exact id first, then the format's equivalent spellings (Ollama's implicit
+  # :latest tag, OpenRouter's :variant suffixes), see ModelProbe->lookup_ids.
+  my $format = $self->model_metadata_format;
+  my @ids = defined $format && Langertha::ModelProbe->is_known_format($format)
+    ? Langertha::ModelProbe->lookup_ids( $format, $model ) : ( $model );
+  my ($facts) = grep { ref $_ eq 'HASH' } map { $learned->{$_} } @ids;
+  return unless $facts;
   for my $cap ( keys %$facts ) {
     if ( $facts->{$cap} ) { $caps->{$cap} = 1 if $wire->{$cap} }
     else                  { delete $caps->{$cap} }
@@ -207,11 +215,11 @@ async sub probe_model_capabilities_f {
   if ( exists $args{models} ) {
     croak ref($self) . ': probe_model_capabilities_f models must be an ArrayRef'
       unless ref $args{models} eq 'ARRAY';
-    @models = grep { defined && length } @{ $args{models} };
+    @models = grep { defined && !ref && length } @{ $args{models} };
   }
   else {
     my $model = $self->_capability_model;
-    @models = ( $model ) if defined $model && length $model;
+    @models = ( $model ) if defined $model && !ref $model && length $model;
   }
 
   my $probe     = 'Langertha::ModelProbe';
@@ -227,13 +235,24 @@ async sub probe_model_capabilities_f {
     my $request = $self->generate_http_request( $method, $url, sub { $_[0] },
       $per_model ? ( model => $batch->[0] ) : () );
     my $response = await $self->_async_do_request_f( request => $request );
+    # A per-model document that does not know the model (Ollama /api/show
+    # answers 404 "model not found") gives no fact for that model; the other
+    # models of the call are still learned. Every other failure fails loud.
+    next if $per_model && $response->code == 404;
     unless ( $response->is_success ) {
       my $body = $self->can('_error_response_body') ? $self->_error_response_body($response) : '';
       croak ref($self) . ' model metadata probe failed: ' . $response->status_line
         . ( length $body ? " - $body" : '' );
     }
-    my $facts = $probe->extract( $format, $self->json->decode( $response->content ), $batch );
-    for my $model ( keys %$facts ) {
+    my $data;
+    {
+      local $@;
+      croak ref($self) . ' model metadata probe: response from ' . $request->uri->path
+        . ' is not JSON'
+        unless eval { $data = $self->json->decode( $response->content ); 1 };
+    }
+    my $facts = $probe->extract( $format, $data, $batch );
+    for my $model ( grep { length } keys %$facts ) {
       for my $cap ( grep { $allowed{$_} } keys %{ $facts->{$model} } ) {
         $learned{$model}{$cap} = $facts->{$model}{$cap} ? 1 : 0;
       }
@@ -287,8 +306,21 @@ L<Langertha::Engine::Mistral>, L<Langertha::Engine::Ollama>,
 L<Langertha::Engine::OllamaOpenAI>, L<Langertha::Engine::LMStudio>,
 L<Langertha::Engine::LMStudioOpenAI> and L<Langertha::Engine::LlamaCpp>. On
 every other engine the method exists and resolves to an empty HashRef without
-a request. The future fails with C<< <engine>: model metadata probe failed:
-<status> >> on a non-success HTTP answer.
+a request.
+
+Only non-empty plain strings count as model ids; anything else in C<models>
+is ignored. When C<chat_model> is looked up in the store, the exact id wins,
+then the format's equivalent spelling (L<Langertha::ModelProbe/lookup_ids>):
+on Ollama a missing tag means C<:latest> (C<llava> finds C<llava:latest> and
+back), on OpenRouter a routing variant such as C<:online> or C<:free> falls
+back to its base id when the variant itself is not listed.
+
+On Ollama a model the server does not have (C</api/show> answers 404) gives
+no fact, and the other models of the call are still learned. Any other
+non-success answer fails the future with C<< <engine> model metadata probe
+failed: <status> - <body> >>, a success answer that is not JSON with C<<
+<engine> model metadata probe: response from <path> is not JSON >>; in both
+cases nothing from the call is stored.
 
 =method probe_model_capabilities
 

@@ -41,7 +41,16 @@ rewrite matrix, ADR 0005) and must never do network I/O.
    Mistral, LM Studio) is fetched once and every model in it is learned; Ollama is asked once
    per model; llama.cpp serves one model, so its fact is stored under every id that was asked
    about. Nothing probes implicitly. `learned_model_capabilities` returns a copy of the store,
-   `clear_learned_model_capabilities` empties it.
+   `clear_learned_model_capabilities` empties it. Only non-empty plain strings are model ids
+   (in `models` and in the documents). A model Ollama does not have (`/api/show` 404) gives no
+   fact and the other models of the call are kept; any other non-success answer, or a success
+   answer that is not JSON, fails the future with an engine-named error and stores nothing.
+
+   Looking a fact up for `chat_model` is exact first, then the format's equivalent spelling
+   (`ModelProbe->lookup_ids`): on Ollama a missing tag is `:latest` (`llava` ↔ `llava:latest`);
+   on OpenRouter a routing variant (`:online`, `:free`, `:nitro`, …) falls back to its base id
+   when the variant itself is not listed. Other formats match exactly. This is ADR 0018's
+   "normalize, don't gatekeep" applied to ids the provider itself treats as the same model.
 
 2. **A fourth layer, after layer 3.** `engine_capabilities` applies the learned facts for the
    current `chat_model` right after the static `model_capability_corrections` table, inside the

@@ -55,6 +55,7 @@ my %OLLAMA_SHOW = (
   'llava'    => 'ollama_show_llava.json',
   'llama3.3' => 'ollama_show_llama.json',
   'llama2'   => 'ollama_show_legacy.json',
+  'llava:latest' => 'ollama_show_llava.json',
 );
 
 my $server = Test::LocalHTTPDaemon->start( sub {
@@ -75,8 +76,13 @@ my $server = Test::LocalHTTPDaemon->start( sub {
   if ( $path eq '/ollama/api/show' && $method eq 'POST' ) {
     my $model = eval { $json->decode( $req->content )->{model} } // '';
     return json_response( fixture( $OLLAMA_SHOW{$model} ) ) if $OLLAMA_SHOW{$model};
+    return json_response( '{"error":"llama runner process has terminated"}', 500 )
+      if $model eq 'broken';
     return json_response( qq{{"error":"model '$model' not found"}}, 404 );
   }
+  return HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'text/html' ],
+    '<html><body>Welcome to nginx!</body></html>' )
+    if $path eq '/nonjson/api/v1/models';
   if ( $path =~ m{\A/llama-(vision|text|legacy)/props\z} && $method eq 'GET' ) {
     return json_response( fixture("llamacpp_props_$1.json") );
   }
@@ -272,14 +278,19 @@ subtest 'a learned yes cannot open a closed wire' => sub {
 };
 
 subtest 'errors fail loud' => sub {
-  my $e = Langertha::Engine::Ollama->new( url => "$base/ollama", model => 'missing' );
-  my $f = $e->probe_model_capabilities_f;
+  my $e = Langertha::Engine::Ollama->new( url => "$base/ollama", model => 'broken' );
+  my $f = $e->probe_model_capabilities_f( models => [qw( llava broken )] );
   $f->await;
-  ok $f->is_failed, 'a 404 fails the future';
-  like scalar $f->failure, qr/Langertha::Engine::Ollama model metadata probe failed: 404/,
+  ok $f->is_failed, 'a 500 fails the future';
+  like scalar $f->failure, qr/Langertha::Engine::Ollama model metadata probe failed: 500/,
     'the failure names the engine and the status';
-  like scalar $f->failure, qr/model 'missing' not found/, 'and carries the provider body';
-  is_deeply $e->learned_model_capabilities, {}, 'nothing is stored';
+  like scalar $f->failure, qr/llama runner process has terminated/, 'and carries the provider body';
+  is_deeply $e->learned_model_capabilities, {}, 'nothing from the failed call is stored';
+
+  my $html = Langertha::Engine::OpenRouter->new( url => "$base/nonjson/api/v1", api_key => 'k', model => 'm' );
+  like error_of( sub { $html->probe_model_capabilities } ),
+    qr{\ALangertha::Engine::OpenRouter model metadata probe: response from /nonjson/api/v1/models is not JSON},
+    'a 200 that is not JSON fails with an engine-named error, not a decoder message';
 
   my $bad = Langertha::Engine::OpenRouter->new( url => "$base/or/api/v1", api_key => 'wrong', model => 'm' );
   like error_of( sub { $bad->probe_model_capabilities } ), qr/401/,
@@ -287,6 +298,73 @@ subtest 'errors fail loud' => sub {
 
   like error_of( sub { $e->probe_model_capabilities( models => 'llava' ) } ), qr/must be an ArrayRef/,
     'models must be an ArrayRef';
+};
+
+subtest 'supports() leaves the caller $@ alone' => sub {
+  # A model-less engine croaks inside chat_model; the capability walk catches
+  # that croak and must not leak it into the caller's $@ (review of k270).
+  my $router = Langertha::Engine::OpenRouter->new( api_key => 'k', _async_http => $forbidden );
+  $@ = "caller's own error\n";    ## no critic (Variables::RequireLocalizedPunctuationVars)
+  $router->supports('image_input');
+  is $@, "caller's own error\n", '$@ unchanged after supports()';
+  $@ = '';
+  $router->supports('image_input');
+  is $@, '', 'an empty $@ stays empty';
+};
+
+subtest 'Ollama: a model the server does not have gives no fact, the others are kept' => sub {
+  my $e = Langertha::Engine::Ollama->new( url => "$base/ollama", model => 'llava' );
+  is_deeply $e->probe_model_capabilities( models => [qw( llava missing llama3.3 )] ), {
+    llava => { image_input => 1 }, 'llama3.3' => { image_input => 0 },
+  }, '404 for "missing" is skipped, llava and llama3.3 are learned';
+  is claims($e), 1, 'the learned fact applies';
+};
+
+subtest 'only non-empty plain strings are model ids' => sub {
+  my $e = Langertha::Engine::Ollama->new( url => "$base/ollama", model => 'llava' );
+  is_deeply $e->probe_model_capabilities( models => [ {}, ['llava'], '', undef, 'llava' ] ),
+    { llava => { image_input => 1 } }, 'references, empty and undef ids are ignored (no request for them)';
+  is_deeply [ sort keys %{ $e->learned_model_capabilities } ], ['llava'], 'no odd key in the store';
+  my $facts = Langertha::ModelProbe->extract( openrouter => { data => [
+    { id => { not => 'a string' }, architecture => { input_modalities => ['image'] } },
+    { id => '', canonical_slug => 'x/y', architecture => { input_modalities => ['text'] } },
+  ] }, [] );
+  is_deeply $facts, { 'x/y' => { image_input => 0 } }, 'a non-string id in the document is not a key';
+};
+
+subtest 'tolerant id matching: Ollama :latest, OpenRouter variants' => sub {
+  my $tagged = Langertha::Engine::Ollama->new( url => "$base/ollama", model => 'llava:latest' );
+  $tagged->probe_model_capabilities( models => ['llava'] );
+  is claims($tagged), 1, 'llava:latest finds a fact learned as llava';
+
+  my $bare = Langertha::Engine::OllamaOpenAI->new( url => "$base/ollama/v1", model => 'llava' );
+  $bare->probe_model_capabilities( models => ['llava:latest'] );
+  is claims($bare), 1, 'llava finds a fact learned as llava:latest';
+
+  my $other_tag = Langertha::Engine::Ollama->new( url => "$base/ollama", model => 'llava:13b' );
+  $other_tag->probe_model_capabilities( models => ['llava'] );
+  is claims($other_tag), 0, 'another tag is another model: no match';
+
+  for my $case ( [ 'openai/gpt-4o:online' => 1 ], [ 'deepseek/deepseek-r1:free' => 0 ] ) {
+    my ( $model, $want ) = @$case;
+    my $e = Langertha::Engine::OpenRouter->new( url => "$base/or/api/v1", api_key => 'or-key', model => $model );
+    $e->probe_model_capabilities;
+    is claims($e), $want, "$model falls back to its base id";
+  }
+
+  my $probe = 'Langertha::ModelProbe';
+  is_deeply [ $probe->lookup_ids( ollama => 'llava' ) ], [ 'llava', 'llava:latest' ], 'ollama: bare adds :latest';
+  is_deeply [ $probe->lookup_ids( ollama => 'llava:latest' ) ], [ 'llava:latest', 'llava' ], 'ollama: :latest adds bare';
+  is_deeply [ $probe->lookup_ids( openrouter => 'openai/gpt-4o:nitro' ) ],
+    [ 'openai/gpt-4o:nitro', 'openai/gpt-4o' ], 'openrouter: exact variant first, then base';
+  is_deeply [ $probe->lookup_ids( mistral => 'mistral-small-latest' ) ], ['mistral-small-latest'],
+    'other formats match exactly';
+
+  my $exact = Langertha::Engine::OpenRouter->new( api_key => 'k', model => 'openai/gpt-4o:free' );
+  $exact->_set_learned_model_capabilities( {
+    'openai/gpt-4o:free' => { image_input => 0 }, 'openai/gpt-4o' => { image_input => 1 },
+  } );
+  is claims($exact), 0, 'a listed variant wins over its base id';
 };
 
 subtest 'a probe on a clone does not write into its source' => sub {
