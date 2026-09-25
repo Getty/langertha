@@ -15,8 +15,9 @@ Revision history for Langertha
       tools the way chat_with_tools_f does, in the system prompt instead
       of an ignored tools key, and <tool_call> blocks in the reply land
       on Response->tool_calls, with finish_reason tool_calls where it
-      was stop. A block that holds no valid call stays in the text.
-      tool_choice => 'none' withholds the tools, and a built-in tool
+      was stop. A block that holds no valid call stays in the text, in
+      ToolCall->extract_hermes_from_text too, which also takes
+      tag => ... for a custom call tag. tool_choice => 'none' withholds the tools, and a built-in tool
       croaks there. chat_stream_realtime_f puts the tools in the prompt
       too and does not stream the <tool_call> blocks: their calls arrive
       on the final chunk, and markup still unclosed at the end is

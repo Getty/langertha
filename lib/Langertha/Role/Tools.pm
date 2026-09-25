@@ -185,29 +185,15 @@ sub _hermes_tool_messages {
 # Splits hermes model text into the text without the call tags and the
 # well-formed calls ({name, arguments} HASHes) the tags carried, honoring
 # hermes_call_tag. Shared by response_tool_calls, response_text_content,
-# chat_f's reply lift (karr k231) and the streamed lift (k253). A block that
-# carries no call stays in the text where it was: what the model wrote is not
-# dropped (k253 review).
+# chat_f's reply lift (karr k231) and the streamed lift (k253). Delegates to
+# Langertha::ToolCall->extract_hermes_from_text, the one hermes lift (k255):
+# only a well-formed call reaches the tool loop (k163), a block that carries
+# no call stays in the text where it was (k253 review).
 sub _hermes_split_text {
   my ( $self, $text ) = @_;
-  my $content = $text // '';
-  my $tag = $self->hermes_call_tag;
-  my @tool_calls;
-  $content =~ s{(<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>)}{
-    my ( $block, $json_str ) = ( $1, $2 );
-    my $tc = eval { $self->decode_json_text($json_str) };
-    # Guard as Langertha::ToolCall->extract_hermes_from_text does: only a
-    # well-formed call (a HASH carrying a non-empty name) may reach the tool
-    # loop, which then does $tc->{name}/$tc->{arguments}. Valid-but-non-object
-    # JSON ([1,2], a bare string/number) or an object without a name would
-    # otherwise crash the raid ("Not a HASH reference" / "Tool '' not found").
-    # -- karr k163
-    ( ref($tc) eq 'HASH' && defined $tc->{name} && length $tc->{name} )
-      ? do { push @tool_calls, $tc; '' }
-      : $block;
-  }seg;
-  $content =~ s/^\s+|\s+$//g;
-  return ( $content, \@tool_calls );
+  my ( $content, $calls ) = Langertha::ToolCall->extract_hermes_from_text(
+    $text, tag => $self->hermes_call_tag );
+  return ( $content, [ map { { name => $_->name, arguments => $_->arguments } } @$calls ] );
 }
 
 # The streamed counterpart of chat_f's reply lift (karr k253, ADR 0001): text

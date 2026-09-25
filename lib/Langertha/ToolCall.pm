@@ -309,24 +309,47 @@ Croaks like L</extract>, including on a client-actionable C<responses> item.
 =cut
 
 # Hermes-style XML embedded in plain text. Returns ($cleaned_text, \@calls).
+# The one hermes text lift: Role::Tools delegates here with the engine's
+# hermes_call_tag (karr k255). Only a well-formed call (a JSON object with a
+# non-empty name) becomes a ToolCall and leaves the text (k163); a block that
+# carries no call stays in the text where it was -- what the model wrote is
+# not dropped (k253).
 sub extract_hermes_from_text {
-  my ($class, $text) = @_;
+  my ( $class, $text, %opts ) = @_;
+  my $tag = defined $opts{tag} && length $opts{tag} ? $opts{tag} : 'tool_call';
   my $clean = defined($text) ? $text : '';
   my @calls;
-  while ( $clean =~ m{<tool_call>\s*(.*?)\s*</tool_call>}sg ) {
-    my $json = $1;
+  $clean =~ s{(<\Q$tag\E>\s*(.*?)\s*</\Q$tag\E>)}{
+    my ( $block, $json ) = ( $1, $2 );
     my $obj = eval { $TEXT_JSON->decode($json) };
-    next unless ref($obj) eq 'HASH';
-    next unless defined $obj->{name} && length $obj->{name};
-    push @calls, $class->new(
-      name      => $obj->{name},
-      arguments => ( ref( $obj->{arguments} ) eq 'HASH' ? $obj->{arguments} : {} ),
-    );
-  }
-  $clean =~ s{<tool_call>.*?</tool_call>}{}sg;
+    ( ref($obj) eq 'HASH' && defined $obj->{name} && length $obj->{name} )
+      ? do {
+          push @calls, $class->new(
+            name      => $obj->{name},
+            arguments => ( ref( $obj->{arguments} ) eq 'HASH' ? $obj->{arguments} : {} ),
+          );
+          '';
+        }
+      : $block;
+  }seg;
   $clean =~ s/^\s+|\s+$//g;
   return ( $clean, \@calls );
 }
+
+=method extract_hermes_from_text
+
+    my ( $clean, $calls ) = Langertha::ToolCall->extract_hermes_from_text($text);
+    my ( $clean, $calls ) = Langertha::ToolCall->extract_hermes_from_text(
+        $text, tag => 'function_call' );
+
+Lifts Hermes-style C<< <tool_call>{"name":...,"arguments":{...}}</tool_call> >>
+blocks out of model text. Returns the trimmed text without the lifted blocks
+and an ArrayRef of C<Langertha::ToolCall>. C<tag> names the call tag (default
+C<tool_call>); engines pass their C<hermes_call_tag>. A block that carries no
+call (invalid JSON, a non-object, an object without a C<name>) stays in the
+text where it was. A non-object C<arguments> becomes C<{}>.
+
+=cut
 
 # --- Serializers to wire-format hashes ---
 
