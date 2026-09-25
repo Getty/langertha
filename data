@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T21:27:16Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:27:16Z
+created: 2026-09-25T20:27:03Z
+id: 307
+priority: medium
+started: 2026-09-25T21:05:53Z
+status: done
+tags:
+- llm
+- risk
+- scaleway
+title: Scaleway default chat model llama-3.1-8b-instruct marked EOL on Scaleway Generative
+  APIs
+updated: 2026-09-25T21:27:16Z
+---
+
+Engine/Scaleway.pm:55 default_model llama-3.1-8b-instruct. Scaleway supported-models page (checked 2026-09-25, https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/) shows llama-3.1-8b-instruct Serverless=EOL, so users on the default get an error. Pick a current serverless model (llama-3.3-70b-instruct is still Yes; or mistral-small-3.2-24b-instruct-2506 / qwen3.6-35b-a3b), then re-check the capability-corrections comment at Scaleway.pm:79, which keys on the default. POD lines 17/29-30 also list mistral-small-3.1-24b-instruct-2503 (EOL 2025-11-14).
