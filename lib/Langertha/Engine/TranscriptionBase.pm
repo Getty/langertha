@@ -21,7 +21,6 @@ sub _build_openapi_operations {
 
 sub _build_supported_operations {[qw(
   createTranscription
-  createTranslation
 )]}
 
 =head1 SYNOPSIS

@@ -428,7 +428,10 @@ sub embedding_request {
   my ( $self, $input, %extra ) = @_;
   my $model = $self->embedding_model;
 
-  my %config = %{ delete $extra{embedContentConfig} // {} };
+  my %config = (
+    defined $self->embedding_dimensions ? ( outputDimensionality => $self->embedding_dimensions ) : (),
+    %{ delete $extra{embedContentConfig} // {} },
+  );
   for my $key ( sort keys %EMBED_CONFIG_KEY ) {
     $config{ $EMBED_CONFIG_KEY{$key} } = delete $extra{$key} if exists $extra{$key};
   }
@@ -469,7 +472,8 @@ input. The optional C<task_type>, C<title> and C<output_dimensionality> are
 placed in C<embedContentConfig> (as C<taskType>, C<title>,
 C<outputDimensionality>), merged with an C<embedContentConfig> you pass
 yourself; any other key goes into each request unchanged. In a batch every
-input gets the same settings.
+input gets the same settings. L<Langertha::Role::Embedding/embedding_dimensions>,
+when set, is sent as C<outputDimensionality> unless the call passes one.
 
 =cut
 

@@ -48,6 +48,22 @@ server embeds with the model it serves.
 
 =cut
 
+has embedding_dimensions => (
+  is => 'ro',
+  isa => 'Maybe[Int]',
+);
+
+=attr embedding_dimensions
+
+Optional size of the returned vectors, for models that can shorten them
+(OpenAI C<text-embedding-3-*>, C<gemini-embedding-001>). OpenAI-compatible
+engines send it as C<dimensions>, L<Langertha::Engine::Gemini> as
+C<embedContentConfig.outputDimensionality>; a matching extra passed to
+C<embedding_request> wins over it. Unset (the default), nothing is sent and
+the model answers in its native size. Other engines do not send it.
+
+=cut
+
 sub embedding {
   my ( $self, $text ) = @_;
   return $self->embedding_request($text);

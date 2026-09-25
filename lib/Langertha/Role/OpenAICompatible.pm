@@ -251,6 +251,7 @@ sub embedding_request {
   return $self->generate_request( $self->embedding_operation_id, sub { $self->embedding_response(shift, $input) },
     defined $self->embedding_model ? ( model => $self->embedding_model ) : (),
     input => $input,
+    defined $self->embedding_dimensions ? ( dimensions => $self->embedding_dimensions ) : (),
     %extra,
   );
 }
@@ -262,7 +263,9 @@ sub embedding_request {
 Generates an OpenAI-format embedding request for C<$input>: a string, or
 an ArrayRef of strings for a batch (sent as one C<input> array). Uses
 C<embedding_model> (default: C<text-embedding-3-large>). C<%extra> goes
-into the body unchanged (C<dimensions>, C<encoding_format>, ...). The
+into the body unchanged (C<dimensions>, C<encoding_format>, ...);
+L<Langertha::Role::Embedding/embedding_dimensions>, when set, is sent as
+C<dimensions> unless C<%extra> carries one. The
 request's response parser knows the input shape, so a batch comes back as
 one vector per input (see L</embedding_response>). Returns an HTTP request
 object.

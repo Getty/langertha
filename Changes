@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New engine attribute embedding_dimensions shortens every embedding:
+      sent as dimensions on OpenAI-compatible engines and as
+      embedContentConfig.outputDimensionality on Gemini, a per-request extra
+      still wins. Transcription engines no longer allow the unimplemented
+      createTranslation operation.
+
     - Tests cover the OpenAI, Groq and whisper-handle transcription requests
       (endpoint, auth, multipart parts) and image answers on documented
       bodies (several gpt-image b64_json images; a url item with
