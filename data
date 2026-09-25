@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T06:30:53Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T06:30:53Z
+created: 2026-09-25T05:40:47Z
+id: 234
+priority: low
+started: 2026-09-25T06:02:35Z
+status: done
+tags:
+- capabilities
+- hermes
+- wire
+title: Hermes engines over-claim tools_native and tool_choice_* via Role::Tools
+updated: 2026-09-25T06:30:53Z
+---
+
+Found in k231. NousResearch and AKI native (tool_wire_format hermes) compose Role::Tools, so %ROLE_TO_CAPS gives them tools_native + tool_choice_{auto,any,none,named} (t/78_engine_capabilities.t pins "nousresearch tools_native (composes Tools)"). The hermes wire has no tools/tool_choice body key: tools ride the system prompt, tool_choice cannot be expressed (k231 drops it with a carp). Consequences: supports() over-claims (ADR 0002 honesty), and the ADR 0005 forced-tool rewrite never fires on NousResearch (it would, via response_format_json_schema, if tool_choice_named were cleared). Decide: layer-2 around engine_capabilities on the hermes wire (clear tools_native + tool_choice_*; maybe keep tool_choice_auto), or a HermesTools-level rule; check manifest/Builder and the perl-ai-langertha skill table ("tools | only tools_hermes"). Whether Nous honors json_schema needs langertha-llm-advisor.
+
+2026-09-25 05:44 llm-advisor 2026-09-25 (docs only, no live calls). SOURCES: aki.io/docs/llm-chat/llm-request-parameters (request = key, chat_context, text_context, chat_output_format, top_k, top_p, temperature, max_gen_tokens, wait_for_result — NO tools/tool_choice/response_format); aki.io/docs/llm-chat/llm-chat-context ("We are currently extending the chat context format with tool calling mechanisms, will publish soon"); aki.io/docs/llm-chat/llm-output-format (chat_output_format=json "supports tool calls" in output, undocumented shape). Nous: portal.nousresearch.com/api-docs is JS-rendered (unreadable); hermes-agent.nousresearch.com/docs/integrations/nous-portal + portal.nousresearch.com/models: inference-api.nousresearch.com/v1 is now an OpenAI-compatible GATEWAY (341 models: Claude, GPT, Gemini… routed via OpenRouter + own backend for Hermes-4/4.3). Hermes Agent drives native OpenAI tools through it for non-Hermes models; Nous itself says Hermes-4 is NOT recommended for tool loops. HF Hermes-4-70B card: template takes a tools: field, <tool_call> output, vLLM/SGLang parsers exist — but whether Nous hosted backend enables a tool parser / constrained json_schema is NOT publicly documented. RECOMMENDATION: (a) one layer-2 rule on Role::HermesTools (both consumers, different parents: OpenAIBase + Remote — ADR 0016 favours the role) via around engine_capabilities: delete tools_native, tool_choice_any, tool_choice_named, parallel_tool_use; keep tools_hermes + tool_choice_auto; claim tool_choice_none ONLY if k231 is changed to withhold the tool prompt on none (mirror k233), else clear it. Not layer 3: tool_wire_format is engine-scoped, a per-model tools_native=1 would lie about the wire. (b) NousResearch keeps response_format_json_{object,schema} from OpenAIBase (flag = wire accepts the field; unverified whether Hermes-4 backend constrains) -> with tool_choice_named cleared, ADR 0005 rewrite fires (it runs before _hermes_prompt_tools, so tools/tool_choice are already gone — ordering is correct). Harden it: on the hermes wire the rewrite should ALSO put the schema into a system message (Hermes-Function-Calling structured-output prompt "<schema>…</schema>"), so the synthetic ToolCall survives a backend that silently ignores response_format. (c) AKI native: no response_format -> rewrite cannot fire; keep k231 carp+drop for any/named (or croak — stricter, ADR 0021 style); point users to AKIOpenAI for forced tools. Update t/78 pins ("nousresearch tools_native"), perl-ai-langertha skill table, Manifest/Builder publishes flags so check t/96. Live-verify Nous json_schema on Hermes-4-70B once, only with Getty approval.
+
+2026-09-25 06:10 Implemented on branch worktree-agent-a46133756ae808261 (4285a3b code+tests, 5959f10 ADR 0005/0002 Updates + Changes). The perl-ai-langertha skill table now also applies the forced-tool json_schema row to NousResearch; skill edit left to the orchestrator.
