@@ -762,7 +762,7 @@ a forced choice is dropped with a warning, the model then decides; a forced
 named tool that the C<json_schema> rewrite below can take is rewritten
 instead. Likewise C<parallel_tool_use> reaches the wire only where the engine
 C<supports('parallel_tool_use')>; a value you set elsewhere is dropped with a
-warning on the OpenAI-compatible and Responses envelopes.
+warning.
 
 The canonical per-request controls (karr #46) are normalized like
 C<messages>/C<tools> instead of being spread as raw target-wire kwargs:
@@ -995,7 +995,8 @@ sub _gate_tool_choice {
 }
 
 # parallel_tool_use -> parallel_tool_calls, in place, for the Chat Completions
-# and Responses builders alike (streaming too, karr k240): only when tools are
+# and Responses builders alike (streaming too, karr k240); Ollama native and
+# Gemini call it only for the drop carp (flag cleared, k241). Only when tools are
 # present. A per-request control beats the engine attribute; an explicit
 # parallel_tool_calls kwarg is the caller's wire intent and wins over both.
 # Emitted only where the engine supports('parallel_tool_use') (karr k241, ADR

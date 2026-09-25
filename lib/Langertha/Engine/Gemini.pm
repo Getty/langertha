@@ -252,6 +252,9 @@ sub chat_request {
   # Canonical per-request controls (chat_f, karr #46) beat the engine
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
+  # No parallel knob on this wire (parallel_tool_use is cleared): a value the
+  # caller set is only dropped, with the shared carp (karr k241).
+  $self->_parallel_tool_calls_kwarg( \%extra, $controls );
 
   # Translate tool_choice (canonical / OpenAI / Anthropic shapes) into
   # Gemini's toolConfig.functionCallingConfig form.
@@ -445,6 +448,9 @@ sub chat_stream_request {
   # Canonical per-request controls (chat_f, karr #46) beat the engine
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
+  # No parallel knob on this wire (parallel_tool_use is cleared): a value the
+  # caller set is only dropped, with the shared carp (karr k241).
+  $self->_parallel_tool_calls_kwarg( \%extra, $controls );
 
   # Same tool_choice translation as chat_request.
   if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {

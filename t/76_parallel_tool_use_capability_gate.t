@@ -92,6 +92,32 @@ for my $name ( sort keys %make ) {
     };
 }
 
+# Ollama native and Gemini have no parallel knob at all: a set value is only
+# dropped, loudly, the same carp as the envelopes.
+for my $native (
+    [ ollama => sub { Langertha::Engine::Ollama->new( url => 'http://h:1', model => 'm', @_ ) } ],
+    [ gemini => sub { Langertha::Engine::Gemini->new( api_key => 'k', @_ ) } ],
+) {
+    my ( $name, $make ) = @$native;
+    subtest "$name native: a set parallel_tool_use carps, nothing reaches the body" => sub {
+        my $tools = $make->()->format_tools([$tool]);
+        for my $builder (qw( chat_request chat_stream_request )) {
+            for my $case (
+                [ 'control', {}, [ controls => { parallel_tool_use => 0 } ] ],
+                [ 'engine attribute', { parallel_tool_use => 0 }, [] ],
+            ) {
+                my ( $label, $ctor, $args ) = @$case;
+                my ( $body, $warns ) = build( $make->(%$ctor), $builder, tools => $tools, @$args );
+                ok( !( grep { /parallel/ } keys %$body ), "$builder: $label not on the body" );
+                ok( ( grep { /dropping parallel_tool_use/ } @$warns ), "$builder: dropping a set $label carps" )
+                    or diag @$warns;
+            }
+            my ( $body, $warns ) = build( $make->(), $builder, tools => $tools );
+            ok( !@$warns, "$builder: nothing set, silent" ) or diag @$warns;
+        }
+    };
+}
+
 subtest 'openai keeps sending it, silently' => sub {
     my $e = Langertha::Engine::OpenAI->new( api_key => 'k', model => 'gpt-5.6' );
     my $tools = $e->format_tools([$tool]);

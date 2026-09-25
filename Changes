@@ -77,8 +77,7 @@ Revision history for Langertha
       no longer claims tool_choice_* (its /api/chat has none, like its /v1),
       so chat_f turns a forced named tool into a format schema and a
       synthetic tool call there. LM Studio native croaks on tools; use
-      LMStudioOpenAI or LMStudioAnthropic for tool calling. Hetzner still
-      sends the tool_choice you pass.
+      LMStudioOpenAI or LMStudioAnthropic for tool calling.
 
     - tool_choice accepts a Langertha::ToolChoice object (ToolChoice->none,
       ->any, ->specific($name), ...) wherever it accepts a string or hash:
@@ -91,7 +90,8 @@ Revision history for Langertha
       streaming request of the OpenAI-compatible and Responses engines as
       parallel_tool_calls, exactly as it reaches the non-streaming one, and
       only where the engine supports('parallel_tool_use'); a value you set
-      is dropped with a warning elsewhere, and an explicit
+      is dropped with a warning elsewhere (Ollama native and Gemini
+      included), and an explicit
       parallel_tool_calls argument always passes. Gemini, Ollama native and
       OllamaOpenAI no longer claim parallel_tool_use: their wires have no
       such knob.

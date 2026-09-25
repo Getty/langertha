@@ -214,6 +214,9 @@ sub chat_request {
   # Canonical per-request controls (chat_f, karr #46) beat the engine
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
+  # No parallel knob on this wire (parallel_tool_use is cleared): a value the
+  # caller set is only dropped, with the shared carp (karr k241).
+  $self->_parallel_tool_calls_kwarg( \%extra, $controls );
 
   # /api/chat has no tool_choice field: the tool_choice_* flags are cleared
   # below, so the shared rule drops it (none withholds the tools, a forced
@@ -461,6 +464,9 @@ sub chat_stream_request {
   # Canonical per-request controls (chat_f, karr #46) beat the engine
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
+  # No parallel knob on this wire (parallel_tool_use is cleared): a value the
+  # caller set is only dropped, with the shared carp (karr k241).
+  $self->_parallel_tool_calls_kwarg( \%extra, $controls );
 
   # No tool_choice field, same rule as chat_request (karr k239).
   $self->_gate_tool_choice(\%extra);

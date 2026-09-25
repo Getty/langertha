@@ -96,18 +96,18 @@ the claimed capability also gates emission on the tool-selection axis:
 - **`parallel_tool_calls`** — `Role::Chat::_parallel_tool_calls_kwarg`, shared by the Chat
   Completions and Responses envelopes, emits only where `supports('parallel_tool_use')`. A value
   the caller set (control or attribute) that the gate drops carps, the ADR 0025 drop+carp;
-  nothing set stays silent. An explicit `parallel_tool_calls` kwarg is wire intent and passes.
+  nothing set stays silent. Ollama native and Gemini call it too, only for that carp: their
+  flag is cleared, so it never emits there. An explicit `parallel_tool_calls` kwarg is wire intent and passes.
 
 Layer-2 clears that go with it: Ollama native drops `tool_choice_*` and `parallel_tool_use`
 (tools_native stays, so a forced named tool in `chat_f` takes the ADR 0005 `format` rewrite);
 Gemini (no parallel knob in `ToolConfig`) and OllamaOpenAI drop `parallel_tool_use`. LM Studio
 native composes no `Role::Tools` and croaks on a non-empty `tools` list.
 
-One deliberate exception: Hetzner clears its tool flags because nothing confirms the gateway
-honors them, not because the field is absent. It overrides `_openai_tool_choice_kwarg` and
-keeps serializing a `tool_choice` the caller passes, so an unverified flag does not cost a
-choice the wire may accept. Where an OpenAI-compatible engine clears a `tool_choice_*` kind for
-a documented reason (MiniMax and OllamaOpenAI: no field; llama.cpp: named downgraded to auto;
-Moonshot per model: 400; SGLang: auto and none undocumented, so auto drops as the default and
-none withholds the tools), the gate applies. Tests: `t/76_tool_choice_capability_gate.t`,
+The registry is the truth, with no per-engine exception: wherever an OpenAI-compatible engine
+clears a `tool_choice_*` kind, the gate applies — MiniMax and OllamaOpenAI (no field),
+llama.cpp (named downgraded to auto), Moonshot per model (400), SGLang (auto and none
+undocumented: auto drops as the default, none withholds the tools) and Hetzner (all four
+cleared as unverified: auto drops, a forced choice drops with a carp). A flag cleared for want of
+confirmation is re-added once confirmed, and the field comes back with it. Tests: `t/76_tool_choice_capability_gate.t`,
 `t/76_parallel_tool_use_capability_gate.t`.

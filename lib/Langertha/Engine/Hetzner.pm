@@ -3,7 +3,6 @@ package Langertha::Engine::Hetzner;
 our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
-use Langertha::ToolChoice;
 
 extends 'Langertha::Engine::OpenAIBase';
 
@@ -158,23 +157,6 @@ around engine_capabilities => sub {
   ) };
   return $caps;
 };
-
-# The tool_choice_* flags above are cleared because nothing confirms the
-# gateway honors them, not because the field is absent: the wire is
-# OpenAI-shaped and its backend may well take tool_choice. The OpenAI
-# envelope's k239 gate drops a kind the engine does not claim, which here
-# would lose a choice the wire may accept, so a tool_choice the caller passes
-# explicitly is still serialized (as before k239; t/48_hetzner.t). chat_f
-# does not route through it either way (no tool_choice_named, no json_schema).
-# Revisit together with the flags once a live test confirms them.
-sub _openai_tool_choice_kwarg {
-  my ( $self, $extra ) = @_;
-  return unless defined $extra->{tool_choice};
-  if ( my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} ) ) {
-    $extra->{tool_choice} = $tc->to('openai');
-  }
-  return;
-}
 
 __PACKAGE__->meta->make_immutable;
 

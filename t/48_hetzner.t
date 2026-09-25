@@ -136,23 +136,36 @@ is($tools_data->{tools}[0]{function}{description}, 'Echo the input text',
 is_deeply($tools_data->{tools}[0]{function}{parameters}{required}, ['message'],
   'tool parameters.required under function key');
 
-# --- tool_choice translates to the OpenAI shape ---
+# --- tool_choice follows the capability registry (karr k239, ADR 0002) ---
+# Hetzner clears every tool_choice_* flag (nothing confirms the gateway honors
+# the field), and the registry is the truth: the OpenAI envelope sends no
+# tool_choice the engine does not claim. auto is the wire default and drops
+# quietly; a forced choice drops with a carp, since the model then decides.
 
-my $tc_data = $json->decode(
-  $hetzner->chat_request($tools_msgs, tools => $tools, tool_choice => 'auto')->content
-);
-is($tc_data->{tool_choice}, 'auto', 'tool_choice string shortcut -> flat "auto"');
+my @tc_warns;
+my $tc_data = do {
+  local $SIG{__WARN__} = sub { push @tc_warns, $_[0] };
+  $json->decode(
+    $hetzner->chat_request($tools_msgs, tools => $tools, tool_choice => 'auto')->content
+  );
+};
+ok(!exists $tc_data->{tool_choice} && !@tc_warns, 'tool_choice auto dropped silently')
+  or diag @tc_warns;
 
-my $tc_named = $json->decode(
-  $hetzner->chat_request(
-    $tools_msgs,
-    tools       => $tools,
-    tool_choice => { type => 'tool', name => 'echo' },
-  )->content
-);
-is($tc_named->{tool_choice}{type}, 'function', 'named tool_choice -> OpenAI function wrapper');
-is($tc_named->{tool_choice}{function}{name}, 'echo',
-  'named tool_choice -> function.name echo');
+@tc_warns = ();
+my $tc_named = do {
+  local $SIG{__WARN__} = sub { push @tc_warns, $_[0] };
+  $json->decode(
+    $hetzner->chat_request(
+      $tools_msgs,
+      tools       => $tools,
+      tool_choice => { type => 'tool', name => 'echo' },
+    )->content
+  );
+};
+ok(!exists $tc_named->{tool_choice}, 'named tool_choice not sent');
+ok((grep { /dropping tool_choice 'tool echo'/ } @tc_warns), 'dropping the named choice carps')
+  or diag @tc_warns;
 
 # --- Static model list (no HTTP) ---
 
