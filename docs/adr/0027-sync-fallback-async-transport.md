@@ -144,3 +144,17 @@ loop-adapter layer would build on.
 
 - A pluggable event-loop adapter layer (AnyEvent/Mojo) that gives real concurrency on a non-
   IO::Async reactor — deferred; it would consume the `_async_http` injection seam formalized here.
+
+## Update (k274 — inline-image fetches on the `_f` paths use the selected backend)
+
+A URL-sourced `Content::Image` that an engine must inline (Gemini, Ollama native, LM Studio
+native, and the `_content_inline_images_only` engines) was fetched with a private blocking
+`LWP::UserAgent` while the request body was built — on the `_f` paths too, stalling the IO::Async
+loop that knarr/skeid serve concurrent requests from. `chat_f`, `chat_stream_realtime_f` and
+`chat_with_tools_f` now prefetch those images through the engine's `_async_http` (so injected
+client > Net::Async::HTTP > the `SyncHTTP` shim over the engine's `user_agent`, the same selection
+as the chat request) with `Content::Image->ensure_base64_f`, all concurrently via `needs_all`,
+before the synchronous build; the bytes are cached on the image, so the serializers do no I/O. A
+failed fetch fails the Future with the error the sync path croaks. The sync methods keep their own
+LWP fetch. The async fetch carries no 30 s timeout of its own: it inherits the backend's, like the
+chat request.
