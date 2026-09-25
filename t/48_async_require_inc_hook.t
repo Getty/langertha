@@ -18,6 +18,14 @@ BEGIN {
 # file down with it. The child uses a pass-through hook, standing in for PAR,
 # lib::relative-style loaders or a test blocker. (karr k193)
 
+# poll_metrics_f is not covered: it loads nothing lazily (HTTP::Request is
+# loaded with the role, and by LWP long before), so it has no first-time
+# require to trip over.
+
+note( 'perl < 5.38 does not localize $INC around @INC hook calls: the panic '
+    . 'condition is not reachable here, this run only checks the call itself' )
+  if $] < 5.038;
+
 my @inc = map { "-I$_" } grep { !ref } @INC;
 
 sub run_child {
@@ -71,21 +79,6 @@ PERL
   is( $seen->{pending}, 1, 'export_otlp_f suspended on the pending request future' );
   is( $seen->{method}, 'POST', 'the OTLP POST reached the injected client' );
   is( $seen->{code}, 200, 'export_otlp_f resolved with the response once the request completed' );
-};
-
-subtest 'poll_metrics_f suspends on a pending request' => sub {
-  my ( $status, $seen ) = run_child(<<'PERL');
-my $future = $engine->poll_metrics_f;
-print "pending=", ( $future->is_ready ? 0 : 1 ), "\n";
-my ( $request_future, $request ) = @{ $client->{pending}[0] };
-print "method=", $request->method, "\n";
-$request_future->done( HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'text/plain' ], "up 1\n" ) );
-print "records=", scalar @{ $future->get }, "\n";
-PERL
-  is( $status, 0, 'child perl exited cleanly' );
-  is( $seen->{pending}, 1, 'poll_metrics_f suspended on the pending request future' );
-  is( $seen->{method}, 'GET', 'the /metrics GET reached the injected client' );
-  is( $seen->{records}, 1, 'poll_metrics_f resolved with the parsed records' );
 };
 
 done_testing;

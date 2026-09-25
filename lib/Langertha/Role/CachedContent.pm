@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );
+use URI;
 use Langertha::CachedContent;
 
 # The consumer's endpoint/auth seam (Langertha::Engine::Gemini's
@@ -267,7 +268,6 @@ async sub list_cached_contents_f {
     $params{pageSize}  = $page_size if defined $page_size;
     $params{pageToken} = $token     if defined $token;
     if (%params) {
-      require URI;
       my $uri = URI->new($url);
       my %query = $uri->query_form;
       $uri->query_form( %query, %params );
