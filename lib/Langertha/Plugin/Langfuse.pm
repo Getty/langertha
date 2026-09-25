@@ -575,7 +575,10 @@ async sub plugin_after_embedding {
 
   $self->update_trace(
     id     => $self->_trace_id,
-    output => { dimensions => ref $vector eq 'ARRAY' ? scalar @$vector : undef },
+    # A batch (k289) is an ArrayRef of vectors: report the vector's width.
+    output => { dimensions => ref $vector eq 'ARRAY'
+      ? ( ref $vector->[0] eq 'ARRAY' ? scalar @{$vector->[0]} : scalar @$vector )
+      : undef },
   );
 
   if ($self->auto_flush) {

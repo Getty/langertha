@@ -574,6 +574,22 @@ subtest 'Embedder with Langfuse plugin creates trace + generation' => sub {
   is_deeply($update->{body}{output}, { dimensions => 3 }, 'trace output has dimensions');
 };
 
+# k289: a batch returns an ArrayRef of vectors; the trace reports the vector
+# width, not the number of inputs.
+subtest 'Langfuse embedding trace on a batch reports the vector width' => sub {
+  my $lf = Langertha::Plugin::Langfuse->new(
+    host       => Langertha::Embedder->new(engine => MockEmbeddingEngine->new),
+    public_key => 'pk-test',
+    secret_key => 'sk-test',
+  );
+  my $batch = [ [0.1, 0.2, 0.3], [0.4, 0.5, 0.6] ];
+  $lf->plugin_before_embedding([qw( a b )])->get;
+  my $out = $lf->plugin_after_embedding([qw( a b )], $batch)->get;
+  is($out, $batch, 'the batch passes through unchanged');
+  is_deeply($lf->_batch->[-1]{body}{output}, { dimensions => 3 },
+    'trace output dimensions is the vector width');
+};
+
 subtest 'Langfuse plugin via Name => Args syntax' => sub {
   my $engine = MockChatEngine->new;
 

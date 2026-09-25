@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Batch embeddings: simple_embedding([ $a, $b, ... ]) (and the
+      Langertha::Embedder wrapper) returns one vector per input, in input
+      order, on every OpenAI-compatible engine (ordered by data[].index)
+      and on Ollama native; a string input still returns one vector. A
+      response requested with encoding_format => 'base64' is decoded to
+      floats, so the result is an ArrayRef of floats either way. A batch
+      answered with the wrong number of vectors croaks, naming the engine.
+
     - New capability image_input (Langertha::Role::ImageInput):
       $engine->supports('image_input') says whether the configured model
       sees an image part. It is claimed for OpenAI, first-party Anthropic,

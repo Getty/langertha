@@ -114,7 +114,9 @@ sub simple_embedding {
 
     my $vector = $embedder->simple_embedding($text);
 
-Returns the embedding vector for C<$text>. If C<model> is set, uses it
+Returns the embedding vector for C<$text>; an ArrayRef of strings is one
+batch request and returns an ArrayRef of vectors in input order (the
+plugin hooks see the whole batch). If C<model> is set, uses it
 as an override; otherwise delegates directly to the engine's
 C<simple_embedding>. Plugin hooks C<plugin_before_embedding> and
 C<plugin_after_embedding> are fired around the request.

@@ -5,6 +5,7 @@ use Moose::Role;
 use File::ShareDir::ProjectDistDir qw( :all );
 use Carp qw( croak carp );
 use JSON::MaybeXS;
+use MIME::Base64 qw( decode_base64 );
 use Langertha::ToolChoice;
 use Langertha::Response;
 use Langertha::ToolCall;
@@ -243,7 +244,7 @@ sub embedding_operation_id { 'createEmbedding' }
 
 sub embedding_request {
   my ( $self, $input, %extra ) = @_;
-  return $self->generate_request( $self->embedding_operation_id, sub { $self->embedding_response(shift) },
+  return $self->generate_request( $self->embedding_operation_id, sub { $self->embedding_response(shift, $input) },
     defined $self->embedding_model ? ( model => $self->embedding_model ) : (),
     input => $input,
     %extra,
@@ -254,14 +255,18 @@ sub embedding_request {
 
     my $request = $engine->embedding_request($input, %extra);
 
-Generates an OpenAI-format embedding request for the given C<$input>
-string. Uses C<embedding_model> (default: C<text-embedding-3-large>).
-Returns an HTTP request object.
+Generates an OpenAI-format embedding request for C<$input>: a string, or
+an ArrayRef of strings for a batch (sent as one C<input> array). Uses
+C<embedding_model> (default: C<text-embedding-3-large>). C<%extra> goes
+into the body unchanged (C<dimensions>, C<encoding_format>, ...). The
+request's response parser knows the input shape, so a batch comes back as
+one vector per input (see L</embedding_response>). Returns an HTTP request
+object.
 
 =cut
 
 sub embedding_response {
-  my ( $self, $response ) = @_;
+  my ( $self, $response, $input ) = @_;
   my $data = $self->parse_response($response);
   # tracing
   # A malformed/error payload that still parses as a 200 JSON body can lack the
@@ -276,15 +281,49 @@ sub embedding_response {
       . ( defined $err ? " (error: $err)" : "" );
   }
   my @objects = @{$data->{data}};
-  return $objects[0]->{embedding};
+  # data[].index is the input position and the wire does not promise the array
+  # comes in input order, so sort by it whenever every entry carries one (k289).
+  unless ( grep { ref $_ ne 'HASH' || !defined $_->{index} } @objects ) {
+    @objects = sort { $a->{index} <=> $b->{index} } @objects;
+  }
+  my @vectors = map { $self->_embedding_vector($_) } @objects;
+  if ( ref $input eq 'ARRAY' ) {
+    croak "".(ref $self)." embedding response returned ".scalar(@vectors)
+      ." vectors for ".scalar(@{$input})." inputs"
+      unless @vectors == @{$input};
+    return \@vectors;
+  }
+  return $vectors[0];
+}
+
+# One data[] entry's vector. encoding_format => 'base64' answers with a string
+# of little-endian float32 instead of a float array; decode it, so the caller
+# gets the same ArrayRef of floats either way (k289).
+sub _embedding_vector {
+  my ( $self, $object ) = @_;
+  my $embedding = ref $object eq 'HASH' ? $object->{embedding} : undef;
+  return [ unpack 'f<*', decode_base64($embedding) ]
+    if defined $embedding && !ref $embedding;
+  return $embedding;
 }
 
 =method embedding_response
 
-    my $vector = $engine->embedding_response($http_response);
+    my $vector  = $engine->embedding_response($http_response);
+    my $vectors = $engine->embedding_response($http_response, \@inputs);
 
-Parses an OpenAI-format embedding response. Returns an ArrayRef of
-floats representing the embedding vector.
+Parses an OpenAI-format embedding response. The second argument is the
+request's input; the parser built by L</embedding_request> passes it itself.
+For a string input (or none) it returns the vector of the first input
+(C<data[].index> 0) as an ArrayRef of floats. For an ArrayRef input it
+returns an ArrayRef with one vector per input, in input order (sorted by
+C<data[].index>), and croaks when the number of vectors does not match the
+number of inputs.
+
+A response requested with C<< encoding_format => 'base64' >> is decoded
+(little-endian float32), so the result is floats either way; there is no
+option to get the base64 string back. Parse the L<HTTP::Response> yourself
+when you need the raw form.
 
 =cut
 

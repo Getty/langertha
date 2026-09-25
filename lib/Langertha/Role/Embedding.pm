@@ -46,8 +46,9 @@ Use L</simple_embedding> to execute the request and get the result directly.
 
 sub simple_embedding {
   my ( $self, $text ) = @_;
-  $log->debugf("[%s] simple_embedding, model=%s, input_length=%d",
-    ref $self, $self->embedding_model // 'default', length($text // ''));
+  $log->debugf("[%s] simple_embedding, model=%s, %s",
+    ref $self, $self->embedding_model // 'default',
+    ref $text eq 'ARRAY' ? 'inputs='.scalar(@{$text}) : 'input_length='.length($text // ''));
   my $request = $self->embedding($text);
   my $response = $self->user_agent->request($request);
   return $request->response_call->($response);
@@ -55,10 +56,13 @@ sub simple_embedding {
 
 =method simple_embedding
 
-    my $vector = $engine->simple_embedding($text);
+    my $vector  = $engine->simple_embedding($text);
+    my $vectors = $engine->simple_embedding([ $text_a, $text_b ]);
 
-Sends an embedding request for C<$text> and returns the embedding vector.
-Blocks until the request completes.
+Sends an embedding request for C<$text> and returns the embedding vector
+(an ArrayRef of floats). An ArrayRef of strings is sent as one batch
+request and returns an ArrayRef of vectors, one per input and in input
+order. Blocks until the request completes.
 
 =cut
 

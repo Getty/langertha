@@ -195,7 +195,7 @@ requesting JSON-formatted output from the model. Defaults to C<0>.
 
 sub embedding_request {
   my ( $self, $prompt, %extra ) = @_;
-  return $self->generate_request( embed => sub { $self->embedding_response(shift) },
+  return $self->generate_request( embed => sub { $self->embedding_response(shift, $prompt) },
     model => $self->embedding_model,
     input => $prompt,
     %extra,
@@ -203,10 +203,19 @@ sub embedding_request {
 }
 
 sub embedding_response {
-  my ( $self, $response ) = @_;
+  my ( $self, $response, $input ) = @_;
   my $data = $self->parse_response($response);
-  # New API returns embeddings as array of arrays
-  return $data->{embeddings}[0];
+  # /api/embed returns one vector per input, by position. An ArrayRef input is
+  # a batch and gets them all; a string input keeps getting one vector (k289).
+  my $embeddings = $data->{embeddings};
+  if ( ref $input eq 'ARRAY' ) {
+    my $count = ref $embeddings eq 'ARRAY' ? scalar @{$embeddings} : 0;
+    croak "".(ref $self)." embedding response returned $count vectors for "
+      .scalar(@{$input})." inputs"
+      unless $count == @{$input};
+    return [ @{$embeddings} ];
+  }
+  return $embeddings->[0];
 }
 
 sub chat_request {
