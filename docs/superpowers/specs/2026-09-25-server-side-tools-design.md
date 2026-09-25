@@ -583,17 +583,23 @@ The advisor's plan is about **9 requests**: OpenAI `gpt-5.6-luna` and xAI `grok-
 summary. The advisor's full per-request list sits in its report to the orchestrator, so
 reconcile the two before running anything.
 
-| # | Capture (`t/data/`, + `.headers.json`) | Provider / model | Needed for |
-|---|---|---|---|
-| 1 | `responses_web_search.json`: `web_search_call` + message with `url_citation` | OpenAI gpt-5.6-luna | parsing, citations, loop test |
-| 2 | `responses_web_search_function_call.json`: server call + `function_call` in one turn | OpenAI gpt-5.6-luna | the loop executes only the function call, echo |
-| 3 | `responses_web_search_echo.json`: follow-up turn echoing #2's items + `function_call_output` | OpenAI gpt-5.6-luna | echo acceptance |
-| 4 | `xairesponses_chat_response.json`: plain text, encrypted reasoning, `include` set | xAI grok-4.7 | walker, autoviv fix, `thinking` undef |
-| 5 | `xairesponses_tool_call_response.json`: function call | xAI grok-4.7 | function tools on the new engine |
-| 6 | `xairesponses_web_search.json`: server items, annotations, usage extras | xAI grok-4.7, `max_turns` ≤ 2 | citations shape (numeric title), usage / ticks unit |
-| 7 | `xairesponses_x_search.json` | xAI grok-4.7, `max_turns` ≤ 2 | server item types, X Search billing fields |
-| 8 | `xairesponses_json_object.json`: `text.format` json_object | xAI grok-4.7 | the `response_format_json_object` flag |
-| 9 | `xairesponses_web_search_stream.sse`: streamed web-search turn | xAI grok-4.7, `max_turns` ≤ 2 | xAI SSE event names (feeds k212) |
+| # | Capture (`t/data/`, + `.headers.json`) | Provider / model | Needed for | ~Cost |
+|---|---|---|---|---|
+| 1 | `responses_web_search.json`: `web_search_call` + message with `url_citation`, `include: ["web_search_call.action.sources"]` | OpenAI gpt-5.6-luna (fallback gpt-5.4-mini) | parsing, citations | $0.02–0.05 |
+| 2 | `responses_web_search_function_call.json`: server call + `function_call` in one turn | OpenAI gpt-5.6-luna | the loop executes only the function call | $0.05–0.10 (2+3) |
+| 3 | `responses_web_search_echo.json`: follow-up echoing #2's items + `function_call_output` | OpenAI gpt-5.6-luna | echo acceptance | (with 2) |
+| 4 | `xairesponses_chat_response.json`: plain text | xAI grok-4.6 (current default of Engine::XAI at capture time; grok-4.7 after k205) | reasoning item shape, the summary autoviv fix (k211) | < $0.01 |
+| 5 | `xairesponses_web_search.json`: server items, annotations, usage extras | xAI grok-4.7, `max_turns: 2` | top-level `citations` present?, annotation `title`, usage / ticks unit | $0.05–0.15 |
+| 6 | `xairesponses_web_search_function_call.json`: `web_search` + function tool | xAI grok-4.7, `max_turns: 2` | function tools on the new engine | $0.10–0.25 (6+7) |
+| 7 | `xairesponses_web_search_echo.json`: echo turn incl. encrypted reasoning | xAI grok-4.7 | echo with `reasoning.encrypted_content` | (with 6) |
+| 8 | `xairesponses_web_search_stream.sse`: streamed web-search turn | xAI grok-4.7, `max_turns: 1` | xAI SSE event names (feeds k212) | $0.05–0.15 |
+| 9 (optional) | `xairesponses_json_object.json`: `text.format` json_object | xAI | the `response_format_json_object` flag | < $0.01 |
+
+Total ≈ 9 requests on two keys, ≈ $0.40–1.00; proposed hard cap $3 — **awaits maintainer approval**.
+`x_search` is deferred (per-post billing since 2026-09-21; if wanted later: `max_turns: 1` +
+`allowed_x_handles`, ≈ $0.10–0.30). Anthropic `pause_turn` is not triggerable on demand — Phase 2
+uses the documented shape. (List reconciled by the orchestrator against the advisor's full
+red-team report, 2026-09-25.)
 
 Phase 2 captures (Anthropic web_search / `pause_turn` / `allowed_callers`, Gemini
 google_search / Gemini 3 combined tools) are a separate approval.
