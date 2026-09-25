@@ -190,12 +190,16 @@ one correction on, so each engine carries it next to its other wire corrections.
 subclasses keep the flag: OpenAI and OpenRouter document the field; the rest are unverified
 and stay as the base advertises them until their docs or a live test decide.
 
-The second half is new to the quartet: **the wire agrees with the capability**.
-`Role::PromptCache::prompt_cache_kwargs_for` drops `prompt_cache` / `prompt_cache_key`
-(engine attribute or per-request control) when `supports()` is false for it, so clearing a
-cache flag also stops its emission; no per-engine `prompt_cache_kwargs_for` stub is needed
-(unlike the MiniMax/Moonshot `reasoning_kwargs_for` stubs). The drop is silent, like those
-stubs. It is byte-identical for every engine whose flags did not change, and because the
-provider manifest (ADR 0029) reads the same registry, those engines' model entries stop
+The second half is new to the quartet: **the wire agrees with the capability for the routing
+key**. `Role::PromptCache::prompt_cache_kwargs_for` drops `prompt_cache_key` (engine attribute
+or per-request control) when `supports('prompt_cache_key')` is false, so clearing that flag
+also stops its emission; no per-engine `prompt_cache_kwargs_for` stub is needed (unlike the
+MiniMax/Moonshot `reasoning_kwargs_for` stubs). The drop is silent, like those stubs: the
+servers ignored the key anyway. `prompt_cache` is deliberately **not** gated. Its flag is
+cleared family-wide on `OpenAIBase`, yet `cache_wire_format` is a public attribute, and an
+OpenAI-family engine configured with `cache_wire_format => 'anthropic'` (an OpenAI-compatible
+proxy in front of Claude) must keep sending `cache_control`; gating the family flag would
+silently drop it. The request body changes only where `prompt_cache_key` was cleared. Because
+the provider manifest (ADR 0029) reads the same registry, those engines' model entries stop
 publishing `prompt_cache_key` too. ADR 0015's direction-pair table still holds per family;
 this refines "all subclasses of `OpenAIBase`" per engine.
