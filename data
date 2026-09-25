@@ -1,0 +1,37 @@
+---
+claimed_at: 2026-09-25T04:13:07Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T04:13:07Z
+created: 2026-09-25T02:55:40Z
+id: 219
+priority: low
+started: 2026-09-25T03:22:59Z
+status: done
+tags:
+- moonshot
+- reasoning
+- llm
+title: 'Moonshot chat face: K2.x thinking toggle (enabled/disabled) still unreachable'
+updated: 2026-09-25T04:13:07Z
+---
+
+Follow-up from k209/k215 (wire-bundle2). Engine::Moonshot clears reasoning_effort on qr/\Akimi-k2(?!\d)/, so the kimi-k2.6 / kimi-k2.7-code thinking-toggle Reasoning::Profile rows (thinking_on enabled) never reach chat/completions. Turning it on is a capability row (opt-back for the documented ids, as on MoonshotAnthropic) plus tests; needs llm-advisor confirmation of the chat-face thinking shape (and whether k2.7-code errors on disabled there). Also open from k215: budget_tokens with thinking enabled on /anthropic (unverified), tool_choice any on MoonshotAnthropic K2 (unverified).
+
+2026-09-25 03:30 Stopped before implementing (k219-223 branch): the card notes document the /anthropic face only (k215 advisor). For chat/completions they give no documented wire shape: (1) the request field and placement (top-level thinking {type: enabled|disabled}? something else?), with doc source; (2) whether kimi-k2.7-code 400s on disabled or on omission there; (3) whether kimi-k2.6 with thinking disabled needs anything besides the temperature clear already in place. Needs llm-advisor, docs only.
+
+2026-09-25 03:32 llm-advisor 2026-09-25, docs only, no live call. Endpoint POST https://api.moonshot.ai/v1/chat/completions. Sources fetched 2026-09-25: platform.kimi.ai/docs/api/models-overview.md (param tables + K2.x thinking sections), docs/api/chat.md (OpenAPI schemas KimiK26ChatRequest / KimiK27CodeChatRequest, Thinking accordion), docs/guide/use-thinking-models.md, docs/guide/kimi-k2-6-quickstart.md ("Disable Thinking Capability Example"), docs/guide/kimi-k2-7-code-quickstart.md, docs/guide/use-reasoning-effort.md.
+Q1 SHAPE: a TOP-LEVEL request-body object "thinking": {"type": ..., "keep": ...}. extra_body is only the OpenAI-SDK route to it (the curl examples put it top-level). No model-id variant: kimi-k2-thinking is not in the current catalog, and toggling is by field only. Schema: type is required inside the object, additionalProperties false, so send only type/keep.
+ - kimi-k2.6: type enum [enabled, disabled], default {"type":"enabled"}; keep enum [all, null], default null (history reasoning not kept). Curl: {"model":"kimi-k2.6","messages":[...],"thinking":{"type":"disabled"}}.
+ - kimi-k2.7-code and kimi-k2.7-code-highspeed ("same model, identical parameter constraints", models-overview): type enum [enabled] only; keep is treated as "all" whether omitted, null or "all". Guides: "You do not need to (and should not) pass the thinking parameter".
+ - kimi-k3: no thinking field ("remove the K2.x thinking configuration", use-reasoning-effort.md); reasoning_effort only (already done in k207).
+Q2 k2.7-code: {"type":"disabled"} is an ERROR on this endpoint (schema: "passing it returns an error"; quickstart: "will throw an error if the thinking mode is disabled"). OMISSION IS FINE and is the documented path (default {"type":"enabled","keep":"all"}, every k2.7-code example omits it). DOC CONFLICT: the models-overview table says "if set explicitly, only {"type":"enabled","keep":"all"} is accepted", while the OpenAPI schema allows {"type":"enabled"} with keep omitted. So the current Profile toggle output {type:enabled} (no keep) is valid per schema but a possible 400 per the overview. Recommendation: on the chat face NEVER send thinking for k2.7-code(-highspeed), at any level including none. none cannot disable, so drop it (the existing can_disable 0 + absent semantics), which sidesteps the conflict.
+Q3 k2.6 disabled: only the temperature constraint (0.6 non-thinking, 1.0 thinking, other values 400). It is already safe because k214 clears temperature on qr/\Akimi-k2(?!\d)/ and never sends it, not even 1. Nothing else is documented as mode-dependent: top_p/n/penalties are fixed in both modes and Langertha does not send them; tool_choice required is banned in both modes (tool_choice_any cleared). Do NOT send keep with disabled; the schema says it only affects history, and keep:"all" is recommended with enabled. Minor: the builtin $web_search tool is "temporarily incompatible with K2.6 thinking mode" (k26 quickstart), which is not Langertha-relevant.
+Q4 reasoning_content: chat.md response table: "reasoning_content: Reasoning process (returned only when thinking mode is enabled)". Enabled: message.reasoning_content, and in streaming delta.reasoning_content always before content. Disabled: the field is absent. Langertha already handles both: OpenAICompatible chat_response/stream read it when present, and the Role::Tools openai echo allowlist copies it back only when defined. That echo is REQUIRED within a tool loop when enabled, and k2.7-code always keeps history.
+EXACT WIRE (Engine::Moonshot, chat face):
+ - kimi-k2.6: reasoning_effort none -> "thinking":{"type":"disabled"}; any other level -> "thinking":{"type":"enabled"} (documented valid; omitting is equivalent). No keep, no reasoning_effort, no temperature.
+ - kimi-k2.7-code / -highspeed: no thinking field at any level (none is dropped; it cannot disable). No reasoning_effort, no temperature. That means the flag can stay off; there is nothing to emit. If you want a uniform toggle, the only safe explicit form is {"type":"enabled","keep":"all"}, not {"type":"enabled"}.
+IMPLEMENTATION NOTES: (a) the existing Kimi K2 Profile rows are wire_format anthropic, so the chat face needs openai-wire rows or a wire-agnostic toggle. (b) Opting reasoning_effort back on for kimi-k2.6 only (layer 3, exact id) is enough; k2.7-code gains nothing. (c) Consider whether MoonshotAnthropic k2.7-code should also move to absent. It sends {type:enabled} today, and the /anthropic docs say only enabled is allowed, so it is fine as is. (d) Side, pre-existing: the docs recommend max_tokens >= 16000 for thinking (reasoning_content counts toward max_tokens), but Moonshot default_response_size is 4096, so K2 thinking replies may truncate. Not in scope; consider a follow-up.
+VERDICT: implementable from docs; not live-verified.
+
+2026-09-25 03:59 Implemented on branch k219 (71484d8 feat, fffae1b docs). Engine::Moonshot opts in via _reasoning_thinking_toggle and re-enables reasoning_effort for the exact id kimi-k2.6 (layer 3). kimi-k2.6 chat/completions: none -> top-level thinking {type:disabled}, other levels -> {type:enabled}; no keep, reasoning_effort or temperature. kimi-k2.7-code(-highspeed) stay cleared and send nothing. No Profile/serializer code change needed: wire_format is descriptive and to_openai already serializes toggle rows. t/47 golden: only the 22 Moonshot|kimi-k2.6 rows changed, and budget/control_budget now croak there, as on MoonshotAnthropic and MiniMax-M3. MoonshotAnthropic is byte-identical. ADR 0019 and 0023 k219 Updates added. Documentation-derived, not live-verified. prove -lr t/ PASS (live tests skipped), perlcritic clean, dzil build OK.
