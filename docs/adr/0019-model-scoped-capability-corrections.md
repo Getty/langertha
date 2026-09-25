@@ -165,7 +165,10 @@ and ADR 0015 (per-family `around` corrections, the layer-2 sibling of this per-m
 (`low|high|max`, default `max`) on `chat/completions`. The K2.x line takes only the Kimi
 `thinking` object. That is per-model wire reality, so it moves to this table: the layer-2
 `around engine_capabilities` is gone, and the K2 row, widened to `qr/\Akimi-k2(?!\d)/` so dash-form ids such as `kimi-k2-thinking` are
-covered too, now reads `{ tool_choice_any => 0, reasoning_effort => 0 }`. The accepted K3 vocabulary lives in its
+covered too, now reads `{ tool_choice_any => 0, reasoning_effort => 0 }`. Only the
+`reasoning_effort` half is documented for the dash-form ids; the `tool_choice_any` clear
+(documented for the dotted K2.x line) is extrapolated to that discontinued 2026-05-25 preview
+series — low exposure, accepted rather than split into a second row. The accepted K3 vocabulary lives in its
 `Reasoning::Profile` row (ADR 0023), not here: the flag only says the wire takes the field.
 
 The ADR 0009 k204 gate (`supports('reasoning_effort') || supports('thinking_budget')`) sees the
