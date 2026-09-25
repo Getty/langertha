@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-25T20:58:02Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:58:02Z
+created: 2026-09-25T20:21:13Z
+id: 291
+priority: medium
+started: 2026-09-25T20:23:47Z
+status: done
+tags:
+- embedding
+- mistral
+- scaleway
+- bug
+title: Mistral and Scaleway inherit text-embedding-3-large as default embedding model
+  (an OpenAI model id)
+updated: 2026-09-25T20:58:02Z
+---
+
+Role::OpenAICompatible::default_embedding_model is text-embedding-3-large (OpenAICompatible.pm:124). Mistral (Engine/Mistral.pm, composes Embedding) and Scaleway (Engine/Scaleway.pm:9) do not override it. Verified offline: Mistral->new(api_key=>"k")->embedding("x") body {"input":"x","model":"text-embedding-3-large"}; Scaleway same. Neither provider serves that id -> a 4xx for anyone relying on the default. The live test hides it by passing embedding_model=>"mistral-embed" (t/82_live_embedding.t:102).
+
+Fix: Mistral sub default_embedding_model { "mistral-embed" } (confident). Scaleway: pick a current Generative APIs embedding model (last known: bge-multilingual-gemma2; newer qwen3-embedding-* may exist) — verify against Scaleway docs via langertha-llm-advisor before choosing. Add request-building tests (t/21_embedding_requests.t) asserting the default model for each embedding engine.
+
+2026-09-25 20:33 Scaleway default embedding model = qwen3-embedding-8b (live; bge-multilingual-gemma2 also served; sentence-t5-xxl EOL) per scaleway.com/en/docs/generative-apis/reference-content/supported-models/ (llm-advisor 2026-09-25, docs only, not live-verified). Mistral mistral-embed confirmed current. Implemented in 901f509 (langertha-worker).
