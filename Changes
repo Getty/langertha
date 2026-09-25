@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - MiniMax: on MiniMax-M3, reasoning_effort now reaches the wire as
+      MiniMax's thinking toggle: none sends thinking {type: disabled}, any
+      other level {type: adaptive}. Every level gives the same depth. The
+      M2.x models still send nothing, since they cannot turn thinking off. A
+      thinking_budget on MiniMax-M3 now croaks. MiniMaxAnthropic follows the
+      same mapping: none on M3 sends thinking {type: disabled} explicitly, and
+      minimal now turns thinking on. Taken from MiniMax's documentation, not
+      verified against the live API.
+
     - Moonshot and MoonshotAnthropic no longer send temperature on any Kimi
       model (kimi-k3, kimi-k2.6, kimi-k2.7-code): Kimi fixes it server-side
       and rejects other values, and kimi-k2.6 without thinking even rejects

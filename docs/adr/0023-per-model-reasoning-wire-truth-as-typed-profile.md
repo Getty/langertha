@@ -348,3 +348,48 @@ row. Its flag is cleared per model on `Engine::Moonshot` only (ADR 0019 k207 upd
 `MoonshotAnthropic` on K2.x still sends `output_config.effort` plus the adaptive `thinking` block,
 as it did before k207, pending a check of what Kimi's Messages API takes there (karr k215).
 Source: platform.kimi.ai `use-reasoning-effort`, `api/chat` and `api/messages`, advisor-verified 2026-09-25 — documentation only, not live-verified.
+
+## Update (k209 — thinking-toggle rows: `thinking_on` + `disable_form 'thinking_disabled'`, serialized by `Reasoning`)
+
+Three wires take a binary `thinking` object with an on/off `type` and no effort level:
+MiniMax-M3 on `chat/completions` (`disabled|adaptive`, default `adaptive`), Kimi K2.x on
+`chat/completions`, and Kimi K2.x on Moonshot's `/anthropic` Messages face (`disabled|enabled`;
+`kimi-k2.7-code` accepts only `enabled`). The Profile could not express that: `control 'boolean'`
+existed only descriptively for Ollama, `disable_form` was read by no serializer, and `to_openai`
+/ `to_anthropic` could only emit an effort. The advisor proposed one shared extension; this
+Update records it and the choice of where it is serialized.
+
+- **Profile.** A new optional attribute `thinking_on` (enum `adaptive|enabled`, predicate
+  `has_thinking_on`) marks a **thinking-toggle row** and names its on-type. A new `DisableForm`
+  value `thinking_disabled` names the off-form `{type:'disabled'}`. `thinking_toggle_for($effort)`
+  derives the object: `none` gives `{type:'disabled'}` when `disable_form` is `thinking_disabled`
+  and nothing on a row that cannot disable (the field is omitted and the server default applies,
+  the rule every always-on row already follows: Fable, grok, `kimi-k3`); any other level gives
+  `{type: thinking_on}`. The level ladder collapses to on/off, so every level gives the same depth.
+- **Rows.** `\AMiniMax-M3(?!\d)` (`can_disable 1`, `thinking_disabled`, `adaptive`) and
+  `\AMiniMax-M2(?!\d)` (`can_disable 0`, `absent`, `adaptive`: M2.x accepts `disabled` but keeps
+  thinking on). Both are `control 'boolean'` with no `levels`. The Kimi K2 rows land with k215.
+- **Serialization in `Langertha::Reasoning`, not in engine overrides.** `to_openai` and
+  `to_anthropic` return the toggle, and nothing else, when the resolved profile
+  `has_thinking_on`. `display` rides along on an on toggle on the anthropic wire only. The
+  advisor and the k209 brief suggested an engine-scoped `reasoning_kwargs_for` on
+  `Engine::MiniMax` (the DeepSeek precedent). That was rejected as the larger design. It would
+  need one override per engine (MiniMax, MoonshotAnthropic, later Moonshot) that repeats the same
+  per-model regexes, and this ADR moved that per-model truth out of code and into the Profile. A
+  replacing `reasoning_kwargs_for` also bypasses the role's ADR 0009 k204 `supports()` gate, as
+  DeepSeek's comment warns. With the branch in `Reasoning`, the engines add only capability rows,
+  the k204 gate stays the role's, and every face that speaks a toggle row's model id gets the same
+  wire. The rows are `\A`-anchored on the providers' own ids, so aggregator ids
+  (`minimax/minimax-m3`, `moonshotai/kimi-*`) never turn into a toggle.
+- **Consequences.** `Engine::MiniMax` re-enables `reasoning_effort` for M3 only (ADR 0019 k209
+  Update). `MiniMax-M3` gets `{type:'disabled'}` for `none` and `{type:'adaptive'}` for every other
+  level on `chat/completions`, where nothing was sent before. The same rows now reach
+  `Engine::MiniMaxAnthropic` too: on M3, `none` sends an explicit `{type:'disabled'}` (it matches
+  the endpoint default, so the effect is unchanged), and `minimal` turns thinking on (`adaptive`)
+  on M3 and M2.x, as in MiniMax's own `/v1/responses` mapping. That endpoint's k209 `output_config`
+  strip (ADR 0009) stays, and it is now a no-op on the toggle rows. As with `kimi-k3`, a
+  `thinking_budget` on MiniMax-M3 now croaks in `Reasoning::BUILD` where it was dropped silently
+  before. Source: platform.minimax.io `openapi-chat-openai.json`, `openapi-chat-anthropic.json`,
+  `openapi-responses.json`, advisor-verified 2026-09-25. This is documentation only and not
+  live-verified. Pinned by `t/48_reasoning_thinking_toggle.t` and the regenerated
+  `t/47_reasoning_capability_gate.t` golden rows.

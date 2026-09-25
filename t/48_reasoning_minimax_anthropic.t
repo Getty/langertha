@@ -33,9 +33,14 @@ for my $model (qw( MiniMax-M3 MiniMax-M2.7 )) {
   for my $effort (qw( none minimal low medium high xhigh max )) {
     my $got = body( 'Langertha::Engine::MiniMaxAnthropic', model => $model, reasoning_effort => $effort );
     ok( !exists $got->{output_config}, "MiniMaxAnthropic $model '$effort': no output_config" );
-    my $thinks = $effort ne 'none' && $effort ne 'minimal';
-    is_deeply( $got->{thinking}, $thinks ? { type => 'adaptive' } : undef,
-      "MiniMaxAnthropic $model '$effort': thinking " . ( $thinks ? 'adaptive' : 'absent' ) );
+    # k209 part 1: both ids are thinking-toggle Profile rows. Any level turns
+    # thinking on; none turns it off explicitly on M3 and is omitted on M2.7,
+    # which cannot turn thinking off.
+    my $want = $effort ne 'none'      ? { type => 'adaptive' }
+             : $model eq 'MiniMax-M3' ? { type => 'disabled' }
+             :                          undef;
+    is_deeply( $got->{thinking}, $want,
+      "MiniMaxAnthropic $model '$effort': thinking " . ( $want ? $want->{type} : 'absent' ) );
   }
 }
 

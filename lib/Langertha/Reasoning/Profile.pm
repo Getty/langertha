@@ -38,7 +38,9 @@ enum 'Langertha::Reasoning::Level'
 enum 'Langertha::Reasoning::Control'
   => [qw( effort budget boolean none )];
 enum 'Langertha::Reasoning::DisableForm'
-  => [qw( absent explicit_none think_false budget_zero )];
+  => [qw( absent explicit_none think_false budget_zero thinking_disabled )];
+enum 'Langertha::Reasoning::ThinkingOn'
+  => [qw( adaptive enabled )];
 enum 'Langertha::Reasoning::Wire'
   => [qw( openai responses anthropic gemini ollama )];
 
@@ -99,7 +101,8 @@ has control => (
 
 The wire's native reasoning control type: C<effort> (a level string),
 C<budget> (an integer token budget, Gemini 2.5), C<boolean> (Ollama's
-C<options.think>) or C<none>.
+C<options.think>, or a C<thinking> on/off toggle — see L</thinking_on>) or
+C<none>.
 
 =cut
 
@@ -219,8 +222,28 @@ has disable_form => (
 =attr disable_form
 
 How "off" is expressed on the wire: C<absent> (omit the field),
-C<explicit_none> (the literal C<none> level), C<think_false> (Ollama) or
-C<budget_zero> (Gemini flash C<thinkingBudget=0>).
+C<explicit_none> (the literal C<none> level), C<think_false> (Ollama),
+C<budget_zero> (Gemini flash C<thinkingBudget=0>) or C<thinking_disabled>
+(C<< thinking =E<gt> { type =E<gt> 'disabled' } >>, the thinking-toggle rows;
+read by L</thinking_toggle_for>).
+
+=cut
+
+has thinking_on => (
+  is        => 'ro',
+  isa       => 'Langertha::Reasoning::ThinkingOn',
+  predicate => 'has_thinking_on',
+);
+
+=attr thinking_on
+
+Set only on a B<thinking-toggle> model: one whose wire takes a C<thinking>
+object with an on/off C<type> and no effort level (MiniMax-M3 / M2.x, Kimi
+K2.x; karr k209, k215). Its value is the "on" type the model takes:
+C<adaptive> (MiniMax) or C<enabled> (Kimi). When set, L<Langertha::Reasoning>
+serializes the effort onto that toggle on the C<openai> and C<anthropic> wires
+instead of an effort field (see L</thinking_toggle_for>); the level ladder
+collapses to on/off. Unset everywhere else.
 
 =cut
 
@@ -307,6 +330,30 @@ L</can_disable>): they carry an effort but never a C<thinking> block.
 =cut
 
 sub fable_class { return $_[0]->can_disable ? 0 : 1 }
+
+=method thinking_toggle_for
+
+    $profile->thinking_toggle_for('none')   # { type => 'disabled' } on MiniMax-M3
+    $profile->thinking_toggle_for('high')   # { type => 'adaptive' }
+
+The C<thinking> object a thinking-toggle model (L</has_thinking_on>) takes for
+a normalized effort: C<none> gives C<< { type =E<gt> 'disabled' } >> when
+L</disable_form> is C<thinking_disabled>, and nothing (C<undef>) on a model
+that cannot turn thinking off — the field is omitted and the server default
+applies, as on every always-on model; any other level gives
+C<< { type =E<gt> L</thinking_on> } >>. C<undef> on a model without a toggle.
+
+=cut
+
+sub thinking_toggle_for {
+  my ( $self, $effort ) = @_;
+  return unless $self->has_thinking_on;
+  if ( $effort eq 'none' ) {
+    return unless $self->disable_form eq 'thinking_disabled';
+    return { type => 'disabled' };
+  }
+  return { type => $self->thinking_on };
+}
 
 =method effort_accepted_on
 
@@ -448,6 +495,9 @@ my $ANTHROPIC_K177_DOC = 'platform.claude.com output_config.effort doc; k177 202
 # 400 or ignored, is unverified).
 my $XAI_K208_DOC = 'docs.x.ai/developers/model-capabilities/text/reasoning; k208 2026-09-25 (advisor-verified, doc-sourced not live)';
 
+# karr k209: MiniMax chat/completions + /anthropic request schemas, advisor
+# 2026-09-25 — doc-sourced, NOT live-probed.
+my $MINIMAX_K209_DOC = 'platform.minimax.io openapi-chat-openai.json + openapi-chat-anthropic.json; k209 2026-09-25 (advisor-verified, doc-sourced not live)';
 # $levels is the superset a family accepts on the `responses` (Responses API)
 # wire; $extra{openai_levels} is the narrower Chat Completions set, defaulting to
 # $levels when the two wires agree. The k176 per-wire max split is exactly this
@@ -659,6 +709,35 @@ sub _family_profiles {
       source => 'platform.kimi.ai use-reasoning-effort + api/chat + api/messages; k207 2026-09-25 (advisor-verified, doc-sourced not live)',
       can_disable => 0, disable_form => 'absent' ),
 
+    # Thinking-toggle families (karr k209, k215): the wire takes a `thinking`
+    # object with an on/off type and no effort level, so Langertha::Reasoning
+    # maps none -> off and every other level -> on (the ladder collapses).
+    # \A-anchored on the providers' own ids; aggregator ids are not matched.
+    #
+    # MiniMax (platform.minimax.io openapi-chat-openai.json /
+    # openapi-chat-anthropic.json, advisor 2026-09-25, doc-sourced not live):
+    # thinking {type: disabled|adaptive}, no effort, no budget. M3 honors
+    # disabled; M2.x accepts it but keeps thinking on, so it cannot disable.
+    # MiniMax's own /v1/responses maps effort the same way (none -> off, any
+    # level -> adaptive).
+    __PACKAGE__->new(
+      model_match  => qr/\AMiniMax-M3(?!\d)/,
+      control      => 'boolean',
+      wire_format  => 'openai',
+      can_disable  => 1,
+      disable_form => 'thinking_disabled',
+      thinking_on  => 'adaptive',
+      source       => $MINIMAX_K209_DOC,
+    ),
+    __PACKAGE__->new(
+      model_match  => qr/\AMiniMax-M2(?!\d)/,
+      control      => 'boolean',
+      wire_format  => 'openai',
+      can_disable  => 0,
+      disable_form => 'absent',
+      thinking_on  => 'adaptive',
+      source       => $MINIMAX_K209_DOC,
+    ),
     # Self-hosted Qwen3.x reasoning family (vLLM / SGLang / llama.cpp), matched
     # with or without its HuggingFace org prefix (served ids look like
     # "Qwen/Qwen3.8-27B-FP8"). The loaded chat template — not the server —

@@ -179,3 +179,19 @@ layer-2 clear used to drop that budget silently. Moonshot ids that match neither
 `kimi-*` id, the sunset `moonshot-v1-*`) now advertise `reasoning_effort` and get the
 passthrough profile. Source: platform.kimi.ai models overview, `use-reasoning-effort` guide and
 `api/chat` schema, advisor-verified 2026-09-25 — documentation only, not live-verified.
+
+## Update (k209 — a catch-all first row lets one model re-enable an endpoint-wide clear)
+
+`Engine::MiniMax` cleared `reasoning_effort` at layer 2 for every model. MiniMax-M3 has a
+controllable thinking toggle on `chat/completions` (ADR 0023 k209 Update), but M2.x and unknown
+ids have none. Layer 3 runs *inside* the layer-2 `around`, so a layer-3 row cannot re-enable a
+flag that layer 2 deletes. The clear therefore moves into this table as a catch-all first row,
+and the model row that wins over it comes after:
+
+    qr/\A/                => { reasoning_effort => 0 },
+    qr/\AMiniMax-M3(?!\d)/ => { reasoning_effort => 1 },
+
+This is the table's existing "later matches win" rule, used for a default-deny. Use it only when
+one model must opt back in to something the rest of the endpoint lacks. A flag that no model on
+the endpoint takes stays in layer 2. The other MiniMax clears (`tool_choice_*`,
+`response_format_*`, `parallel_tool_use`) are endpoint-wide and stay in the `around`.

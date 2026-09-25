@@ -38,9 +38,11 @@ the Anthropic wire format specifically.
 See L<Langertha::Engine::MiniMax> for the available models list.
 
 MiniMax's Anthropic-compatible request schema has no C<output_config>, so a
-C<reasoning_effort> is not sent as C<output_config.effort>; it still sends
-C<thinking> C<< { type =E<gt> 'adaptive' } >>, which turns thinking on (the
-endpoint's default for C<MiniMax-M3> is thinking off).
+C<reasoning_effort> is not sent as C<output_config.effort>. It goes out as the
+C<thinking> toggle instead: any level sends C<< { type =E<gt> 'adaptive' } >>,
+which turns thinking on (the endpoint's default for C<MiniMax-M3> is thinking
+off), and C<none> sends C<< { type =E<gt> 'disabled' } >> on C<MiniMax-M3>. The
+M2.x models cannot turn thinking off, so C<none> sends nothing there.
 
 Get your API key at L<https://platform.minimax.io/> and set
 C<LANGERTHA_MINIMAX_API_KEY> in your environment.

@@ -41,7 +41,7 @@ my %ENGINES = (
   LMStudioAnthropic => [ undef ],
   LMStudioOpenAI    => [ undef ],
   MiniMax           => [ undef, 'MiniMax-M2.7' ],
-  MiniMaxAnthropic  => [ undef ],
+  MiniMaxAnthropic  => [ undef, 'MiniMax-M2.7' ],
   Mistral           => [ undef ],
   Moonshot          => [ undef, 'kimi-k2.6' ],
   MoonshotAnthropic => [ undef ],
@@ -129,10 +129,11 @@ for my $key ( sort keys %$want ) {
 
 # --- Intent, independent of the golden table ---
 
-# The engines that clear reasoning_effort -- engine-wide (MiniMax) or per
-# model (Moonshot's K2.x line, layer 3 since karr k207) -- send no reasoning
-# field, and no longer carry a stub to make that true.
-for my $case ( [ 'MiniMax' ], [ 'Moonshot', 'kimi-k2.6' ] ) {
+# The engines that clear reasoning_effort per model -- MiniMax's M2.x line
+# (karr k209: only M3 takes the thinking toggle) and Moonshot's K2.x line
+# (layer 3 since karr k207) -- send no reasoning field, and no longer carry a
+# stub to make that true.
+for my $case ( [ 'MiniMax', 'MiniMax-M2.7' ], [ 'Moonshot', 'kimi-k2.6' ] ) {
   my ( $short, $model ) = @$case;
   my $class = "Langertha::Engine::$short";
   my $label = $short . ( $model ? " $model" : '' );
@@ -171,8 +172,11 @@ for my $case ( [ 'MiniMax' ], [ 'Moonshot', 'kimi-k2.6' ] ) {
   __PACKAGE__->meta->make_immutable;
 }
 
-is_deeply( [ Test::K204::MiniMaxReasons->new( api_key => 'k', reasoning_effort => 'high' )->reasoning_kwargs_for ],
-  [ reasoning_effort => 'high' ],
+# MiniMax-M2.7 is a thinking-toggle Profile row (karr k209), so the re-asserted
+# flag reaches the wire as its thinking toggle.
+is_deeply( [ Test::K204::MiniMaxReasons->new( api_key => 'k', model => 'MiniMax-M2.7',
+    reasoning_effort => 'high' )->reasoning_kwargs_for ],
+  [ thinking => { type => 'adaptive' } ],
   'a MiniMax subclass that advertises reasoning_effort emits it (no stub in the way)' );
 is_deeply( [ Test::K204::OpenAINoReasoning->new( api_key => 'k', reasoning_effort => 'high' )->reasoning_kwargs_for ],
   [], 'an engine that clears reasoning_effort (and has no thinking_budget) stops emitting' );

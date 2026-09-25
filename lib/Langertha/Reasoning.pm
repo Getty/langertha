@@ -206,8 +206,28 @@ at C<high>.
 
 =cut
 
+# A thinking-toggle model (Profile thinking_on, karr k209/k215) takes a
+# `thinking` object with an on/off type and no effort level, on both the openai
+# and the anthropic wire: none -> off where the model can disable (else the
+# field is omitted), any other level -> the model's on-type. thinking_display
+# rides along on the anthropic wire only, never on an off toggle; a
+# display-only request turns the toggle on, as the adaptive path does.
+sub _thinking_toggle {
+  my ( $self, $with_display ) = @_;
+  my $profile = $self->_profile;
+  my $display = $with_display && $self->has_thinking_display;
+  my $thinking = $self->has_effort ? $profile->thinking_toggle_for( $self->effort )
+               : $display          ? { type => $profile->thinking_on }
+               :                     undef;
+  return () unless $thinking;
+  $thinking = { %$thinking, display => $self->thinking_display }
+    if $display && $thinking->{type} ne 'disabled';
+  return ( thinking => $thinking );
+}
+
 sub to_openai {
   my ( $self ) = @_;
+  return $self->_thinking_toggle(0) if $self->_profile->has_thinking_on;
   return () unless $self->has_effort;
   return () unless $self->_profile->effort_accepted_on( 'openai', $self->effort );
   return ( reasoning_effort => $self->effort );
@@ -236,10 +256,18 @@ unrecognized model id keeps the full normalized vocabulary. An effort the
 configured L</model> does not accept yields an empty list on B<both> wires —
 they can never diverge. Empty list when no L</effort> is set.
 
+A B<thinking-toggle> model (its profile has
+L<Langertha::Reasoning::Profile/thinking_on>: MiniMax-M3 / M2.x, Kimi K2.x)
+takes no effort field on C<to_openai>: it gets
+C<< thinking =E<gt> { type =E<gt> ... } >> instead — C<disabled> for C<none>
+where the model can turn thinking off, the model's on-type (C<adaptive> or
+C<enabled>) for any other level. Every level gives the same depth there.
+
 =cut
 
 sub to_anthropic {
   my ( $self ) = @_;
+  return $self->_thinking_toggle(1) if $self->_profile->has_thinking_on;
   my $e = $self->has_effort ? $self->effort : undef;
   my $effort_ok = defined $e && $self->_profile->anthropic_effort_ok($e);
 
@@ -274,6 +302,10 @@ L</thinking_display> is set. Fable-class models (Fable / Mythos) get no
 C<thinking> key — thinking is always on and C<type:disabled> 400s there — and
 therefore cannot carry a C<display> either. Empty list when neither an
 Anthropic-supported effort nor a C<thinking_display> is present.
+
+A B<thinking-toggle> model gets only the C<thinking> toggle described under
+L</to_openai> (no C<output_config.effort>), with C<display> added to an on
+toggle when L</thinking_display> is set.
 
 =cut
 

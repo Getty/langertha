@@ -75,6 +75,13 @@ and agentic capabilities.
 See L<https://platform.minimax.io/docs/guides/models-intro> for the full
 model catalog including audio, video, and music models.
 
+B<Reasoning:> this endpoint has no effort level, only a C<thinking> toggle.
+On C<MiniMax-M3>, C<reasoning_effort =E<gt> 'none'> sends
+C<< thinking =E<gt> { type =E<gt> 'disabled' } >> and any other level sends
+C<< { type =E<gt> 'adaptive' } >>; every level gives the same reasoning depth,
+so do not expect graded effort. The M2.x models cannot turn thinking off and
+take no reasoning control here (nothing is sent).
+
 Supports chat, streaming, tool calling, and structured output. Embeddings,
 transcription, images, and documents are not supported via this endpoint.
 
@@ -113,25 +120,39 @@ sub _build_static_models {[
 ]}
 
 # MiniMax's current /v1/chat/completions schema (platform.minimax.io, verified
-# 2026-09-01) is narrower than the role inventory promises: `reasoning_effort`
-# is ignored by M2.x, and `tool_choice`, `response_format` and
-# `parallel_tool_calls` are absent from the schema entirely. Function calling
-# (the `tools` array) is supported, so tools_native stays; the selection,
-# structured-output and parallel knobs are cleared so chat_f never builds a body
-# around fields the wire drops. Clearing reasoning_effort also stops its
-# emission (Role::ReasoningEffort gates on the flag, ADR 0009 k204). (Route
-# reasoning via MiniMaxAnthropic.)
+# 2026-09-01) is narrower than the role inventory promises: `tool_choice`,
+# `response_format` and `parallel_tool_calls` are absent from the schema
+# entirely. Function calling (the `tools` array) is supported, so tools_native
+# stays; the selection, structured-output and parallel knobs are cleared so
+# chat_f never builds a body around fields the wire drops. reasoning_effort is
+# per model and lives in model_capability_corrections below.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete @{$caps}{ qw(
-    reasoning_effort
     tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
     response_format_json_object response_format_json_schema
     parallel_tool_use
   ) };
   return $caps;
 };
+
+# Reasoning is per model (karr k209, openapi-chat-openai.json, advisor
+# 2026-09-25, docs only). The wire has no effort field, only a binary
+# thinking:{type: disabled|adaptive} toggle (default adaptive). MiniMax-M3
+# honors it, so reasoning_effort is re-enabled there and its
+# Reasoning::Profile row maps none -> disabled and every other level ->
+# adaptive (all levels give the same depth). M2.x accepts disabled but keeps
+# thinking on, and unknown ids are unchecked, so every other model keeps the
+# flag cleared and Role::ReasoningEffort sends nothing (the k204 gate). The
+# clear is the catch-all first row rather than layer 2, so the M3 row can win
+# over it (ADR 0019 k209 Update).
+sub model_capability_corrections {
+  return (
+    qr/\A/                => { reasoning_effort => 0 },
+    qr/\AMiniMax-M3(?!\d)/ => { reasoning_effort => 1 },
+  );
+}
 
 __PACKAGE__->meta->make_immutable;
 

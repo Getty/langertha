@@ -48,13 +48,16 @@ use JSON::MaybeXS;
   ok !$caps->{prompt_cache_key},            'perplexity has no prompt_cache_key (caching is automatic)';
 }
 
-# MiniMax (OpenAI endpoint): inherits ReasoningEffort via OpenAIBase but M2.x
-# ignores it on the wire, so the engine clears the capability.
+# MiniMax (OpenAI endpoint): inherits ReasoningEffort via OpenAIBase, but only
+# MiniMax-M3 can turn thinking off (karr k209), so the capability is per model:
+# kept on M3 (the default), cleared on M2.x.
 {
-  my $e = Langertha::Engine::MiniMax->new( api_key => 'x' );
+  my $e = Langertha::Engine::MiniMax->new( api_key => 'x', model => 'MiniMax-M2.7' );
   my $caps = $e->engine_capabilities;
-  ok !$caps->{reasoning_effort}, 'minimax(openai) clears reasoning_effort';
-  ok !$e->supports('reasoning_effort'), 'minimax supports() reasoning_effort false';
+  ok !$caps->{reasoning_effort}, 'minimax(openai) M2.7 clears reasoning_effort';
+  ok !$e->supports('reasoning_effort'), 'minimax M2.7 supports() reasoning_effort false';
+  ok( Langertha::Engine::MiniMax->new( api_key => 'x' )->supports('reasoning_effort'),
+    'minimax M3 (default) supports() reasoning_effort (thinking toggle)' );
 }
 
 # Gemini: composes Tools (so all tool_choice flags are on by default;
