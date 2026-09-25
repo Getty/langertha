@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-25T03:22:28Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:22:28Z
+created: 2026-09-25T02:06:41Z
+id: 212
+priority: medium
+started: 2026-09-25T03:00:47Z
+status: done
+tags:
+- llm
+- risk
+- responses
+- streaming
+title: ResponsesCompatible stream parser drops tool calls (and response.failed); blocks
+  streaming on XAIResponses
+updated: 2026-09-25T03:22:28Z
+---
+
+Found in the llm-advisor k206 review (2026-09-25, code read, no live call). Role::ResponsesCompatible::parse_stream_chunk only handles response.output_text.delta and response.completed/incomplete. It never produces tool_calls: no handling of response.function_call_arguments.delta/done or response.output_item.done{type:function_call}, and the terminal response.completed chunk does not walk response.output[]. Harmless today (OpenAIResponses does not stream; Perplexity streams without tools). k206 plans Engine::XAIResponses with streaming ON and function tools, so streamed function calls would be silently lost. response.failed is also unhandled, so a failed server-tool run ends with no final chunk. Fix direction: on response.completed, reuse the chat_response output walker over data.response.output (tool_calls, citations, server_tool_calls), and add response.failed. Event names are from OpenAI streaming-events reference (developers.openai.com/api/reference/resources/responses/streaming-events, fetched 2026-09-25); the xAI SSE event names still need the k206 stream capture.
+
+2026-09-25 03:02 Starting in worktree k212: one output walker shared by chat_response + terminal stream event; response.failed/error croak
+
+2026-09-25 03:10 Done on branch k212 (d73913d fix, c190371 ADR 0020 Update). One walker _responses_walk_output shared by chat_response + terminal response.completed/incomplete; tool calls from terminal event only (no incremental assembly, no dupes); response.failed/error croak with provider code+message. Final chunk gets finish_reason only when tool calls present (text-only Perplexity chunk unchanged). Test t/43_responses_stream_tool_calls.t, stream built from documented events around the verbatim non-streaming capture. xAI event names still need the k206 capture.
