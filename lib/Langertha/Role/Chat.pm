@@ -954,7 +954,8 @@ async sub chat_stream_realtime_f {
   # Same canonical-control extraction as chat_f (karr #46).
   my $controls = $self->_extract_controls(\%opts);
 
-  my ($conversation) = $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
+  my ( $conversation, $hermes_prompted ) =
+    $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
   $conversation = $self->_hermes_prompt_schema( $controls, $conversation );
   $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
 
@@ -968,6 +969,21 @@ async sub chat_stream_realtime_f {
   my $response_status;
   my $t0           = [gettimeofday];
   my $ttft_seconds;
+
+  # Every parsed chunk goes out through here. When the tools rode the hermes
+  # prompt, the <tool_call> blocks are withheld from the text and their calls
+  # land on the final chunk, as chat_f lifts them from its reply (karr k253).
+  my %hermes_state;
+  my $deliver = sub {
+    my ($chunk) = @_;
+    $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
+    if ($hermes_prompted) {
+      $chunk = $self->_hermes_stream_chunk( \%hermes_state, $chunk );
+      return unless $chunk;
+    }
+    push @all_chunks, $chunk;
+    $chunk_callback->($chunk) if $chunk_callback;
+  };
 
   # A die in the chunk-sub (a malformed stream line, or the caller's
   # chunk_callback) must fail this request's future on every backend, and must
@@ -990,11 +1006,7 @@ async sub chat_stream_realtime_f {
         my $ok = eval {
           $buffer .= $data;
           my $chunks = $self->_process_stream_buffer(\$buffer, $format, 0, \%stream_state);
-          for my $chunk (@$chunks) {
-            $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
-            push @all_chunks, $chunk;
-            $chunk_callback->($chunk) if $chunk_callback;
-          }
+          $deliver->($_) for @$chunks;
           1;
         };
         return if $ok;
@@ -1040,8 +1052,13 @@ async sub chat_stream_realtime_f {
   # Process remaining buffer
   if ($buffer ne '') {
     my $chunks = $self->_process_stream_buffer(\$buffer, $format, 1, \%stream_state);
-    for my $chunk (@$chunks) {
-      $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
+    $deliver->($_) for @$chunks;
+  }
+  # A hermes stream that ended without a final chunk still owes its held text
+  # (a partial or unclosed tag is text) and the calls of its closed blocks.
+  if ($hermes_prompted) {
+    my $chunk = $self->_hermes_stream_chunk( \%hermes_state, undef, 1 );
+    if ($chunk) {
       push @all_chunks, $chunk;
       $chunk_callback->($chunk) if $chunk_callback;
     }
@@ -1328,8 +1345,15 @@ L</chat_f> (without the C<json_schema> rewrite); any engine-specific extras
 pass through. Tool calls the
 model streams are collected with L</aggregate_tool_calls>. On a C<hermes>
 engine the tools ride the system prompt and C<tool_choice> is handled as in
-L</chat_f>; the C<E<lt>tool_callE<gt>> blocks the model writes stay in the
-streamed text.
+L</chat_f>. The text inside the C<E<lt>tool_callE<gt>> blocks the model writes
+(L<Langertha::Role::HermesTools/hermes_call_tag>) is not streamed, even when a
+tag is split across chunks, and chunks that carried only such text are not
+delivered; the calls land as L<Langertha::ToolCall> objects on the final chunk,
+whose C<finish_reason> is then C<tool_calls>, as L</chat_f> puts them on
+L<Langertha::Response/tool_calls>. A call tag inside C<E<lt>thinkE<gt>> text is
+no call. Markup that is unclosed when the stream ends is streamed as text and
+gives no call. A stream that ends without a final chunk gets a closing chunk
+for the text still held back and any calls.
 
 Returns a L<Future> that resolves to C<($content, \@chunks, \%timing,
 $thinking)> where C<$content> is the full concatenated text, C<\@chunks> the

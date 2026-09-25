@@ -209,6 +209,113 @@ sub _hermes_split_text {
   return ( $content, \@tool_calls );
 }
 
+# The streamed counterpart of chat_f's reply lift (karr k253, ADR 0001): text
+# inside <tool_call>...</tool_call> (hermes_call_tag) is not emitted, and the
+# calls land on the final chunk. Called by chat_stream_realtime_f for each
+# chunk of a turn whose tools went into the prompt; returns the chunk to
+# deliver, or undef for a chunk that carried only call markup. A closed block
+# is kept whole for _hermes_split_text, so the stream finds the calls chat_f
+# finds. $flush (the stream ended without a final chunk) returns the chunk
+# for whatever is still held, or undef when nothing is.
+sub _hermes_stream_chunk {
+  my ( $self, $state, $chunk, $flush ) = @_;
+  if ($flush) {
+    return if $state->{done};
+    my $text  = $self->_hermes_stream_split( $state, '', 1 );
+    my $calls = $self->_hermes_stream_calls($state);
+    return unless length $text || @$calls;
+    require Langertha::Stream::Chunk;
+    return Langertha::Stream::Chunk->new( content => $text, is_final => 1,
+      @$calls ? ( tool_calls => $calls, finish_reason => 'tool_calls' ) : () );
+  }
+  return $chunk if $state->{done};
+  my $final = $chunk->is_final || length( $chunk->finish_reason // '' );
+  my $text  = $self->_hermes_stream_split( $state, $chunk->content, $final );
+  my %set;
+  $set{content} = $text if $text ne $chunk->content;
+  if ($final) {
+    $state->{done} = 1;
+    my $calls = $self->_hermes_stream_calls($state);
+    %set = ( %set, tool_calls => [ @{ $chunk->tool_calls // [] }, @$calls ],
+      finish_reason => 'tool_calls' ) if @$calls;
+  }
+  return $chunk unless %set;
+  return if !$final && $text eq ''
+    && !grep { my $has = "has_$_"; $chunk->$has } qw( thinking tool_calls usage cached_tokens citations );
+  return $chunk->meta->clone_object( $chunk, %set );
+}
+
+# The calls of the closed blocks the stream withheld, as chat_f reads them
+# (_hermes_split_text, then the Response BUILDARGS upgrade).
+sub _hermes_stream_calls {
+  my ( $self, $state ) = @_;
+  my ( undef, $calls ) = $self->_hermes_split_text( join '', @{ $state->{blocks} // [] } );
+  return [ map {
+    Langertha::ToolCall->new(
+      name      => $_->{name},
+      arguments => ( ref $_->{arguments} eq 'HASH' ? $_->{arguments} : {} ),
+    )
+  } @$calls ];
+}
+
+# Tag-aware incremental splitter behind _hermes_stream_chunk. Appends $text to
+# the held text and returns what may be emitted now: text outside a call block
+# streams, a closed <tool_call>...</tool_call> goes to $state->{blocks}, and a
+# tail that may still turn into a tag is held until the next chunk. With the
+# think tag filter on (Role::ThinkTag), a <think> block passes through as text
+# and a call tag inside it is no call, as chat_f strips thinking before its
+# lift. $flush releases everything held, an unclosed call block as text.
+sub _hermes_stream_split {
+  my ( $self, $state, $text, $flush ) = @_;
+  my $buf = \$state->{pending};
+  $$buf //= '';
+  $$buf .= $text // '';
+  my $tag   = $self->hermes_call_tag;
+  my $think = $self->can('think_tag_filter') && $self->think_tag_filter ? $self->think_tag : undef;
+  my $out = '';
+  while (1) {
+    my $mode = $state->{mode} // 'text';
+    if ( $mode eq 'call' ) {
+      my $close = "</$tag>";
+      my $at = index( $$buf, $close );
+      last if $at < 0;
+      push @{ $state->{blocks} }, substr( $$buf, 0, $at + length $close, '' );
+      $state->{mode} = 'text';
+      next;
+    }
+    my @marks = $mode eq 'think' ? ( [ "</$think>", 'text' ] )
+      : ( [ "<$tag>", 'call' ], defined $think ? [ "<$think>", 'think' ] : () );
+    my ( $at, $hit );
+    for my $mark (@marks) {
+      my $pos = index( $$buf, $mark->[0] );
+      ( $at, $hit ) = ( $pos, $mark ) if $pos >= 0 && ( !defined $at || $pos < $at );
+    }
+    if ($hit) {
+      # A call block stays held from its opening tag on; think tags stream.
+      $out .= substr( $$buf, 0, $hit->[1] eq 'call' ? $at : $at + length $hit->[0], '' );
+      $state->{mode} = $hit->[1];
+      next;
+    }
+    my $keep = 0;
+    for my $mark ( map { $_->[0] } @marks ) {
+      for my $len ( reverse 1 .. length($mark) - 1 ) {
+        next if $len > length $$buf;
+        next unless substr( $$buf, -$len ) eq substr( $mark, 0, $len );
+        $keep = $len if $len > $keep;
+        last;
+      }
+    }
+    $out .= substr( $$buf, 0, length($$buf) - $keep, '' );
+    last;
+  }
+  if ($flush) {
+    $out .= $$buf;
+    $$buf = '';
+    $state->{mode} = 'text';
+  }
+  return $out;
+}
+
 =method build_tool_chat_request
 
     my $request = $self->build_tool_chat_request($conversation, $formatted_tools);
