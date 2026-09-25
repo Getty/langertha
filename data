@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T07:31:29Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:31:29Z
+created: 2026-09-25T07:25:50Z
+id: 250
+priority: low
+started: 2026-09-25T07:31:29Z
+status: done
+tags:
+- chat_f
+- rewrite
+- structured-output
+title: ADR 0005 forced-tool rewrite silently overwrites a caller's response_format
+updated: 2026-09-25T07:31:29Z
+---
+
+From k249: when chat_f rewrites a forced tool_choice into response_format json_schema (engine lacks tool_choice_named), it sets a per-request response_format that replaces one the caller passed per request or set on the engine — silently. Decide: croak when both a forced tool and a (non-text) response_format are given on a rewriting engine (the two intents conflict), or carp and let the forced tool win. Test on Perplexity + Ollama native + NousResearch.
+
+2026-09-25 07:31 Implemented on branch worktree-agent-a3183b0fd95cc997d (1b0cd34 fix, 9c95b1d ADR 0005 k250 Update): same-request non-text response_format + forced tool croaks; engine-level one carps and is replaced; text silent. t/77_forced_tool_response_format_conflict.t on Perplexity/Ollama/NousResearch.
