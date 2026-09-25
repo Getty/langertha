@@ -51,6 +51,14 @@ Revision history for Langertha
       the way its engine does on every simple_chat* method, instead of
       failing to encode them.
 
+    - Transcription uploads (multipart/form-data) send text fields UTF-8
+      encoded, as JSON bodies do, so a non-ASCII prompt no longer arrives
+      as Latin-1 or croaks with "content must be bytes"; a decoded
+      filename is sent as UTF-8 too. The Content-Type boundary always
+      matches the body's. An ArrayRef under a key ending in [] is sent as
+      repeated fields, so timestamp_granularities[] => [qw( word segment )]
+      works; any other ArrayRef stays a file part.
+
     - Langertha::Chat without a system_prompt of its own sends the
       engine's system_prompt, as the engine itself would. A wrapper
       system_prompt still replaces the engine's; NousResearch's

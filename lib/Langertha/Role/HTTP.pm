@@ -8,6 +8,8 @@ use Log::Any qw( $log );
 use Time::HiRes qw( gettimeofday tv_interval );
 use URI;
 use LWP::UserAgent;
+use Encode ();
+use File::Spec;
 
 use Langertha::Request::HTTP;
 use HTTP::Request::Common;
@@ -46,19 +48,80 @@ instance. Used internally when building C<application/json> request bodies.
 
 our $boundary = 'XyXLaXyXngXyXerXyXthXyXaXyX';
 
+# Character strings go on the wire as UTF-8, like the JSON body (json->utf8).
+sub _multipart_text {
+  my ( $value ) = @_;
+  return $value unless defined $value;
+  return Encode::encode( 'UTF-8', "$value" );
+}
+
+# A filename is path-like: a decoded (UTF-8 flagged) name is encoded, an
+# undecoded one is already the filesystem's bytes and passes unchanged.
+# RFC 7578 section 4.2: the name goes into filename="..." as raw UTF-8 (what
+# browsers and the OpenAI SDKs send), never as filename*.
+sub _multipart_filename {
+  my ( $name ) = @_;
+  return $name unless defined $name && utf8::is_utf8($name);
+  return Encode::encode( 'UTF-8', $name );
+}
+
 sub generate_multipart_body {
   my ( $self, $req, %args ) = @_;
-  my @formdata = map { $_, $args{$_} } sort { $a cmp $b } keys %args;
+  my @formdata;
+  for my $key ( sort { $a cmp $b } keys %args ) {
+    my $value = $args{$key};
+    if ( ref $value eq 'ARRAY' && $key =~ /\[\]\z/ ) {
+      # Multi-valued field (OpenAI: timestamp_granularities[], include[]):
+      # one part per element, in order. -- karr k286
+      push @formdata, map { ( $key, _multipart_text($_) ) } @$value;
+    }
+    elsif ( ref $value eq 'ARRAY' ) {
+      # File spec, HTTP::Request::Common form_data convention:
+      # [ $path, $filename, @headers ] or [ undef, $filename, Content => $bytes ].
+      my ( $file, $filename, @headers ) = @$value;
+      $filename = ( File::Spec->splitpath("$file") )[-1]
+        if !defined $filename && defined $file;
+      push @formdata, $key, [ $file, _multipart_filename($filename), @headers ];
+    }
+    elsif ( ref $value ) {
+      push @formdata, $key, $value;
+    }
+    else {
+      push @formdata, $key, _multipart_text($value);
+    }
+  }
   return HTTP::Request::Common::form_data(\@formdata, $boundary, $req);
 }
 
 =method generate_multipart_body
 
-    my $body = $engine->generate_multipart_body($request, %args);
+    my ( $body, $boundary ) = $engine->generate_multipart_body($request, %args);
 
-Encodes C<%args> as a C<multipart/form-data> body and attaches it to C<$request>.
-Used internally when the OpenAPI spec specifies C<multipart/form-data> content type
-(e.g. for audio upload endpoints).
+Encodes C<%args> as a C<multipart/form-data> body (fields sorted by name) and
+returns it together with the boundary it used. The boundary is
+C<$Langertha::Role::HTTP::boundary> unless a part contains it, in which case
+L<HTTP::Request::Common> picks another one; the C<Content-Type> header must use
+the returned value (L</generate_http_request> does). Used internally when the
+OpenAPI spec specifies C<multipart/form-data> (e.g. audio upload endpoints).
+
+Values are read as follows:
+
+=over
+
+=item * A plain scalar is a text field. It is a character string and is sent
+UTF-8 encoded, the same as a value in a JSON body.
+
+=item * An ArrayRef under a key ending in C<[]> (C<timestamp_granularities[]>,
+C<include[]>) is a multi-valued field: one text part per element.
+
+=item * Any other ArrayRef is a file part in the L<HTTP::Request::Common>
+C<form_data> form: C<[ $path ]>, C<[ $path, $filename, @headers ]>, or
+C<< [ undef, $filename, Content => $bytes, @headers ] >> for in-memory content.
+The filename defaults to the basename of C<$path>. A decoded (character)
+filename is sent UTF-8 encoded; an undecoded one is taken as the filesystem's
+bytes and sent unchanged, as raw UTF-8 in C<filename="..."> (RFC 7578).
+
+=back
 
 =cut
 
@@ -69,10 +132,9 @@ sub generate_http_request {
   my $userinfo = $uri->userinfo;
   $uri->userinfo(undef) if $userinfo;
   my $headers = [
-    ( 'Content-Type',
-      $content_type eq 'multipart/form-data'
-        ? 'multipart/form-data; boundary="'.$boundary.'"'
-      : 'application/json; charset=utf-8' )
+    # multipart gets its Content-Type below, from the boundary the body used
+    $content_type eq 'multipart/form-data' ? ()
+      : ( 'Content-Type', 'application/json; charset=utf-8' )
   ];
   my $request = Langertha::Request::HTTP->new(
     http => [ uc($method), $uri, $headers, ( scalar %args > 0 ?
@@ -85,7 +147,9 @@ sub generate_http_request {
     response_call => $response_call,
   );
   if ($content_type and $content_type eq 'multipart/form-data') {
-    $request->content($self->generate_multipart_body($request, %args));
+    my ( $body, $used_boundary ) = $self->generate_multipart_body($request, %args);
+    $request->header( 'Content-Type' => 'multipart/form-data; boundary="'.$used_boundary.'"' );
+    $request->content($body);
   }
   if ($userinfo) {
     my ( $user, $pass ) = split(/:/, $userinfo);
