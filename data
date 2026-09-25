@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-09-25T17:48:18Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T17:48:18Z
+created: 2026-09-25T17:38:18Z
+id: 274
+priority: medium
+started: 2026-09-25T17:38:42Z
+status: done
+tags:
+- vision
+- async
+title: Content::Image URL fetch is blocking LWP inside async paths (inline-only engines,
+  Gemini)
+updated: 2026-09-25T17:48:18Z
+---
+
+From k267/knarr k33: for inline-only engines (Gemini, Ollama native, LMStudio native, OllamaOpenAI, Cerebras, Moonshot) a from_url image is fetched synchronously with LWP while building the request, even on the _f path inside an IO::Async loop — blocks the loop (knarr/skeid serve many requests). Make the fetch async on _f paths (prefetch images via the engine's async HTTP before request build, or a Content::Image->ensure_base64_f), keep sync behavior for sync calls. langertha-async-worker.
