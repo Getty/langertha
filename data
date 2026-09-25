@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-25T23:25:32Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:25:32Z
+created: 2026-09-25T22:48:27Z
+id: 327
+priority: high
+started: 2026-09-25T22:50:35Z
+status: done
+tags:
+- gemini
+- cached-content
+- wire
+title: 'Gemini cachedContents wire shape: create body sends bare FunctionDeclarations
+  as tools; from_hash reads a nonexistent expiration wrapper (expire_time lost, is_expired
+  always false)'
+updated: 2026-09-25T23:25:32Z
+---
+
+Reproduced offline (bug hunt 2026-09-26).
+
+1) lib/Langertha/CachedContent.pm:253-263 to_create_body "peels" Tool->format_list("gemini") down to its functionDeclarations array and sends that as body.tools. The cachedContents REST field is tools: Tool[] where each Tool is { functionDeclarations: [...] } (same shape as generateContent tools). Result on the wire: tools:[{"name":"f","description":"d","parameters":{...}}] -> expected 400 (unknown field name in Tool). Fix: send format_list output unpeeled.
+   Repro: Langertha::CachedContent->new(model=>"models/gemini-2.5-pro", ttl=>"60s", tools=>[{name=>"f",description=>"d",input_schema=>{type=>"object",properties=>{}}}])->to_create_body->{tools}
+
+2) lib/Langertha/CachedContent.pm:320 from_hash reads $hash->{expiration}{ttl|expireTime}. expiration is a proto oneof; proto3 JSON flattens it, so real GET/POST/LIST responses carry top-level "expireTime" (ttl is input-only). expire_time is therefore never set on a parsed server resource and is_expired (:384) falls back to ttl, which is also absent -> always 0.
+   Repro: Langertha::CachedContent->from_hash({name=>"cachedContents/x", model=>"m", expireTime=>"2020-01-01T00:00:00Z"}) -> expire_time undef, is_expired 0.
+   Fix: read top-level expireTime/ttl (keep the wrapper as a tolerated alternate spelling, ADR 0018). The t/47_gemini_cached_content.t payloads are hand-written with the wrapper (karr #92 pattern); replace with a doc-sourced or captured shape.
+
+3) (provider-reality, needs langertha-llm-advisor to confirm) lib/Langertha/Engine/Gemini.pm:332/345 and :680/691: with a bound cached_content, chat_request still sends systemInstruction (from the engine system_prompt), tools and toolConfig. Gemini documents that a generateContent request referencing cachedContent may not also set system_instruction, tools or tool_config (400 "CachedContent can not be used with GenerateContent request setting system_instruction, tools or tool_config"). Suggested: croak/carp early or drop them with a carp when cached_content is bound.
