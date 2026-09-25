@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-09-25T23:28:34Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:28:34Z
+created: 2026-09-25T23:26:24Z
+id: 340
+priority: low
+started: 2026-09-25T23:27:03Z
+status: done
+tags:
+- adr
+- gemini
+title: 'ADR: a bound Gemini cachedContent owns systemInstruction/tools/toolConfig
+  (k327)'
+updated: 2026-09-25T23:28:34Z
+---
+
+k327 drops systemInstruction/tools/toolConfig from generateContent when cached_content is bound (server 400 otherwise; confirmed by observed server text, not docs) and carps. Record as ADR or Update to ADR 0018/0004 via langertha-adr-auditor. Also add a test for chat_with_tools_f with a bound cache.
