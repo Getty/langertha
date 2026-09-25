@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T07:25:42Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:25:42Z
+created: 2026-09-25T07:08:02Z
+id: 249
+priority: medium
+started: 2026-09-25T07:25:42Z
+status: done
+tags:
+- capabilities
+- exclusions
+- groq
+- cerebras
+- sglang
+title: Exclusion guard ignores an engine-attribute response_format
+updated: 2026-09-25T07:25:42Z
+---
+
+Found during k245. _check_capability_exclusions is fed response_format => $opts{response_format} only (chat_f, chat_stream_realtime_f in Role::Chat). A response_format set on the engine ($engine->response_format, Role::ResponseFormat) is still sent by the OpenAICompatible request builder (OpenAICompatible.pm ~L382/L523) but the guard never sees it. Reproduced offline: Groq->new(model=>llama-3.3-70b-versatile, response_format=>{type=>json_object}) + chat_f(tools=>[...]) sends both on the wire (Groq 400s this per k184) instead of croaking. Affects every rule (Groq, Cerebras, SGLang k245). Fix: feed the effective response_format (per-request control, else engine attribute) into the guard. Done = test in t/78 or t/23 + ADR 0024 Update line.
+
+2026-09-25 07:25 Fixed on branch worktree-agent-a07a584ea0a36dbef (4a52b0c fix, 3741bd7 ADR 0024 Update). Guard now gets _chat_effective_response_format (per-request else engine attr). ADR 0005 rewrite not affected; it silently overwrites a caller response_format (separate question).
