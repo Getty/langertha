@@ -96,7 +96,8 @@ sub from_hash {
   # them flat; Gemini reports the read count as usageMetadata's
   # cachedContentTokenCount (Engine::Gemini renames it cached_content_token_count).
   # The OpenAI Chat nesting wins, then the Responses nesting, then the Anthropic
-  # flat keys, then Gemini's (karr #125 / #130 / #159 / k197). The read count and the
+  # flat keys, then Gemini's, then the canonical flat cached_tokens that
+  # Engine::AKI emits (karr #125 / #130 / #159 / k197). The read count and the
   # write count are distinct quantities — the write count is deliberately NOT
   # folded into cached_tokens. Values are read into lexicals first so a missing
   # key never autovivifies the caller's hash.
@@ -112,6 +113,7 @@ sub from_hash {
   elsif ( defined $hash->{cache_read_input_tokens} )        { $cached = $hash->{cache_read_input_tokens} }
   elsif ( defined $hash->{cachedContentTokenCount} )        { $cached = $hash->{cachedContentTokenCount} }
   elsif ( defined $hash->{cached_content_token_count} )     { $cached = $hash->{cached_content_token_count} }
+  elsif ( defined $hash->{cached_tokens} )                  { $cached = $hash->{cached_tokens} }
 
   my $cache_write;
   if    ( $ptd && defined $ptd->{cache_write_tokens} )          { $cache_write = $ptd->{cache_write_tokens} }
@@ -164,7 +166,7 @@ sub from_raw {
   # chat_response reads the same keys, by definedness).
   my %aki = map { defined $data->{$_} ? ( $_ => $data->{$_} ) : () }
     qw( prompt_length num_generated_tokens num_cached_tokens );
-  if ( exists $aki{prompt_length} || exists $aki{num_generated_tokens} ) {
+  if (%aki) {
     return $class->new(
       input_tokens  => 0 + ( $aki{prompt_length}        // 0 ),
       output_tokens => 0 + ( $aki{num_generated_tokens} // 0 ),
@@ -302,6 +304,13 @@ C<completion_tokens_details>) survive, and keys the engine normalized away
 (Gemini camelCase, Ollama C<prompt_eval_count> / C<eval_count>) stay absent.
 C<exists> checks behave exactly as they did on the raw hash.
 
+These engine-normalized keys are legacy: the accessors above read every
+spelling, so no engine needs to rename for Usage's sake any more. They are
+kept for compatibility and are B<not> deprecated. For example
+L<Langertha::Engine::Gemini> still serves C<prompt_tokens>,
+C<completion_tokens>, C<total_tokens> and C<cached_content_token_count> here
+in place of Gemini's camelCase C<usageMetadata> names.
+
 For a Usage constructed directly (no raw hash), the overload returns the
 canonical L</to_hash> shape (C<input_tokens> / C<output_tokens> /
 C<total_tokens>). New code should prefer the accessors and the
@@ -331,8 +340,10 @@ C<cache_read_input_tokens> in the same block), and Anthropic reports it flat as
 C<usage.cache_read_input_tokens>. The OpenAI Chat nesting wins, then the
 Responses nesting, then the Anthropic flat key. Gemini reports it as
 C<usageMetadata.cachedContentTokenCount> (C<cached_content_token_count> after
-L<Langertha::Engine::Gemini> renames it), read last. C<undef> when the provider
-does not report a cache-read count.
+L<Langertha::Engine::Gemini> renames it), read after the Anthropic key. A flat
+canonical C<cached_tokens> (what L<Langertha::Engine::AKI> puts in its usage
+hash, from AKI.IO's native C<num_cached_tokens>) is read last. C<undef> when the
+provider does not report a cache-read count.
 
 Note: on OpenAI (GPT-5.6 and later) this count excludes hidden tokens and
 rounds down to a multiple of 128, so cost arithmetic built on it is

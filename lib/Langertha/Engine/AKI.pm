@@ -291,13 +291,16 @@ sub chat_response {
 
   # Native usage: the AKI wire names its token counts differently from the
   # OpenAI/Anthropic shapes, so normalize to the keys Langertha::Usage->from_hash
-  # understands. num_cached_tokens is the same quantity as cached_tokens. The
+  # understands. num_cached_tokens is the same quantity as cached_tokens; it rides
+  # in the usage hash so Response->usage->cached_tokens carries it and
+  # Response->cached_tokens is lifted off that Usage (karr k197). The
   # native counts differ from the /v1 OpenAI shim for the same prompt (prompt_length
   # 37 vs prompt_tokens 64), so trust $response->model for which model answered.
   # -- karr k126
   my $usage = {
     defined $data->{prompt_length}        ? ( prompt_tokens     => $data->{prompt_length} )        : (),
     defined $data->{num_generated_tokens} ? ( completion_tokens => $data->{num_generated_tokens} ) : (),
+    defined $data->{num_cached_tokens}    ? ( cached_tokens     => $data->{num_cached_tokens} )    : (),
   };
   undef $usage unless %$usage;
 
@@ -318,7 +321,6 @@ sub chat_response {
     $data->{job_id}     ? ( id    => $data->{job_id} )     : (),
     $data->{model_name} ? ( model => $data->{model_name} ) : (),
     $usage              ? ( usage => $usage )              : (),
-    defined $data->{num_cached_tokens} ? ( cached_tokens => $data->{num_cached_tokens} ) : (),
     $timing             ? ( timing => $timing )            : (),
     @$tool_calls        ? ( tool_calls => $tool_calls )    : (),
   );
@@ -331,7 +333,8 @@ sub chat_response {
 Parses a native AKI.IO chat response. Dies with an API error message if
 C<success> is false. Returns a L<Langertha::Response> with C<content>,
 C<id> (from the wire C<job_id>), C<model>, C<usage> (from C<prompt_length> /
-C<num_generated_tokens>), C<cached_tokens> (from C<num_cached_tokens>),
+C<num_generated_tokens> / C<num_cached_tokens>), C<cached_tokens> (lifted off
+C<usage>),
 C<timing> (C<total_seconds> / C<compute_seconds>, both already in seconds),
 C<tool_calls> (Hermes C<E<lt>tool_callE<gt>> tags), and C<raw>. The native
 token counts differ from the OpenAI-compatible shim for the same prompt —

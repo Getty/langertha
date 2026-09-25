@@ -53,8 +53,22 @@ subtest 'AKI native: from_raw reads the verbatim capture like the engine does' =
   my $resp = $engine->chat_response(
     http_json( $data_dir->child('aki_chat_response.json')->slurp_raw ) );
   is_deeply( [ $resp->prompt_tokens, $resp->completion_tokens, $resp->cached_tokens ],
-      [ $usage->input_tokens, $usage->output_tokens, $usage->cached_tokens ],
-      'from_raw matches Engine::AKI chat_response on the same capture' );
+      [ 38, 3, 16 ], 'Engine::AKI chat_response reads the same capture' );
+  # Response.usage is the documented cross-provider place to read the cache
+  # count; it must agree with the Response.cached_tokens shortcut (k197 I1).
+  is( $resp->usage->cached_tokens, 16, 'Response->usage->cached_tokens carries num_cached_tokens' );
+  is( $resp->usage->{prompt_tokens}, 38, 'usage->{prompt_tokens} hash key unchanged' );
+  is( $resp->usage->{completion_tokens}, 3, 'usage->{completion_tokens} hash key unchanged' );
+
+  # The capture with only its cache count left: the engine keeps the count,
+  # so from_raw must too.
+  my %cached_only = %$data;
+  delete @cached_only{qw( prompt_length num_generated_tokens )};
+  my $cached = Langertha::Usage->from_raw( \%cached_only );
+  isa_ok( $cached, ['Langertha::Usage'], 'a cache-count-only body is reported usage' );
+  is( $cached && $cached->cached_tokens, 16, 'from_raw keeps the lone cache count' );
+  my $cached_resp = $engine->chat_response( http_json( $json->encode( \%cached_only ) ) );
+  is( $cached_resp->usage && $cached_resp->usage->cached_tokens, 16, 'Engine::AKI agrees' );
 };
 
 subtest 'Ollama native: from_raw follows the engine on zero counts' => sub {
