@@ -534,7 +534,7 @@ Returns an HTTP request object for use with streaming execution.
 =cut
 
 sub parse_stream_chunk {
-  my ( $self, $data, $event ) = @_;
+  my ( $self, $data, $event, $state ) = @_;
 
   return undef unless $data && $data->{choices};
 
@@ -543,6 +543,39 @@ sub parse_stream_chunk {
 
   my $content = $choice->{delta}{content} // '';
   my $finish_reason = $choice->{finish_reason};
+
+  # A streamed tool call arrives as delta.tool_calls fragments keyed by
+  # `index`: the first carries id, type and function.name, the rest append to
+  # function.arguments, and fragments of parallel calls interleave. Assemble
+  # them per index in this stream's state and deliver the finished calls on the
+  # chunk that carries finish_reason -- read by the same
+  # ToolCall->extract('openai', ...) chat_response uses, so a streamed and a
+  # non-streamed reply of one response yield the same calls. The calls leave the
+  # state as they are delivered, so none arrives twice. -- karr k221
+  $state //= $self->_stream_parse_state;
+  my $pending = $state->{openai_tool_calls} //= {};
+  my $delta_calls = ref $choice->{delta} eq 'HASH' ? $choice->{delta}{tool_calls} : undef;
+  if ( ref $delta_calls eq 'ARRAY' ) {
+    for my $pos ( 0 .. $#$delta_calls ) {
+      my $fragment = $delta_calls->[$pos];
+      next unless ref $fragment eq 'HASH';
+      my $call = $pending->{ $fragment->{index} // $pos }
+        //= { type => 'function', function => { arguments => '' } };
+      $call->{id} = $fragment->{id} if !length( $call->{id} // '' ) && length( $fragment->{id} // '' );
+      my $fn = ref $fragment->{function} eq 'HASH' ? $fragment->{function} : {};
+      $call->{function}{name} = $fn->{name}
+        if !length( $call->{function}{name} // '' ) && length( $fn->{name} // '' );
+      if ( ref $fn->{arguments} ) { $call->{function}{arguments} = $fn->{arguments} }
+      elsif ( defined $fn->{arguments} ) { $call->{function}{arguments} .= $fn->{arguments} }
+    }
+  }
+  my @tool_calls;
+  if ( defined $finish_reason && %$pending ) {
+    my @calls = map { $pending->{$_} } sort { $a <=> $b } keys %$pending;
+    %$pending = ();
+    @tool_calls = Langertha::ToolCall->extract( 'openai',
+      { choices => [ { message => { tool_calls => \@calls } } ] } );
+  }
 
   # Streamed chain-of-thought reaches the delta under the same two spellings the
   # non-streaming chat_response reads: the DeepSeek/SGLang/Moonshot/xAI
@@ -571,12 +604,13 @@ sub parse_stream_chunk {
       && defined $data->{usage}{prompt_tokens_details}{cached_tokens}
       ? ( cached_tokens => $data->{usage}{prompt_tokens_details}{cached_tokens} ) : () ),
     defined $thinking ? ( thinking => $thinking ) : (),
+    @tool_calls ? ( tool_calls => \@tool_calls ) : (),
   );
 }
 
 =method parse_stream_chunk
 
-    my $chunk = $engine->parse_stream_chunk($data, $event);
+    my $chunk = $engine->parse_stream_chunk($data, $event, \%state);
 
 Parses a single SSE data payload from an OpenAI-format stream. Returns
 a L<Langertha::Stream::Chunk> with C<content>, C<is_final>, C<finish_reason>,
@@ -584,6 +618,14 @@ C<model>, C<usage>, C<cached_tokens> (lifted from
 C<usage.prompt_tokens_details.cached_tokens> when present), and C<thinking>
 (the streamed C<delta.reasoning_content> / bare C<delta.reasoning>, guarded
 C<!ref>). Returns C<undef> only when the payload carries no C<choices>.
+
+C<delta.tool_calls> fragments are assembled per C<index> in C<\%state> (one
+HashRef per stream; the stream paths pass it, a direct caller may omit it and
+share the engine's fallback), and the finished calls land as
+L<Langertha::ToolCall> objects on the chunk that carries C<finish_reason>, read
+by the same L<Langertha::ToolCall/extract> as L</chat_response>. Collect them
+with L<Langertha::Role::Chat/aggregate_tool_calls>. C<finish_reason> is passed
+through as the provider sent it, as on the non-streaming path.
 
 =cut
 

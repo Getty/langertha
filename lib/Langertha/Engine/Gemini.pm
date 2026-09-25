@@ -578,6 +578,11 @@ sub parse_stream_chunk {
   my $finish_reason = $candidate->{finishReason};
   my $is_final = defined $finish_reason && $finish_reason ne '';
 
+  # A streamed functionCall part arrives whole in one chunk (it is not
+  # fragmented), so the chunk that carries it is where the call completes. Read
+  # it with the same ToolCall->extract chat_response uses. -- karr k221
+  my @tool_calls = Langertha::ToolCall->extract( $self->tool_wire_format, $data );
+
   return Langertha::Stream::Chunk->new(
     content => $text,
     raw => $data,
@@ -585,6 +590,7 @@ sub parse_stream_chunk {
     $finish_reason ? (finish_reason => $finish_reason) : (),
     $data->{usageMetadata} ? (usage => $data->{usageMetadata}) : (),
     defined $thinking ? ( thinking => $thinking ) : (),
+    @tool_calls ? ( tool_calls => \@tool_calls ) : (),
   );
 }
 

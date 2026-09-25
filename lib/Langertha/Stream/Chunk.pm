@@ -112,14 +112,33 @@ has tool_calls => (
 
 =attr tool_calls
 
-Optional ArrayRef of L<Langertha::ToolCall> objects associated with
-this chunk. Populated when the engine emits tool-call information
-on the stream. The Open-Responses envelope
-(L<Langertha::Role::ResponsesCompatible>) puts the reply's function calls
-on its final chunk, read from the terminal C<response.completed> event; the
-Chat-Completions and Anthropic dialects do not populate it yet. Most chunks
-have no tool calls — use C<has_tool_calls> to check, or
-L<Langertha::Role::Chat/aggregate_tool_calls> to collect them.
+Optional ArrayRef of finished L<Langertha::ToolCall> objects that complete
+on this chunk. Every call the model streams lands on exactly one chunk, as the
+same object the non-streaming reply of that response carries on
+L<Langertha::Response/tool_calls>; a chunk never holds a fragment. Where it
+lands depends on the dialect:
+
+=over
+
+=item * Chat-Completions (L<Langertha::Role::OpenAICompatible>): the
+C<delta.tool_calls> fragments are assembled per C<index>, and all calls land on
+the chunk that carries C<finish_reason>.
+
+=item * Anthropic Messages (L<Langertha::Role::AnthropicCompatible>): each
+C<tool_use> block is assembled from its C<input_json_delta> fragments and lands
+on the chunk for its C<content_block_stop>, before the final chunk.
+
+=item * Gemini and Ollama native: calls arrive whole and land on the chunk that
+carries them.
+
+=item * Open-Responses (L<Langertha::Role::ResponsesCompatible>): the calls land
+on the final chunk, read from the terminal C<response.completed> event.
+
+=back
+
+Most chunks have no tool calls — use C<has_tool_calls> to check, or
+L<Langertha::Role::Chat/aggregate_tool_calls> to collect them all in stream
+order.
 
 =cut
 

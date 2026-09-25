@@ -12,6 +12,21 @@ requires qw(
 use Langertha::Stream;
 use Langertha::Stream::Chunk;
 
+# Per-stream parse state for the dialect parsers that assemble a tool call
+# from fragments spread over several events (Chat-Completions delta.tool_calls,
+# Anthropic input_json_delta -- karr k221). Both stream paths hand
+# parse_stream_chunk a fresh HashRef per stream as its third argument
+# (process_stream_data below, Role::Chat::chat_stream_realtime_f), so two
+# streams on one engine never share fragments. This engine-wide HashRef is only
+# the fallback for a caller that invokes parse_stream_chunk (or
+# _process_stream_buffer) directly without one.
+has _stream_parse_state => (
+  is       => 'ro',
+  isa      => 'HashRef',
+  init_arg => undef,
+  default  => sub { {} },
+);
+
 =head1 SYNOPSIS
 
     # Synchronous streaming via Role::HTTP
@@ -91,6 +106,7 @@ sub process_stream_data {
   my $format = $self->stream_format;
   my $buffer = '';
   my $current_event = undef;
+  my %state;   # this stream's parse state, see _stream_parse_state
 
   my @lines = split /\r?\n/, $data;
 
@@ -110,7 +126,7 @@ sub process_stream_data {
         # Stream complete
         last;
       } elsif ($parsed->{type} eq 'data') {
-        my $chunk = $self->parse_stream_chunk($parsed->{data}, $current_event);
+        my $chunk = $self->parse_stream_chunk($parsed->{data}, $current_event, \%state);
         if ($chunk) {
           push @chunks, $chunk;
           $chunk_callback->($chunk) if $chunk_callback;
@@ -123,7 +139,7 @@ sub process_stream_data {
       my $parsed = $self->parse_ndjson_line($line);
       next unless $parsed && $parsed->{type} eq 'data';
 
-      my $chunk = $self->parse_stream_chunk($parsed->{data});
+      my $chunk = $self->parse_stream_chunk($parsed->{data}, undef, \%state);
       if ($chunk) {
         push @chunks, $chunk;
         $chunk_callback->($chunk) if $chunk_callback;
@@ -140,8 +156,10 @@ sub process_stream_data {
     my $chunks = $engine->process_stream_data($raw_body);
 
 Parses a complete streaming response body according to the engine's
-C<stream_format> (C<'sse'> or C<'ndjson'>). Calls C<parse_stream_chunk> on
-each data event and optionally calls C<$chunk_callback> with each resulting
+C<stream_format> (C<'sse'> or C<'ndjson'>). Calls
+C<parse_stream_chunk($data, $event, \%state)> on each data event, with one
+fresh C<%state> for the whole body, in which a parser assembles tool-call
+fragments and optionally calls C<$chunk_callback> with each resulting
 L<Langertha::Stream::Chunk>. Returns an ArrayRef of all chunks.
 
 =cut

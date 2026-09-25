@@ -787,11 +787,14 @@ async sub chat_stream_realtime_f {
   # Same canonical-control extraction as chat_f (karr #46).
   my $controls = $self->_extract_controls(\%opts);
 
+  $opts{tools} = $self->_stream_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
+
   my $request = $self->chat_stream_request( $self->chat_messages(@messages),
     ( %$controls ? ( controls => $controls ) : () ),
     %opts );
   my @all_chunks;
   my $buffer = '';
+  my %stream_state;   # this stream's parse state (tool-call fragments, karr k221)
   my $format = $self->stream_format;
   my $response_status;
   my $t0           = [gettimeofday];
@@ -817,7 +820,7 @@ async sub chat_stream_realtime_f {
 
         my $ok = eval {
           $buffer .= $data;
-          my $chunks = $self->_process_stream_buffer(\$buffer, $format);
+          my $chunks = $self->_process_stream_buffer(\$buffer, $format, 0, \%stream_state);
           for my $chunk (@$chunks) {
             $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
             push @all_chunks, $chunk;
@@ -867,7 +870,7 @@ async sub chat_stream_realtime_f {
 
   # Process remaining buffer
   if ($buffer ne '') {
-    my $chunks = $self->_process_stream_buffer(\$buffer, $format, 1);
+    my $chunks = $self->_process_stream_buffer(\$buffer, $format, 1, \%stream_state);
     for my $chunk (@$chunks) {
       $ttft_seconds = tv_interval($t0) unless defined $ttft_seconds;
       push @all_chunks, $chunk;
@@ -882,6 +885,29 @@ async sub chat_stream_realtime_f {
     ttft_seconds  => $ttft_seconds,
     total_seconds => $total_seconds,
   }, $thinking);
+}
+
+# Streaming callers pass canonical Langertha::Tool objects too, as
+# chat_with_tools_f's callers do; the JSON encoder would put such an object on
+# the wire in its canonical to_hash shape, which only the Anthropic wire reads.
+# Serialize the objects for this engine's tool_wire_format through the value
+# objects (ADR 0001, karr k221). A tool hash is already the caller's wire shape
+# and passes through untouched, as before: the Tool round trip is lossy (it
+# would drop wire extras such as OpenAI's function.strict or Anthropic's
+# cache_control) and would croak on provider built-ins. The hermes wire (tools
+# ride the prompt) and an engine without Role::Tools get the list unchanged.
+sub _stream_wire_tools {
+  my ( $self, $tools ) = @_;
+  return $tools unless $self->can('tool_wire_format');
+  my $fmt = $self->tool_wire_format;
+  return $tools if $fmt eq 'hermes';
+  my ( @objects, @hashes );
+  for my $tool (@$tools) {
+    if ( blessed($tool) && $tool->isa('Langertha::Tool') ) { push @objects, $tool }
+    else                                                    { push @hashes, $tool }
+  }
+  return $tools unless @objects;
+  return [ @{ Langertha::Tool->format_list( $fmt, \@objects ) }, @hashes ];
 }
 
 sub aggregate_tool_calls {
@@ -901,20 +927,17 @@ sub aggregate_tool_calls {
 
 Walks an ArrayRef of L<Langertha::Stream::Chunk> objects and returns
 the flat list of L<Langertha::ToolCall> objects collected from any
-chunks that carry C<tool_calls>. Returns an empty ArrayRef if none of
-the chunks emitted tool calls.
+chunks that carry C<tool_calls>, in stream order. Returns an empty ArrayRef if
+none of the chunks emitted tool calls.
 
-This is the collection seam for streamed tool-call aggregation, the
-streaming counterpart to L<Langertha::Response/tool_calls>. Assembling
-fragmented tool-call deltas (OpenAI's C<delta.tool_calls> stream,
-Anthropic's C<input_json_delta>) into a finished L<Langertha::ToolCall>
-on the chunk belongs in C<parse_stream_chunk>. Today only the
-Open-Responses envelope (L<Langertha::Role::ResponsesCompatible>) delivers
-streamed tool calls, read off its terminal C<response.completed> event, and no
-shipped engine streams through it with tools yet. The Chat-Completions,
-Anthropic, Gemini and Ollama-native parsers do not assemble their tool-call
-deltas (karr k221), so on those this helper returns an empty list — use the
-non-streaming path when you need tool calls there.
+This is the streaming counterpart to L<Langertha::Response/tool_calls>: for a
+streamed response it returns the same calls, as equal L<Langertha::ToolCall>
+objects, that the non-streaming reply of that response carries. Each dialect's
+C<parse_stream_chunk> assembles its fragments (Chat-Completions
+C<delta.tool_calls> per C<index>, Anthropic C<input_json_delta> per content
+block) in per-stream state and puts every finished call on exactly one chunk,
+so this helper only collects and never sees a call twice. See
+L<Langertha::Stream::Chunk/tool_calls> for the chunk each dialect uses.
 
 =cut
 
@@ -1001,8 +1024,11 @@ per-request controls (karr #46) — C<temperature>, C<max_tokens>,
 C<response_format>, C<seed>, C<parallel_tool_use>, C<reasoning_effort>,
 C<thinking_budget>, C<prompt_cache>, C<prompt_cache_ttl>, C<prompt_cache_key> —
 are extracted and handed to L</chat_stream_request> under C<controls>, exactly
-as in L</chat_f>. All other options (tools, tool_choice, and any engine-specific
-extras) pass straight through.
+as in L</chat_f>. C<tools> may hold L<Langertha::Tool> objects, which are
+serialized for the engine's C<tool_wire_format>; tool hashes are taken as
+already in the engine's wire shape and pass through untouched, as do
+C<tool_choice> and any engine-specific extras. Tool calls the model streams are
+collected with L</aggregate_tool_calls>.
 
 Returns a L<Future> that resolves to C<($content, \@chunks, \%timing,
 $thinking)> where C<$content> is the full concatenated text, C<\@chunks> the
@@ -1056,7 +1082,7 @@ they consume the key and croak — use L</chat_f> for structured output there.
 =cut
 
 sub _process_stream_buffer {
-  my ($self, $buffer_ref, $format, $final) = @_;
+  my ($self, $buffer_ref, $format, $final, $state) = @_;
 
   my @chunks;
 
@@ -1077,7 +1103,7 @@ sub _process_stream_buffer {
           my $json_data = $1;
           next if $json_data eq '[DONE]' || $json_data eq '';
           my $parsed = $self->json->decode($json_data);
-          my $chunk = $self->parse_stream_chunk($parsed);
+          my $chunk = $self->parse_stream_chunk($parsed, undef, $state);
           push @chunks, $chunk if $chunk;
         }
       }
@@ -1088,7 +1114,7 @@ sub _process_stream_buffer {
       my $line = $1;
       next if $line eq '';
       my $parsed = $self->json->decode($line);
-      my $chunk = $self->parse_stream_chunk($parsed);
+      my $chunk = $self->parse_stream_chunk($parsed, undef, $state);
       push @chunks, $chunk if $chunk;
     }
   }

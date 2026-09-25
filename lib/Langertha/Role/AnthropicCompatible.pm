@@ -684,22 +684,61 @@ Returns an HTTP request object for use with streaming execution.
 =cut
 
 sub parse_stream_chunk {
-  my ( $self, $data, $event ) = @_;
+  my ( $self, $data, $event, $state ) = @_;
 
   require Langertha::Stream::Chunk;
 
   # Anthropic uses event types: content_block_delta, message_delta, message_stop
   my $type = $data->{type} // '';
 
+  # A streamed tool call is a tool_use content block: content_block_start
+  # names it (id, name, an empty input), input_json_delta events carry its
+  # input as partial_json fragments, content_block_stop closes it. Assemble the
+  # block per content-block index in this stream's state and deliver it on its
+  # content_block_stop, read by the same ToolCall->extract chat_response uses,
+  # so a streamed and a non-streamed reply of one response yield the same call.
+  # The block leaves the state as it is delivered, so it never arrives twice.
+  # -- karr k221
+  $state //= $self->_stream_parse_state;
+  my $blocks = $state->{anthropic_tool_blocks} //= {};
+
   # A new message begins the terminal-metadata carry fresh (karr k167): guards
   # against a prior stream on the same engine that aborted before message_stop.
   if ($type eq 'message_start') {
     $self->_stream_final_meta(undef);
+    %$blocks = ();
     return undef;
+  }
+
+  if ($type eq 'content_block_start') {
+    my $block = $data->{content_block};
+    if ( ref $block eq 'HASH' && ( $block->{type} // '' ) eq 'tool_use' ) {
+      $blocks->{ $data->{index} // 0 } = { block => { %$block }, json => '' };
+    }
+    return undef;
+  }
+
+  if ($type eq 'content_block_stop') {
+    my $open = delete $blocks->{ $data->{index} // 0 } or return undef;
+    my $block = $open->{block};
+    $block->{input} = $open->{json} if length $open->{json};
+    my @tool_calls = Langertha::ToolCall->extract( $self->tool_wire_format,
+      { content => [ $block ] } );
+    return undef unless @tool_calls;
+    return Langertha::Stream::Chunk->new(
+      content    => '',
+      raw        => $data,
+      is_final   => 0,
+      tool_calls => \@tool_calls,
+    );
   }
 
   if ($type eq 'content_block_delta') {
     my $delta = $data->{delta} || {};
+    if ( ( $delta->{type} // '' ) eq 'input_json_delta'
+      && ( my $open = $blocks->{ $data->{index} // 0 } ) ) {
+      $open->{json} .= $delta->{partial_json} // '';
+    }
     # A content_block_delta is discriminated by delta.type: text_delta carries
     # `text`, thinking_delta carries `thinking` (extended-thinking models), then
     # exactly one signature_delta precedes content_block_stop. Surface the
@@ -746,13 +785,13 @@ sub parse_stream_chunk {
     );
   }
 
-  # Other event types (message_start, content_block_start, etc.) - skip
+  # Other event types (ping, ...) - skip
   return undef;
 }
 
 =method parse_stream_chunk
 
-    my $chunk = $engine->parse_stream_chunk($data, $event);
+    my $chunk = $engine->parse_stream_chunk($data, $event, \%state);
 
 Parses a single SSE data payload from an Anthropic-format stream by event
 type. A C<content_block_delta> of type C<thinking_delta> surfaces its
@@ -763,6 +802,14 @@ the C<message_delta> metadata is replayed onto the C<is_final> C<message_stop>
 chunk, matching the cross-dialect contract where C<finish_reason> and C<usage>
 land on the same chunk that is C<is_final>. Returns a
 L<Langertha::Stream::Chunk>, or C<undef> for event types that carry no content.
+
+A C<tool_use> content block is assembled from its C<content_block_start> and
+C<input_json_delta> fragments in C<\%state> (one HashRef per stream; the stream
+paths pass it, a direct caller may omit it and share the engine's fallback) and
+lands as a L<Langertha::ToolCall> on the chunk for its C<content_block_stop>,
+read by the same L<Langertha::ToolCall/extract> as L</chat_response>. Collect
+the calls with L<Langertha::Role::Chat/aggregate_tool_calls>. The
+C<content_block_stop> of any other block still returns C<undef>.
 
 =cut
 

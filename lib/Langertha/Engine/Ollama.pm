@@ -531,6 +531,11 @@ sub parse_stream_chunk {
   # the non-streaming path. -- karr k129
   my $thinking = $data->{message}{thinking};
 
+  # Native /api/chat streams message.tool_calls whole, on the chunk where the
+  # call completes (not fragmented). Read it with the same ToolCall->extract
+  # chat_response uses. -- karr k221
+  my @tool_calls = Langertha::ToolCall->extract( $self->tool_wire_format, $data );
+
   require Langertha::Stream::Chunk;
   return Langertha::Stream::Chunk->new(
     content => $content,
@@ -543,6 +548,7 @@ sub parse_stream_chunk {
       $data->{prompt_eval_count} ? (prompt_tokens => $data->{prompt_eval_count}) : (),
     }) : (),
     defined $thinking ? ( thinking => $thinking ) : (),
+    @tool_calls ? ( tool_calls => \@tool_calls ) : (),
   );
 }
 

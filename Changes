@@ -83,6 +83,18 @@ Revision history for Langertha
       message instead of ending it silently. Built from OpenAI's documented
       streaming events, not verified against a live stream.
 
+    - Streamed tool calls are no longer lost. Every stream parser
+      (Chat-Completions, Anthropic, Gemini, Ollama native, Open-Responses)
+      delivers each call once, as the same Langertha::ToolCall the
+      non-streaming reply has, and aggregate_tool_calls collects them from
+      chat_stream_realtime_f's chunks. chat_stream_realtime_f now serializes
+      Langertha::Tool objects in tools for the engine's wire; tool hashes are
+      sent as given. The Open-Responses stream also shows a reasoning summary
+      as thinking on its final chunk, and a response.failed or error event
+      fails the stream with the provider's message. The stream shapes come
+      from the providers' documentation, not from live captures.
+
+
     - MiniMaxAnthropic no longer sends output_config.effort, which MiniMax's
       Anthropic-compatible schema does not have. A reasoning_effort still
       sends thinking {type: adaptive}, which turns thinking on. Taken from
