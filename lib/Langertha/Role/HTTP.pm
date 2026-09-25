@@ -163,8 +163,20 @@ has user_agent_timeout => (
 
 =attr user_agent_timeout
 
-Optional timeout in seconds for the L<LWP::UserAgent>. When not set, the
-default L<LWP::UserAgent> timeout applies.
+Optional timeout in seconds for HTTP requests. The synchronous methods get it
+through the L<LWP::UserAgent> (seconds without activity on the connection);
+when not set, LWP's own default (180 seconds) applies there.
+
+The C<_f> methods (and L<Langertha::Role::AsyncHTTP/async_request_f>) on the
+L<Net::Async::HTTP> backend apply it as well: a plain request fails after this
+many seconds in total, a streaming one after this many seconds without a byte
+(a long stream that keeps delivering is not cut off). The Future then fails
+with C<< <engine class>: request to <url> timed out after Ns >> (C<streaming
+request ... without data (...)> for a stream), the URL without its query
+string, and the Net::Async::HTTP category (C<timeout> / C<stall_timeout>) as
+the second failure value. When not set, the async backend has B<no> timeout,
+as before. The synchronous fallback uses the L<LWP::UserAgent>'s timeout; an
+injected client that is not a L<Net::Async::HTTP> keeps its own.
 
 =cut
 

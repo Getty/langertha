@@ -46,6 +46,14 @@ Revision history for Langertha
       takes it), sent as image_url.detail on OpenAI chat and
       input_image.detail on Open-Responses, ignored elsewhere.
 
+    - user_agent_timeout now also bounds the _f methods and
+      async_request_f on the Net::Async::HTTP backend, which had no
+      timeout at all: a plain request fails after that many seconds, a
+      stream after that many seconds without data, with a "timed out
+      after Ns" error naming the engine and the URL. Unset, the async
+      backend still has no timeout.
+
+
     - LM Studio native (/api/v1/chat) sends text as type text input
       parts, and since that endpoint takes no assistant messages, a
       history with assistant turns is cut to the user turn(s) after the

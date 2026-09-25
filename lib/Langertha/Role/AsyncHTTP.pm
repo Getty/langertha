@@ -3,6 +3,8 @@ package Langertha::Role::AsyncHTTP;
 our $VERSION = '0.503';
 use Moose::Role;
 use Future::AsyncAwait;
+use Future;
+use Scalar::Util qw( blessed );
 
 requires 'user_agent';
 
@@ -96,7 +98,45 @@ their own clients. Inject a client configured otherwise to change either.
 
 async sub async_request_f {
   my ( $self, $request, %opts ) = @_;
-  return await $self->_async_http->do_request( request => $request, %opts );
+  return await $self->_async_do_request_f( request => $request, %opts );
+}
+
+# Every async request core sends goes through here (karr k278, ADR 0027).
+# Net::Async::HTTP sets no timeout of its own, so a provider that accepts and
+# never answers left the Future pending forever. When the engine has a
+# user_agent_timeout it becomes Net::Async::HTTP's per-request timeout: the
+# total time for a plain request, the time without a byte (stall_timeout) for
+# a streaming one (on_header), where a long steady stream is legitimate. The
+# failure is rewritten to name the engine and the URL (query and userinfo
+# dropped: Gemini carries its key in the query). A caller's own timeout /
+# stall_timeout option wins. The sync shim already has the timeout on its
+# LWP user agent, and an injected client of another class keeps its own.
+sub _async_do_request_f {
+  my ( $self, %args ) = @_;
+  my $http = $self->_async_http;
+  my $secs = $self->can('has_user_agent_timeout') && $self->has_user_agent_timeout
+    ? $self->user_agent_timeout : 0;
+  return $http->do_request(%args)
+    unless $secs && blessed($http) && $http->isa('Net::Async::HTTP')
+      && !exists $args{timeout} && !exists $args{stall_timeout};
+
+  my $stream = $args{on_header} ? 1 : 0;
+  my $uri    = $args{request}->uri->clone;
+  $uri->query(undef);
+  $uri->fragment(undef);
+  $uri->userinfo(undef) if $uri->can('userinfo');
+  my $what = ref($self) . ': ' . ( $stream ? 'streaming request' : 'request' ) . " to $uri";
+
+  return $http->do_request( %args, ( $stream ? 'stall_timeout' : 'timeout' ) => $secs )
+    ->else( sub {
+      my ( $message, $category, @details ) = @_;
+      return Future->fail(@_)
+        unless defined $category && ( $category eq 'timeout' || $category eq 'stall_timeout' );
+      my $text = $category eq 'timeout'
+        ? "$what timed out after ${secs}s"
+        : "$what timed out after ${secs}s without data ($message)";
+      return Future->fail( "$text\n", $category, @details );
+    } );
 }
 
 =method async_request_f
@@ -123,6 +163,15 @@ synchronous fallback it B<resolves> with the 500 response LWP synthesizes
 future does not fail. Either way the call did not succeed, so always check
 C<is_success>; do not rely on a failed future alone to catch a dead endpoint.
 See ADR 0027 for the parity scope.
+
+When the engine has a L<Langertha::Role::HTTP/user_agent_timeout> and the
+backend is a L<Net::Async::HTTP>, it is applied here like on the engine's own
+C<_f> calls: as the total C<timeout> for a plain request, as the
+C<stall_timeout> (time without a byte) when C<on_header> is given. On expiry
+the future B<fails> with C<< <engine class>: request to <url> timed out after
+Ns >> (query string and userinfo left out of the URL) and the category
+C<timeout> or C<stall_timeout>. Passing your own C<timeout> or
+C<stall_timeout> option overrides it.
 
 Any extra named options (such as C<on_header> for streaming) are passed to
 C<do_request> unchanged. The backend object itself is not exposed; see

@@ -110,7 +110,7 @@ async sub poll_metrics_f {
 
   my $request = HTTP::Request->new(GET => $url);
 
-  my $response = await $self->_async_http->do_request(
+  my $response = await $self->_async_do_request_f(
     request => $request,
   );
 
@@ -194,7 +194,7 @@ async sub export_otlp_f {
   $log->debugf("[%s] exporting %d records to %s",
     ref($self), scalar(@$records), $endpoint);
 
-  my $response = await $self->_async_http->do_request(
+  my $response = await $self->_async_do_request_f(
     request => $request,
   );
 

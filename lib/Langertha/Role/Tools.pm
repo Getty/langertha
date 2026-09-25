@@ -600,7 +600,7 @@ async sub chat_with_tools_f {
       ref $self, $iteration, $self->tool_max_iterations);
 
     my $request = $self->build_tool_chat_request($conversation, $formatted_tools);
-    my $response = await $self->_async_http->do_request(request => $request);
+    my $response = await $self->_async_do_request_f(request => $request);
 
     unless ($response->is_success) {
       die "".(ref $self)." tool chat request failed: ".$response->status_line;

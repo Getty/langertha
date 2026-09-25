@@ -231,7 +231,7 @@ async sub simple_chat_f {
   $conversation = await $self->_run_plugin_before_llm_call($conversation, 1);
 
   my $request = $engine->chat_request($conversation, $self->_extra);
-  my $response = await $engine->_async_http->do_request(
+  my $response = await $engine->_async_do_request_f(
     request => $request,
   );
   unless ($response->is_success) {
@@ -417,7 +417,7 @@ async sub simple_chat_with_tools_f {
 
     my $request = $engine->build_tool_chat_request($conversation, $formatted_tools, $self->_extra);
 
-    my $response = await $engine->_async_http->do_request(request => $request);
+    my $response = await $engine->_async_do_request_f(request => $request);
     unless ($response->is_success) {
       die "" . (ref $engine) . " tool chat request failed: " . $response->status_line;
     }

@@ -913,7 +913,7 @@ async sub chat_f {
     ( %$controls ? ( controls => $controls ) : () ),
     %opts );
 
-  my $response = await $self->_async_http->do_request( request => $request );
+  my $response = await $self->_async_do_request_f( request => $request );
 
   unless ($response->is_success) {
     die "".(ref $self)." request failed: ".$response->status_line;
@@ -1200,7 +1200,7 @@ async sub chat_stream_realtime_f {
   # the loop's read handler, where a die escapes the loop and leaves this
   # request pending (karr k194, ADR 0027).
   my ( $request_f, $stream_error );
-  $request_f = $self->_async_http->do_request(
+  $request_f = $self->_async_do_request_f(
     request => $request,
     on_header => sub {
       my ($response) = @_;

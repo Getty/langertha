@@ -172,3 +172,37 @@ a fetch that wins cancels its timer. With no loop (the `SyncHTTP` shim, an injec
 `user_agent`'s. The chat request itself still has no timeout on Net::Async::HTTP. The attribute is
 separate from `user_agent_timeout` because that one bounds a whole LLM request (often minutes) and
 has no default.
+
+## Update (k278 — `user_agent_timeout` bounds async requests too)
+
+Revises the k276 sentence "the chat request itself still has no timeout on Net::Async::HTTP".
+`user_agent_timeout` used to reach only the LWP user agent, so on Net::Async::HTTP a provider that
+accepts and never answers (or stops mid-stream) left the Future pending forever, inside the loop
+knarr/skeid/raider serve everything else from. Every async request core sends (`chat_f`,
+`chat_stream_realtime_f`, `chat_with_tools_f`, `Langertha::Chat`, `MetricsPoll`, and the public
+`async_request_f` of ADR 0028) now goes through one private helper, `_async_do_request_f`, which —
+when the attribute is set and the backend `isa Net::Async::HTTP` — passes it as Net::Async::HTTP's
+own per-request option, so no extra timer race is needed (the library already cancels and closes
+the connection):
+
+- **plain request → `timeout`** (total time). For a non-streaming LLM reply the server is silent
+  until it is done, so total and inactivity are practically the same.
+- **streaming (`on_header`) → `stall_timeout`** (no byte for N s, reset on every read/write). A
+  long but steady stream is legitimate; a total cap would cut off long generations.
+
+The failure is rewritten to `<engine class>: request to <url> timed out after Ns` (streaming:
+`streaming request … timed out after Ns without data (Stalled while …)`), keeping Net::Async::HTTP's
+category (`timeout` / `stall_timeout`) as the second failure value; the URL loses query string,
+fragment and userinfo (Gemini carries its key in `?key=`). Other failures pass through unchanged. A
+caller's own `timeout` / `stall_timeout` option to `async_request_f` wins. The `SyncHTTP` shim is
+untouched (the timeout is already on its `user_agent`), and an injected client of another class
+keeps its own timeout — core does not guess at its option names.
+
+**No default on async.** LWP's default is 180 s, but it is an *inactivity* timeout (per socket
+read), and the async backend has run without any timeout since it existed. A 180 s default would
+start failing long silent requests (non-streamed reasoning models, background Responses calls,
+knarr proxying them) that work today, on upgrade and without a code change. Unset therefore stays
+"no timeout" on Net::Async::HTTP; the sync/async parity is: same attribute, same number, applied on
+both backends when the user sets it. `0` also means no async timeout (Net::Async::HTTP would treat
+`0` as "fail immediately"). Content::Image prefetches keep their own `inline_image_fetch_timeout`
+(k276), which is not routed through the helper.
