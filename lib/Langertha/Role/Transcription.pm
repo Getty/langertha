@@ -3,6 +3,7 @@ package Langertha::Role::Transcription;
 our $VERSION = '0.503';
 use Moose::Role;
 use Carp qw( croak );
+use Scalar::Util qw( openhandle );
 
 requires qw(
   transcription_request
@@ -29,6 +30,62 @@ to the general C<model> attribute from L<Langertha::Role::Models>.
 
 =cut
 
+sub transcription_file_part {
+  my ( $self, $input, $filename ) = @_;
+  croak "".(ref $self).": no audio given for transcription" unless defined $input;
+  my $bytes;
+  if ( ref $input eq 'SCALAR' ) {
+    $bytes = $$input;
+  }
+  elsif ( openhandle($input) ) {
+    binmode $input;
+    local $/;
+    $bytes = readline $input;
+    croak "".(ref $self).": cannot read audio from filehandle: $!" unless defined $bytes;
+  }
+  elsif ( !ref $input && index( $input, "\0" ) >= 0 ) {
+    # No path contains a NUL byte, and nearly every audio container header
+    # does (RIFF sizes, ID3, OggS, fLaC) -- so this is content, and it never
+    # reaches open() or a file test. -- karr k287
+    $bytes = $input;
+  }
+  else {
+    return [ $input, defined $filename ? ( $filename ) : () ];
+  }
+  croak "".(ref $self).": audio content must be bytes, not a character string"
+    if utf8::is_utf8($bytes) && !utf8::downgrade( $bytes, 1 );
+  return [ undef, $filename // 'audio',
+    'Content-Type' => 'application/octet-stream', Content => $bytes ];
+}
+
+=method transcription_file_part
+
+    my $part = $engine->transcription_file_part($audio, $filename);
+
+Turns the audio argument of L</transcription> into the multipart file part.
+C<$audio> is one of:
+
+=over
+
+=item * a path to the audio file (a plain string);
+
+=item * a reference to a scalar holding the audio bytes: C<\$bytes>;
+
+=item * an open filehandle, read to the end in binary mode;
+
+=item * a plain string that contains a NUL byte, taken as the audio bytes
+(no path can contain one). Prefer C<\$bytes>: a short content without a NUL
+would be taken as a path.
+
+=back
+
+C<$filename> is the name sent with the part; it defaults to the basename of
+the path, and to C<audio> for in-memory content. Hosted APIs (OpenAI, Groq)
+detect the format from the filename's extension, so pass one such as
+C<speech.mp3> with in-memory audio.
+
+=cut
+
 sub transcription {
   my ( $self, $file_or_content, %extra ) = @_;
   return $self->transcription_request($file_or_content, %extra);
@@ -36,10 +93,13 @@ sub transcription {
 
 =method transcription
 
-    my $request = $engine->transcription($file_or_content, %extra);
+    my $request = $engine->transcription($audio, %extra);
+    my $request = $engine->transcription(\$bytes, filename => 'speech.mp3');
 
-Builds and returns a transcription HTTP request object for the given audio
-file path or content. Use L</simple_transcription> to execute the request
+Builds and returns a transcription HTTP request object for the given audio:
+a path, C<\$bytes>, or a filehandle (see L</transcription_file_part>).
+C<filename> in C<%extra> sets the uploaded filename; the other C<%extra> pairs
+are sent as form fields. Use L</simple_transcription> to execute the request
 and get the transcript directly.
 
 =cut
@@ -53,12 +113,13 @@ sub simple_transcription {
 
 =method simple_transcription
 
-    my $text = $engine->simple_transcription($file_or_content, %extra);
+    my $text = $engine->simple_transcription($audio, %extra);
     my $text = $engine->simple_transcription('/path/to/audio.mp3');
-    my $text = $engine->simple_transcription($audio_bytes, language => 'en');
+    my $text = $engine->simple_transcription(\$audio_bytes,
+        filename => 'audio.mp3', language => 'en');
 
-Sends a transcription request for the audio file or content and returns the
-transcript text. Blocks until the request completes. Additional options such as
+Sends a transcription request for the audio (a path, C<\$bytes> or a
+filehandle, see L</transcription_file_part>) and returns the transcript text. Blocks until the request completes. Additional options such as
 C<language> can be passed as C<%extra> key/value pairs.
 
 =cut

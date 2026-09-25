@@ -59,6 +59,12 @@ Revision history for Langertha
       repeated fields, so timestamp_granularities[] => [qw( word segment )]
       works; any other ArrayRef stays a file part.
 
+    - transcription and simple_transcription take in-memory audio as
+      documented: \$bytes, an open filehandle, or a string holding a NUL
+      byte (a path otherwise), with filename => 'speech.mp3' naming the
+      upload (default "audio"; hosted APIs detect the format from the
+      extension). Audio passed as a character string croaks.
+
     - Langertha::Chat without a system_prompt of its own sends the
       engine's system_prompt, as the engine itself would. A wrapper
       system_prompt still replaces the engine's; NousResearch's

@@ -99,4 +99,39 @@ my $multipart = sub {
   like($body, qr/; filename="\Q$name\E"\r\n/, 'decoded (character) filename is sent UTF-8 encoded');
 }
 
+# karr k287: simple_transcription($audio_bytes) is documented, so in-memory
+# audio must become the file part's content -- never a path handed to open()
+# (which croaked "Can't open file RIFF...").
+{
+  my $audio = "RIFF\0\x01\xff\xfeWAVEdata";
+  my $expected = sub {
+    my ( $filename ) = @_;
+    return $multipart->(
+      "Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\nContent-Type: application/octet-stream\r\n\r\n$audio",
+      "Content-Disposition: form-data; name=\"model\"\r\n\r\nmodel",
+    );
+  };
+  is($whisper->transcription(\$audio, filename => 'speech.wav')->content, $expected->('speech.wav'),
+    'scalar ref: bytes are the part content, filename from the filename option (not a form field)');
+  is($whisper->transcription(\$audio)->content, $expected->('audio'),
+    'scalar ref without filename: filename defaults to audio');
+
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  is($whisper->transcription($audio, filename => 'speech.wav')->content, $expected->('speech.wav'),
+    'plain string with a NUL byte is content, as the POD documents');
+  is(scalar @warnings, 0, 'and it never reaches open() (no "Invalid \\0 character in pathname")');
+
+  open my $fh, '<', \$audio or die $!;
+  is($whisper->transcription($fh, filename => 'speech.wav')->content, $expected->('speech.wav'),
+    'filehandle: read to the end, sent as content');
+
+  is($whisper->transcription($file, filename => 'renamed.wav')->content =~ /filename="([^"]+)"/ ? $1 : undef,
+    'renamed.wav', 'path with filename option: upload renamed, content still read from the path');
+
+  my $chars = "caf\x{e9} \x{2603}";
+  ok(!eval { $whisper->transcription(\$chars); 1 }, 'character string as audio content croaks');
+  like($@, qr/audio content must be bytes/, '... with a clear message');
+}
+
 done_testing;

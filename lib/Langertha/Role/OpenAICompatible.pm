@@ -486,8 +486,9 @@ sub transcription_operation_id { 'createTranscription' }
 
 sub transcription_request {
   my ( $self, $file, %extra ) = @_;
+  my $filename = delete $extra{filename};
   return $self->generate_request( $self->transcription_operation_id, sub { $self->transcription_response(shift) },
-    file => [ $file ],
+    file => $self->transcription_file_part( $file, $filename ),
     $self->transcription_model ? ( model => $self->transcription_model ) : (),
     %extra,
   );
@@ -495,9 +496,11 @@ sub transcription_request {
 
 =method transcription_request
 
-    my $request = $engine->transcription_request($file_path, %extra);
+    my $request = $engine->transcription_request($audio, %extra);
 
-Generates an OpenAI-format transcription request for the given audio file.
+Generates an OpenAI-format transcription request for the given audio (a path,
+C<\$bytes> or a filehandle; C<filename> in C<%extra> names the upload, see
+L<Langertha::Role::Transcription/transcription_file_part>).
 Uses C<transcription_model> (default: C<whisper-1>). Returns an HTTP
 request object.
 
