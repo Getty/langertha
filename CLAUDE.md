@@ -71,7 +71,7 @@ refactors:
 - **0019** — model-scoped capability corrections (amends 0002): declarative `model_capability_corrections` keyed on `chat_model` (layer 3)
 - **0020** — Open-Responses envelope as third composed role `Role::ResponsesCompatible` (OpenAIResponses + Perplexity, divergence hooks — six since k213)
 - **0021** — pairwise capability exclusions (tools + `response_format`) croak at the `chat_f`/streaming layer — mechanism superseded by 0024
-- **0022** — `RateLimit` resets split into typed instant (`*_reset_at`) + duration (`*_reset_after`), `undef` when the wire sent neither
+- **0022** — `RateLimit` resets split into typed instant (`*_reset_at`) + duration (`*_reset_after`), `undef` when the wire sent neither; `retry_after` seconds from `Retry-After`, errors (429) recorded before the croak (k300)
 - **0023** — per-model reasoning wire-truth is a typed `Reasoning::Profile` resolved via `for_model($id)`; carries `is_reasoning_model` (k186) and multi-digit guards (k196)
 - **0024** — pairwise capability exclusions are model-scoped (`model_capability_exclusions` on `Role::Chat`), engine-scoped on Groq/Cerebras
 - **0025** — `temperature` emission is gated on resolved reasoning effort for OpenAI reasoning models (drop+carp; `temperature=1` passes)
