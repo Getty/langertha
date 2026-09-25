@@ -27,6 +27,11 @@ Revision history for Langertha
       same reply: Gemini thought parts stay out of it, and a Mistral
       content-chunk list comes back as text instead of an array reference.
 
+    - Ollama keep_alive given as a plain number, also as a string such as
+      '-1' or '300', is sent as a JSON number (seconds, negative keeps the
+      model loaded); Ollama rejected the string form. Durations with a unit
+      such as '5m' stay strings.
+
     - Ollama native chat joins a message content given as an array of text
       parts into one string (newline-separated) instead of sending the array,
       which /api/chat rejects; OpenAI-style image_url parts go to images.
