@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T19:44:59Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T19:44:59Z
+created: 2026-09-25T19:38:49Z
+id: 283
+priority: low
+started: 2026-09-25T19:40:14Z
+status: done
+tags:
+- release
+- changes
+title: 'Changes: wrap/spacing cleanup in {{$NEXT}} (image_input + timeout/Gemini/Pricing
+  bullets)'
+updated: 2026-09-25T19:44:59Z
+---
+
+Pre-release audit (langertha-release-checker) after a171067. Three small style issues in the {{$NEXT}} section, none blocking:
+
+Changes:12 - the image_input bullet line "(verified with live image requests) and third-party ids on Perplexity. Gateways, self-hosted" is 98 chars, a clear outlier against the ~72-74 char wrap the rest of the paragraph (and file) uses. Looks like text was appended without rewrapping.
+
+Changes:66-69 - a double blank line between the user_agent_timeout bullet ("...backend still has no timeout.") and the "LM Studio native (/api/v1/chat)..." bullet, vs the single blank line convention used everywhere else in the file.
+
+Changes:82-85 - same double-blank-line issue between the Gemini array-content bullet ("...systemInstruction as its text.") and the "Langertha::Pricing rules take optional..." bullet.
+
+Fix: rewrap Changes:12 to the paragraphs surrounding wrap width; collapse both double blank lines to single. Re-run dzil build after editing (Text::Template/NextRelease do not catch wrap issues, only literal {{).
