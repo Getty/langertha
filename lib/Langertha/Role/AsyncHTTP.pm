@@ -28,7 +28,10 @@ sub _build__async_http {
   my $loaded     = eval { require Net::Async::HTTP; 1 };
   my $load_error = $@;
   if ($loaded) {
-    my $http = Net::Async::HTTP->new;
+    # No HTTP/1.1 pipelining: a request pipelined behind a long LLM stream
+    # waits for it anyway, and fails with "Connection closed" when that stream
+    # is aborted (karr k199, ADR 0027).
+    my $http = Net::Async::HTTP->new( pipeline => 0 );
     $self->_async_loop->add($http);
     return $http;
   }
@@ -70,7 +73,8 @@ pass C<< _async_http => $client >> at construction to bring your own client
 (any object with that method) and it is used verbatim.
 
 When not injected the builder selects, in order: L<Net::Async::HTTP> if it can
-be loaded (a real async client added to L</_async_loop>); otherwise
+be loaded (a real async client added to L</_async_loop>, built with
+C<< pipeline => 0 >>); otherwise
 L<Langertha::Request::SyncHTTP> over the engine's C<user_agent>, warning once
 per process. The warning names the caller's own C<_f> call site; if
 L<Net::Async::HTTP> is installed but fails to load (for example a missing
@@ -78,6 +82,15 @@ L<IO::Async> sub-dependency) it says so and includes the first line of the
 load error instead of claiming the module is unavailable. The sync fallback runs HTTP B<synchronously and sequentially>
 (blocking, no concurrency) — every C<_f> call still works and returns a
 L<Future>, but multiple calls awaited "in parallel" run one after another.
+
+The L<Net::Async::HTTP> client does not pipeline HTTP/1.1 requests: a request
+pipelined behind a long LLM stream would wait for it anyway, and would fail
+with C<Connection closed> if that stream were cancelled or aborted. It keeps
+the library's other defaults, including C<max_connections_per_host> (one
+keep-alive connection per host; the C<NET_ASYNC_HTTP_MAXCONNS> environment
+variable changes it), so concurrent requests on one engine are sent one after
+another on that connection. Concurrent requests through different engines use
+their own clients. Inject a client configured otherwise to change either.
 
 =cut
 
