@@ -8,12 +8,21 @@ use MIME::Base64 qw( encode_base64 decode_base64 );
 use Future;
 use Future::AsyncAwait;
 use Scalar::Util qw( blessed );
+use Socket qw( getaddrinfo getnameinfo inet_pton AF_INET AF_INET6 SOCK_STREAM
+  NI_NUMERICHOST NIx_NOSERV );
 
 with 'Langertha::Content';
 
 # The only schemes the inline fetch talks to (karr k325). data: URLs are
 # decoded locally, everything else croaks before any I/O.
 my @FETCH_SCHEMES = qw( http https );
+
+# The download cap when the caller passes none (karr k337): provider inline
+# image limits sit around 20 MB, and the body is held in memory.
+use constant DEFAULT_MAX_BYTES => 20_971_520;
+
+# Redirect hops the Net::Async::HTTP fetch follows itself, the LWP default.
+my $MAX_REDIRECTS = 7;
 
 =head1 SYNOPSIS
 
@@ -245,23 +254,25 @@ Builds an image block from an existing base64 string.
 
 # timeout => N comes from the engine's inline_image_fetch_timeout on the
 # request-build paths (karr k279). LWP cannot run without a timeout, so 0
-# leaves LWP's own default (180s) in place.
+# leaves LWP's own default (180s) in place. max_bytes / url_filter come from
+# inline_image_max_bytes / inline_image_url_filter (karr k337).
 sub ensure_base64 {
   my ( $self, %opt ) = @_;
   return $self->base64 if $self->has_base64;
   croak "ensure_base64: no url to fetch" unless $self->has_url;
   return $self->_inline_data_url if _is_data_url($self->url);
   $self->_check_fetch_scheme($self->url);
+  my %limit = _fetch_limits(%opt);
+  $self->_check_url_filter( $self->url, $limit{url_filter} );
 
   my $secs = $opt{timeout} // 30;
   require LWP::UserAgent;
-  # protocols_allowed also stops a redirect to any other scheme (karr k325).
-  my $ua = LWP::UserAgent->new(
+  my %state = ( checked => { _uri_key( $self->url ) => 1 } );   # vetted above
+  my $ua = $self->_guard_ua( LWP::UserAgent->new(
     agent => 'Langertha-Content-Image/'.$VERSION,
-    protocols_allowed => [@FETCH_SCHEMES],
     ( $secs ? ( timeout => $secs ) : () ),
-  );
-  return $self->_inline_fetched( $ua->get($self->url) );
+  ), \%limit, \%state );
+  return $self->_inline_fetched( $ua->get($self->url), \%limit, \%state );
 }
 
 # Async twin of ensure_base64 (karr k274): the GET goes through $http, any
@@ -270,44 +281,135 @@ sub ensure_base64 {
 # LWP. A transport failure and an error status fail the Future with the text
 # ensure_base64 croaks.
 async sub ensure_base64_f {
-  my ( $self, $http ) = @_;
+  my ( $self, $http, %opt ) = @_;
   return $self->base64 if $self->has_base64;
   croak "ensure_base64_f: no url to fetch" unless $self->has_url;
   return $self->_inline_data_url if _is_data_url($self->url);
   $self->_check_fetch_scheme($self->url);
   croak "ensure_base64_f requires a client with do_request"
     unless blessed($http) && $http->can('do_request');
+  my %limit = _fetch_limits(%opt);
+  $self->_check_url_filter( $self->url, $limit{url_filter} );
+
+  my %state = ( checked => { _uri_key( $self->url ) => 1 } );   # vetted above
+  if ( $http->isa('Net::Async::HTTP') ) {
+    my $response = await $self->_fetch_net_async_f( $http, \%limit );
+    return $self->_inline_fetched( $response, \%limit, \%state );
+  }
   # The sync LWP shim runs the engine's own user_agent, which allows every
-  # scheme LWP knows: fetch through a copy restricted like ensure_base64's, so
-  # a redirect to another scheme is refused on this path too (karr k325).
+  # scheme LWP knows and has no size cap: fetch through a copy guarded like
+  # ensure_base64's agent (karr k325, k337).
   if ( $http->isa('Langertha::Request::SyncHTTP')
     && blessed( $http->user_agent ) && $http->user_agent->isa('LWP::UserAgent') ) {
-    my $ua = $http->user_agent->clone;
-    $ua->protocols_allowed([@FETCH_SCHEMES]);
-    $http = Langertha::Request::SyncHTTP->new( user_agent => $ua );
+    $http = Langertha::Request::SyncHTTP->new(
+      user_agent => $self->_guard_ua( $http->user_agent->clone, \%limit, \%state ) );
+  }
+  else {
+    # Any other client follows redirects on its own terms: its chain is
+    # checked after the fact, and nothing from a refused hop is stored.
+    $state{check_chain} = 1;
   }
 
-  my $url = $self->url;
+  my $response = await $self->_fetch_one_f( $http, $self->url );
+  return $self->_inline_fetched( $response, \%limit, \%state );
+}
+
+# One GET through the async contract; a transport failure fails with the text
+# ensure_base64 croaks.
+sub _fetch_one_f {
+  my ( $self, $http, $url, %args ) = @_;
   require HTTP::Request;
   my $request = HTTP::Request->new( GET => $url,
     [ 'User-Agent' => 'Langertha-Content-Image/'.$VERSION ] );
-  my $response = await $http->do_request( request => $request )->else( sub {
+  my $orig = $self->url;
+  return $http->do_request( request => $request, %args )->else( sub {
     my ($err) = @_;
     $err =~ s/\s+\z//;
-    Future->fail("ensure_base64: failed to fetch $url: $err\n");
+    Future->fail("ensure_base64: failed to fetch $orig: $err\n");
   } );
-  return $self->_inline_fetched($response);
+}
+
+# Net::Async::HTTP (karr k337). Redirects are followed here, one hop at a
+# time with max_redirects => 0, so the scheme rule and the url filter see
+# every hop before it is requested. The body streams through on_header and is
+# counted; past the cap the request is abandoned: wait_any cancels it, which
+# closes the connection. That abort waits for the loop's next tick, because
+# the chunk callback runs inside the connection's read handler, where closing
+# the connection is not safe; a response that completes within the same read
+# is refused by the flag instead.
+async sub _fetch_net_async_f {
+  my ( $self, $http, $limit ) = @_;
+  require URI;
+  my $max = $limit->{max_bytes};
+  my $uri = URI->new( $self->url );
+  my $previous;
+  for my $hop ( 0 .. $MAX_REDIRECTS ) {
+    my $too_big;
+    my $abort = Future->new;
+    my %stream = $max ? ( on_header => sub {
+      my ($header) = @_;
+      my $trip = sub {
+        return if $too_big++;
+        $http->loop->later( sub { $abort->done unless $abort->is_ready } );
+      };
+      my $length = $header->content_length;
+      $trip->() if $header->is_success && defined $length && $length > $max;
+      return sub {
+        return $header unless @_;
+        return if $too_big;
+        $header->add_content( $_[0] ) if defined $_[0];
+        $trip->() if length( ${ $header->content_ref } ) > $max;
+        return;
+      };
+    } ) : ();
+    # Over the cap, whatever ends the fetch (the abort, or the server closing
+    # the connection first) ends in the size error.
+    my $response = await Future->wait_any(
+      $self->_fetch_one_f( $http, "$uri", max_redirects => 0, %stream ), $abort,
+    )->else( sub { $too_big ? Future->done : Future->fail(@_) } );
+    $self->_croak_too_big($max) if $too_big;
+    $response->previous($previous) if $previous;
+    my $location = $response->is_redirect && $response->header('Location');
+    return $response unless $location && $hop < $MAX_REDIRECTS;
+    $uri = URI->new_abs( $location, $uri );
+    $self->_check_fetch_scheme("$uri");
+    $self->_check_url_filter( "$uri", $limit->{url_filter} );
+    $previous = $response;
+  }
+  return;   # not reached: the last hop returns above
 }
 
 # Stores a fetched HTTP::Response as the inline payload (both doors above).
 sub _inline_fetched {
-  my ( $self, $response ) = @_;
+  my ( $self, $response, $limit, $state ) = @_;
+  $self->_refuse_url( @{$state}{qw( refused filter_error )} ) if $state->{refused};
   croak "ensure_base64: failed to fetch ".$self->url.": ".$response->status_line
     unless $response->is_success;
+  # LWP stops at max_size (Client-Aborted) or at the Content-Length check of
+  # _guard_ua (X-Died); a body from any other client is measured here (k337).
+  my $max  = $limit->{max_bytes};
+  my $died = $response->header('X-Died');
+  $self->_croak_too_big($max) if $max && ( $state->{too_big}
+    || ( $response->header('Client-Aborted') // '' ) eq 'max_size'
+    || ( $response->content_length // 0 ) > $max
+    || length( ${ $response->content_ref } ) > $max );
+  croak "ensure_base64: failed to fetch ".$self->url.": $died" if defined $died;
   # Whatever client ran the fetch, a body that came from another scheme (a
   # redirect it followed) is never stored (karr k325).
   my $final = $response->request && $response->request->uri;
   $self->_check_fetch_scheme("$final") if defined $final;
+  # A client that followed redirects on its own: every hop it took must pass
+  # the url filter too, or nothing is stored (karr k337).
+  if ( $limit->{url_filter} && $state->{check_chain} ) {
+    my @chain;
+    for ( my $hop = $response; $hop; $hop = $hop->previous ) {
+      unshift @chain, $hop->request->uri if $hop->request && $hop->request->uri;
+    }
+    for my $hop (@chain) {
+      $self->_check_url_filter( "$hop", $limit->{url_filter} )
+        unless $state->{checked}{ _uri_key($hop) }++;
+    }
+  }
 
   $self->base64(encode_base64($response->decoded_content(charset => 'none'), ''));
   unless ($self->has_media_type) {
@@ -319,10 +421,95 @@ sub _inline_fetched {
   return $self->base64;
 }
 
+# max_bytes (undef: the default cap, 0: none) and url_filter out of the
+# ensure_base64(_f) options.
+sub _fetch_limits {
+  my (%opt) = @_;
+  my $filter = $opt{url_filter};
+  croak "url_filter must be a CODE reference" if defined $filter && ref $filter ne 'CODE';
+  return ( max_bytes => $opt{max_bytes} // DEFAULT_MAX_BYTES, url_filter => $filter );
+}
+
+# The LWP agent of a fetch, guarded (karr k325, k337): only http/https, also
+# on redirects; max_size stops reading past the cap, and a Content-Length over
+# it stops before the body; request_prepare runs for the first request and for
+# every redirect hop before it connects, so a hop the url filter refuses is
+# never requested. LWP turns a die in either handler into a response (X-Died,
+# or a 400), so the verdict is kept in $state for _inline_fetched. A handler
+# rather than a redirect_ok override: that would mean reblessing the clone of
+# the engine's user_agent into a generated subclass.
+sub _guard_ua {
+  my ( $self, $ua, $limit, $state ) = @_;
+  $ua->protocols_allowed([@FETCH_SCHEMES]);
+  if ( my $max = $limit->{max_bytes} ) {
+    $ua->max_size($max);
+    $ua->add_handler( response_header => sub {
+      my ($response) = @_;
+      my $length = $response->content_length;
+      return unless defined $length && $length > $max;
+      $state->{too_big} = 1;
+      die "inline_image_max_bytes exceeded\n";
+    }, m_code => 2 );
+  }
+  if ( my $filter = $limit->{url_filter} ) {
+    $ua->add_handler( request_prepare => sub {
+      my ($request) = @_;
+      return if $state->{checked}{ _uri_key( $request->uri ) }++;
+      my ( $ok, $error ) = _filter_verdict( $filter, $request->uri );
+      return if $ok;
+      @{$state}{qw( refused filter_error )} = ( $request->uri->as_string, $error );
+      die "refused by inline_image_url_filter\n";
+    } );
+  }
+  return $ua;
+}
+
+# (allowed, error) for one URL: the filter gets a URI object and returns true
+# to allow; a filter that dies refuses, and its error is reported.
+sub _filter_verdict {
+  my ( $filter, $url ) = @_;
+  require URI;
+  my $ok;
+  return ( 0, $@ =~ s/\s+\z//r ) unless eval { $ok = $filter->( URI->new("$url") ); 1 };
+  return ( $ok ? 1 : 0, undef );
+}
+
+# A URL's canonical string, so a URL the filter already passed is not asked
+# (and resolved) twice.
+sub _uri_key {
+  require URI;
+  return URI->new("$_[0]")->canonical->as_string;
+}
+
+sub _check_url_filter {
+  my ( $self, $url, $filter ) = @_;
+  return unless $filter;
+  my ( $ok, $error ) = _filter_verdict( $filter, $url );
+  $self->_refuse_url( $url, $error ) unless $ok;
+  return;
+}
+
+sub _refuse_url {
+  my ( $self, $url, $error ) = @_;
+  my $class = ref $self || $self;
+  croak "$class refuses to fetch image URL $url: "
+    . ( defined $error ? "inline_image_url_filter died: $error" : 'rejected by inline_image_url_filter' );
+}
+
+sub _croak_too_big {
+  my ( $self, $max ) = @_;
+  my $class = ref $self || $self;
+  croak "$class image at ".$self->url." exceeds inline_image_max_bytes ($max)";
+}
+
 =method ensure_base64
 
     my $b64 = $img->ensure_base64;
     my $b64 = $img->ensure_base64( timeout => 5 );
+    my $b64 = $img->ensure_base64(
+      max_bytes  => 5_000_000,
+      url_filter => Langertha::Content::Image->deny_private_hosts,
+    );
 
 Returns the base64 payload, fetching the URL over HTTP if necessary.
 Populates C<media_type> from the response C<Content-Type> header when the
@@ -335,11 +522,29 @@ Any other scheme croaks before any I/O:
     (only http/https; use Content::Image->from_file for local files)
 
 A redirect to another scheme is not followed, and a fetch that ended on one
-anyway is not stored. The fetch does B<not> restrict which hosts an C<http>
-URL may point at: requests to private or internal addresses (SSRF) are the
-caller's responsibility. When image URLs come from untrusted input and the
-engine has to inline images, validate the host before the message reaches the
-engine, or pass images as base64.
+anyway is not stored.
+
+C<max_bytes> caps the download, C<20971520> (20 MiB) by default; C<0> means no
+cap. A C<Content-Length> over the cap stops the fetch before the body, and a
+body that grows past it stops reading there. Nothing is stored, and the call
+croaks:
+
+    Langertha::Content::Image image at https://... exceeds inline_image_max_bytes (20971520)
+
+C<url_filter> is a code reference that decides which URLs may be fetched,
+against server-side request forgery (SSRF) through image URLs from untrusted
+input. It gets each URL as a L<URI> object and returns true to allow it. It
+runs on the image URL before any I/O, and again on every redirect hop before
+that hop is requested. Without it, the default, every C<http> and C<https> host
+is fetched. A refused URL, or a filter that dies, croaks:
+
+    Langertha::Content::Image refuses to fetch image URL http://10.0.0.5/x.png:
+    rejected by inline_image_url_filter
+
+L</deny_private_hosts> builds a ready-made filter.
+L<Langertha::Role::Chat> passes the engine's
+L<Langertha::Role::Chat/inline_image_max_bytes> and
+L<Langertha::Role::Chat/inline_image_url_filter> as these two options.
 
 The fetch is a blocking L<LWP::UserAgent> GET that gives up after
 C<timeout> seconds of inactivity, C<30> by default. When
@@ -353,6 +558,7 @@ timeout.
 =method ensure_base64_f
 
     my $b64 = await $img->ensure_base64_f($http);
+    my $b64 = await $img->ensure_base64_f( $http, max_bytes => ..., url_filter => ... );
 
 The async L</ensure_base64>: returns a L<Future> of the base64 payload and
 fetches the URL through C<$http>, any client that answers the async
@@ -362,10 +568,131 @@ The scheme rules of L</ensure_base64> apply unchanged: a non-HTTP(S) URL fails
 the Future before any request, a C<data:> URL is decoded locally, and on the
 synchronous LWP fallback (L<Langertha::Request::SyncHTTP>) the fetch runs over
 a copy of its user agent restricted to C<http> and C<https>.
+
+C<max_bytes> and C<url_filter> work as on L</ensure_base64> and fail the
+Future with the same text. On L<Net::Async::HTTP> the body is counted as it
+arrives and the request is abandoned (its connection closed) once it passes
+the cap, and redirects (up to 7) are followed one hop at a time, so the filter
+sees each hop before it is requested. On the LWP fallback the copy of its user
+agent carries the cap and the filter. Any other client follows redirects on its
+own: there the filter sees the hops only after the fetch, and the payload of a
+fetch with a refused hop is not stored; the cap is checked on the finished
+body.
 The C<_f> methods of L<Langertha::Role::Chat> call it with the engine's backend
 for every URL image the engine has to inline, before the request is built.
 
 =cut
+
+# --- SSRF filter (karr k337) ---
+
+sub deny_private_hosts {
+  my ( $class, %opt ) = @_;
+  my $resolver = $opt{resolver} // \&_resolve_host;
+  croak "deny_private_hosts: resolver must be a CODE reference" unless ref $resolver eq 'CODE';
+  return sub {
+    my ($uri) = @_;
+    my $host = eval { $uri->host };
+    return 0 unless defined $host && length $host;
+    my @addresses = $resolver->($host);
+    return 0 unless @addresses;
+    for my $address (@addresses) {
+      return 0 if _is_private_address($address);
+    }
+    return 1;
+  };
+}
+
+=method deny_private_hosts
+
+    my $engine = Langertha::Engine::Gemini->new(
+      api_key                 => $key,
+      inline_image_url_filter => Langertha::Content::Image->deny_private_hosts,
+    );
+
+    # With a resolver of your own (tests, a caching resolver):
+    my $filter = Langertha::Content::Image->deny_private_hosts(
+      resolver => sub { my ($host) = @_; return @ip_addresses },
+    );
+
+Returns a URL filter for L</ensure_base64>'s C<url_filter> (and the engine's
+L<Langertha::Role::Chat/inline_image_url_filter>) that refuses hosts on
+internal networks. It resolves the URL's host and refuses it when any address
+it resolves to is one of:
+
+=over
+
+=item * IPv4 C<0.0.0.0/8> (this host), C<127.0.0.0/8> (loopback), C<10.0.0.0/8>,
+C<172.16.0.0/12>, C<192.168.0.0/16> (RFC 1918), C<100.64.0.0/10> (carrier-grade
+NAT), C<169.254.0.0/16> (link-local, including the cloud metadata address
+C<169.254.169.254>), C<224.0.0.0/3> (multicast, reserved, broadcast)
+
+=item * IPv6 C<::/96> (unspecified, loopback C<::1>, IPv4-compatible),
+C<fe80::/10> (link-local), C<fec0::/10> (site-local), C<fc00::/7> (unique local,
+including the AWS metadata address C<fd00:ec2::254>), C<ff00::/8> (multicast), and
+an IPv4-mapped C<::ffff:a.b.c.d> whose IPv4 address is in the list above
+
+=back
+
+A host that does not resolve, and a URL without a host, are refused too.
+
+The default resolver is the system's C<getaddrinfo> (L<Socket>); an IP literal
+is not looked up. The lookup blocks, also on the C<_f> paths, where it holds
+the event loop for its duration. C<resolver> replaces it: a code reference
+that gets the host name and returns its addresses as strings.
+
+B<DNS rebinding:> the host is resolved here, before the HTTP client connects,
+and the client resolves it again on its own. A name whose DNS answer changes
+between the two lookups (a short TTL pointing first at a public address, then
+at C<127.0.0.1>) passes the filter and still reaches the internal address.
+The filter stops URLs that name or resolve to an internal address; for a
+guarantee against rebinding, fetch through an egress proxy or firewall that
+enforces the same rule on the connection itself.
+
+=cut
+
+sub _resolve_host {
+  my ($host) = @_;
+  my ( $err, @found ) = getaddrinfo( $host, undef, { socktype => SOCK_STREAM } );
+  return () if $err;
+  my @addresses;
+  for my $entry (@found) {
+    my ( $name_err, $ip ) = getnameinfo( $entry->{addr}, NI_NUMERICHOST, NIx_NOSERV );
+    push @addresses, $ip unless $name_err;
+  }
+  return @addresses;
+}
+
+# True for an address on an internal network (the deny_private_hosts list),
+# and for anything that does not parse as an IP address.
+sub _is_private_address {
+  my ($address) = @_;
+  ( my $ip = $address // '' ) =~ s/%.*\z//s;   # IPv6 zone index
+  $ip =~ s/\A\[(.*)\]\z/$1/;
+  if ( defined( my $v4 = inet_pton( AF_INET, $ip ) ) ) {
+    return _is_private_v4($v4);
+  }
+  my $v6 = inet_pton( AF_INET6, $ip );
+  return 1 unless defined $v6;
+  return _is_private_v4( substr $v6, 12 ) if substr( $v6, 0, 12 ) eq ( "\0" x 10 ) . "\xff\xff";
+  return 1 if substr( $v6, 0, 12 ) eq "\0" x 12;
+  my ( $first, $second ) = unpack 'C2', $v6;
+  return 1 if ( $first & 0xfe ) == 0xfc;                          # fc00::/7
+  return 1 if $first == 0xfe && ( $second & 0x80 ) == 0x80;       # fe80::/10, fec0::/10
+  return 1 if $first == 0xff;                                     # ff00::/8
+  return 0;
+}
+
+sub _is_private_v4 {
+  my ($packed) = @_;
+  my ( $first, $second ) = unpack 'C2', $packed;
+  return 1 if $first == 0 || $first == 10 || $first == 127;
+  return 1 if $first == 169 && $second == 254;
+  return 1 if $first == 172 && ( $second & 0xf0 ) == 16;
+  return 1 if $first == 192 && $second == 168;
+  return 1 if $first == 100 && ( $second & 0xc0 ) == 64;
+  return 1 if $first >= 224;
+  return 0;
+}
 
 # --- Serializers ---
 

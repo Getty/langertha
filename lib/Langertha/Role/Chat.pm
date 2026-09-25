@@ -371,7 +371,8 @@ sub _content_block {
     && ( $opt{inline} || $method =~ /\Ato_(?:gemini|ollama|lmstudio)\z/ );
   my $out;
   return $out if eval {
-    $block->ensure_base64( timeout => $self->inline_image_fetch_timeout ) if $prefetch;
+    $block->ensure_base64( timeout => $self->inline_image_fetch_timeout,
+      $self->_inline_image_fetch_limits ) if $prefetch;
     $out = $block->$method(@opt);
     1;
   };
@@ -412,6 +413,61 @@ request, it is the LWP timeout of L<Langertha::Content::Image/ensure_base64>
 own default of 180 seconds, because LWP cannot run without a timeout.
 
 =cut
+
+has inline_image_max_bytes => (
+  isa => 'Int',
+  is => 'ro',
+  default => 20_971_520,
+);
+
+=attr inline_image_max_bytes
+
+The most bytes a URL image fetch may download on an engine that has to inline
+images (see L</content_format>). Defaults to C<20971520> (20 MiB), about the
+largest inline image providers take; C<0> removes the cap. Enforced on every
+backend: a C<Content-Length> over the cap stops the fetch before the body, and
+a body that grows past it stops the download (L<Net::Async::HTTP> closes the
+connection, LWP stops reading). The call then fails with the engine-named
+inline-image error carrying
+
+    Langertha::Content::Image image at <url> exceeds inline_image_max_bytes (<n>)
+
+on the synchronous and the C<_f> paths alike.
+See L<Langertha::Content::Image/ensure_base64>.
+
+=cut
+
+has inline_image_url_filter => (
+  isa => 'Maybe[CodeRef]',
+  is => 'ro',
+);
+
+=attr inline_image_url_filter
+
+    inline_image_url_filter => Langertha::Content::Image->deny_private_hosts,
+    inline_image_url_filter => sub { my ($uri) = @_; $uri->host eq 'img.example.com' },
+
+Optional code reference that decides which image URLs an engine that has to
+inline images may fetch, against server-side request forgery when image URLs
+come from untrusted input (a gateway forwarding its clients' messages). It gets
+a L<URI> object and returns true to allow the fetch. It runs on the image URL
+before any request and on every redirect hop before that hop is requested; a
+refusal fails the call with the engine-named inline-image error. Unset by
+default: every C<http> and C<https> URL is fetched.
+L<Langertha::Content::Image/deny_private_hosts> returns a filter that refuses
+loopback, link-local, private, carrier-grade NAT and cloud metadata addresses;
+read its DNS-rebinding caveat. Only the fetches Langertha makes are filtered:
+engines that pass an image URL through to the provider (OpenAI, Anthropic)
+leave the fetch to the provider.
+
+=cut
+
+# The ensure_base64(_f) options for the two attributes above (karr k337).
+sub _inline_image_fetch_limits {
+  my ($self) = @_;
+  return ( max_bytes => $self->inline_image_max_bytes,
+    url_filter => $self->inline_image_url_filter );
+}
 
 # The _f paths fetch every URL image this engine has to inline through its
 # async backend (_async_http: injected client, Net::Async::HTTP or the sync
@@ -467,7 +523,7 @@ async sub _prefetch_inline_images_f {
   my $secs = $self->inline_image_fetch_timeout;
   await Future->needs_all( map {
     my $url   = $_->url;
-    my $fetch = $_->ensure_base64_f($http);
+    my $fetch = $_->ensure_base64_f( $http, $self->_inline_image_fetch_limits );
     $fetch = Future->wait_any( $fetch, $loop->delay_future( after => $secs )
       ->then_fail("ensure_base64: failed to fetch $url: timed out after ${secs}s\n") )
       if $loop && $secs;

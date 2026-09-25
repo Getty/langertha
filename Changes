@@ -17,6 +17,13 @@ Revision history for Langertha
       resource links, audio and other MIME types become text placeholders.
       A result with only structuredContent sends it as a JSON string.
 
+    - Security: inline image fetches are capped by the new engine attribute
+      inline_image_max_bytes (default 20 MiB, 0 for no cap) on every backend;
+      a larger image fails the call. The new optional inline_image_url_filter
+      vets each image URL and redirect hop before it is requested, and
+      Langertha::Content::Image->deny_private_hosts is a ready-made filter
+      against loopback, private, link-local and cloud metadata addresses.
+
     - clear_models_cache also resets the models attribute, so the next access
       to models fetches the list again. Gemini responses fill Response.id from
       responseId.
@@ -29,8 +36,7 @@ Revision history for Langertha
       URLs (data: URLs are decoded in process). A file:, ftp: or other URL,
       given to from_url or as an image_url part in a message, croaks before
       any I/O instead of sending a local file to the provider, and a redirect
-      to another scheme is not followed. Restricting private hosts (SSRF)
-      remains the caller's job.
+      to another scheme is not followed.
 
     - The MCP tool loops (chat_with_tools_f, and Langertha::Chat's
       simple_chat_with_tools and simple_chat_with_tools_f) fail on a response

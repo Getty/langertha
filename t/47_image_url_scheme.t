@@ -25,7 +25,7 @@ use Langertha::Engine::Ollama;
 # only http/https (data: URLs are decoded in process); every other scheme
 # croaks with one message on every path before any I/O, and a redirect to
 # another scheme is not followed (LWP protocols_allowed, also on the sync
-# LWP fallback of the _f paths). SSRF to private hosts stays out of scope.
+# LWP fallback of the _f paths). SSRF to private hosts: t/47_image_fetch_limits.t (k337).
 
 my $json = JSON::MaybeXS->new( canonical => 1, utf8 => 1 );
 my $PNG  = "\x89PNG-k325";
