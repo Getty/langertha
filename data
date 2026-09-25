@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-25T20:57:54Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:57:54Z
+created: 2026-09-25T20:20:51Z
+id: 290
+priority: medium
+started: 2026-09-25T20:23:39Z
+status: done
+tags:
+- embedding
+- imagegen
+- error-handling
+- bug
+title: Embedding/image responses return undef silently on empty or missing data; malformed
+  JSON croak lacks engine context
+updated: 2026-09-25T20:57:54Z
+---
+
+The k171 guard only covers a non-ARRAY data in OpenAICompatible::embedding_response. Reproduced offline:
+- OpenAICompatible::embedding_response on 200 {"data":[]} -> returns undef, no error (OpenAICompatible.pm:278-279).
+- Ollama::embedding_response on 200 {"error":"model not found"} or {"embeddings":[]} -> undef, no error (Engine/Ollama.pm:205-210). Ollama returns some load errors with 200 in older versions; either way an absent vector is not a result.
+- OpenAICompatible::image_response returns $data->{data} unchecked (OpenAICompatible.pm:751-755): missing/empty data -> undef/[] with no error.
+- Role::HTTP::parse_response (Role/HTTP.pm:141) lets JSON::MaybeXS croak raw: "malformed JSON string ... at Role/HTTP.pm line 141" with no engine class or status — unlike the non-2xx path which names the engine. Hits embeddings, transcription, images (and chat) the same way.
+
+Downstream: Raider stores undef vectors in _session_embeddings and silently degrades search (langertha-raider lib/Langertha/Raider.pm:1597).
+Fix: croak "<class> embedding response contained no vector (error: ...)" for empty data / missing embeddings (surface ->{error}); same for image data; wrap decode in parse_response to croak "<class> response is not valid JSON: <truncated body>". Extend t/44_malformed_response_guards.t.
+
+2026-09-25 20:52 Implemented in 0b2b5f0: no-vector/no-image croaks, parse_response names engine on bad JSON.
