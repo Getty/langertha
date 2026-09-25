@@ -11,8 +11,13 @@ Revision history for Langertha
       TSystems, the qwen3.6, qwen3.8 and gemma4 models on AKIOpenAI
       (verified with live image requests) and third-party ids on Perplexity. Gateways, self-hosted
       servers and the /anthropic shims
-      make no claim. The flag never blocks sending an image. Manifests
-      built by Langertha::Manifest::Builder publish it per model.
+      make no static claim. $engine->probe_model_capabilities_f (sync:
+      probe_model_capabilities) reads image_input per model from the
+      provider's own metadata on OpenRouter, Mistral, Ollama, OllamaOpenAI,
+      LMStudio, LMStudioOpenAI and LlamaCpp; a probed answer beats the
+      static one. supports() never probes by itself. The flag never blocks
+      sending an image. Manifests built by Langertha::Manifest::Builder
+      publish it per model, probed answers included.
 
     - Langertha::Content::Image reaches more wires intact. OpenAIResponses
       and Perplexity send input_text / input_image parts (image_url as a

@@ -2,6 +2,9 @@ package Langertha::Role::Capabilities;
 # ABSTRACT: Engine-capability registry derived from composed roles
 our $VERSION = '0.503';
 use Moose::Role;
+use Carp qw( croak );
+use Future::AsyncAwait;
+use Langertha::ModelProbe;
 
 =head1 SYNOPSIS
 
@@ -94,7 +97,16 @@ sub engine_capabilities {
   # model_capability_corrections; it refines the role-derived base for the
   # currently selected chat_model. Engine-WIDE corrections stay in
   # `around engine_capabilities` (the outer endpoint-reality gate, layer 2).
+  # The wire set (layer 1) before any model-scoped refinement: a learned fact
+  # can re-assert only a flag the composed roles grant (ADR 0032).
+  my %wire = %caps;
   $self->_apply_model_capability_corrections(\%caps);
+  # Learned layer (ADR 0032): facts the engine read from the provider's own
+  # model metadata (probe_model_capabilities_f), for this chat_model. They
+  # run after the static per-model table, so for a model the probe reported,
+  # the provider's statement beats the static default in both directions.
+  # Empty until the caller probes: supports() never does network I/O.
+  $self->_apply_learned_model_capabilities( \%caps, \%wire );
   return \%caps;
 }
 
@@ -113,7 +125,7 @@ sub _apply_model_capability_corrections {
   # default-deny catch-all row (qr/\A/, Engine::MiniMax, ADR 0019 k209 Update)
   # holds even for model => ''; every family row needs a real id to match.
   return unless $self->can('chat_model');
-  my $model = $self->chat_model // '';
+  my $model = $self->_capability_model // '';
   while ( @corrections >= 2 ) {
     my ( $matcher, $overrides ) = splice @corrections, 0, 2;
     my $hit = ref $matcher eq 'Regexp' ? ( $model =~ $matcher )
@@ -129,6 +141,185 @@ sub _apply_model_capability_corrections {
   return;
 }
 
+# The model the capability picture is evaluated for. An engine without a
+# default model (OpenRouter, OllamaOpenAI, Groq) croaks when chat_model is
+# built with no model configured. For the capability picture that means "no
+# model", which the table walk matches as '' (ADR 0019 k209 rule), not an
+# error of supports() (ADR 0032).
+sub _capability_model {
+  my ( $self ) = @_;
+  return undef unless $self->can('chat_model');
+  my $model;
+  my $ok = eval { $model = $self->chat_model; 1 };
+  return $ok ? $model : undef;
+}
+
+has _learned_model_capabilities => (
+  is       => 'ro',
+  isa      => 'HashRef',
+  default  => sub { {} },
+  writer   => '_set_learned_model_capabilities',
+  init_arg => undef,
+);
+
+sub _apply_learned_model_capabilities {
+  my ( $self, $caps, $wire ) = @_;
+  my $learned = $self->_learned_model_capabilities;
+  return unless %$learned;
+  my $model = $self->_capability_model;
+  return unless defined $model && ref $learned->{$model} eq 'HASH';
+  my $facts = $learned->{$model};
+  for my $cap ( keys %$facts ) {
+    if ( $facts->{$cap} ) { $caps->{$cap} = 1 if $wire->{$cap} }
+    else                  { delete $caps->{$cap} }
+  }
+  return;
+}
+
+sub learned_model_capabilities {
+  my ( $self ) = @_;
+  my $learned = $self->_learned_model_capabilities;
+  return { map { $_ => { %{ $learned->{$_} } } } keys %$learned };
+}
+
+sub clear_learned_model_capabilities {
+  my ( $self ) = @_;
+  $self->_set_learned_model_capabilities( {} );
+  return;
+}
+
+# Engine hooks (ADR 0032). An engine that can read its provider's model
+# metadata names the document format (a Langertha::ModelProbe tag) and its
+# URL. The default is no probe: probe_model_capabilities_f resolves to {}
+# without a request.
+sub model_metadata_format { return undef }
+sub model_metadata_url    { return undef }
+
+async sub probe_model_capabilities_f {
+  my ( $self, %args ) = @_;
+  my $format = $self->model_metadata_format;
+  return {} unless defined $format;
+  my $url = $self->model_metadata_url;
+  croak ref($self) . ": model_metadata_format '$format' without a model_metadata_url"
+    unless defined $url && length $url;
+
+  my @models;
+  if ( exists $args{models} ) {
+    croak ref($self) . ': probe_model_capabilities_f models must be an ArrayRef'
+      unless ref $args{models} eq 'ARRAY';
+    @models = grep { defined && length } @{ $args{models} };
+  }
+  else {
+    my $model = $self->_capability_model;
+    @models = ( $model ) if defined $model && length $model;
+  }
+
+  my $probe     = 'Langertha::ModelProbe';
+  my $method    = $probe->http_method($format);
+  my $per_model = $probe->per_model($format);
+  # A per-model document (Ollama /api/show) takes one request per model and
+  # needs a model; a server-wide document is one request whatever was asked.
+  my @batches = $per_model ? ( map { [ $_ ] } @models ) : ( [ @models ] );
+  my %allowed = map { $_ => 1 } $probe->probed_capabilities;
+
+  my %learned;
+  for my $batch (@batches) {
+    my $request = $self->generate_http_request( $method, $url, sub { $_[0] },
+      $per_model ? ( model => $batch->[0] ) : () );
+    my $response = await $self->_async_do_request_f( request => $request );
+    unless ( $response->is_success ) {
+      my $body = $self->can('_error_response_body') ? $self->_error_response_body($response) : '';
+      croak ref($self) . ' model metadata probe failed: ' . $response->status_line
+        . ( length $body ? " - $body" : '' );
+    }
+    my $facts = $probe->extract( $format, $self->json->decode( $response->content ), $batch );
+    for my $model ( keys %$facts ) {
+      for my $cap ( grep { $allowed{$_} } keys %{ $facts->{$model} } ) {
+        $learned{$model}{$cap} = $facts->{$model}{$cap} ? 1 : 0;
+      }
+    }
+  }
+
+  # A new HashRef, never a mutation in place: clone_object (Manifest::Builder)
+  # shares the slot, and a clone that probes must not write into its source.
+  my $current = $self->learned_model_capabilities;
+  for my $model ( keys %learned ) {
+    $current->{$model} = { %{ $current->{$model} // {} }, %{ $learned{$model} } };
+  }
+  $self->_set_learned_model_capabilities($current);
+  return \%learned;
+}
+
+sub probe_model_capabilities {
+  my ( $self, %args ) = @_;
+  # ->get drives the loop the pending future belongs to, or returns at once
+  # on the synchronous fallback (ADR 0027), as poll_metrics does.
+  return $self->probe_model_capabilities_f(%args)->get;
+}
+
+=method probe_model_capabilities_f
+
+    my $learned = await $engine->probe_model_capabilities_f;
+    my $learned = await $engine->probe_model_capabilities_f( models => [ 'llava', 'llama3.3' ] );
+    # { 'llava' => { image_input => 1 }, 'llama3.3' => { image_input => 0 } }
+
+    $engine->supports('image_input');   # now answers from the learned fact
+
+Asks the provider's own model metadata endpoint which capabilities a model has
+and stores the answer on this engine instance (ADR 0032). It is the only way
+facts enter the learned layer: C<supports> and L</engine_capabilities> never
+send a request.
+
+Without C<models>, the probe asks about C<chat_model> (nothing when no model is
+configured). Endpoints that describe every model in one document (OpenRouter,
+Mistral, LM Studio) are fetched once and every model they describe is learned;
+Ollama's C</api/show> is asked once per model; llama.cpp's C</props> describes
+the one loaded model, so its fact is stored for every id that was asked about.
+
+Resolves to C<< { $model_id => { $capability => 0|1 } } >>, the facts learned by
+this call; they are merged into the engine's store. Only the capabilities in
+L<Langertha::ModelProbe/probed_capabilities> are learned (C<image_input>). A
+model the document does not describe, or describes without the field, gets no
+fact and keeps its static answer.
+
+Engines that implement a probe: L<Langertha::Engine::OpenRouter>,
+L<Langertha::Engine::Mistral>, L<Langertha::Engine::Ollama>,
+L<Langertha::Engine::OllamaOpenAI>, L<Langertha::Engine::LMStudio>,
+L<Langertha::Engine::LMStudioOpenAI> and L<Langertha::Engine::LlamaCpp>. On
+every other engine the method exists and resolves to an empty HashRef without
+a request. The future fails with C<< <engine>: model metadata probe failed:
+<status> >> on a non-success HTTP answer.
+
+=method probe_model_capabilities
+
+    my $learned = $engine->probe_model_capabilities;
+
+Synchronous wrapper around L</probe_model_capabilities_f> (blocks with
+C<< ->get >>).
+
+=method learned_model_capabilities
+
+    my $learned = $engine->learned_model_capabilities;
+    # { 'openai/gpt-4o' => { image_input => 1 }, ... }
+
+A copy of every fact probed so far on this instance, per model id.
+
+=method clear_learned_model_capabilities
+
+Forgets every probed fact; L</engine_capabilities> answers from the static
+layers again.
+
+=method model_metadata_format
+
+The L<Langertha::ModelProbe> format tag of this engine's model metadata, or
+C<undef> (the default) when the engine has no probe.
+
+=method model_metadata_url
+
+The URL L</probe_model_capabilities_f> requests, or C<undef> (the default).
+
+=cut
+
 =method engine_capabilities
 
     my $caps = $engine->engine_capabilities;
@@ -141,6 +332,15 @@ deliver at all, or add an ad-hoc flag — the outer gate); (3) it applies the
 engine's C<model_capability_corrections> for the currently selected
 C<chat_model>, refining the base where the wire reality is per-model rather
 than per-engine (ADR 0002 amendment, ADR 0019).
+
+After layer 3 comes the B<learned layer> (ADR 0032): facts that
+L</probe_model_capabilities_f> read from the provider's own model metadata for
+the current C<chat_model>. For a model the probe reported, the provider's
+statement wins over the static table in both directions; a learned C<1> can
+only re-assert a flag the composed roles grant (layer 1). The learned layer
+runs inside the base method, so the engine's C<around> (layer 2) still has the
+last word: a wire that cannot carry a field stays closed. The learned layer is
+empty until the caller probes, so this method never sends a request.
 
 A capability flag means B<the wire accepts the field>, not that any given
 model will honor it. For example C<reasoning_effort> being true says the

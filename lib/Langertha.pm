@@ -529,6 +529,10 @@ itself, on L<Langertha::Response/server_tool_calls> (never on C<tool_calls>)
 =item * L<Langertha::Content> / L<Langertha::Content::Image> -
 Provider-agnostic vision input
 
+=item * L<Langertha::ModelProbe> - Reads model-scoped capability facts
+(C<image_input>) from a provider's own model metadata, for
+L<Langertha::Role::Capabilities/probe_model_capabilities_f>
+
 =item * L<Langertha::RateLimit> - Normalized rate limit data from HTTP response headers
 
 =item * L<Langertha::Moment> - Instant reported by a provider

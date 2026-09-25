@@ -111,10 +111,21 @@ around engine_capabilities => sub {
     tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
     prompt_cache_key parallel_tool_use
   ) };
-  # image_input (k266, ADR 0019): self-hosted: the served model is launch state the client cannot see, so no claim.
-  delete $caps->{image_input};
   return $caps;
 };
+
+# image_input (k266, ADR 0019): self-hosted: the served model is launch state
+# the client cannot see, so no static claim. A layer-3 catch-all rather than a
+# layer-2 delete, so a fact probed from the server's /api/show can answer per
+# model (ADR 0032).
+sub model_capability_corrections {
+  return ( qr/\A/ => { image_input => 0 } );
+}
+
+sub model_metadata_format { 'ollama' }
+sub model_metadata_url {
+  return Langertha::ModelProbe->server_root_url( $_[0]->url ) . '/api/show';
+}
 
 __PACKAGE__->meta->make_immutable;
 

@@ -21,13 +21,20 @@ with map { 'Langertha::Role::'.$_ } qw(
   ImageInput
 );
 
-around engine_capabilities => sub {
-  my ( $orig, $self, @rest ) = @_;
-  my $caps = $self->$orig(@rest);
-  # image_input (k266, ADR 0019): self-hosted: the served model is launch state the client cannot see, so no claim.
-  delete $caps->{image_input};
-  return $caps;
-};
+# image_input (k266, ADR 0019): self-hosted: the served model is launch state
+# the client cannot see, so no static claim. A layer-3 catch-all rather than a
+# layer-2 delete, so a fact probed from /api/v1/models (capabilities.vision)
+# can answer per model (ADR 0032).
+sub model_capability_corrections {
+  return ( qr/\A/ => { image_input => 0 } );
+}
+
+sub model_metadata_format { 'lmstudio' }
+sub model_metadata_url {
+  my $url = $_[0]->url;
+  $url =~ s{/\z}{};
+  return $url . '/api/v1/models';
+}
 
 =head1 SYNOPSIS
 

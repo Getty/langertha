@@ -91,6 +91,12 @@ sub chat_operation_id { 'chat_completion_v1_chat_completions_post' }
 
 sub list_models_path { '/v1/models' }
 
+# The static table above is the answer until the caller probes: /v1/models
+# states capabilities.vision per model and alias, and a probed fact wins over
+# the table for the models it describes (ADR 0032).
+sub model_metadata_format { 'mistral' }
+sub model_metadata_url    { $_[0]->url . $_[0]->list_models_path }
+
 sub embedding_operation_id { 'embeddings_v1_embeddings_post' }
 
 __PACKAGE__->meta->make_immutable;

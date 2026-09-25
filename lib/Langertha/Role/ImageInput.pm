@@ -37,10 +37,16 @@ keep the flag and clear it for the listed text-only models
 the documented vision models;
 
 =item * gateways, self-hosted servers and the C</anthropic> shims clear it
-engine-wide: the model behind them is unknown to the client, so the engine
-makes no claim.
+for every model: the model behind them is unknown to the client, so the engine
+makes no static claim.
 
 =back
+
+The static answer can be replaced by what the provider says about its own
+models: L<Langertha::Role::Capabilities/probe_model_capabilities_f> reads the
+metadata endpoint of OpenRouter, Mistral, Ollama, OllamaOpenAI, LMStudio,
+LMStudioOpenAI and LlamaCpp and stores C<image_input> per model on the engine
+instance (ADR 0032). Nothing probes implicitly.
 
 The flag is advisory. Nothing blocks or strips an image when it is false; an
 image sent to an engine without the claim goes out on the wire as usual and the

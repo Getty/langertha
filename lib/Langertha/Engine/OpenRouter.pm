@@ -63,13 +63,16 @@ sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
 
-around engine_capabilities => sub {
-  my ( $orig, $self, @rest ) = @_;
-  my $caps = $self->$orig(@rest);
-  # image_input (k266, ADR 0019): a gateway: the model behind it is unknown to the client, so no claim.
-  delete $caps->{image_input};
-  return $caps;
-};
+# image_input (k266, ADR 0019): a gateway: the model behind it is unknown to
+# the client, so no static claim. The catch-all is a layer-3 row, not a
+# layer-2 delete, so a fact probed from /models (architecture.input_modalities)
+# can answer per model (ADR 0032).
+sub model_capability_corrections {
+  return ( qr/\A/ => { image_input => 0 } );
+}
+
+sub model_metadata_format { 'openrouter' }
+sub model_metadata_url    { $_[0]->url . $_[0]->list_models_path }
 
 __PACKAGE__->meta->make_immutable;
 
