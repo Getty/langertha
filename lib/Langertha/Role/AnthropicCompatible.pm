@@ -617,8 +617,8 @@ sub chat_stream_request {
     }
     elsif ( ref($rf) eq 'HASH' && ( $rf->{type} // '' ) eq 'json_object' ) {
       croak "".(ref $self)." cannot stream a json_object response_format: the "
-        . "first-party Claude Messages API has no native free-form JSON structured "
-        . "output, and the synthesized-tool fallback has no streaming lift. Use "
+        . "Messages endpoint has no native free-form JSON output (only json_schema "
+        . "via output_config.format), and the synthesized-tool fallback has no streaming lift. Use "
         . "chat_f/chat_request, or pass a json_schema response_format to stream "
         . "native structured output.";
     }

@@ -56,6 +56,15 @@ my $obj = body( 'chat_request', response_format => { type => 'json_object' } );
 ok( !exists $obj->{output_config}, 'kimi-k3 json_object: no output_config.format' );
 is( $obj->{tools}[0]{name}, '__langertha_response_format__', 'kimi-k3 json_object: synthetic tool' );
 
+# Streaming a json_object croaks on kimi-k3 as on first-party Anthropic, with a
+# message that does not claim to be first-party Claude (review M5).
+{
+  my $err = eval { body( 'chat_stream_request', response_format => { type => 'json_object' } ); 1 } ? '' : $@;
+  like( $err, qr/cannot stream a json_object response_format: the Messages endpoint has no native free-form JSON/,
+    'kimi-k3 streaming json_object: endpoint-neutral croak' );
+  unlike( $err, qr/Claude/, 'kimi-k3 streaming json_object: croak does not name Claude' );
+}
+
 # --- K2.x: the shim rewrite ---
 for my $model (qw( kimi-k2.6 kimi-k2.7-code )) {
   my $got = body( 'chat_request', model => $model, response_format => $RF );
