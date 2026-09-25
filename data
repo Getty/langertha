@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T05:20:57Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T05:20:57Z
+created: 2026-09-25T03:00:12Z
+id: 220
+priority: low
+started: 2026-09-25T04:33:32Z
+status: done
+tags:
+- temperature
+- responses
+- review
+title: ResponsesCompatible _temperature_kwargs still drops a capability-cleared temperature
+  silently (k214 carp parity)
+updated: 2026-09-25T05:20:57Z
+---
+
+From the wire-bundle2 review (k214). Role::OpenAICompatible and Role::AnthropicCompatible _temperature_kwargs now carp when supports(temperature) is false and a caller-set temperature != 1 is dropped (ADR 0025 k214 Update). Role::ResponsesCompatible::_temperature_kwargs (lib/Langertha/Role/ResponsesCompatible.pm ~l.109) still does `return () unless supports(temperature)` first, so the same drop is silent there. No engine on the responses wire clears temperature per model today, so it is latent; bring the three gates to parity (same carp, same 1-stays-quiet rule) when k206 (XAI Responses) or any per-model temperature clear lands on that wire, and add a t/79 case. Consider also making the message actionable (name the remedy: unset temperature) and reporting the caller frame rather than Role/Chat.pm.
+
+2026-09-25 04:38 Implemented: ResponsesCompatible gate carps like OpenAI/Anthropic (same message on all three, names remedy 'unset temperature to silence this', every request, 1 quiet). t/79_kimi_temperature_gate.t + ADR 0025 k220 Update. Caller-frame reporting left as is.
+
+Commit 2555dba
