@@ -24,10 +24,11 @@ Revision history for Langertha
       croaks before the request. On the _f methods these fetches (Gemini
       included) run concurrently through the engine's async HTTP backend
       before the request is built, instead of blocking the event loop on
-      LWP, and a failed fetch fails the Future. Like the sync fetch they
-      give up after 30 seconds, set by the engine attribute
-      inline_image_fetch_timeout (0 disables it; on the sync LWP fallback
-      the user_agent's timeout applies). New Image methods
+      LWP, and a failed fetch fails the Future. Every fetch gives up after
+      30 seconds, set by the engine attribute inline_image_fetch_timeout
+      (on the _f methods 0 disables it and the sync LWP fallback uses the
+      user_agent's timeout; on the sync methods 0 keeps LWP's 180 second
+      default). ensure_base64 takes timeout => N. New Image methods
       to_responses, to_ollama, to_lmstudio, data_url and ensure_base64_f;
       to_openai takes inline => 1. Langertha::Chat sends Content objects
       the way its engine does on every simple_chat* method, instead of

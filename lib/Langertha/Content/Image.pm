@@ -231,15 +231,19 @@ Builds an image block from an existing base64 string.
 
 # --- Base64 materialization ---
 
+# timeout => N comes from the engine's inline_image_fetch_timeout on the
+# request-build paths (karr k279). LWP cannot run without a timeout, so 0
+# leaves LWP's own default (180s) in place.
 sub ensure_base64 {
-  my ($self) = @_;
+  my ( $self, %opt ) = @_;
   return $self->base64 if $self->has_base64;
   croak "ensure_base64: no url to fetch" unless $self->has_url;
 
+  my $secs = $opt{timeout} // 30;
   require LWP::UserAgent;
   my $ua = LWP::UserAgent->new(
-    agent   => 'Langertha-Content-Image/'.$VERSION,
-    timeout => 30,
+    agent => 'Langertha-Content-Image/'.$VERSION,
+    ( $secs ? ( timeout => $secs ) : () ),
   );
   return $self->_inline_fetched( $ua->get($self->url) );
 }
@@ -287,10 +291,18 @@ sub _inline_fetched {
 =method ensure_base64
 
     my $b64 = $img->ensure_base64;
+    my $b64 = $img->ensure_base64( timeout => 5 );
 
 Returns the base64 payload, fetching the URL over HTTP if necessary.
 Populates C<media_type> from the response C<Content-Type> header when the
 image was URL-only. Caches the result on the object.
+
+The fetch is a blocking L<LWP::UserAgent> GET that gives up after
+C<timeout> seconds of inactivity, C<30> by default. When
+L<Langertha::Role::Chat> builds a request it passes the engine's
+L<Langertha::Role::Chat/inline_image_fetch_timeout>. C<< timeout => 0 >> leaves
+LWP's own default (180 seconds) in place, because LWP cannot run without a
+timeout.
 
 =cut
 

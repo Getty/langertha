@@ -348,8 +348,18 @@ sub _gemini_part {
 # request is built (karr k267).
 sub _content_block {
   my ( $self, $block, $method, @opt ) = @_;
+  my %opt = @opt;
+  # The serializers fetch through ensure_base64 without arguments (30s); fetch
+  # first with the engine's timeout instead (karr k279).
+  my $prefetch = $block->isa('Langertha::Content::Image')
+    && $block->has_url && !$block->has_base64
+    && ( $opt{inline} || $method =~ /\Ato_(?:gemini|ollama|lmstudio)\z/ );
   my $out;
-  return $out if eval { $out = $block->$method(@opt); 1 };
+  return $out if eval {
+    $block->ensure_base64( timeout => $self->inline_image_fetch_timeout ) if $prefetch;
+    $out = $block->$method(@opt);
+    1;
+  };
   my $err = $@;
   croak $self->_inline_image_error($err)
     if $block->can('has_url') && $block->has_url && !$block->has_base64;
@@ -373,15 +383,18 @@ has inline_image_fetch_timeout => (
 
 =attr inline_image_fetch_timeout
 
-Seconds each URL image fetch may take on the C<_f> paths of an engine that has
-to inline images (see L</content_format>) before the call fails with the
-engine-named inline-image error (C<timed out after 30s>). Defaults to C<30>,
-the timeout of the synchronous fetch in
-L<Langertha::Content::Image/ensure_base64>. It is enforced on the event loop of
-the async backend (L<Langertha::Role::AsyncHTTP/async_loop>); on the
-synchronous LWP fallback, or with an injected client without a C<loop>, the
-client's own timeout applies instead (for the fallback, the C<user_agent>'s).
-C<0> disables it.
+Seconds each URL image fetch may take on an engine that has to inline images
+(see L</content_format>) before the call fails with the engine-named
+inline-image error. Defaults to C<30>.
+
+On the C<_f> paths it is enforced on the event loop of the async backend
+(L<Langertha::Role::AsyncHTTP/async_loop>; the error says C<timed out after
+30s>), and C<0> disables it; on the synchronous LWP fallback, or with an
+injected client without a C<loop>, the client's own timeout applies instead
+(for the fallback, the C<user_agent>'s). When the synchronous methods build the
+request, it is the LWP timeout of L<Langertha::Content::Image/ensure_base64>
+(the error then carries LWP's C<read timeout> status), and C<0> leaves LWP's
+own default of 180 seconds, because LWP cannot run without a timeout.
 
 =cut
 

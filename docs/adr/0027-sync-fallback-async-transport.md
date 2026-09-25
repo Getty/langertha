@@ -172,6 +172,7 @@ a fetch that wins cancels its timer. With no loop (the `SyncHTTP` shim, an injec
 `user_agent`'s. The chat request itself still has no timeout on Net::Async::HTTP. The attribute is
 separate from `user_agent_timeout` because that one bounds a whole LLM request (often minutes) and
 has no default.
+k279: the sync request build passes the same attribute to `ensure_base64(timeout => N)` (LWP; `0` keeps LWP's 180 s default, as LWP cannot run untimed); direct callers keep 30 s.
 
 ## Update (k278 — `user_agent_timeout` bounds async requests too)
 
