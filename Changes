@@ -42,8 +42,9 @@ Revision history for Langertha
       images encodes with convert_blessed (logs, traces): a compact
       description (source, url, media_type, detail, decoded byte count),
       never the image data. New optional detail attribute (low, high,
-      auto; every from_* takes it), sent as image_url.detail on OpenAI
-      chat and input_image.detail on Open-Responses, ignored elsewhere.
+      auto, or any other value, passed through unchanged; every from_*
+      takes it), sent as image_url.detail on OpenAI chat and
+      input_image.detail on Open-Responses, ignored elsewhere.
 
     - LM Studio native (/api/v1/chat) sends text as type text input
       parts, and since that endpoint takes no assistant messages, a

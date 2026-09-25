@@ -104,8 +104,15 @@ my %ARGS = (
   ) {
     is $ctor->[1]->()->detail, 'auto', "$ctor->[0] accepts detail";
   }
-  ok !eval { Langertha::Content::Image->from_url( $URL, detail => 'ultra' ); 1 },
-    'an unknown detail value is rejected';
+  # Normalize, don't gatekeep: a value Langertha does not know yet goes to the
+  # wire unchanged and the provider judges it.
+  my $new = Langertha::Content::Image->from_url( $URL, detail => 'original' );
+  is_deeply $new->to_openai,
+    { type => 'image_url', image_url => { url => $URL, detail => 'original' } },
+    'an unknown detail value passes through to image_url.detail';
+  is $new->to_responses->{detail}, 'original', '... and to input_image.detail';
+  ok !eval { Langertha::Content::Image->new( url => $URL, detail => '' ); 1 },
+    'an empty detail string is rejected';
 }
 
 # --- Open-Responses wire ---

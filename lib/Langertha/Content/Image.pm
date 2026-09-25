@@ -2,7 +2,7 @@ package Langertha::Content::Image;
 # ABSTRACT: Canonical image content block with cross-provider conversion
 our $VERSION = '0.503';
 use Moose;
-use Moose::Util::TypeConstraints qw( enum );
+use Moose::Util::TypeConstraints qw( subtype as where message );
 use Carp qw( croak );
 use MIME::Base64 qw( encode_base64 decode_base64 );
 use Future;
@@ -111,7 +111,10 @@ extension by C<from_file> and from the URL path by C<from_url>.
 
 =cut
 
-enum 'Langertha::Content::Image::Detail' => [qw( low high auto )];
+# Open value, not an enum: the provider judges it (normalize, don't gatekeep;
+# a model family may add values before Langertha knows them).
+subtype 'Langertha::Content::Image::Detail', as 'Str', where { length },
+  message { 'detail must be a non-empty string' };
 
 has detail => (
   is => 'ro',
@@ -121,7 +124,9 @@ has detail => (
 
 =attr detail
 
-Optional image-detail hint: C<low>, C<high> or C<auto>. Unset by default, and
+Optional image-detail hint, a non-empty string. The known values are C<low>,
+C<high> and C<auto>; any other value is sent unchanged, and the provider
+decides whether it takes it. Unset by default, and
 then no C<detail> field goes on any wire. When set, L</to_openai> sends it as
 C<image_url.detail> and L</to_responses> as C<input_image.detail>; the other
 serializers ignore it, because their wires have no such field. Every C<from_*>
