@@ -748,7 +748,9 @@ out verbatim. C<tool_choice> is never sent there: C<none> withholds the
 tools (no tool prompt; a warning says so), and any value other than
 C<auto> is ignored with a warning, as the prompt cannot force a tool
 (on L<Langertha::Engine::NousResearch> a forced named tool takes the
-C<json_schema> rewrite described below instead).
+C<json_schema> rewrite described below instead). On NousResearch, tools
+together with a C<json_schema> C<response_format> send both the schema prompt
+and the tool prompt.
 C<E<lt>tool_callE<gt>> blocks in the reply land on
 L<Langertha::Response/tool_calls> and are removed from C<content>.
 

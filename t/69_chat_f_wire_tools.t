@@ -317,6 +317,12 @@ subtest 'hermes: tool_choice has no wire of its own' => sub {
   my ($any) = hermes_body( [$obj], tool_choice => 'any' );
   ok( !exists $any->{tool_choice} && !exists $any->{response_format}, 'NousResearch any: dropped, not rewritten' );
   is( scalar @warnings, 1, 'NousResearch any: one warning' );
+
+  @warnings = ();
+  my ($missing) = hermes_body( [$obj], tool_choice => { type => 'tool', name => 'nope' } );
+  ok( !exists $missing->{tool_choice} && !exists $missing->{response_format},
+    'NousResearch named tool not in tools: dropped, not rewritten' );
+  is( scalar @warnings, 1, 'NousResearch named tool not in tools: one warning' );
 };
 
 subtest 'hermes: a forced tool on NousResearch takes the json_schema rewrite (k234, ADR 0005)' => sub {
@@ -475,6 +481,12 @@ subtest 'hermes: any json_schema response_format also rides the schema prompt (k
   is( $direct->{messages}[0]{role}, 'system', 'per request: a system message leads' );
   is_deeply( $json->decode( $schema_in->($direct) // 'null' ), $schema, 'per request: the schema in <schema> tags' );
   is_deeply( $direct->{messages}[1], { role => 'user', content => 'hi' }, 'per request: the user turn follows' );
+  unlike( $direct->{messages}[0]{content}, qr/\bYou are\b/i,
+    'no persona line: the schema prompt must not compete with the system_prompt (k234 review M3)' );
+
+  my $with_system = $send->( [ system_prompt => 'Be terse.' ], response_format => $rf );
+  like( $with_system->{messages}[0]{content}, qr/<schema>/, 'with a system_prompt: the schema prompt leads, as the tool prompt does' );
+  is_deeply( $with_system->{messages}[1], { role => 'system', content => 'Be terse.' }, 'with a system_prompt: then the engine system prompt' );
 
   my $engine_rf = $send->( [ response_format => $rf ] );
   is_deeply( $json->decode( $schema_in->($engine_rf) // 'null' ), $schema, 'engine attribute: the schema in the prompt' );

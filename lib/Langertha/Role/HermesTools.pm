@@ -153,7 +153,7 @@ has hermes_schema_prompt => (
 
 sub _build_hermes_schema_prompt {
   return <<'PROMPT';
-You are a helpful assistant that answers in JSON. Here's the json schema you must adhere to:
+Answer in JSON that adheres to this JSON schema:
 <schema>
 %s
 </schema>
