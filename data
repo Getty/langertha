@@ -1,0 +1,26 @@
+---
+class: standard
+completed: 2026-09-25T08:30:37Z
+created: 2026-09-25T08:29:13Z
+id: 259
+priority: high
+started: 2026-09-25T08:30:37Z
+status: done
+tags:
+- release
+- changes
+title: 'Changes: three stale/orphaned bullets from the mid-cycle Raider extraction'
+updated: 2026-09-25T08:30:37Z
+---
+
+Pre-release audit (0.502..HEAD -> 0.503) found three {{$NEXT}} bullets left inaccurate by the later Raider extraction (feat!: d326f95, ADR 0026):
+
+1. Changes:820-828 - "MCP tool calling now speaks the current protocol revision... via a new Langertha::MCP::Client" describes a class added by 863ab31 and then REMOVED by 1e52de0 ("drop unpublished MCP stub") as part of the same cycles Raider extraction. `find lib -iname "*MCP*"` shows no such file at HEAD. The bullet describes something that will not ship in 0.503 - remove or rewrite it.
+
+2. Changes:738-747 - "Langertha::Response and Langertha::Result (and Raider::Result through @ISA) are now always true in boolean context (overload bool => 1)" is stale for Result: lib/Langertha/Result.pm is now a bare reserved-namespace stub (package + POD only, no `use overload`, no class body at all - see the file). The claim is only true for Response now. Needs rewording to drop or qualify the Result half.
+
+3. Changes:830-838, 840-848, 850-855 - three "Raider:" bullets (paused-raid dedup, session-history-per-wire-shape rendering, plugin_before_llm_call conversation drift) describe fixes to Raider-internal code that has since been extracted entirely to langertha-raider. Checked langertha-raider/Changes - none of these three fixes are mentioned there either, so the behavior is orphaned between the two distributions: a core-only reader sees fixes for a subsystem no longer in the package, and a raider reader never learns their install carries these fixes. Move/summarize into langertha-raider/Changes (or add a cross-reference) and trim/remove from core.
+
+Fix is an editing pass, not a code change - langertha-pod-writer lane per CLAUDE.md delegation table. Re-run `prove -lr t/release-changes_has_content.t` equiv / dzil build after editing (Changes sits in @Author::GETTY allow_dirty, but a literal edit should still be verified with dzil build per house memory note on Changes edits).
+
+2026-09-25 08:30 Duplicate of #256 (created concurrently by another audit instance racing on the same unreleased HEAD). Unique content (Result bool-overload staleness, orphaned Raider-internal bullets) folded into #256's notes and re-filed as #261. Closing to avoid duplicate tracking.
