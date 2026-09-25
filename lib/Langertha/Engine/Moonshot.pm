@@ -73,10 +73,17 @@ preview series was discontinued on 2026-05-25.
 See L<https://platform.kimi.ai/docs/models> for the full model catalog.
 
 B<Reasoning note:> reasoning control differs per model family on this
-endpoint. The K2.x line uses a Kimi-specific C<thinking> object
+endpoint. The K2.x line uses a Kimi-specific top-level C<thinking> object
 (C<{ type =E<gt> 'enabled' }> / C<{ type =E<gt> 'disabled' }>), not the
-OpenAI-wire C<reasoning_effort> field, so this engine does not advertise or
-emit C<reasoning_effort> for them. C<kimi-k3> instead accepts a top-level
+OpenAI-wire C<reasoning_effort> field. On C<kimi-k2.6> this engine serializes
+C<reasoning_effort> onto that toggle: C<none> sends
+C<< thinking =E<gt> { type =E<gt> 'disabled' } >>, any other level
+C<< thinking =E<gt> { type =E<gt> 'enabled' } >> (every level gives the same
+depth), and no C<reasoning_effort> field goes out. C<kimi-k2.7-code> and
+C<kimi-k2.7-code-highspeed> always think and must not be sent a C<thinking>
+field, so the engine does not advertise C<reasoning_effort> there and sends
+nothing. This K2.x wire is taken from Moonshot's documentation and is not
+verified against the live API. C<kimi-k3> instead accepts a top-level
 C<reasoning_effort> of C<low> / C<high> / C<max> and defaults to C<max>
 server-side when the field is omitted; it always reasons. On C<kimi-k3> the
 engine sends C<reasoning_effort> when it is one of those three values and drops
@@ -135,6 +142,13 @@ sub _build_static_models {[
 #     Kimi `thinking` object. Clear reasoning_effort there (dotted and
 #     dash-form K2 ids alike, e.g. kimi-k2-thinking), and
 #     Role::ReasoningEffort then sends no reasoning field (the k204 gate).
+#     kimi-k2.6 alone is re-asserted (karr k219, exact id): it takes a
+#     top-level thinking {type: enabled|disabled} (KimiK26ChatRequest schema,
+#     kimi-k2-6-quickstart; advisor 2026-09-25, docs only, not live), which
+#     the opted-in toggle (_reasoning_thinking_toggle below) serializes from
+#     reasoning_effort. kimi-k2.7-code(-highspeed) stays cleared: `disabled`
+#     is an error there and the guides say not to pass thinking at all, so
+#     there is nothing to send.
 #   * Temperature is fixed server-side on every current Kimi id (karr k214,
 #     platform.kimi.ai models overview, advisor 2026-09-25, docs + third-party
 #     400 reports, not live): kimi-k3 and kimi-k2.7-code(-highspeed) take only
@@ -148,8 +162,16 @@ sub model_capability_corrections {
     'kimi-k3'       => { tool_choice_named => 0 },
     qr/\Akimi-k3(?!\d)/ => { temperature => 0 },
     qr/\Akimi-k2(?!\d)/ => { tool_choice_any => 0, reasoning_effort => 0, temperature => 0 },
+    'kimi-k2.6'     => { reasoning_effort => 1 },
   );
 }
+
+# Kimi's chat/completions speaks the K2.x `thinking` on/off toggle as a
+# top-level object (karr k219; ADR 0023 k209 Update: the toggle is an
+# endpoint's opt-in). Only kimi-k2.6 reaches it: its Profile row maps none ->
+# {type: disabled}, any other level -> {type: enabled}, and never sends `keep`.
+# kimi-k3 has no toggle row and keeps its reasoning_effort (k207).
+sub _reasoning_thinking_toggle { 1 }
 
 __PACKAGE__->meta->make_immutable;
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: Moonshot kimi-k3 takes reasoning_effort low|high|max; K2.x takes none (karr k207)
+# ABSTRACT: Moonshot kimi-k3 takes reasoning_effort low|high|max; K2.x takes the thinking toggle (karr k207, k215, k219)
 
 use strict;
 use warnings;
@@ -37,7 +37,9 @@ my %K3_OK = map { $_ => 1 } qw( low high max );
 ok( Langertha::Engine::Moonshot->new( api_key => 'k' )->supports('reasoning_effort'),
   'Moonshot kimi-k3 (default) advertises reasoning_effort' );
 # kimi-k2-thinking: a dash-form K2 id is K2 too (thinking object only).
-for my $model (qw( kimi-k2.6 kimi-k2.7-code kimi-k2.7-code-highspeed kimi-k2-thinking )) {
+# kimi-k2.6 takes the thinking toggle on this face since karr k219 (below); the
+# rest of the K2 line keeps the flag cleared, since nothing may be sent there.
+for my $model (qw( kimi-k2.7-code kimi-k2.7-code-highspeed kimi-k2-thinking )) {
   my $engine = Langertha::Engine::Moonshot->new( api_key => 'k', model => $model );
   ok( !$engine->supports('reasoning_effort'), "Moonshot $model: reasoning_effort cleared (layer 3)" );
   ok( !$engine->supports('tool_choice_any'), "Moonshot $model: tool_choice_any still cleared" );
@@ -143,9 +145,55 @@ is( $p26->disable_form, 'thinking_disabled', 'kimi-k2.6 profile: off is thinking
 ok( !Langertha::Reasoning::Profile->for_model('kimi-k2.7-code')->can_disable,
   'kimi-k2.7-code profile: cannot disable' );
 
-# The chat face is unchanged: Engine::Moonshot still clears reasoning_effort on
-# K2, so the shared rows send nothing there (a chat-face toggle is future work).
-ok( !exists body( 'Langertha::Engine::Moonshot', model => 'kimi-k2.6', reasoning_effort => 'none' )->{thinking},
-  'Moonshot kimi-k2.6: still no thinking field on chat/completions' );
+# --- karr k219: the chat face (chat/completions) on K2.x ---
+# Kimi's chat/completions takes a TOP-LEVEL `thinking` object (KimiK26ChatRequest
+# schema, kimi-k2-6-quickstart "Disable Thinking"; additionalProperties false,
+# type required). kimi-k2.6: type enabled|disabled, so none -> disabled and any
+# other level -> enabled; never `keep`, never reasoning_effort, never
+# temperature (0.6 without thinking, 1.0 with, else 400; cleared in k214).
+# kimi-k2.7-code(-highspeed): type enabled only, `disabled` is an error, and the
+# guides say not to pass thinking at all (the overview only accepts it with
+# keep:"all", the schema without -- a doc conflict). Omission is the documented
+# path, so nothing is ever sent there: the flag stays cleared. kimi-k3 is k207,
+# unchanged. Advisor 2026-09-25, documentation only, not live-verified.
+my $k26 = Langertha::Engine::Moonshot->new( api_key => 'k', model => 'kimi-k2.6' );
+ok( $k26->supports('reasoning_effort'), 'Moonshot kimi-k2.6: reasoning_effort (the toggle) advertised' );
+ok( !$k26->supports('tool_choice_any'), 'Moonshot kimi-k2.6: tool_choice_any still cleared' );
+ok( !$k26->supports('temperature'), 'Moonshot kimi-k2.6: temperature still cleared' );
+for my $builder (qw( chat_request chat_stream_request )) {
+  for my $effort (qw( none minimal low medium high xhigh max )) {
+    my $engine = Langertha::Engine::Moonshot->new(
+      api_key => 'k', model => 'kimi-k2.6', reasoning_effort => $effort, temperature => 0.6 );
+    my $got;
+    {
+      local $SIG{__WARN__} = sub {};
+      $got = $json->decode( $engine->$builder( @MSG, controls => {} )->content );
+    }
+    my $want = { type => $effort eq 'none' ? 'disabled' : 'enabled' };
+    is_deeply( $got->{thinking}, $want,
+      "Moonshot kimi-k2.6 $builder '$effort': top-level thinking $want->{type}, no keep" );
+    ok( !exists $got->{reasoning_effort}, "Moonshot kimi-k2.6 $builder '$effort': no reasoning_effort" );
+    ok( !exists $got->{temperature}, "Moonshot kimi-k2.6 $builder '$effort': no temperature" );
+  }
+}
+ok( !exists body( 'Langertha::Engine::Moonshot', model => 'kimi-k2.6' )->{thinking},
+  'Moonshot kimi-k2.6: no reasoning control, no thinking field (server default enabled)' );
+ok( !exists body( 'Langertha::Engine::Moonshot', model => 'kimi-k2.6', thinking_display => 'summarized' )->{thinking},
+  'Moonshot kimi-k2.6: thinking_display alone adds no thinking field on this wire' );
+is_deeply( body( 'Langertha::Engine::Moonshot', model => 'kimi-k2.6',
+    reasoning_effort => 'high', controls => { reasoning_effort => 'none' } )->{thinking},
+  { type => 'disabled' }, 'Moonshot kimi-k2.6: a per-request none beats the attribute' );
+
+for my $model (qw( kimi-k2.7-code kimi-k2.7-code-highspeed )) {
+  for my $builder (qw( chat_request chat_stream_request )) {
+    for my $effort (qw( none low high max )) {
+      my $engine = Langertha::Engine::Moonshot->new(
+        api_key => 'k', model => $model, reasoning_effort => $effort );
+      my $got = $json->decode( $engine->$builder( @MSG, controls => {} )->content );
+      ok( !exists $got->{thinking} && !exists $got->{reasoning_effort},
+        "Moonshot $model $builder '$effort': no thinking, no reasoning_effort (omission is documented)" );
+    }
+  }
+}
 
 done_testing;

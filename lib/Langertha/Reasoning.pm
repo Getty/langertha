@@ -144,7 +144,7 @@ has thinking_toggle => (
 =attr thinking_toggle
 
 Whether the target endpoint speaks the C<thinking> on/off toggle (MiniMax's
-cloud API, Kimi's Messages face; karr k209/k215). Set by
+cloud API, Kimi's Messages and chat/completions faces; karr k209/k215/k219). Set by
 L<Langertha::Role::ReasoningEffort/reasoning_kwargs_for> from the engine's
 opt-in. Only when it is true does a thinking-toggle profile
 (L<Langertha::Reasoning::Profile/thinking_on>) serialize as the toggle; when
@@ -237,7 +237,8 @@ at C<high>.
 =cut
 
 # A thinking-toggle model (Profile thinking_on, karr k209/k215) on an endpoint
-# that opted in (thinking_toggle: MiniMax, MiniMaxAnthropic, MoonshotAnthropic)
+# that opted in (thinking_toggle: MiniMax, MiniMaxAnthropic, Moonshot,
+# MoonshotAnthropic)
 # takes a `thinking` object with an on/off type and no effort level, on both the
 # openai and the anthropic wire: none -> off where the model can disable (else
 # the field is omitted), any other level -> the model's on-type. On any other

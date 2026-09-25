@@ -748,7 +748,11 @@ sub _family_profiles {
     # `enabled` needs budget_tokens on the Messages face is UNVERIFIED; none is
     # sent. \z-anchored to Kimi's documented ids: AKI.IO's hosted
     # kimi-k2.7-code-1100b is a different API and is not matched. Reached on
-    # MoonshotAnthropic; Engine::Moonshot still clears reasoning_effort on K2.
+    # MoonshotAnthropic (both rows) and on Engine::Moonshot's chat/completions
+    # (kimi-k2.6 only, karr k219: the same toggle as a top-level `thinking`;
+    # wire_format is descriptive, to_openai serializes it). Engine::Moonshot
+    # keeps reasoning_effort cleared on kimi-k2.7-code, where the chat face
+    # must not be sent thinking at all.
     __PACKAGE__->new(
       model_match  => qr/\Akimi-k2\.7-code(?:-highspeed)?\z/,
       control      => 'boolean',

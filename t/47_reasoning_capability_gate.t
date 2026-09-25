@@ -136,9 +136,10 @@ for my $key ( sort keys %$want ) {
 
 # The engines that clear reasoning_effort per model -- MiniMax's M2.x line
 # (karr k209: only M3 takes the thinking toggle) and Moonshot's K2.x line
-# (layer 3 since karr k207) -- send no reasoning field, and no longer carry a
-# stub to make that true.
-for my $case ( [ 'MiniMax', 'MiniMax-M2.7' ], [ 'Moonshot', 'kimi-k2.6' ] ) {
+# (layer 3 since karr k207; kimi-k2.6 alone re-asserted as the toggle in k219,
+# so kimi-k2.7-code is the cleared case) -- send no reasoning field, and no
+# longer carry a stub to make that true.
+for my $case ( [ 'MiniMax', 'MiniMax-M2.7' ], [ 'Moonshot', 'kimi-k2.7-code' ] ) {
   my ( $short, $model ) = @$case;
   my $class = "Langertha::Engine::$short";
   my $label = $short . ( $model ? " $model" : '' );

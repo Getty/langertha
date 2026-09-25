@@ -563,10 +563,13 @@ ok(Langertha::Engine::Moonshot->does('Langertha::Role::StaticModels'), 'Moonshot
   is($m->url, 'https://api.moonshot.ai/v1', 'Moonshot url default correct');
   is($m->default_model, 'kimi-k3', 'Moonshot default_model');
   # kimi-k3 takes a top-level reasoning_effort; the K2.x line uses a `thinking`
-  # object instead, so the flag is cleared per model (karr k207, layer 3).
+  # object instead, so the flag is cleared per model (karr k207, layer 3) and
+  # re-asserted for kimi-k2.6 alone, which serializes it as the toggle (k219).
   ok($m->supports('reasoning_effort'), 'Moonshot kimi-k3 advertises reasoning_effort');
-  ok(!Langertha::Engine::Moonshot->new(api_key => 'test-key', model => 'kimi-k2.6')
-      ->supports('reasoning_effort'), 'Moonshot kimi-k2.6 clears reasoning_effort (per model)');
+  ok(Langertha::Engine::Moonshot->new(api_key => 'test-key', model => 'kimi-k2.6')
+      ->supports('reasoning_effort'), 'Moonshot kimi-k2.6 advertises reasoning_effort (the toggle)');
+  ok(!Langertha::Engine::Moonshot->new(api_key => 'test-key', model => 'kimi-k2.7-code')
+      ->supports('reasoning_effort'), 'Moonshot kimi-k2.7-code clears reasoning_effort (per model)');
 
   my $req = $m->chat('test prompt');
   like($req->uri, qr{/chat/completions$}, 'Moonshot chat endpoint is /chat/completions');
