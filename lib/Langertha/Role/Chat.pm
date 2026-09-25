@@ -788,12 +788,11 @@ async sub chat_stream_realtime_f {
   my $ttft_seconds;
 
   # A die in the chunk-sub (a malformed stream line, or the caller's
-  # chunk_callback) must fail this request's future on every backend. An
-  # event-loop backend (Net::Async::HTTP) runs the chunk-sub inside the loop's
-  # read handler, where a die would unwind out of the loop into whatever is
-  # driving it and leave this request pending (karr k194, ADR 0027).
+  # chunk_callback) must fail this request's future on every backend, and must
+  # not unwind into the backend: Net::Async::HTTP runs the chunk-sub inside
+  # the loop's read handler, where a die escapes the loop and leaves this
+  # request pending (karr k194, ADR 0027).
   my ( $request_f, $stream_error );
-  my $abort_f = Future->new;
   $request_f = $self->_async_http->do_request(
     request => $request,
     on_header => sub {
@@ -803,8 +802,8 @@ async sub chat_stream_realtime_f {
       # Return a callback that handles each body chunk
       return sub {
         my ($data) = @_;
-        return if defined $stream_error;  # already failed; drop the rest
-        return unless defined $data;      # undef signals end of body
+        return if $stream_error;       # already failed; drop the rest
+        return unless defined $data;   # undef signals end of body
 
         my $ok = eval {
           $buffer .= $data;
@@ -817,18 +816,36 @@ async sub chat_stream_realtime_f {
           1;
         };
         return if $ok;
-        $stream_error = $@ || "streaming callback died\n";
+        $stream_error = [ $@ || "streaming callback died\n", http => $response, $request ];
+
         # A synchronous backend (Langertha::Request::SyncHTTP) runs the
         # chunk-sub before do_request returns: die again so it stops reading
-        # and fails its own future with the original exception. Once the
-        # backend has handed back its future, fail ours instead; wait_any then
-        # cancels the transfer.
-        die $stream_error unless $request_f;
-        $abort_f->fail( $stream_error, http => $response, $request );
+        # and fails its own future with the original exception.
+        die $stream_error->[0] unless $request_f;
+
+        # An event-loop backend must not be stopped from in here. Cancelling
+        # a Net::Async::HTTP request closes its connection, and doing that
+        # inside its read handler leaves the rest of an already-read burst
+        # in the buffer of a connection with no request left, which
+        # Net::Async::HTTP then dies on ("Spurious on_read"). Cancel on the
+        # next loop iteration instead, once this read is fully processed; if
+        # the response completes within this read there is nothing to cancel.
+        # A future without a loop (a foreign injected client) is drained.
+        my $loop = $request_f->can('loop') && $request_f->loop;
+        $loop->later(sub { $request_f->cancel unless $request_f->is_ready }) if $loop;
+        return;
       };
     },
   );
-  await Future->wait_any( $request_f, $abort_f );
+
+  # Wait for the transfer to end however it ends: done, failed, or cancelled
+  # above. A cancel from our own caller still stops the transfer.
+  my $transfer_f = $request_f->new;
+  $request_f->on_ready(sub { $transfer_f->done unless $transfer_f->is_ready });
+  $transfer_f->on_cancel(sub { $request_f->cancel unless $request_f->is_ready });
+  await $transfer_f;
+  await $request_f if $request_f->is_failed;
+  await Future->fail(@$stream_error) if $stream_error;
 
   unless ($response_status->is_success) {
     die "".(ref $self)." streaming request failed: ".$response_status->status_line;
@@ -983,10 +1000,28 @@ engine and prompt. The trailing element is additive: callers destructuring only
 the first three keep working.
 
 If C<chunk_callback> dies, or a stream line cannot be parsed, the returned
-future B<fails> with that exception, the rest of the stream is dropped and the
-transfer is stopped. This holds on every HTTP backend: on L<Net::Async::HTTP>
-the exception does not escape the event loop, so other requests on the same
-loop are unaffected (L<Langertha::Role::AsyncHTTP>).
+future B<fails> with that exception on every HTTP backend, and no further
+chunk reaches C<chunk_callback>. How the rest of the transfer ends depends on
+the backend (L<Langertha::Role::AsyncHTTP>):
+
+=over
+
+=item * L<Net::Async::HTTP>: the exception never escapes the event loop. The
+request is cancelled on the next loop iteration (unless the response already
+ended within the same read), and the engine goes on serving requests. Like any
+cancelled L<Net::Async::HTTP> request this closes its connection, so a request
+the client had already pipelined behind it on that keep-alive connection fails
+with C<Connection closed>; requests through other engines are unaffected.
+
+=item * the synchronous L<Langertha::Request::SyncHTTP> fallback: LWP stops
+reading at once.
+
+=item * an injected client whose futures have no C<loop>: the rest of the body
+is read and discarded, and the future fails when the response ends.
+
+=back
+
+Cancelling the returned future cancels the HTTP request.
 
 This is the streaming counterpart to L</chat_f>. Unlike L</chat_f> it does
 not apply the forced-tool fallback (rewriting a named C<tool_choice> into a

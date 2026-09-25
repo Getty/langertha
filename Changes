@@ -40,8 +40,9 @@ Revision history for Langertha
 
     - chat_stream_realtime_f: a die in chunk_callback, or a malformed stream
       line, fails that request's future with the original exception on every
-      backend; on Net::Async::HTTP other work on the same IO::Async loop is
-      unaffected.
+      backend. On Net::Async::HTTP the exception stays out of the IO::Async
+      loop and the request is cancelled; a request already pipelined behind
+      it on the same connection fails with "Connection closed".
 
     - export_otlp_f no longer aborts the process (a Future::AsyncAwait panic
       about $main::INC) when a coderef hook is in @INC, as PAR and
