@@ -268,8 +268,9 @@ the seam, and reconcile any drift (open karr tickets #1, #2).
 ## Raider (autonomous agent) → sibling distribution langertha-raider
 
 The autonomous agent (`Langertha::Raider`, `Raider::Result`), the Raid orchestration layer
-(`Langertha::Raid`, `Raid::Loop/Parallel/Sequential`) and the async MCP client (moved there as
-`Langertha::Raider::MCP`) no longer ship in core. They live in **langertha-raider**
+(`Langertha::Raid`, `Raid::Loop/Parallel/Sequential`) no longer ship in core; raider talks MCP
+through `Net::Async::MCP` directly (the planned `Langertha::Raider::MCP` wrapper was never
+built — ADR 0026 update). They live in **langertha-raider**
 (`requires 'Langertha'`, never the reverse — same pattern as langertha-knarr/skeid).
 `Langertha::RunContext` and `Langertha::Role::Runnable` (the run context + `run_f` contract those
 nodes use) stay in core as dependency-free generic primitives. ADRs 0007/0008 record Raider

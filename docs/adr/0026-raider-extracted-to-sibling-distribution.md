@@ -97,3 +97,11 @@ into a sibling and depended back on.
   tracked on that repo's board — not core work.
 - karr #172 (Raider session-history embeddings) targets code that now lives in `langertha-raider`
   and should move to that board.
+
+## Update (k189 — 2026-09-25): `Langertha::Raider::MCP` was never built
+
+The rename `MCP::Client` → `Langertha::Raider::MCP` recorded above did not happen on the raider
+side: langertha-raider (as of f39ad50) has no such module and uses `Net::Async::MCP` directly
+(its cpanfile requires it). Nothing changes for core — `mcp_servers` stays duck-typed on any
+`Net::Async::MCP`-compatible client — but core docs must not name `Langertha::Raider::MCP` as an
+example client.
