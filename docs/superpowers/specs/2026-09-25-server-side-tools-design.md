@@ -1,312 +1,434 @@
 # Design Spec — Provider server-side tools (`Langertha::ServerTool`) and `Engine::XAIResponses` (karr k206)
 
-- Status: **proposed** (spec only, nothing implemented)
+- Status: **proposed, revision 2** (spec only, nothing implemented). Option (b) was accepted
+  by the orchestrator on 2026-09-25. The llm-advisor red-team verdict was "safe with
+  changes", and those changes are folded in here.
 - Date: 2026-09-25
-- karr: k206 (this). Related: k208 (grok `Reasoning::Profile` row, parallel branch), k205 (XAI default model, parallel branch)
-- ADRs read: **0001**, **0002**, **0003**, **0004**, **0005**, **0010**, **0016**, **0018**, **0019**, **0020**, **0024**, **0029**, `CONTEXT.md`
-- ADRs touched when implemented: new ADR (next free number, **re-check at merge**; parallel branches allocate independently), `## Update` on **0003** and **0029**, new terms in `CONTEXT.md`
-- Provider facts: from the k206 llm-advisor note (docs fetched 2026-09-25) plus the current code.
-  Anything else is marked **[verify: llm-advisor]** and must be confirmed before Phase 1 code.
+- karr: k206 (this). Prerequisite **k212** (Responses stream parser drops tool calls and
+  `response.failed`). Related: k208 (grok `Reasoning::Profile` row, parallel branch), k205
+  (XAI default model, parallel branch), k213 (Perplexity Agent API now has tools, docs drift).
+- ADRs read: **0001**, **0002**, **0003**, **0004**, **0005**, **0010**, **0016**, **0018**,
+  **0019**, **0020**, **0024**, **0029**, `CONTEXT.md`
+- ADRs touched when implemented: a new ADR (take the next free number and **re-check it at
+  merge**, because parallel branches allocate numbers independently), an `## Update` on
+  **0003** and on **0029**, and new terms in `CONTEXT.md`.
+- Provider facts come from the two llm-advisor notes on k206 (both 2026-09-25, docs only, no
+  live call) and from the current code. A fact the docs cannot settle is marked
+  **[capture]**: it is decided by the Phase 1 captures (§6), not by another docs read.
 
 ## 1. Problem
 
-Langertha has no seam for provider-hosted ("server-side") tools, the tools the provider
-runs itself during one request: web search, X search, code interpreter, file/collection
-search, remote MCP. xAI offers these only on `/v1/responses` (advisor, k206), so an
-`Engine::XAIResponses` without this seam gives users nothing that `Engine::XAI` doesn't already
-give them. `OpenAIResponses` users lack OpenAI's hosted tools for the same reason.
+Langertha has no seam for tools the provider executes itself during one request: web
+search, X search, code interpreter, file/collection search and remote MCP. xAI offers these
+**only** on `/v1/responses`. Its Chat Completions endpoint is "function calling only", and
+Live Search `search_parameters` has answered HTTP 410 since 2026-01-12. So an
+`Engine::XAIResponses` without this seam would give users nothing that `Engine::XAI` doesn't
+already give them. `OpenAIResponses` users lack OpenAI's hosted tools for the same reason.
 
-What the code does today, verified in the k206 worktree (not the same as the ticket's
-"nameless function tool"):
+What the code does today, checked in the k206 worktree:
 
 | Input | Path | Result |
 |---|---|---|
 | `{type=>'web_search'}` | `Tool->from_hash` → `from_anthropic` | `undef`, so `from_list`/`format_list` **silently drop** it |
-| `{type=>'web_search_20250305', name=>'web_search'}` (Anthropic shape) | `Tool->from_hash` → `from_anthropic` | a **user function tool** called `web_search` with an empty schema. The server-tool `type` is lost, which is a silent corruption |
-| `chat_f(tools=>[{type=>'web_search'}, $mcp_tool])` on `OpenAIResponses` | `ResponsesCompatible::chat_request` formats only when `$tools[0]` has no `type` | whole list goes out **verbatim**, and the MCP-shaped tool reaches the wire unformatted (400) |
-| `chat_f(tools=>[$mcp_tool, {type=>'web_search'}])` on `OpenAIResponses` | same heuristic, first item has no `type` | `format_list` runs, and web_search is **silently dropped** |
-| `chat_f(tools=>[{type=>…}])` on `OpenAI` / `Anthropic` / `Gemini` | those `chat_request`s pass `tools` verbatim | reaches the wire as written, so a de facto raw escape hatch already exists on `chat_f` |
-| `chat_with_tools_f` | tools come only from `mcp_servers` → `format_tools` | no way to add a server tool at all |
+| `{type=>'web_search_20250305', name=>'web_search'}` (Anthropic shape) | `Tool->from_hash` → `from_anthropic` | a **user function tool** named `web_search` with an empty schema. The server-tool `type` is lost, which silently corrupts the request |
+| `chat_f(tools=>[{type=>'web_search'}, $mcp_tool])` on `OpenAIResponses` | `ResponsesCompatible::chat_request` formats the list only when `$tools[0]` has no `type` | the whole list goes out **verbatim**, so the MCP-shaped tool reaches the wire unformatted (400) |
+| `chat_f(tools=>[$mcp_tool, {type=>'web_search'}])` on `OpenAIResponses` | same heuristic, and the first item has no `type` | `format_list` runs and web_search is **silently dropped** |
+| `chat_f(tools=>[{type=>…}])` on `OpenAI` / `Anthropic` / `Gemini` | these `chat_request`s pass `tools` through verbatim | the list reaches the wire as written, so a raw escape hatch already exists on `chat_f` by accident |
+| `chat_with_tools_f` | tools come only from `mcp_servers` → `format_tools` | there is no way to add a server tool at all |
 
-Inbound, nothing breaks but everything is lost. `ToolCall->locate` only matches
-`function_call` / `tool_use` / `functionCall`, so server-side call items are already
-excluded from `Response.tool_calls` (good, see §3.2). But their results, the
-`url_citation` annotations and server-tool usage are dropped, except Perplexity's
-`search_results` (lifted into `Response.citations` by its `_responses_extra_fields`).
+Inbound, nothing crashes today, but a lot is lost:
 
-Side finding, to fix in Phase 1 because xAI hits it on every reasoning reply:
-`ResponsesCompatible::chat_response` reads `$item->{summary}[0]{text}` as a chained
-rvalue. A `reasoning` item with `summary => []` or no `summary` gets `summary => [{}]`
-autovivified into `raw` (verified with perl). This is the k168 bug class. xAI always
-returns `reasoning.encrypted_content` with no summary (advisor), so every xAI reply
-would carry the polluted trace.
+- `ToolCall->locate` matches only `function_call` / `tool_use` / `functionCall`. Server-side
+  call items are therefore already kept out of `Response.tool_calls`, which is correct
+  (§3.2).
+- Their results, the `url_citation` annotations and the server-tool usage are dropped. The
+  one exception is Perplexity's `search_results`, which its `_responses_extra_fields` lifts
+  into `Response.citations`.
+- **Client-actionable** output items that the walker does not map are dropped silently too:
+  `custom_tool_call`, `computer_call`, `local_shell_call`, `apply_patch_call`, a client
+  `tool_search_call` and `mcp_approval_request`. A tool loop then ends as if the model had
+  finished, which is wrong (§3.3).
+
+Two side findings, both fixed in Phase 1:
+
+- **Autovivification.** `ResponsesCompatible::chat_response` reads `$item->{summary}[0]{text}`
+  as a chained rvalue. A `reasoning` item with `summary => []`, or with no `summary` at all,
+  gets `summary => [{}]` written into `raw` (checked with perl). This is the same bug class
+  as k168. xAI hits it on every reasoning reply, because grok-4.7 always returns
+  `encrypted_content` with no summary.
+- **Usage extras.** The usage normalization drops xAI's `server_side_tool_usage_details`,
+  `num_server_side_tools_used` and `cost_in_usd_ticks` (§4.1).
 
 ## 2. Inventory
 
-"Built-in" is not the same as "server-side". Several providers ship built-in tools that
-the **client** executes (Anthropic `bash`/`text_editor`/`computer`/`memory`, OpenAI
-`computer_use_preview`/`local_shell`/`shell`/`apply_patch` **[verify: llm-advisor]**). This
-spec covers only tools the **provider** executes, meaning the client never runs the call.
+"Built-in" does not mean "server-side". Several built-in tool types are executed by the
+**client**. This spec treats as server tools only the ones the provider executes, which is
+decided by type **and** by the `execution` / `environment` fields (§3.4).
 
 ### 2.1 OpenAI Responses (`/v1/responses`, `tool_wire_format` `responses`)
 
-- **Request:** entries in the same `tools` array as function tools, discriminated by
-  `type`, e.g. `{type:"web_search"}` (earlier `web_search_preview`),
-  `{type:"file_search", vector_store_ids:[…]}`, `{type:"code_interpreter", container:{…}}`,
-  `{type:"image_generation"}`, `{type:"mcp", server_label, server_url, require_approval}`
-  **[verify: llm-advisor — current type names, versions, per-model availability]**. On
-  this wire, anything whose `type` is not `function` is a built-in.
-- **Response:** typed `output[]` items next to `message` / `function_call`:
-  `web_search_call` (`id`, `status`, `action`), `file_search_call`,
-  `code_interpreter_call`, `image_generation_call`, `mcp_list_tools`, `mcp_call`,
-  `mcp_approval_request`. Citations come as `output_text.annotations[]` of
-  `type:"url_citation"` (`url`, `title`, `start_index`, `end_index`) and `file_citation`
-  **[verify: llm-advisor — item + annotation shapes]**.
-- `mcp_approval_request` needs a **client round-trip** (an approval input item). That makes
-  it neither a pure server call nor a function call; see the open questions (§8).
-- `tool_choice` can force a hosted tool (`{type:"web_search"}`)
-  **[verify: llm-advisor]**. Today `ToolChoice->from_hash({type=>'web_search'})` returns `undef`.
+- **Request.** Built-in tools are entries in the same `tools` array as function tools,
+  discriminated by `type`. The ones the provider executes:
+
+  | `type` | Example / notes |
+  |---|---|
+  | `web_search` | earlier spelled `web_search_preview` |
+  | `file_search` | `vector_store_ids:[…]` |
+  | `code_interpreter` | `container:{…}` |
+  | `image_generation` | |
+  | `mcp` | remote MCP: `server_label`, `server_url`, `require_approval` |
+  | `tool_search` | only with `execution` ≠ `client` |
+  | `shell` | only with `environment` `container_auto` / `container_reference` |
+
+  Client-executed, per the OpenAI create-response reference (advisor):
+
+  | `type` | Answered with |
+  |---|---|
+  | `custom` | a user tool, answered with `custom_tool_call_output` |
+  | `namespace` | |
+  | `tool_search` | when `execution:"client"` |
+  | `shell` | when `environment` is local |
+  | `local_shell` | |
+  | `computer`, `computer_use_preview` | |
+  | `apply_patch` | |
+
+  `programmatic_tool_calling` is new, and its classification is **[capture]**. It is not a
+  Phase 1 server tool; §3.4 treats it as unknown.
+- **`require_approval` defaults to `"always"`** (advisor). An `mcp` tool without it
+  therefore produces an `mcp_approval_request` that needs a client round-trip.
+- **Response.** Typed `output[]` items sit next to `message` / `function_call`:
+
+  | Kind | Item types |
+  |---|---|
+  | server calls | `web_search_call`, `file_search_call`, `code_interpreter_call`, `image_generation_call`, `mcp_list_tools`, `mcp_call`, hosted `shell_call` / `tool_search_call` |
+  | client-actionable | `custom_tool_call`, `computer_call`, `local_shell_call`, `apply_patch_call`, client `tool_search_call`, `mcp_approval_request` |
+
+  Citations are `output_text.annotations[]` entries of `type:"url_citation"` (`url`,
+  `title`, `start_index`, `end_index`), plus `file_citation`.
+- Server items may be **echoed** back in `input` on the next turn; the advisor confirmed
+  both OpenAI and xAI accept this.
 
 ### 2.2 xAI Responses (`https://api.x.ai/v1/responses`)
 
-From the advisor note (2026-09-25, docs only, no live call):
+Advisor notes, 2026-09-25:
 
-- Server-side agentic tools `web_search`, `x_search`, `code_interpreter`,
-  collections/`file_search` and remote MCP exist **only** on `/v1/responses`. Chat
-  Completions is "function calling only". Live Search `search_parameters` answers HTTP 410
-  since 2026-01-12.
-- Also Responses-only: `grok-4.20-multi-agent`, `previous_response_id`/`store`, `max_turns`,
-  the encrypted reasoning round-trip (grok-4.7 always returns `reasoning.encrypted_content`),
-  citations/annotations, and reasoning-summary stream events.
-- Not Responses-only: `reasoning_effort`, `prompt_cache_key`, json_schema, function tools,
-  streaming, `reasoning_content`.
-- **Request:** same Open-Responses `tools[]` shape, keyed by `type`
-  **[verify: llm-advisor — exact type strings, MCP tool fields, collections field names]**.
-- **Response:** a top-level `citations` array (advisor) plus output items for the server
-  calls **[verify: llm-advisor — item type names, whether `citations` holds URL strings
-  or objects, whether `output_text.annotations` is also populated, the server-tool usage
-  block (e.g. `server_side_tool_usage`)]**. The output walker already skips unknown item
-  types.
+- **Responses-only features:**
+  - server-side agentic tools: `web_search`, `x_search`, `code_interpreter`,
+    collections/`file_search`, remote `mcp`;
+  - `grok-4.20-multi-agent`;
+  - `previous_response_id` / `store`;
+  - `max_turns`;
+  - the encrypted-reasoning round-trip;
+  - citations / annotations;
+  - reasoning-summary stream events.
+- **Not Responses-only:** `reasoning_effort`, `prompt_cache_key`, json_schema, function
+  tools, streaming and `reasoning_content`. Users who only need function tools keep
+  `Engine::XAI`.
+- **MCP:** `require_approval` and `connector_id` are "not currently supported" (xAI docs).
+  Langertha must not send them (§3.5).
+- **Citations:** the xAI REST reference has **no top-level `citations` field**. That field
+  exists in the xAI SDK (gRPC). On `/v1/responses`, citations are `output_text.annotations`
+  entries of type `url_citation`, and their **`title` is the citation number** (`"1"`), not
+  the page title. Confirm by **[capture]**.
+- **Encrypted reasoning:** the xAI stateless-loop docs send
+  `include: ["reasoning.encrypted_content"]` on every turn. grok-4.7 returns it regardless;
+  older grok models return it only when asked.
+- **Usage extras:** `usage.server_side_tool_usage_details`, `num_server_side_tools_used` and
+  `cost_in_usd_ticks`.
+- **Billing:** X Search has been billed per post and per profile fetched since 2026-09-21
+  ($5 per 1k posts, $10 per 1k profiles), in addition to token costs.
+- **`grok-4.20-multi-agent` limitations:** no client function tools and no `max_tokens`
+  (docs, multi-agent Limitations).
+- **Request/response item shapes:** the same Open-Responses `tools[]` and `output[]` shapes
+  as §2.1. The exact server-call item type names xAI emits are **[capture]**. The output
+  walker already skips unknown item types.
 
 ### 2.3 Anthropic Messages (`tool_wire_format` `anthropic`), Phase 2
 
-- **Request:** entries in `tools[]` carry a dated `type` plus a fixed `name`:
-  `{type:"web_search_20250305", name:"web_search", max_uses, allowed_domains, …}`,
-  `web_fetch_…`, `code_execution_…` (possibly with a beta header)
-  **[verify: llm-advisor — current versions and beta headers]**. User tools have no
-  `type` (or `type:"custom"`). The Anthropic-defined **client** tools (`bash_…`,
-  `text_editor_…`, `computer_…`, `memory_…`) use the same dated-`type` shape but come back
-  as ordinary `tool_use` blocks, so the shape alone does not say who executes.
-- **Response:** `server_tool_use` blocks (`id`, `name`, `input`) plus result blocks
-  (`web_search_tool_result`, `code_execution_tool_result`, … with `tool_use_id`). `text`
-  blocks carry `citations[]` (`web_search_result_location`: `url`, `title`, `cited_text`).
-  `usage.server_tool_use.web_search_requests` counts calls. `stop_reason:"pause_turn"`
-  means a long server turn was paused and must be re-sent to continue.
-- The MCP connector is a top-level `mcp_servers` body field (beta), with
-  `mcp_tool_use`/`mcp_tool_result` blocks **[verify: llm-advisor]**. It has the same name
-  as Langertha's `mcp_servers` attribute (client-side MCP) and a different meaning. A
-  `chat_f(mcp_servers=>…)` kwarg would reach the wire through `%extra`.
+- **Request.** Server tools are entries in `tools[]` with a dated `type` plus a fixed
+  `name`, for example `{type:"web_search_20250305", name:"web_search", max_uses,
+  allowed_domains, …}`, `web_fetch_…` and `code_execution_…`.
+  - **Catch:** newer `web_search` / `web_fetch` versions default `allowed_callers` to
+    `code_execution`. On models without programmatic tool calling that is a 400 unless the
+    tool entry sets `allowed_callers: ["direct"]`.
+  - The Anthropic-defined **client** tools (`bash_…`, `text_editor_…`, `computer_…`,
+    `memory_…`) use the same dated-`type` shape but come back as ordinary `tool_use` blocks.
+- **Response.** The reply carries:
+  - `server_tool_use` blocks (`id`, `name`, `input`);
+  - result blocks (`web_search_tool_result`, `code_execution_tool_result`, …) with
+    `tool_use_id`;
+  - `text` blocks carrying `citations[]` (`web_search_result_location`);
+  - `usage.server_tool_use.web_search_requests`;
+  - `stop_reason:"pause_turn"`, which means the turn must be re-sent to continue.
+- **MCP connector.** It is an `mcp_toolset` entry in `tools` **plus** a top-level
+  `mcp_servers` body field **plus** the header `anthropic-beta: mcp-client-2025-11-20`.
+  - The top-level field has the same name as Langertha's `mcp_servers` attribute, which is
+    client-side MCP and means something else.
+  - Supporting it needs a header hook, and the ADR 0004 `%extra` route has to get past that
+    name collision.
 
 ### 2.4 Gemini (`tool_wire_format` `gemini`), Phase 2
 
-- **Request:** sibling entries in `tools[]` next to the `{functionDeclarations:[…]}` entry:
-  `{google_search:{}}`, `{code_execution:{}}`, `{url_context:{}}`, possibly
-  `{google_maps:{}}` / file search **[verify: llm-advisor]**. Whether `google_search` and
-  `functionDeclarations` may be combined in one request depends on the model
-  **[verify: llm-advisor]**. Where they cannot, that is an ADR 0024 model-scoped exclusion,
-  not a flag.
-- **Response:** `candidates[0].groundingMetadata` (`webSearchQueries`,
-  `groundingChunks[].web.{uri,title}`, `groundingSupports`). Code execution returns
-  `executableCode` / `codeExecutionResult` parts inside `content.parts`.
+- **Request.** Server tools are sibling entries in `tools[]` next to the one
+  `{functionDeclarations:[…]}` entry: `{google_search:{}}`, `{code_execution:{}}`,
+  `{url_context:{}}`, …
+- **Combining built-ins with `functionDeclarations` works on Gemini 3 only**, and it needs
+  `toolConfig.includeServerSideToolInvocations: true`. The reply then carries
+  `toolCall` / `toolResponse` parts with a `thoughtSignature`. That makes it a **companion
+  request flag**, not only a model-scoped exclusion (§4).
+- **Response.** `candidates[0].groundingMetadata` (`webSearchQueries`,
+  `groundingChunks[].web.{uri,title}`, `groundingSupports`). Code execution produces
+  `executableCode` / `codeExecutionResult` parts.
 
 ### 2.5 Perplexity Agent API (`/v1/agent`)
 
-Search is implicit in the preset. Results already reach `Response.citations` via
-`search_results`. Whether the Agent API accepts explicit `tools:[{type:"web_search"},
-{type:"fetch_url"}]` is **[verify: llm-advisor]**. Perplexity composes no `Role::Tools`
-(ADR 0005/0010), so the seam below must not depend on `Role::Tools`.
+The Agent API now accepts explicit tools, both function and built-in (advisor). The docs
+drift is filed as **k213**. Search is implicit in the preset, and its results already reach
+`Response.citations` via `search_results`. Perplexity composes no `Role::Tools` (ADR
+0005/0010), so the seam below must not depend on `Role::Tools`. Perplexity adopts the seam
+under k213, not in this ticket.
 
 ### 2.6 Out of scope, named so nobody assumes coverage
 
-- Groq "compound" models (server tools on `chat/completions`, `executed_tools` in the message)
-- OpenRouter `plugins`/`:online`
-- Mistral Agents/Conversations connectors
-- OpenAI Chat Completions `web_search_options`
+- Groq "compound" models (server tools on `chat/completions`, `executed_tools` in the
+  message).
+- OpenRouter `plugins` / `:online`.
+- Mistral Agents / Conversations connectors.
+- OpenAI Chat Completions `web_search_options`.
 
-These are body fields, not `tools[]` entries, so they already fit ADR 0004 top-level
+All four are body fields, not `tools[]` entries. They already fit ADR 0004's top-level
 `%extra` and need no seam.
 
 ## 3. The value-object seam
 
 ### 3.1 Options
 
-**(a) A kind flag on `Langertha::Tool`** (`kind => 'server'`, plus a native passthrough hash)
+**(a) A kind flag on `Langertha::Tool`.** Rejected.
 
-- **ADR 0001:** it stays inside the seam, but it bends the definition. A `Tool` is the
-  canonical definition that every wire can translate (`to($fmt)` total over
-  `%TO_METHOD`). A server tool cannot be translated at all: `web_search` on Responses,
-  `web_search_20250305` on Anthropic and `google_search` on Gemini are three different
-  contracts. So `to`, `to_json_schema` (the forced-tool rewrite, ADR 0005), `to_mcp`/hermes
-  and `to_hash` would each need a `kind` branch and a croak.
-- **Types:** `name` is `required` and `input_schema` defaults to an object schema. OpenAI
-  server tools have neither, so both invariants go soft.
-- **Risk:** every existing `Tool` consumer, including siblings (Raider builds `Tool`s),
-  would have to learn to skip the kind.
-- **Rejected:** it makes the most-used value object partial in order to carry something it
-  cannot translate.
+- A `Tool` is the canonical definition that every wire can translate: `to($fmt)` covers all
+  of `%TO_METHOD`.
+- A server tool cannot be translated. `web_search`, `web_search_20250305` and
+  `google_search` are three different contracts.
+- A kind flag would add a branch plus a croak to `to`, `to_json_schema` (the ADR 0005
+  forced-tool rewrite), `to_mcp`/hermes and `to_hash`.
+- It would soften `name`/`input_schema` for every consumer, including sibling
+  distributions.
 
-**(b) A separate `Langertha::ServerTool` value object** — recommended
+**(b) A separate `Langertha::ServerTool` value object.** Accepted.
 
-- **ADR 0001:** it fits the house pattern exactly. The seam is a *family* of value objects
-  keyed by one tag (`Tool`, `ToolCall`, `ToolResult`, `ToolChoice`, ADR 0010), and
-  `ServerTool` becomes the fifth member, dispatched on the same `tool_wire_format`. Engines
-  still carry no per-format code.
-- **Contract:** its `to($fmt)` is honest. It returns the native spec on the wire it
-  belongs to and croaks on any other, which is fail-loud where (a) would be quietly partial.
-- **Types:** `Tool` keeps `name` required and total translation.
-- **Rules:** recognizing a raw hash is **format-pinned** (`ServerTool->from_hash($fmt,
-  $hash)`), like `ToolCall->extract($fmt, …)`, never sniffed. The per-wire rule is simple:
-  - `responses`: `type` present and ne `function`;
-  - `anthropic`: `type` present and not `custom`;
-  - `gemini`: a key other than `functionDeclarations`.
-- **Cost:** one more class, and a partition step in `Tool->format_list`.
+- It becomes the fifth member of the tool value-object family and is keyed by the same
+  `tool_wire_format` (ADR 0001/0010).
+- Its `to($fmt)` returns the native spec on its own wire and croaks on any other wire.
+- Recognition is **format-pinned** (`from_hash($fmt, $hash)`), like
+  `ToolCall->extract($fmt, …)`, and never sniffed.
 
-**(c) A raw escape hatch** (`raw_tools => [...]` appended verbatim, or `%extra` `tools`)
+**(c) A raw escape hatch.** Rejected as the design.
 
-- **Status:** it already exists by accident on `chat_f` for the OpenAI, Anthropic and
-  Gemini `chat_request`s (§1).
-- **ADR 0004:** not an `extra_body` violation as such (it's a top-level kwarg), but it is
-  the *shape* 0004 rejects: an open, unreviewed bucket.
-- **Other costs:** no capability check, no fail-loud on a wrong wire, no mixing with MCP
-  tools (the Responses heuristic breaks mixed lists either way), and nothing for
+- It is the open-bucket shape that ADR 0004 rejects.
+- It gives no capability check, no fail-loud, no mixed lists and nothing for
   `chat_with_tools_f`.
-- **Rejected as the design.** The existing verbatim path on `chat_f` stays as it is
-  (deliberate keep: removing it would break callers who pass provider-shaped tools today).
+- The accidental verbatim `tools` path on `chat_f` for OpenAI, Anthropic and Gemini stays as
+  it is. Removing it would break callers who pass provider-shaped tools today, so this is a
+  deliberate keep.
 
-### 3.2 ADR 0003 — do server-side calls belong on `Response.tool_calls`?
+### 3.2 ADR 0003: server-side calls do not go on `Response.tool_calls`
 
-**No.** `tool_calls` has one operational meaning to every consumer:
+`tool_calls` has one operational meaning, "calls the client must act on":
 
 - `chat_with_tools_f` dispatches each call to `mcp_servers` by name, and dies with
-  "Tool '…' not found" on a miss;
-- Raider does the same;
-- a `chat_f` caller acts on them.
+  "Tool '…' not found" on a miss.
+- Raider does the same.
+- `chat_f` callers act on them.
 
-`synthetic` records *provenance*. It does not say "don't execute". If server calls went on
-`tool_calls`, every consumer, siblings included, would have to filter them, and missing
-the filter crashes the loop. The client never executes a server call, so it is not a
-tool call in 0003's sense. It is a record of what the provider did.
+`synthetic` records provenance. It does not mean "don't execute".
 
-Therefore:
+Consequences:
 
-1. **Invariant (made explicit and tested):** `ToolCall->locate($fmt, …)` never returns a
-   server-side call item. That holds today on every wire. A regression test pins it per
-   wire with the captures in §6.
-2. **New `Response` attribute `server_tool_calls`** (ADR 0004: first-class, `Maybe`-typed,
-   predicate `has_server_tool_calls`, in the `clone_with` copy list):
-   `ArrayRef[Langertha::ServerToolCall]`. `ServerToolCall` is a thin immutable record:
-   `type` (the wire item type, e.g. `web_search_call`, `server_tool_use`), `id`, `status`
-   (optional), and `data` (the item verbatim). Cross-provider normalization of
-   inputs/outputs is **not** done in Phase 1. The shapes differ too much, and a guessed
-   canonical form would be the invented-value trap of ADR 0023. `to_hash`/`TO_JSON` as
-   on `ToolCall`.
-3. **Citations** go to the existing `Response.citations`, as HashRefs with at least `url`
-   (plus `title` / `snippet` when present). Deduplicate by `url`, keeping first-seen order.
-4. ADR 0003 gets an `## Update (k206)`: `tool_calls` means **calls the client must act
-   on**; provider-executed activity is recorded on `server_tool_calls` and is not a
+1. **Inbound invariant (tested):** `ToolCall->locate($fmt, …)` never returns a
+   server-side call item.
+2. **New attribute `Response.server_tool_calls`** (ADR 0004: first-class, `Maybe`-typed,
+   predicate `has_server_tool_calls`, listed in `clone_with`), typed
+   `ArrayRef[Langertha::ServerToolCall]`.
+   - A `ServerToolCall` is a thin immutable record: `type` (the wire item type), `id`,
+     `status` (optional) and `data` (the item verbatim), plus `to_hash`/`TO_JSON`.
+   - Phase 1 does not normalize inputs/outputs across providers. That would be the
+     invented-value trap of ADR 0023.
+3. **Citations** go to the existing `Response.citations` (§3.6).
+4. **ADR 0003 gets an `## Update (k206)`:** `tool_calls` means calls the client must act
+   on. Provider-executed activity is recorded on `server_tool_calls`, and that is not a
    second tool-call representation.
 
-### 3.3 `chat_with_tools_f` must not execute server calls
+### 3.3 `chat_with_tools_f` and the inbound guard
 
-It doesn't need to change for this. It already sees only `ToolCall->locate` output, and the
-invariant above keeps server items out. The server items still travel in the **assistant
-echo**, because the `responses`, `anthropic` and `gemini` branches of
-`format_tool_results` echo the whole `output[]` / `content` / `parts`, so the provider keeps
-its context. When a turn has only server activity and final text, the loop returns that
-text, which is correct.
+- **The loop itself** does not change.
+  - It sees only `ToolCall->locate` output, so server items never reach `call_tool`.
+  - The `responses` / `anthropic` / `gemini` branches of `format_tool_results` echo the
+    whole `output[]` / `content` / `parts`, so server items travel in the assistant echo.
+    Both providers accept that echo.
+  - A turn with only server activity plus final text returns that text.
+- **Inbound fail-loud guard** (new, Responses walker, dialect layer). When `output[]`
+  contains a **client-actionable** item type that Langertha does not map to `tool_calls`,
+  `chat_response` **croaks** with the item type and a pointer.
+  - The item types: `custom_tool_call`, `computer_call`, `local_shell_call`,
+    `apply_patch_call`, a `tool_search_call` whose `execution` is `client`, and
+    `mcp_approval_request`.
+  - Without the guard, the loop silently ends as if the model were done, and a `chat_f`
+    caller never learns that the model is waiting.
+  - "Values open" (§3.4) covers only *outbound* types we don't know. A known item type the
+    client must answer is never swallowed.
+  - The list lives next to the outbound denylist, so both directions name the same
+    client-executed families.
+  - Unknown item types keep being skipped. They are observable on `raw`, and skipping them
+    stays the values-open default.
+- **Anthropic `pause_turn`** is the one loop behavior change, and it lands in Phase 2 (§6).
 
-The one open loop behavior is Anthropic `pause_turn` (Phase 2, §5).
+### 3.4 Recognizing a server tool (outbound)
 
-### 3.4 How users hand server tools over
+The recognizer is an **explicit allowlist per wire**. It checks the known server-executed
+types together with their execution predicates, and it never reasons "anything that is not
+a function".
 
-- **Per request:** `chat_f(tools => [ … ])` accepts a mix of MCP hashes, provider-shaped
-  function hashes, `Langertha::Tool`, `Langertha::ServerTool` objects and raw server-tool
-  hashes. For engines with the capability, the envelope normalizes the list with
-  `Tool->format_list($fmt, …)`, which now partitions each item:
-  - a blessed `ServerTool` → `->to($fmt)`;
-  - `ServerTool->from_hash($fmt, $h)` recognizes it → verbatim;
-  - anything else → `Tool->from_hash` → `to($fmt)`.
+- **`responses`**, in the order the rules are applied:
+  - `custom`, `namespace`, `function` → **never** a ServerTool. They are client tools and go
+    to `Tool` (function) or keep today's verbatim path (custom, namespace).
+  - Known client-executed built-ins → croak with "client-executed built-in; not a server
+    tool" (orchestrator ruling on Q3). These are `local_shell`, `computer`,
+    `computer_use_preview`, `apply_patch`, `shell` with a non-container `environment`, and
+    `tool_search` with `execution:"client"`.
+  - Server-executed → ServerTool:
 
-  Per-item formatting replaces the "`$tools[0]` has no `type`" heuristic in
-  `ResponsesCompatible::chat_request`. That fixes both mixed-list failures in §1 and the
-  chat-completions-shaped `{type:function, function:{…}}` hash, which is currently sent
-  verbatim to a flat-tool wire.
-- **Per engine:** a new capability role `Langertha::Role::ServerTools` (ADR 0016: capability
-  roles are roles from day one) with attribute `server_tools` (ArrayRef of `ServerTool` or
-  raw hashes, `default => sub { [] }`). The envelope's `chat_request` / `chat_stream_request`
-  append them to every request's `tools`. So `simple_chat` and `chat_with_tools_f` get web
-  search without the loop changing.
-  - The role does **not** require `Role::Tools`: a server-tools-only engine (Perplexity,
-    if §2.5 verifies) stays possible.
-- **Constructors:**
-  - `ServerTool->new(wire => 'responses', spec => { type => 'web_search' })`;
-  - `ServerTool->from_hash($fmt, $hash)`, which returns `undef` when the hash is not a
-    server tool on that wire.
-- **Values are open** (ADR 0029 stance): Langertha keeps no list of valid `type` strings,
-  so a new provider tool works without a release.
-- **Client-executed built-ins** (§2 intro) croak in `ServerTool->from_hash` / `new` with a
-  pointer ("client-executed built-in; not a server tool"). That needs a small **denylist**,
-  which is safer than a positive list: an unknown type passes, and only the known
-  loop-breakers are refused. Otherwise their calls would slip past the loop:
-  - Anthropic's become `tool_use`, and the loop dies on "not found";
-  - OpenAI's become an unknown item type, and the loop silently ends.
-- **Fail loud:** a `ServerTool` (object or recognized hash) reaching an engine without
-  `supports('server_tools')` croaks in `chat_f` / the envelope before the request, and a
-  `ServerTool` whose `wire` differs from the engine's `tool_wire_format` croaks in `to`.
-  Raw unrecognized hashes on non-supporting engines keep today's verbatim behavior
-  (the deliberate keep in §3.1c).
+    | `type` | Condition |
+    |---|---|
+    | `web_search`, `web_search_preview`, `file_search`, `code_interpreter`, `image_generation`, `mcp` | none |
+    | `x_search` | xAI |
+    | `shell` | `environment.type` ∈ {`container_auto`, `container_reference`} |
+    | `tool_search` | `execution` ≠ `client` |
+  - Anything else → **not** recognized. `from_hash` returns `undef`, and the item keeps
+    today's verbatim passthrough on `chat_f`, where the provider gets to judge it (values
+    open).
+  - A caller who is sure about a new server type wraps it explicitly:
+    `ServerTool->new(wire => 'responses', spec => {…}, force => 1)`. The name of that flag
+    is an open detail for the implementer; `force` is a placeholder.
+- **`anthropic` / `gemini`:** Phase 2, with the same structure.
+- The **allowlist and denylist** are data tables in `ServerTool`. Extending either is a
+  one-line change plus a test. Rows need a provider-docs source; the advisor supplies it.
 
-### 3.5 Recommendation
+### 3.5 Remote MCP: the approval check is an engine hook
 
-Option **(b)**: `Langertha::ServerTool` (outbound, native passthrough, pinned to one wire),
-`Langertha::ServerToolCall` + `Response.server_tool_calls` (inbound record), citations on
-the existing `Response.citations`, the capability role `Role::ServerTools` and a
-`server_tools` flag. `Response.tool_calls` stays client-actionable only (ADR 0003 update).
+OpenAI and xAI both use the `responses` tag but disagree on `require_approval`. The rule
+therefore cannot live in `ServerTool->to('responses')`. The design:
+
+- `Role::ServerTools` calls a hook named
+  `_server_tool_wire_check($server_tool) → $spec`. The name is a proposal. The hook runs
+  once per ServerTool when the request is built, and it can croak or rewrite the spec.
+  The default returns the spec unchanged.
+- **`OpenAIResponses`** override: when an `mcp` tool has `require_approval` absent (which
+  the wire defaults to `"always"`) or set to anything other than the string `'never'`, it
+  croaks: "remote MCP needs require_approval => 'never'; approval flow not supported". This
+  is the orchestrator's ruling on Q2. An approval hook can be added later without breaking
+  anything.
+- **`XAIResponses`** override: `require_approval` and `connector_id` are not supported, so
+  the override **deletes them** from the spec it sends. It carps when a caller set
+  `require_approval` to something other than `'never'`, because xAI never asks for
+  approval and the caller's intent can't be honored.
+- This mirrors ADR 0020's divergence hooks. The envelope is shared, and the provider
+  differences sit in overridable methods on the engine.
+
+### 3.6 Citations: merge and dedup, never "the hook wins"
+
+- **Sources:**
+  - the Responses walker collects `output_text.annotations[]` entries of type
+    `url_citation` (dialect layer, ADR 0018 level 2);
+  - `_responses_extra_fields` may also return a `citations` key. Perplexity does this with
+    `search_results`.
+- **Merge:** the two lists are **concatenated and deduplicated by `url`**, keeping
+  first-seen order, with the hook's entries first. Where the same `url` appears twice,
+  fields are filled in from the second entry without overwriting what is already there.
+  This keeps Perplexity's output unchanged when its payload has no annotations.
+- **Normalized entry:** `{ url, title?, snippet?, start_index?, end_index? }`.
+- **The xAI title rule:** an annotation `title` that is purely numeric is the citation
+  **number**, not a page title. It is dropped from `title`, and nothing is invented to
+  replace it. This is implemented as an `XAIResponses` override of a small hook
+  (`_citation_from_annotation`), not as a global rule, because an OpenAI page title could
+  legitimately be a number. The xAI shape is to be confirmed by **[capture]**.
+- The final stream chunk uses the same merge (the existing k158 path).
+
+### 3.7 How users hand server tools over
+
+- **Per request.** `chat_f(tools => [ … ])` accepts a mix of MCP hashes, provider-shaped
+  function hashes, `Langertha::Tool` objects, `Langertha::ServerTool` objects and
+  recognized server-tool hashes. `Tool->format_list($fmt, …)` sorts each item:
+  - a `ServerTool` object → `->to($fmt)`;
+  - `ServerTool->from_hash($fmt, $h)` recognizes it → its spec;
+  - `custom` / `namespace` / an unrecognized `type` → verbatim;
+  - otherwise → `Tool->from_hash` → `to($fmt)`.
+
+  This replaces the `$tools[0]` heuristic in `ResponsesCompatible` and fixes both
+  mixed-list failures from §1. It also fixes the chat-completions-shaped
+  `{type:function, function:{…}}` hash, which is currently sent unchanged to the flat-tool
+  wire.
+- **Per engine.** A new capability role `Langertha::Role::ServerTools` (ADR 0016: a
+  capability role is a role from day one) adds the attribute `server_tools`, an ArrayRef
+  with `default => sub { [] }`.
+  - The envelope's `chat_request` and `chat_stream_request` append these tools to every
+    request, which covers `simple_chat` and `chat_with_tools_f` without changing either.
+  - The role does **not** require `Role::Tools`, which leaves room for Perplexity (k213).
+- **Fail loud.**
+  - A `ServerTool` given to an engine without `supports('server_tools')` croaks in
+    `chat_f` / the envelope before the request is sent.
+  - A `ServerTool` whose `wire` differs from the engine's `tool_wire_format` croaks in `to`.
+- **Phase 1 surface:** provider-native only, with no portable constructors (orchestrator
+  ruling on Q1). Portable constructors can be added later without breaking anything.
 
 ## 4. Capability registry (ADR 0002) and manifest (ADR 0029)
 
-- **One flag, `server_tools`**, contributed by `Role::ServerTools` in `%ROLE_TO_CAPS`.
-  Meaning, per ADR 0002: *the wire accepts provider-native server-side tool entries in
-  `tools`*, not that every model honors every tool type.
-- **Per-tool-name flags rejected:**
-  - they would need a closed vocabulary of provider tool names;
-  - they drift monthly (Anthropic's dated types);
-  - they collide with the "values open" stance.
-- **Per-model reality** (a model that rejects hosted tools, e.g. a multi-agent or pro SKU)
-  goes into `model_capability_corrections` (ADR 0019 layer 3), never into a layer-2 regex.
-  Candidate rows: **[verify: llm-advisor]**.
-- **Pairwise conflicts** (e.g. Gemini `google_search` + `functionDeclarations`, if
-  model-dependent) go through `model_capability_exclusions` (ADR 0024). That needs a
-  `has_server_tools` argument next to `has_tools`: a Phase 2 extension of the exclusion
-  call signature.
-- `t/78_capability_registry.t`: `Role::ServerTools` appears in the map, so the axis test
-  passes without an allowlist entry.
+- **One flag, `server_tools`**, contributed by `Role::ServerTools` through `%ROLE_TO_CAPS`.
+  It means *the wire accepts provider-native server-side tool entries in `tools`*. Per-tool
+  flags are rejected, because they would need a closed and fast-drifting vocabulary.
+  `t/78_capability_registry.t` sees the role in the map.
+- **Layer 3 (ADR 0019): `grok-4.20-multi-agent` on `XAIResponses`** clears `tools_native`,
+  `tool_choice_auto/any/none/named` and `response_size`. The docs say the model has no
+  client function tools and no `max_tokens`. `server_tools` stays set: the model's purpose
+  is agentic server tools.
+  - Whether the model takes `tool_choice` for server tools is **[capture]**, so the
+    `tool_choice_*` flags stay cleared until then.
+  - Clearing `response_size` must also stop `max_output_tokens` from being emitted. Today
+    `chat_request` emits it from `get_response_size` without checking the capability.
+    Phase 1 therefore gates it on `supports('response_size')` inside the
+    `ResponsesCompatible` body builder. That is a behavior change for every Responses
+    consumer, but a no-op for engines that have the flag.
+- **Pairwise conflicts** (ADR 0024) go through `model_capability_exclusions`, which gains a
+  `has_server_tools` argument. That is a Phase 2 change to the signature. Gemini's
+  combination rule is a companion flag *and* an exclusion (§2.4).
 - **Manifest (ADR 0029):**
-  - Add `server_tools` to `@MODEL_CAPABILITIES`. It describes a chat call to that model at
-    that endpoint, so it qualifies, and the Builder guard test forces the classification.
-  - Values are evaluated per model via the existing clone, so layer-3 corrections apply.
-  - **Known v1 limitation**, added to 0029's list: the manifest says *that* server tools
-    are accepted, not *which* types. Publishing types would be a later `extensions` or
-    schema-v2 decision. Record this as an `## Update (k206)` on 0029.
+  - Add `server_tools` to `@MODEL_CAPABILITIES`. The value is evaluated per model, so the
+    multi-agent correction applies.
+  - Known v1 limitation: the manifest says *that* server tools are accepted, not *which*
+    types.
+  - Record both as an `## Update (k206)` on 0029.
 - **Builder dialect:** `XAIResponses` isa `XAI` isa `OpenAIBase`, so `@DIALECT_BY_CLASS`
-  would call it `openai-chat`, which is wrong. Add
-  `[ 'Langertha::Engine::XAIResponses' => 'responses' ]` above the `OpenAIBase` row. Same
-  envelope, same client adapter, so no new dialect is needed. More generally, a row keyed on
-  "does the engine compose `Role::ResponsesCompatible`" would stop the next Responses
-  engine from repeating this. That is a small Builder decision for the implementer to
-  flag, not to make silently.
+  would call it `openai-chat`. Add `[ 'Langertha::Engine::XAIResponses' => 'responses' ]`
+  above the `OpenAIBase` row. Keying the row on "composes `Role::ResponsesCompatible`"
+  would be more general, but that is a small Builder decision the implementer flags rather
+  than makes silently.
 
-## 5. `Engine::XAIResponses` sketch (from the advisor's note, adjusted)
+### 4.1 Usage and cost extensions (ADR 0004)
+
+- `ResponsesCompatible::chat_response` rebuilds usage from an allowlist, and xAI's extras
+  are lost. Carry `server_side_tool_usage_details`, `num_server_side_tools_used` and
+  `cost_in_usd_ticks` through the normalized usage hash verbatim, the same way
+  `input_tokens_details` and `cost` ride along today, including on the stream's final
+  chunk.
+- **Typed accessors** are a separate decision:
+  - `Langertha::Usage` gets `server_tool_calls_count` (from `num_server_side_tools_used`)
+    and `cost_usd`;
+  - `cost_usd` is `cost_in_usd_ticks / 1e10`, **[capture]** for the tick unit — confirm it
+    against the capture before converting anything;
+  - until the unit is confirmed, only the raw pass-through ships. A wrong conversion is
+    worse than none.
+- Anthropic `usage.server_tool_use.*` joins the same accessors in Phase 2.
+
+## 5. `Engine::XAIResponses`
 
 ```perl
 package Langertha::Engine::XAIResponses;
@@ -315,155 +437,183 @@ use Moose;
 extends 'Langertha::Engine::XAI';
 with 'Langertha::Role::ResponsesCompatible', 'Langertha::Role::ServerTools';
 sub _build_supported_operations { [qw( createResponse )] }
-sub _responses_extra_fields { ... }   # top-level citations -> Response.citations
+sub model_capability_corrections { ... }   # grok-4.20-multi-agent, §4
+sub _server_tool_wire_check      { ... }   # strip require_approval / connector_id, §3.5
+sub _citation_from_annotation    { ... }   # numeric title is the citation number, §3.6
+# chat_request / chat_stream_request: add include => ['reasoning.encrypted_content']
 __PACKAGE__->meta->make_immutable;
 ```
 
-- **Inherited from `XAI`:** URL `https://api.x.ai/v1`, `LANGERTHA_XAI_API_KEY`, Bearer
-  auth, default model, `/models`. This is the same shape as `OpenAIResponses` on `OpenAI`.
-  `ResponsesCompatible` in the subclass overrides the inherited `_build_tool_wire_format` /
-  `_build_reasoning_wire_format` (→ `responses`) and `chat_request` / `chat_response`.
-- **Hooks (ADR 0020):**
-  - `_responses_model_kwargs`, `_responses_format_kwargs` (`text.format`, which the xAI ref
-    has), `_responses_dispatch` (`createResponse`) and `_normalize_input_item` keep their
-    defaults.
-  - `_responses_dispatch` needs `supported_operations` = `createResponse`, because `XAI`
-    restricts it to `createChatCompletion`.
-  - `_responses_extra_fields` lifts xAI's top-level `citations` (normalized to
-    `{ url => … }` hashes if they are bare strings **[verify]**). It is also used on the
-    final stream chunk (the existing k158 path).
-- **Streaming stays on**, unlike `OpenAIResponses`. xAI streams typed SSE. Whether its event
-  names match `parse_stream_chunk` (`response.output_text.delta`, `response.completed`) is
-  **[verify: capture]**. Server-tool and reasoning-summary events fall through to `undef`,
-  which is correct.
-- **Encrypted reasoning:** fix the `summary[0]{text}` autovivification (§1). An
-  `encrypted_content`-only reasoning item must yield no `thinking` (undef, not `''`). The
-  `responses` assistant echo already carries the reasoning item back, which is what the
-  round-trip needs in a tool loop. Whether a stateless multi-turn call needs
-  `include => ['reasoning.encrypted_content']` is **[verify: llm-advisor]**. If it does,
-  send it as a top-level kwarg (ADR 0004).
-- **Reasoning / temperature:**
-  - `reasoning_wire_format` `responses` emits `reasoning:{effort}`. Which grok models accept
-    it on Responses belongs to the grok `Reasoning::Profile` row, **k208 on the parallel
-    branch**. This spec does not touch `Reasoning/Profile.pm` or `Engine/XAI.pm`.
-  - `_temperature_rejected_by_reasoning` is not defined on `XAI`, so the `can()` guard in
-    `_temperature_kwargs` passes temperature through. Whether grok reasoning models reject
-    it is **[verify: llm-advisor]** (k208 territory).
+- **Inherited from `XAI`:** the URL `https://api.x.ai/v1`, `LANGERTHA_XAI_API_KEY`, Bearer
+  auth, the default model and `/models`. This is the same shape as `OpenAIResponses` on
+  `OpenAI`. Because `ResponsesCompatible` sits on the subclass, its `_build_*_wire_format`
+  (→ `responses`) and its `chat_request` / `chat_response` override the inherited ones.
+- **ADR 0020 hooks:**
+  - `_responses_model_kwargs`, `_responses_format_kwargs` (`text.format`),
+    `_normalize_input_item` and `_responses_extra_fields` keep their defaults. Citations
+    now come from annotations (§3.6), so no top-level lift is needed.
+  - `_responses_dispatch` keeps its default `createResponse`. That requires
+    `supported_operations` to be `createResponse`, because `XAI` restricts it to
+    `createChatCompletion`.
+- **`include: ["reasoning.encrypted_content"]` on every request.** It is sent as a
+  top-level kwarg (ADR 0004), and a caller-supplied `include` is merged in rather than
+  overwritten.
+  - The `responses` assistant echo already carries the reasoning item back, so a stateless
+    tool loop keeps its reasoning.
+  - The `summary` autovivification fix (§1) ensures that an encrypted-only reasoning item
+    yields `thinking` as undef.
+- **Streaming is blocked on k212.** `parse_stream_chunk` drops streamed function calls and
+  `response.failed`.
+  - Until k212 lands, `XAIResponses` sets `stream_format` to undef and clears `streaming`,
+    as `OpenAIResponses` does.
+  - Once k212 lands, streaming is switched on in a follow-up. The xAI SSE event names are
+    confirmed against the stream capture first.
+- **Timeouts.** Agentic runs (several searches, code execution, multi-agent) can exceed
+  LWP's 180 s default.
+  - The engine POD tells users to set `user_agent_timeout` (sync path) and names `max_turns`
+    as the budget knob. The async path's timeout behavior is **langertha-async-worker's
+    call**.
+  - Phase 1 does **not** raise any default silently.
+- **Reasoning and temperature belong to k208** on the parallel branch. This spec does not
+  touch `Reasoning/Profile.pm` or `Engine/XAI.pm`. `_temperature_kwargs`' `can()` guard
+  passes temperature through on XAI.
 - **Capabilities:**
-  - inherited: `tools_native`, `tool_choice_*`, `response_format_json_schema`, `streaming`;
-  - added by the role: `server_tools`;
-  - `response_format_json_object` on xAI Responses is **[verify]**;
-  - `grok-4.20-multi-agent` is Responses-only, so there is no correction on this engine;
-    whether it accepts client function tools is **[verify]**.
-- **Out of scope:** `previous_response_id`/`store`, `max_turns` (both reachable as
-  top-level kwargs today, ADR 0004).
+  - inherited: `tools_native`, `tool_choice_*`, `response_format_json_schema`;
+  - added: `server_tools`;
+  - `streaming`: cleared until k212 lands;
+  - the multi-agent row as in §4;
+  - `response_format_json_object` on xAI Responses: **[capture]**. It stays advertised if
+    the capture shows the wire accepts it, and is cleared otherwise.
+- **Out of scope:** `previous_response_id` / `store`. `max_turns` is reachable today as a
+  top-level kwarg.
 - **Done-list (langertha-internals):**
-  - `t/00_load.t`, `t/10_engine_hierarchy.t`;
+  - `t/00_load.t` and `t/10_engine_hierarchy.t`;
   - the `lib/Langertha.pm` catalogue (`t/79`) and the `CLAUDE.md` engine tree;
-  - the Builder dialect row (§4);
-  - POD pointing at `Engine::XAI` for function-tool-only use.
+  - the Builder dialect row;
+  - POD that points function-tool-only users at `Engine::XAI` and documents the X Search
+    per-post billing.
 
 ## 6. Phasing and test strategy
 
-### Phase 1 — the seam, OpenAIResponses, XAIResponses
+### Prerequisite
 
-1. `Langertha::ServerTool` (`new`, `from_hash($fmt,$h)`, `to($fmt)`, denylist, `to_hash`),
-   `responses` wire only. The other wires croak "not yet supported" so that nothing is
-   half-wired.
-2. `Tool->format_list` per-item partition. `ResponsesCompatible::chat_request` and
-   `chat_stream_request` switch from the `$tools[0]` heuristic to
-   `format_list('responses', …)` (pinned literal, like its `ToolChoice` pin, ADR 0010), plus
-   the `server_tools` append.
-3. `Role::ServerTools`, the `server_tools` flag, `%ROLE_TO_CAPS`, the manifest allowlist,
-   and the `supports` croak in `chat_f`.
-4. `ServerToolCall`, `Response.server_tool_calls`, and annotation citations. The Responses
-   walker (dialect layer, ADR 0018 level 2) collects `url_citation` annotations. A
-   `citations` key returned by `_responses_extra_fields` comes later in the constructor
-   list and wins, so Perplexity is unchanged. The stream final chunk does the same.
-5. The `summary` autovivification fix.
-6. `Engine::XAIResponses`.
-7. ADR (new) + 0003/0029 updates + `CONTEXT.md` terms (**ServerTool**, **Server tool call**).
+**k212:** the Responses stream parser handles `function_call` events and `response.failed`,
+and on `response.completed` it reuses the `chat_response` walker (tool_calls, citations,
+server_tool_calls). Phase 1 does not depend on k212; only XAIResponses streaming does.
 
-### Phase 2 — Anthropic and Gemini
+### Phase 1: the seam, OpenAIResponses and XAIResponses
+
+1. `Langertha::ServerTool`: `new`, `from_hash($fmt,$h)` with the §3.4 tables, `to($fmt)` and
+   `to_hash`. The `responses` wire only; the other wires croak "not yet supported".
+2. The per-item partition in `Tool->format_list`. `ResponsesCompatible` switches to
+   `format_list('responses', …)` with a pinned literal, like its `ToolChoice` pin (ADR 0010),
+   and appends `server_tools`.
+3. `Role::ServerTools`: the `server_tools` flag, `%ROLE_TO_CAPS`, the manifest allowlist,
+   the `supports` croak and the `_server_tool_wire_check` hook (§3.5).
+4. Inbound:
+   - `ServerToolCall` and `Response.server_tool_calls`;
+   - the client-actionable guard (§3.3);
+   - the annotation citations merge (§3.6);
+   - the usage pass-through (§4.1);
+   - the `summary` autovivification fix;
+   - the `supports('response_size')` gate on `max_output_tokens`.
+5. `Engine::XAIResponses`, with streaming off (§5).
+6. A new ADR, the 0003 and 0029 updates, and the `CONTEXT.md` terms **ServerTool** and
+   **Server tool call**.
+
+### Phase 2: Anthropic and Gemini
 
 - **Anthropic:**
-  - `to`/`from_hash` for `anthropic`;
-  - the `server_tool_use` + `*_tool_result` blocks → `server_tool_calls`;
+  - the recognizer tables;
+  - `allowed_callers: ["direct"]` handling for the newer web_search / web_fetch versions
+    (fill it in or croak on models without programmatic tool calling; which of the two is
+    decided in Phase 2);
+  - `server_tool_use` + `*_tool_result` → `server_tool_calls`;
   - text-block `citations` → `Response.citations`;
-  - `usage.server_tool_use` into `Langertha::Usage`;
-  - **`pause_turn`**: `chat_with_tools_f` must re-send the turn instead of returning partial
-    text. That is a loop behavior change and needs its own mini-design (and an ADR 0003/0005
-    check). Also the beta headers **[verify]**.
+  - `usage.server_tool_use`;
+  - **`pause_turn`** re-send in `chat_with_tools_f`, which needs its own mini-design;
+  - the MCP connector (`mcp_toolset` + top-level `mcp_servers` + beta header, and the name
+    collision in §2.3).
 - **Gemini:**
-  - `gemini` branch of `format_list` (server tools as sibling `tools[]` entries next to the
-    one `functionDeclarations` entry);
-  - `groundingMetadata.groundingChunks` → citations;
-  - `executableCode` / `codeExecutionResult` parts → `server_tool_calls` (and kept out of
-    `content`);
-  - the exclusion signature extension (§4).
-- Perplexity explicit tools only if §2.5 verifies.
+  - server tools as sibling `tools[]` entries;
+  - for Gemini 3 combined with `functionDeclarations`, the companion flag
+    `toolConfig.includeServerSideToolInvocations: true`, plus `toolCall` / `toolResponse`
+    parts with a `thoughtSignature` that must round-trip in the echo;
+  - pre-Gemini-3 combinations → an exclusion;
+  - `groundingMetadata` → citations;
+  - `executableCode` / `codeExecutionResult` → `server_tool_calls` (kept out of `content`).
+- **Perplexity:** under k213.
 
 ### Tests (skill `langertha-testing`)
 
-- **Request building (`2x`, offline, no capture needed):**
-  - `ServerTool->to` / wire-mismatch croak / denylist croak;
-  - `format_list` partition with all five input kinds;
-  - both mixed-list orders from §1, now correct;
-  - engine `server_tools` appended on `chat_request` and `chat_stream_request`;
-  - the `supports` croak on `Engine::OpenAI` (chat) given a `ServerTool`;
-  - XAIResponses body `is_deeply` (model, `input`, `tools`, `reasoning`, `text.format`)
-    against `/v1/responses` on `api.x.ai`.
-- **Response parsing (`7x`/`9x`, verbatim captures in `t/data/`, `slurp_raw`, never
-  hand-written):** `server_tool_calls`, citations (dedup, order), `tool_calls` empty for a
-  server-only turn (the ADR 0003 invariant), no `summary` autovivification in `raw`.
-- **Mocked async (`6x`, `Test::MockAsyncHTTP`):** a `chat_with_tools_f` turn whose response
-  is the web-search capture makes **zero** `call_tool` calls and returns the text. A
-  mixed capture (server call + `function_call`) executes exactly the function call, and
-  the echo carries the server item.
-- **Registry / manifest:** `t/78` sees `server_tools`; the Builder test classifies it and
-  maps `XAIResponses` → `responses`.
-- **Live:** none without the maintainer's OK. Candidate gated files: extend
-  `85_live_responses` (OpenAI key) and a new xAI Responses live test
-  (`TEST_LANGERTHA_XAI_API_KEY`).
+- **Request building (`2x`, offline):**
+  - the §3.4 tables row by row, including `custom` / `namespace` never becoming a
+    ServerTool, `shell` and `tool_search` by their execution predicate, and the denylist
+    croak;
+  - `format_list` with all item kinds and both mixed-list orders;
+  - `server_tools` appended on both request builders;
+  - the `supports` croak on `Engine::OpenAI`;
+  - the MCP hook: OpenAI croaks on absent or non-`'never'` `require_approval`; xAI strips
+    `require_approval` / `connector_id`;
+  - `include` sent and merged on XAIResponses;
+  - no `max_output_tokens` for `grok-4.20-multi-agent`;
+  - the XAIResponses body `is_deeply`.
+- **Response parsing (`7x`/`9x`, verbatim captures only):**
+  - `server_tool_calls`;
+  - citations merge / dedup / order, and the numeric xAI title dropped;
+  - `tool_calls` empty on a server-only turn;
+  - the client-actionable guard croaks on an `mcp_approval_request`. The fixture for this is
+    a documented exception: the guard test uses a minimal item taken from the OpenAI
+    reference, because provoking one live costs an approval round-trip. Flag this in the
+    test's intent comment;
+  - usage extras carried through;
+  - no autovivification in `raw`.
+- **Mocked async (`6x`):**
+  - on the web-search capture, `chat_with_tools_f` makes **zero** `call_tool` calls;
+  - on the mixed server + function capture it makes exactly one, and the echo carries the
+    server item.
+- **Registry / manifest:** `t/78` and the Builder test (the `server_tools` classification,
+  the multi-agent correction, and `XAIResponses` → `responses`).
 
-**Captures that do not exist and need a maintainer-approved live call** (`t/data/` has only
-`responses_api_text`, `responses_api_toolcall`, `responses_api_toolcall_toplevel` and
-`perplexity_agent_search`, none with server-tool items or annotations):
+### Captures (need the maintainer's approval; none have been made)
 
-| Capture | Provider | Needed for |
-|---|---|---|
-| `responses_web_search.json` (+ headers) — `web_search_call` + `message` with `url_citation` | OpenAI | Phase 1 parsing, loop test |
-| `responses_web_search_function_call.json` — server call + `function_call` in one turn | OpenAI | loop executes only the function call |
-| `xairesponses_chat_response.json` — plain text, encrypted reasoning item | xAI | walker, autoviv fix, `thinking` undef |
-| `xairesponses_web_search.json` / `xairesponses_x_search.json` — server items + top-level `citations` | xAI | Phase 1 parsing, citations shape |
-| `xairesponses_tool_call_response.json` — function call | xAI | function tools on the new engine |
-| `xairesponses_stream.sse` — streamed web-search turn | xAI | stream event names, final-chunk citations |
-| `anthropic_web_search.json`, `anthropic_pause_turn.json` | Anthropic | Phase 2 |
-| `gemini_google_search.json`, `gemini_code_execution.json` | Gemini | Phase 2 |
+The advisor's plan is about **9 requests**: OpenAI `gpt-5.6-luna` and xAI `grok-4.7` with
+`max_turns` ≤ 2. The estimate is **$0.40–1.00**, with a proposed **$3 hard cap**.
+**Awaiting Getty's approval.** The list below reconstructs those 9 requests from the karr
+summary. The advisor's full per-request list sits in its report to the orchestrator, so
+reconcile the two before running anything.
 
-Server-tool calls cost more than plain chat (per-search fees). The Phase 1 set is about six
-calls on two keys. AKI.IO's standing exception does not apply here.
+| # | Capture (`t/data/`, + `.headers.json`) | Provider / model | Needed for |
+|---|---|---|---|
+| 1 | `responses_web_search.json`: `web_search_call` + message with `url_citation` | OpenAI gpt-5.6-luna | parsing, citations, loop test |
+| 2 | `responses_web_search_function_call.json`: server call + `function_call` in one turn | OpenAI gpt-5.6-luna | the loop executes only the function call, echo |
+| 3 | `responses_web_search_echo.json`: follow-up turn echoing #2's items + `function_call_output` | OpenAI gpt-5.6-luna | echo acceptance |
+| 4 | `xairesponses_chat_response.json`: plain text, encrypted reasoning, `include` set | xAI grok-4.7 | walker, autoviv fix, `thinking` undef |
+| 5 | `xairesponses_tool_call_response.json`: function call | xAI grok-4.7 | function tools on the new engine |
+| 6 | `xairesponses_web_search.json`: server items, annotations, usage extras | xAI grok-4.7, `max_turns` ≤ 2 | citations shape (numeric title), usage / ticks unit |
+| 7 | `xairesponses_x_search.json` | xAI grok-4.7, `max_turns` ≤ 2 | server item types, X Search billing fields |
+| 8 | `xairesponses_json_object.json`: `text.format` json_object | xAI grok-4.7 | the `response_format_json_object` flag |
+| 9 | `xairesponses_web_search_stream.sse`: streamed web-search turn | xAI grok-4.7, `max_turns` ≤ 2 | xAI SSE event names (feeds k212) |
+
+Phase 2 captures (Anthropic web_search / `pause_turn` / `allowed_callers`, Gemini
+google_search / Gemini 3 combined tools) are a separate approval.
 
 ## 7. Non-goals
 
-- A portable canonical vocabulary (`ServerTool->web_search` mapping to each provider's
-  spelling) is not in Phase 1; see the open questions.
+- No portable canonical constructors in Phase 1 (Q1 ruling).
+- No MCP approval flow (Q2 ruling).
+- No tool-loop integration for client-executed built-ins; that gets its own later ticket
+  (Q3 ruling).
 - No `previous_response_id` / server-side conversation state.
-- No client-side executor for OpenAI/Anthropic client built-ins.
-- No change to `chat_f`'s existing verbatim `tools` passthrough on non-supporting engines.
+- No change to `chat_f`'s verbatim `tools` passthrough on engines without the capability.
+- No silent timeout changes.
 
 ## 8. Open questions for the maintainer
 
-1. **Portable names?** Should Phase 1 ship a small canonical constructor set
-   (`ServerTool->web_search(%opts)` → `{type:'web_search'}` / `web_search_20250305` /
-   `google_search`), or stay native-only until Anthropic and Gemini land? "Normalize,
-   don't gatekeep" argues for it. The options differ per provider and the dated types
-   drift, which argues against. The recommendation is native-only first.
-2. **MCP approval flow:** OpenAI's remote-MCP `mcp_approval_request` needs a client
-   round-trip. Should Phase 1 support remote MCP only with `require_approval:'never'` (croak
-   otherwise), or design an approval hook now?
-3. **Client-executed built-ins:** is the denylist croak acceptable, or should Langertha
-   (later) route e.g. Anthropic `bash`/`text_editor` calls into the tool loop as ordinary
-   client calls?
-4. **Spend:** OK to make the Phase 1 capture calls (about six requests on OpenAI + xAI, with
-   search fees)?
+1. **Capture spend:** may we make the 9 Phase 1 capture requests (about $0.40–1.00, hard
+   cap $3) on the OpenAI and xAI keys?
+2. **`max_output_tokens` gate:** Phase 1 would stop `ResponsesCompatible` from sending
+   `max_output_tokens` when `supports('response_size')` is false (needed for
+   `grok-4.20-multi-agent`). Every other Responses engine has the flag today, so this is a
+   no-op for them. Is it OK to make this change in the shared role rather than as an
+   XAIResponses-only override?
