@@ -19,8 +19,8 @@ with 'Langertha::Role::ParallelToolUse';
 
     my $loop = IO::Async::Loop->new;
 
-    # Set up any Net::Async::MCP-compatible client (e.g. the
-    # Langertha::Raider::MCP client from the langertha-raider distribution)
+    # Set up any Net::Async::MCP-compatible client (langertha-raider uses
+    # Net::Async::MCP directly)
     my $mcp = SomeMCPClient->new(server => $my_mcp_server);
     $loop->add($mcp);
     await $mcp->initialize;
@@ -85,8 +85,8 @@ has mcp_servers => (
     mcp_servers => [$mcp1, $mcp2]
 
 ArrayRef of MCP client objects to use as tool providers — any
-L<Net::Async::MCP>-compatible client (for example the C<Langertha::Raider::MCP>
-client from the langertha-raider distribution). Each entry must respond to
+L<Net::Async::MCP>-compatible client (for example a L<Net::Async::MCP> client
+as used by the langertha-raider distribution). Each entry must respond to
 C<list_tools> and C<call_tool>. Defaults to an empty ArrayRef. At least one
 server must be configured before calling L</chat_with_tools_f>.
 

@@ -647,9 +647,9 @@ Supported: OpenAI, Groq, Cerebras, OpenRouter, Replicate, HuggingFace
 
 =head2 MCP Tool Calling
 
-Integrates with any L<Net::Async::MCP>-compatible client (for example the
-C<Langertha::Raider::MCP> client shipped with the C<langertha-raider>
-distribution) for automatic multi-round tool calling:
+Integrates with any L<Net::Async::MCP>-compatible client (for example a
+L<Net::Async::MCP> client as used by the C<langertha-raider> distribution)
+for automatic multi-round tool calling:
 
     my $engine = Langertha::Engine::OpenAI->new(
         api_key     => $ENV{OPENAI_API_KEY},
