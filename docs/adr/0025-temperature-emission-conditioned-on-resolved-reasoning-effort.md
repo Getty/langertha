@@ -186,3 +186,31 @@ message is now identical on all three roles and names the remedy:
 server-side); unset temperature to silence this`. Verified offline:
 `t/79_kimi_temperature_gate.t` (test engines clear the flag with a layer-3 row). The carp still
 reports the frame `Carp` picks, not the caller's own frame; left as is.
+
+## Update (k247 — drop warnings name the caller; engine-attribute drops warn once per instance)
+
+Two defects in the drop+carp convention, shared by every capability drop that followed this ADR
+(the three `_temperature_kwargs` gates, `Role::Chat::_gate_tool_choice` (k239),
+`_parallel_tool_calls_kwarg` (k241), the hermes-wire `tool_choice` warnings (k231/k246) and the
+k250 "engine response_format replaced" warning):
+
+- **Location.** The carps fire in private helpers several Langertha frames below the caller, and
+  `Carp` skips only one untrusted frame, so the message named a line in
+  `Role/OpenAICompatible.pm`, `Role/Chat.pm` or `Engine/Ollama.pm`. They now go through one
+  helper, `Role::Chat::_langertha_carp`, which marks every `Langertha`, `Moose`, `Class::MOP`,
+  `Eval::Closure` and `Future` package on the current stack as `%Carp::Internal` for the duration
+  of that one `carp` (`local` on a hash slice). A synchronous `chat_f` / `simple_chat_f` /
+  `chat_request` call therefore reports the user's own line. `croak` is untouched: marking all
+  Langertha packages internal globally would have moved every croak's location too. Under an
+  event loop there may be no user frame; `Carp` then reports what it finds and never dies.
+- **Frequency.** k220's "carps on every request" was right for a per-request value but noisy for
+  an engine attribute, which is identical on every request and every `chat_with_tools_f`
+  iteration. A drop whose value comes from an engine attribute now warns **once per engine
+  instance per (warning kind, value)**; the seen-set is a private lazy `_warned_drops` HashRef on
+  the instance (`init_arg => undef`), never a global, so a new engine warns again. A per-request
+  value still warns every time; `tool_choice` has no engine attribute, so its drops always warn.
+  The temperature key includes `chat_model`, as the message does.
+
+Verified offline: `t/76_drop_warning_location.t` (location on OpenAI temperature, Ollama native
+`tool_choice`, Gemini `parallel_tool_use`; once-vs-every-time counts),
+`t/79_kimi_temperature_gate.t` (parity assertion updated to the new frequency).
