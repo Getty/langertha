@@ -2,6 +2,10 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Tool results carry the call's correlation key: Gemini functionResponse
+      echoes the functionCall id when there is one, and Ollama tool messages
+      send tool_name plus tool_call_id when the call had an id.
+
     - Anthropic tool results map MCP content onto Anthropic blocks instead of
       embedding it: images become base64 image blocks, PDF blobs and text
       resources become documents, text loses annotations and _meta, and

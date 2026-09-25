@@ -56,7 +56,8 @@ has name => (
 
 =attr name
 
-The tool's name. Used by formats that key results by name (Gemini, Hermes).
+The tool's name. Used by formats that key results by name (Gemini, Hermes,
+Ollama's C<tool_name>).
 
 =cut
 
@@ -69,7 +70,8 @@ has id => (
 =attr id
 
 The provider call id this result answers (C<tool_call_id> / C<tool_use_id> /
-C<call_id>). May be empty for formats that don't correlate by id.
+C<call_id>; Gemini's C<functionResponse.id>, Ollama's C<tool_call_id>). May be
+empty; Gemini and Ollama then send no id at all.
 
 =cut
 
@@ -136,9 +138,13 @@ sub to_openai {
 
 sub to_ollama {
   my ($self) = @_;
+  # Ollama's Message carries tool_name and tool_call_id (both omitempty); with
+  # same-name parallel calls they are what correlates a result (karr k328).
   return {
-    role    => 'tool',
-    content => $JSON->encode( $self->content ),
+    role      => 'tool',
+    tool_name => $self->name,
+    ( length( $self->id ) ? ( tool_call_id => $self->id ) : () ),
+    content   => $JSON->encode( $self->content ),
   };
 }
 
@@ -246,6 +252,9 @@ sub to_gemini {
   return {
     functionResponse => {
       name     => $self->name,
+      # Gemini 3 requires the functionCall's id back; 2.5 may send none, and
+      # an invented one would match nothing (karr k328).
+      ( length( $self->id ) ? ( id => $self->id ) : () ),
       response => { result => $self->_text },
     },
   };

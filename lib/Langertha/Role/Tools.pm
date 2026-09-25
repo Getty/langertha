@@ -449,6 +449,7 @@ L</tool_wire_format>. For C<hermes>, strips C<E<lt>tool_callE<gt>> tags.
 sub _result_call_id {
   my ( $tc ) = @_;
   return $tc->id if blessed $tc;
+  return $tc->{functionCall}{id} // '' if ref $tc->{functionCall} eq 'HASH';
   return $tc->{call_id} // $tc->{id} // '';
 }
 
@@ -456,6 +457,7 @@ sub _result_call_name {
   my ( $tc ) = @_;
   return $tc->name if blessed $tc;
   return $tc->{functionCall}{name} // '' if ref $tc->{functionCall} eq 'HASH';
+  return $tc->{function}{name} // '' if ref $tc->{function} eq 'HASH';
   return $tc->{name} // '';
 }
 
@@ -483,6 +485,7 @@ sub format_tool_results {
     my @parts = map {
       Langertha::ToolResult->new(
         name    => _result_call_name( $_->{tool_call} ),
+        id      => _result_call_id( $_->{tool_call} ),
         content => ( $_->{result}{content} // [] ),
       )->to('gemini')
     } @$results;
@@ -507,7 +510,11 @@ sub format_tool_results {
     return (
       \%echo,
       map {
-        Langertha::ToolResult->new( content => ( $_->{result}{content} // [] ) )->to('ollama')
+        Langertha::ToolResult->new(
+          name    => _result_call_name( $_->{tool_call} ),
+          id      => _result_call_id( $_->{tool_call} ),
+          content => ( $_->{result}{content} // [] ),
+        )->to('ollama')
       } @$results,
     );
   }

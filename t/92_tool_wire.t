@@ -122,7 +122,8 @@ subtest 'ToolResult->to per format' => sub {
 
   my $oll = $r->to('ollama');
   is( $oll->{role}, 'tool', 'ollama role tool' );
-  ok( !exists $oll->{tool_call_id}, 'ollama has no tool_call_id' );
+  is( $oll->{tool_name}, 'echo', 'ollama tool_name' );
+  is( $oll->{tool_call_id}, 'call_1', 'ollama tool_call_id' );
 
   my $res = $r->to('responses');
   is( $res->{call_id}, 'call_1', 'responses call_id' );
