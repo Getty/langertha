@@ -38,7 +38,7 @@ The conventions above are non-negotiable — apply silently, do not restate.
    - The engine classes (`lib/Langertha/Engine/`) and `Langertha::Role::Capabilities` — the
      `%ROLE_TO_CAPS` map, each engine's `around engine_capabilities`, its
      `model_capability_corrections` and `model_capability_exclusions` ARE the encoded provider
-     quirks (Perplexity has no tool calling; string-only providers clear `tool_choice_named`;
+     quirks (Perplexity has client function tools but no `tool_choice` / `parallel_tool_calls`; string-only providers clear `tool_choice_named`;
      first-party Anthropic uses native `output_config.format` while the `/anthropic` shims
      need a forced synthetic tool; Groq/Cerebras reject tools + json_schema in one body; …).
    A plan that contradicts an existing ADR or a capability correction is a finding in itself.
@@ -51,7 +51,7 @@ The conventions above are non-negotiable — apply silently, do not restate.
 
 ## What to check — the Sonderheiten that bite
 
-- **Wire format & tool calling** — native tools vs none (Perplexity) vs Hermes-XML; `tool_choice`
+- **Wire format & tool calling** — native tools vs function-tools-only without `tool_choice` (Perplexity Agent API) vs Hermes-XML; `tool_choice`
   shape (object vs string-only); parallel tool use; how tool results must be fed back per format.
 - **Structured output** — native `response_format` json_schema vs json_object vs none; which
   providers need the forced-tool / synthetic-ToolCall workaround.

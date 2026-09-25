@@ -69,7 +69,7 @@ refactors:
 - **0017** — `Response.created` is a `Langertha::Moment` value object (`0+` = epoch, `""` = ISO stamp with sub-seconds), reversing karr #92's engine-side epoch conversion
 - **0018** — where a provider's wire *spelling* is normalized: value-object door (universal) / dialect role (family) / engine `around chat_response` (one provider)
 - **0019** — model-scoped capability corrections (amends 0002): declarative `model_capability_corrections` keyed on `chat_model` (layer 3)
-- **0020** — Open-Responses envelope as third composed role `Role::ResponsesCompatible` (OpenAIResponses + Perplexity, five divergence hooks)
+- **0020** — Open-Responses envelope as third composed role `Role::ResponsesCompatible` (OpenAIResponses + Perplexity, divergence hooks — six since k213)
 - **0021** — pairwise capability exclusions (tools + `response_format`) croak at the `chat_f`/streaming layer — mechanism superseded by 0024
 - **0022** — `RateLimit` resets split into typed instant (`*_reset_at`) + duration (`*_reset_after`), `undef` when the wire sent neither
 - **0023** — per-model reasoning wire-truth is a typed `Reasoning::Profile` resolved via `for_model($id)`; carries `is_reasoning_model` (k186) and multi-digit guards (k196)
@@ -213,7 +213,7 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **HTTP** (sync + async; backend selection in **AsyncHTTP**, ADR 0027) · **JSON** (`$self->json`) · **OpenAICompatible** ·
   **AnthropicCompatible** (`/v1/messages` envelope, parallel to `OpenAICompatible`) ·
   **ResponsesCompatible** (Open-Responses `/v1/responses` + `/v1/agent` envelope, shared by
-  `OpenAIResponses` + `Perplexity` via five divergence hooks — ADR 0020) ·
+  `OpenAIResponses` + `Perplexity` via divergence hooks — ADR 0020) ·
   **OpenAPI** (spec validation) · **ThinkTag** (`<think>` filtering) · **Langfuse** (observability).
 - **Runtime::MetricsPoll** — async Prometheus `/metrics` scrape for self-hosted engines
   (vLLM, SGLang, llama.cpp). URL derived by stripping the trailing `/v1` from the engine's

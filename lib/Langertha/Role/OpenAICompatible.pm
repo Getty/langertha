@@ -406,7 +406,7 @@ sub chat_response {
   my $msg = $choice->{message} || {};
   # The OpenAI-compatible response envelope is always OpenAI-shaped, even for
   # engines whose tool_wire_format is 'hermes' (their calls ride in the message
-  # text, parsed elsewhere) or that compose no Tools role at all (Perplexity).
+  # text, parsed elsewhere).
   # Pin the structured extractor to 'openai' rather than $self->tool_wire_format.
   my @tcs = Langertha::ToolCall->extract( 'openai', $data );
   # Chain-of-thought reaches the OpenAI-compatible message under two spellings:
