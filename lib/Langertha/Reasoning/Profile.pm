@@ -186,6 +186,27 @@ L</can_disable> (whether an explicit C<none> effort turns reasoning off at all).
 
 =cut
 
+has is_reasoning_model => (
+  is      => 'ro',
+  isa     => 'Bool',
+  default => 0,
+);
+
+=attr is_reasoning_model
+
+Whether the model is a curated OpenAI reasoning model — one that can reject a
+non-default C<temperature> while reasoning is active. C<1> is set explicitly on
+the o-series, the gpt-5 line (non-chat), the gpt-5.N lines (non-chat) and gpt-6.
+The explicit non-reasoning entries (gpt-4o / gpt-4.1 and every C<gpt-5-chat> /
+C<gpt-5.N-chat> id) carry C<0>, and so does the unlisted-id default: an unknown
+model never classifies as reasoning, because wrongly dropping a caller's
+temperature is the worse error (karr k186). Only the OpenAI families are
+curated; a C<0> on another family (Claude, Gemini, Qwen, GPT-OSS) means "not
+classified", not "known non-reasoning". Consumed read-only by
+L<Langertha::Engine::OpenAI/_temperature_rejected_by_reasoning>.
+
+=cut
+
 has disable_form => (
   is      => 'ro',
   isa     => 'Langertha::Reasoning::DisableForm',
@@ -438,6 +459,34 @@ sub _openai_profile {
   );
 }
 
+# An OpenAI line whose effort ladder is uncurated: the unlisted-id passthrough
+# serialization (full normalized enum, no per-wire restriction) with an explicit
+# reasoning classification (karr k186).
+sub _openai_passthrough {
+  my ( $match, $is_reasoning, $source ) = @_;
+  return __PACKAGE__->new(
+    model_match        => $match,
+    control            => 'effort',
+    wire_format        => 'openai',
+    levels             => [@ANTHROPIC_EFFORT_LEVELS],
+    is_reasoning_model => $is_reasoning,
+    source             => $source,
+  );
+}
+
+# A non-reasoning chat carve-out that serializes exactly like the reasoning
+# family it sits in ($like_id resolves to that family): only the classification
+# differs, so the carve-out changes nothing on the reasoning wire (karr k186).
+sub _non_reasoning_like {
+  my ( $match, $like_id ) = @_;
+  my $like = _resolve($like_id);
+  return $like->meta->clone_object( $like,
+    model_match        => $match,
+    is_reasoning_model => 0,
+    source             => $like->source . "; k186 non-reasoning chat carve-out",
+  );
+}
+
 sub _gemini3_profile {
   my ( $match, $levels ) = @_;
   return __PACKAGE__->new(
@@ -477,14 +526,15 @@ sub _ensure_registry {
       [qw( low medium high xhigh max )],
       openai_levels => [qw( low medium high xhigh )],
       source        => $OPENAI_K176_DOC,
-      disable_form => 'absent', can_disable => 1 ),
+      disable_form => 'absent', can_disable => 1, is_reasoning_model => 1 ),
     _openai_profile( qr/\Agpt-5\.6/,
       [qw( none low medium high xhigh max )],
       openai_levels => [qw( none low medium high xhigh )],
       source        => $OPENAI_K176_LIVE,
-      disable_form => 'explicit_none' ),
+      disable_form => 'explicit_none', is_reasoning_model => 1 ),
     _openai_profile( qr/\Agpt-5\.5/,
-      [qw( none low medium high xhigh )], disable_form => 'explicit_none' ),
+      [qw( none low medium high xhigh )], disable_form => 'explicit_none',
+      is_reasoning_model => 1 ),
     # gpt-5.1 (karr k174), most-specific-first: codex-max re-adds xhigh, base
     # drops minimal/xhigh/max. Both wires identical (xhigh is not Responses-only).
     # default_reasoning_off: the 5.1 line's no-effort server-side default is
@@ -492,11 +542,11 @@ sub _ensure_registry {
     _openai_profile( qr/\Agpt-5\.1-codex-max/,
       [qw( none low medium high xhigh )],
       source => $OPENAI_K174_DOC, disable_form => 'explicit_none',
-      default_reasoning_off => 1 ),
+      default_reasoning_off => 1, is_reasoning_model => 1 ),
     _openai_profile( qr/\Agpt-5\.1/,
       [qw( none low medium high )],
       source => $OPENAI_K174_DOC, disable_form => 'explicit_none',
-      default_reasoning_off => 1 ),
+      default_reasoning_off => 1, is_reasoning_model => 1 ),
     # gpt-5.2 / gpt-5.4: same no-effort-default-off generation as gpt-5.1
     # (reasoning_tokens=0 with no effort, a non-default temperature honored --
     # k185 2026-09-19 live). Their accepted effort ladder is not yet live-curated,
@@ -509,10 +559,26 @@ sub _ensure_registry {
       wire_format           => 'openai',
       levels                => [@ANTHROPIC_EFFORT_LEVELS],
       default_reasoning_off => 1,
+      is_reasoning_model    => 1,
       source                => 'k185 2026-09-19 live: gpt-5.2/5.4 no-effort default reasoning off; effort ladder uncurated (passthrough)',
     ),
     _openai_profile( qr/\Agpt-5(?![.\d])/,
-      [qw( minimal low medium high )], disable_form => 'absent' ),
+      [qw( minimal low medium high )], disable_form => 'absent',
+      is_reasoning_model => 1 ),
+    # Uncurated OpenAI reasoning lines (karr k186): any other gpt-5.N (5.3, 5.7,
+    # ...) and the o-series are reasoning models, but their effort ladder is not
+    # curated, so they keep the unlisted-id passthrough serialization — only the
+    # reasoning classification is added. Matched after the curated gpt-5.N
+    # families above.
+    _openai_passthrough( qr/\Agpt-5\.\d/, 1,
+      'k186: uncurated gpt-5.N reasoning line; effort ladder passthrough' ),
+    _openai_passthrough( qr/\Ao\d/, 1,
+      'k186: OpenAI o-series reasoning models; effort ladder passthrough' ),
+    # Non-reasoning OpenAI chat models (karr k186), marked explicitly so the
+    # classification never falls out of the default: gpt-4o / gpt-4.1 (and the
+    # rest of gpt-4*). Same passthrough serialization as the unlisted default.
+    _openai_passthrough( qr/\Agpt-4/, 0,
+      'k186: non-reasoning gpt-4 line (gpt-4o, gpt-4.1); effort ladder passthrough' ),
 
     # Self-hosted Qwen3.x reasoning family (vLLM / SGLang / llama.cpp), matched
     # with or without its HuggingFace org prefix (served ids look like
@@ -606,16 +672,30 @@ sub _ensure_registry {
     ),
   );
 
+  # Non-reasoning chat carve-outs (karr k186): gpt-5-chat and every dotted
+  # gpt-5.N-chat id (gpt-5.1-chat-latest, gpt-5.2-chat-latest, ...) are
+  # non-reasoning chat models inside reasoning families. Prepended so they win
+  # over the family patterns; each keeps its family's serialization.
+  unshift @REGISTRY, map { _non_reasoning_like(@$_) } (
+    [ qr/\Agpt-5-chat/,       'gpt-5'   ],
+    [ qr/\Agpt-5\.1-chat/,    'gpt-5.1' ],
+    [ qr/\Agpt-5\.[24]-chat/, 'gpt-5.2' ],
+    [ qr/\Agpt-5\.5-chat/,    'gpt-5.5' ],
+    [ qr/\Agpt-5\.6-chat/,    'gpt-5.6' ],
+    [ qr/\Agpt-5\.\d+-chat/,  'gpt-5.3' ],
+  );
+
   # Provider default: an unrecognized id keeps the full normalized enum on the
   # openai wire (no per-wire restriction), takes the fixed set on anthropic, and
   # the binary collapse on gemini. Shared by every OpenAI-compatible provider
-  # (and no model at all).
+  # (and no model at all). Never a reasoning model (is_reasoning_model 0).
   $DEFAULT = __PACKAGE__->new(
-    model_match => '',
-    control     => 'effort',
-    wire_format => 'openai',
-    levels      => [@ANTHROPIC_EFFORT_LEVELS],
-    source      => 'normalized OpenAI superset passthrough (unlisted id)',
+    model_match        => '',
+    control            => 'effort',
+    wire_format        => 'openai',
+    levels             => [@ANTHROPIC_EFFORT_LEVELS],
+    is_reasoning_model => 0,
+    source             => 'normalized OpenAI superset passthrough (unlisted id)',
   );
 
   return;
@@ -634,6 +714,12 @@ no-model case falls through to). Never dies.
 sub for_model {
   my ( $class, $id ) = @_;
   _ensure_registry();
+  return _resolve($id);
+}
+
+# Walk the registry most-specific-first; the default when nothing matches.
+sub _resolve {
+  my ( $id ) = @_;
   $id = '' unless defined $id;
   for my $profile (@REGISTRY) {
     my $match = $profile->model_match;

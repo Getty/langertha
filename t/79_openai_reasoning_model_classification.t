@@ -25,6 +25,8 @@ use Test2::Bundle::More;
 
 use Langertha::Engine::OpenAI;
 use Langertha::Engine::OpenAIResponses;
+use Langertha::Reasoning;
+use Langertha::Reasoning::Profile;
 
 my @REASONING = qw(
   o1 o3 o3-mini o4-mini
@@ -63,12 +65,42 @@ for my $class (qw( Langertha::Engine::OpenAI Langertha::Engine::OpenAIResponses 
     is( classified_reasoning( $class, $model ), 0,
       "$class $model: non-reasoning (temperature kept)" );
   }
-  todo 'k186: dotted-chat lookahead gap in the engine regex' => sub {
-    for my $model (@DOTTED_CHAT) {
-      is( classified_reasoning( $class, $model ), 0,
-        "$class $model: dotted chat id is non-reasoning (temperature kept)" );
+  for my $model (@DOTTED_CHAT) {
+    is( classified_reasoning( $class, $model ), 0,
+      "$class $model: dotted chat id is non-reasoning (temperature kept)" );
+  }
+}
+
+# The classification is Profile wire-truth (k186): the engine reads it from
+# Langertha::Reasoning::Profile->is_reasoning_model, not from its own regex.
+for my $model (@REASONING) {
+  is( Langertha::Reasoning::Profile->for_model($model)->is_reasoning_model, 1,
+    "Profile $model: is_reasoning_model" );
+}
+for my $model ( @NON_REASONING, @DOTTED_CHAT, '' ) {
+  is( Langertha::Reasoning::Profile->for_model($model)->is_reasoning_model, 0,
+    "Profile '$model': not is_reasoning_model" );
+}
+
+# A chat carve-out changes only the classification, never the reasoning wire:
+# it serializes exactly like the family it sits in.
+my %CHAT_LIKE = (
+  'gpt-5-chat-latest'   => 'gpt-5',
+  'gpt-5.1-chat-latest' => 'gpt-5.1',
+  'gpt-5.2-chat-latest' => 'gpt-5.2',
+  'gpt-5.5-chat-latest' => 'gpt-5.5',
+  'gpt-5.6-chat'        => 'gpt-5.6',
+  'gpt-5.3-chat-latest' => 'gpt-5.3',
+);
+for my $chat ( sort keys %CHAT_LIKE ) {
+  for my $wire (qw( openai responses )) {
+    for my $effort (qw( none minimal low medium high xhigh max )) {
+      is_deeply(
+        { Langertha::Reasoning->new( model => $chat, effort => $effort )->to($wire) },
+        { Langertha::Reasoning->new( model => $CHAT_LIKE{$chat}, effort => $effort )->to($wire) },
+        "$chat serializes like $CHAT_LIKE{$chat} ($wire, $effort)" );
     }
-  };
+  }
 }
 
 done_testing;

@@ -124,23 +124,24 @@ sub _max_tokens_key {
 # o-series and legacy gpt-5 default to reasoning-ON. It is consumed READ-ONLY by
 # the shared _temperature_kwargs gate in Role::OpenAICompatible /
 # Role::ResponsesCompatible; OpenAIResponses inherits it and runs on the
-# 'responses' wire. Non-reasoning OpenAI models (gpt-4o, gpt-5-chat) and every
-# other OpenAI-compatible engine never reach this predicate (they do not define
-# it), so they keep their temperature.
+# 'responses' wire. Non-reasoning OpenAI models (gpt-4o, gpt-4.1, gpt-5-chat,
+# gpt-5.N-chat, any unknown id) are classified by the Profile and keep their
+# temperature; every other OpenAI-compatible engine never reaches this predicate
+# (they do not define it).
 sub _temperature_rejected_by_reasoning {
   my ( $self, $controls ) = @_;
   my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
-  # Which OpenAI models HAVE reasoning (and thus can reject temperature): the
-  # o-series, the gpt-5 line except the non-reasoning gpt-5-chat, and gpt-6. This
-  # is the per-engine model list (ADR 0019); the Profile-driven effort resolution
-  # below, not this regex, is what keeps the gate honest per model.
-  return 0 unless $model =~ /\A(?:o\d|gpt-5(?!-chat)|gpt-6)/;
+  my $profile = Langertha::Reasoning::Profile->for_model($model);
+  # Which OpenAI models HAVE reasoning (and thus can reject temperature) is
+  # Profile wire-truth (karr k186, ADR 0023): the o-series, gpt-5 / gpt-5.N
+  # except every -chat id, and gpt-6. Non-reasoning models and unknown ids are
+  # classified non-reasoning there, so their temperature is kept.
+  return 0 unless $profile->is_reasoning_model;
   # Resolved reasoning effort: a per-request control (chat_f, karr #46) beats the
   # engine attribute; neither set means the model's server-side default applies.
   my $effort = exists $controls->{reasoning_effort} ? $controls->{reasoning_effort}
              : $self->has_reasoning_effort          ? $self->reasoning_effort
              :                                         undef;
-  my $profile = Langertha::Reasoning::Profile->for_model($model);
   # No explicit effort: the model's server-side default effort applies. For most
   # reasoning models that default is a reasoning level (temperature rejected), but
   # the gpt-5.1/5.2/5.4 line defaults to reasoning-OFF, so a non-default
