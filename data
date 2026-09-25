@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T17:21:50Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T17:21:50Z
+created: 2026-09-25T16:31:24Z
+id: 266
+priority: medium
+started: 2026-09-25T16:37:59Z
+status: done
+tags:
+- capabilities
+- vision
+- manifest
+title: 'Capability flag for image input (vision): engines/models that accept Langertha::Content::Image'
+updated: 2026-09-25T17:21:50Z
+---
+
+From knarr k29 and Manifest::Builder note: no capability flag tells whether an engine/model accepts image input (Content::Image). Needed by manifest (per-model capabilities), knarr /api/show 'vision', skeid manifest. Design: capability name (image_input), layer 2 per engine (which wires can carry images at all) + layer 3 model corrections for model-scoped vision (most providers: only some models). Add to Manifest::Builder allowlist. Data from llm-advisor research (docs, dated).
+
+2026-09-25 16:36 llm-advisor research (docs only, 2026-09-25). DESIGN: image_input = 'wire serializes Content::Image correctly AND model sees it'. Layer2 = new capability role (e.g. Role::ImageInput in %ROLE_TO_CAPS) composed only where content_format really fits the wire; layer3 model_capability_corrections per engine. Default for unknown model on a claiming cloud engine: per-engine 'whole family yes except X' where docs say all chat models are VLMs (OpenAI, Anthropic, Gemini, Mistral via exclusions); 'only models matching Y' (qr/\A/=>0 then allowlist) everywhere else. Gateways (OpenRouter/HF/Replicate) + self-hosted (vLLM/SGLang/LlamaCpp/LMStudio*/OllamaOpenAI): wire yes but DO NOT claim at layer2 by default (flag unknown/0); optional name-heuristic off; better: probe live metadata later (OpenRouter architecture.input_modalities, LM Studio capabilities.vision, llama.cpp /props modalities.vision, Ollama /api/show capabilities, TSystems meta_data.input_modalities, Mistral /v1/models capabilities.vision, Anthropic /v1/models capabilities.image_input). BLOCKERS before claiming: (1) OpenAIResponses + Perplexity send chat-style {type:text}/{type:image_url} into Responses input -> 400 (wire wants input_text/input_image with image_url STRING); (2) Ollama native /api/chat wants content:string + images:[base64], gets content array; (3) LMStudio native _extract_text drops images; (4) URL-only images rejected by Ollama /v1, Cerebras, Kimi (base64/ms:// only), LM Studio native -> need inline-only hook calling ensure_base64. DEFAULT MODELS vision? OpenAI gpt-5.6-terra Y, Anthropic claude-sonnet-5 Y, Gemini gemini-3-flash-preview Y, DeepSeek deepseek-flash Y (V4.1, 2026-09-10; v4-pro N), Mistral mistral-small-latest Y (Small 4), XAI grok-4.7 Y, MiniMax/MiniMaxAnthropic MiniMax-M3 Y (M2.x N), Moonshot kimi-k3 Y (base64 only), Hetzner Qwen3.6-35B Y; N: Cerebras/AKIOpenAI/AKIAnthropic/TSystems gpt-oss-120b, Scaleway llama-3.1-8b-instruct, NousResearch Hermes-4-70B, Ollama llama3.3, AKI minimax_m3 (native wire unverified), Perplexity sonar (wire blocked). Full table in advisor report.
+
+2026-09-25 17:13 Implemented on branch k266-image-input (2998380): Role::ImageInput, layer-2/3 claims per advisor table, Builder publishes it, ADR 0019 k266 Update, t/78_image_input_capability.t + t/96 subtest. Follow-up k270 (allowlists for Groq/Cerebras/Scaleway/TSystems, live metadata probe).
