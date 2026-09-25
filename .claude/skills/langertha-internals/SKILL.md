@@ -96,9 +96,13 @@ Per-model reasoning truth lives in `Reasoning::Profile`, not in inline hashes (A
 
 ## Privates that siblings depend on
 
-langertha-raider, -knarr and -skeid reach into core privates: `_async_http` / `_async_loop`
-from `Role::AsyncHTTP` (raider calls `$engine->_async_http->loop`; karr #190/#192) and
-`_langfuse_timestamp`. Treat them as de facto API: renaming or reshaping one needs a karr
-ticket naming the sibling caller. `_async_http` may be a `Langertha::Request::SyncHTTP` when
-Net::Async::HTTP is absent (ADR 0027), so a caller must not assume `->loop` exists — and core
-must never `use` IO::Async / Net::Async::HTTP at file scope (they are `recommends`).
+Siblings (langertha-raider, -knarr, -skeid) use the **public hooks** of ADR 0028:
+`async_request_f`, `async_loop` (`Maybe[loop]`), `langfuse_timestamp`, `Usage->from_raw`,
+and — for composers of `Role::PluginHost` — `plugin_instances`, `plugin_args`,
+`plugin_pipeline_tool_call_f` (k226). The old privates (`_async_http`, `_async_loop`,
+`_langfuse_timestamp`, `_plugin_instances`, `_plugin_args`, `_plugin_pipeline_tool_call`)
+stay as aliases until the siblings have migrated (raider: k195 done, k226 pending) — renaming or
+reshaping one still needs a karr ticket naming the sibling caller. `_async_http` may be a
+`Langertha::Request::SyncHTTP` when Net::Async::HTTP is absent (ADR 0027), so nobody may assume
+`->loop` exists — and core must never `use` IO::Async / Net::Async::HTTP at file scope (they
+are `recommends`).
