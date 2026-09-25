@@ -460,6 +460,43 @@ sub _warn_control_message_args {
   return;
 }
 
+# Drop warnings (karr k247, ADR 0025): a request builder that leaves a value
+# off the wire says so, but the carp fires in a private helper several
+# Langertha frames below the caller's chat_f / chat / simple_chat_f call, and
+# Carp skips only one frame. For the duration of this one warning every
+# Langertha, Moose, Class::MOP, Eval::Closure and Future package on the stack
+# is marked Carp-internal, so the message names the first frame outside that
+# plumbing: the user's own call site (the rule of Role::AsyncHTTP's
+# _caller_location). croak keeps Carp's normal location. Under an event loop
+# the stack may hold no user frame; Carp then reports what it finds, it never
+# dies.
+#
+# $once is set when the dropped value comes from an engine attribute: that
+# value is the same on every request (and every chat_with_tools_f iteration),
+# so it warns once per engine instance per key. A per-request value warns
+# every time. The seen-set lives on the instance, never in a global.
+has _warned_drops => (
+  is       => 'ro',
+  isa      => 'HashRef',
+  init_arg => undef,
+  lazy     => 1,
+  default  => sub { {} },
+);
+
+my $LANGERTHA_INTERNAL = qr/\A(?:Langertha|Moose|Class::MOP|Eval::Closure|Future)(?:::|\z)/;
+
+sub _langertha_carp {
+  my ( $self, $message, $once ) = @_;
+  return if defined $once && $self->_warned_drops->{$once}++;
+  my %internal;
+  for ( my $level = 0; my ($package) = caller $level; $level++ ) {
+    $internal{$package} = 1 if $package =~ $LANGERTHA_INTERNAL;
+  }
+  local @Carp::Internal{ keys %internal } = (1) x keys %internal;
+  carp $message;
+  return;
+}
+
 # karr #148 / #184: a couple of OpenAI-compatible serving stacks reject a
 # request that combines tools and a structured-output response_format with an
 # opaque HTTP 400 and no body. No boolean capability flag can express a mutual
@@ -605,9 +642,10 @@ sub _chat_rewrite_replaces_response_format {
     . "response_format; this engine carries a forced tool as a response_format "
     . "(no native named tool_choice), so the two conflict -- pick one"
     if exists $opts->{response_format};
-  carp "".(ref $self).": the forced tool_choice '$name' is sent as a "
+  $self->_langertha_carp( "".(ref $self).": the forced tool_choice '$name' is sent as a "
     . "response_format (no native named tool_choice); the engine's "
-    . "response_format is replaced for this request";
+    . "response_format is replaced for this request",
+    "response_format replaced by tool_choice $name" );
   return;
 }
 
@@ -818,6 +856,14 @@ named tool that the C<json_schema> rewrite below can take is rewritten
 instead. Likewise C<parallel_tool_use> reaches the wire only where the engine
 C<supports('parallel_tool_use')>; a value you set elsewhere is dropped with a
 warning.
+
+These drop warnings (and the C<temperature> drops of
+L<Langertha::Role::Temperature>) name the line of your own call to C<chat_f>,
+C<simple_chat_f>, C<chat_request> and the like, not a line inside Langertha;
+code running inside an event-loop callback gets whatever location Carp finds.
+A value that comes from an engine attribute is the same on every request, so
+its drop warns once per engine instance; a value passed with the request warns
+on every request.
 
 The canonical per-request controls (karr #46) are normalized like
 C<messages>/C<tools> instead of being spread as raw target-wire kwargs:
@@ -1039,8 +1085,8 @@ sub _gate_tool_choice {
   unless ($tc) {
     return if $has_field;
     delete $extra->{tool_choice};
-    carp "".( ref $self ).": dropping tool_choice -- this engine has no tool_choice "
-      . "field and the value is not one Langertha can read; the model decides whether to call a tool";
+    $self->_langertha_carp( "".( ref $self ).": dropping tool_choice -- this engine has no tool_choice "
+      . "field and the value is not one Langertha can read; the model decides whether to call a tool" );
     return;
   }
   my $cap = $tc->type eq 'tool' ? 'tool_choice_named' : 'tool_choice_' . $tc->type;
@@ -1048,14 +1094,14 @@ sub _gate_tool_choice {
   delete $extra->{tool_choice};
   if ( $tc->type eq 'none' ) {
     my $tools = delete $extra->{tools};
-    carp "".( ref $self ).": dropping tool_choice 'none' -- this engine does not "
-      . "support('tool_choice_none'); the request's tools are withheld instead"
+    $self->_langertha_carp( "".( ref $self ).": dropping tool_choice 'none' -- this engine does not "
+      . "support('tool_choice_none'); the request's tools are withheld instead" )
         if ref $tools eq 'ARRAY' && @$tools;
     return;
   }
-  carp "".( ref $self ).": dropping tool_choice '"
+  $self->_langertha_carp( "".( ref $self ).": dropping tool_choice '"
     . ( $tc->type eq 'tool' ? 'tool ' . ( $tc->name // '' ) : $tc->type )
-    . "' -- this engine does not support('$cap'); the model decides whether to call a tool"
+    . "' -- this engine does not support('$cap'); the model decides whether to call a tool" )
       unless $tc->type eq 'auto';
   return;
 }
@@ -1071,17 +1117,19 @@ sub _gate_tool_choice {
 sub _parallel_tool_calls_kwarg {
   my ( $self, $extra, $controls ) = @_;
   return unless exists $extra->{tools} && !exists $extra->{parallel_tool_calls};
-  my $ptu;
+  my ( $ptu, $from_attr );
   if ( exists $controls->{parallel_tool_use} ) {
     $ptu = $controls->{parallel_tool_use};
   }
   elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
-    $ptu = $self->parallel_tool_use;
+    $ptu       = $self->parallel_tool_use;
+    $from_attr = 1;
   }
   return unless defined $ptu;
   unless ( $self->supports('parallel_tool_use') ) {
-    carp "".( ref $self ).": dropping parallel_tool_use -- this engine does not "
-      . "support('parallel_tool_use'); the provider decides how many tool calls a turn has";
+    $self->_langertha_carp( "".( ref $self ).": dropping parallel_tool_use -- this engine does not "
+      . "support('parallel_tool_use'); the provider decides how many tool calls a turn has",
+      $from_attr ? "parallel_tool_use=$ptu" : undef );
     return;
   }
   $extra->{parallel_tool_calls} = $ptu ? JSON->true : JSON->false;
@@ -1128,13 +1176,13 @@ sub _hermes_prompt_tools {
   my $choice = defined $given ? Langertha::ToolChoice->from_hash($given) : undef;
   my $type   = $choice ? $choice->type : '';
   if ( $type eq 'none' ) {
-    carp "".(ref $self).": tool_choice none on the hermes tool wire: "
-      . "the tools were withheld from the system prompt"
+    $self->_langertha_carp( "".(ref $self).": tool_choice none on the hermes tool wire: "
+      . "the tools were withheld from the system prompt" )
       if ref $tools eq 'ARRAY' && @$tools;
     return ( $conversation, 0 );
   }
-  carp "".(ref $self).": tool_choice is ignored on the hermes tool wire "
-    . "(tools ride the system prompt, which cannot force a tool)"
+  $self->_langertha_carp( "".(ref $self).": tool_choice is ignored on the hermes tool wire "
+    . "(tools ride the system prompt, which cannot force a tool)" )
     if defined $given && $type ne 'auto';
   return ( $conversation, 0 ) unless ref $tools eq 'ARRAY' && @$tools;
   return ( $self->_hermes_tool_messages( $conversation, $self->format_tools($tools) ), 1 );

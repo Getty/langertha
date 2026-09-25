@@ -394,11 +394,16 @@ sub _temperature_kwargs {
            : $self->has_temperature          ? $self->temperature
            :                                    undef;
   return () unless defined $temp;
+  # An engine attribute is the same on every request: warn once per engine
+  # instance (karr k247); a per-request control warns every time.
+  my $once = exists $controls->{temperature} ? undef
+    : 'temperature=' . $temp . ' model=' . ( $self->can('chat_model') ? $self->chat_model // '' : '' );
   unless ( $self->supports('temperature') ) {
-    carp "".( ref $self ).": dropping temperature=$temp -- model '"
+    $self->_langertha_carp( "".( ref $self ).": dropping temperature=$temp -- model '"
       . ( $self->chat_model // '' )
       . "' does not take a temperature (rejected or fixed server-side); "
-      . "unset temperature to silence this"
+      . "unset temperature to silence this",
+      defined $once ? "$once unsupported" : undef )
       if $temp != 1;
     return ();
   }

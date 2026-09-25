@@ -46,7 +46,8 @@ in the C<tool_choice> block.
 The field is sent only when the request carries tools and the engine
 C<supports('parallel_tool_use')>. Engines whose wire has no such knob
 (Gemini, Ollama native and C</v1>, Perplexity, MiniMax, Scaleway, Hetzner)
-clear the capability; a value set there is not sent, with a warning. An explicit
+clear the capability; a value set there is not sent, with a warning (once per
+engine instance for the attribute, every request for a per-request value). An explicit
 C<parallel_tool_calls> request argument is passed through as given.
 
 For convenience the constructor also accepts the provider-native names as

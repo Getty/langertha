@@ -117,6 +117,13 @@ Revision history for Langertha
       (AKI.IO accepts it, but nothing shows it is honored); pass
       parallel_tool_calls directly to send it anyway.
 
+    - The warnings for a temperature, tool_choice, parallel_tool_use or
+      engine response_format that is not sent name the line of your own
+      chat_f / simple_chat_f / chat_request call instead of a line inside
+      Langertha. A value set on the engine warns once per engine instance,
+      not on every request and every chat_with_tools_f turn; a value passed
+      with the request still warns every time.
+
     - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
       item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,
       computer_call, local_shell_call, apply_patch_call and a client-side
@@ -168,8 +175,8 @@ Revision history for Langertha
     - Moonshot and MoonshotAnthropic no longer send temperature on any Kimi
       model (kimi-k3, kimi-k2.6, kimi-k2.7-code): Kimi fixes it server-side
       and rejects other values, and kimi-k2.6 without thinking even rejects
-      1. A dropped caller temperature other than 1 now carps on every
-      request, on these engines, on Claude models that no longer take
+      1. A dropped caller temperature other than 1 now carps, on these
+      engines, on Claude models that no longer take
       temperature (Opus 4.7 and later) and on the Responses wire, where the
       drop used to be silent; the warning says to unset temperature to
       silence it. Taken from Moonshot's documentation, not verified against

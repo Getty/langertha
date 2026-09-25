@@ -94,8 +94,9 @@ for my $class (qw( Langertha::Engine::Moonshot Langertha::Engine::MoonshotAnthro
 # carp). No engine on the responses wire clears temperature today, so the test
 # engines clear it with a layer-3 row (ADR 0019) -- the same shape a future
 # per-model clear on OpenAIResponses / XAI Responses / Perplexity would take.
-# The three gates must stay at parity: same carp, same frequency (every request),
-# 1 quiet. The message names the remedy ("unset temperature to silence this").
+# The three gates must stay at parity: same carp, same frequency (an engine
+# attribute once per engine instance, a per-request value every request; karr
+# k247), 1 quiet. The message names the remedy ("unset temperature to silence this").
 {
   package Test::K220::Responses;
   use Moose;
@@ -128,11 +129,17 @@ for my $class (qw( Test::K220::Responses Test::K220::Perplexity )) {
       $class->new( api_key => 'k', model => $model ), $builder, temperature => 0.7 );
     ok( !exists $body->{temperature} && $carped, "$class $builder: per-request drop carps" );
   }
-  # Same frequency as the other gates: once per request, not once per process.
+  # Same frequency as the other gates (karr k247): the engine attribute is the
+  # same on every request, so it carps once per engine instance; a per-request
+  # value carps on every request.
   my $engine = $class->new( api_key => 'k', model => $model, temperature => 0.7 );
   my ( undef, $first )  = probe( $engine, 'chat_request' );
   my ( undef, $second ) = probe( $engine, 'chat_request' );
-  ok( $first && $second, "$class: carps on every request" );
+  ok( $first && !$second, "$class: engine attribute carps once per engine" );
+  $engine = $class->new( api_key => 'k', model => $model );
+  ( undef, $first )  = probe( $engine, 'chat_request', temperature => 0.7 );
+  ( undef, $second ) = probe( $engine, 'chat_request', temperature => 0.7 );
+  ok( $first && $second, "$class: per-request value carps on every request" );
 }
 
 # Same message on all three wire roles, and it names the remedy (k220 polish).

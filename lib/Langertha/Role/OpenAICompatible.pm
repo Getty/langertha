@@ -322,20 +322,26 @@ sub _temperature_kwargs {
            : $self->can('has_temperature') && $self->has_temperature ? $self->temperature
            :                                    undef;
   return () unless defined $temp;
+  # An engine attribute is the same on every request: warn once per engine
+  # instance (karr k247); a per-request control warns every time.
+  my $once = exists $controls->{temperature} ? undef
+    : 'temperature=' . $temp . ' model=' . ( $self->can('chat_model') ? $self->chat_model // '' : '' );
   unless ( $self->supports('temperature') ) {
-    carp "".( ref $self ).": dropping temperature=$temp -- model '"
+    $self->_langertha_carp( "".( ref $self ).": dropping temperature=$temp -- model '"
       . ( $self->can('chat_model') ? $self->chat_model // '' : '' )
       . "' does not take a temperature (rejected or fixed server-side); "
-      . "unset temperature to silence this"
+      . "unset temperature to silence this",
+      defined $once ? "$once unsupported" : undef )
       if $temp != 1;
     return ();
   }
   if ( $temp != 1
     && $self->can('_temperature_rejected_by_reasoning')
     && $self->_temperature_rejected_by_reasoning($controls) ) {
-    carp "".( ref $self ).": dropping temperature=$temp -- this reasoning model "
+    $self->_langertha_carp( "".( ref $self ).": dropping temperature=$temp -- this reasoning model "
       . "rejects a non-default temperature while reasoning is active (only the "
-      . "wire default 1 is accepted); pass reasoning_effort => 'none' to keep it";
+      . "wire default 1 is accepted); pass reasoning_effort => 'none' to keep it",
+      defined $once ? "$once reasoning" : undef );
     return ();
   }
   return ( temperature => $temp );
