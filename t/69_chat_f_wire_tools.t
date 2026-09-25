@@ -115,4 +115,102 @@ subtest 'pin: wire-shaped hashes go out byte for byte' => sub {
   }
 };
 
+my $obj = Langertha::Tool->new( name => 'obj', description => 'An object', input_schema => $schema );
+my $mcp = { name => 'mcp', description => 'An MCP tool', inputSchema => $schema };
+my $mcp_tool = Langertha::Tool->from_hash($mcp);
+
+subtest 'a Langertha::Tool goes out in the wire shape of the engine' => sub {
+  for my $fmt (qw( openai anthropic ollama responses )) {
+    is_deeply( chat_f_tools( $fmt, [$obj] ), [ $obj->to($fmt) ], "$fmt: serialized by Tool->to" );
+  }
+  is_deeply( chat_f_tools( gemini => [$obj] ), [ { functionDeclarations => [ $obj->to('gemini') ] } ],
+    'gemini: wrapped in one functionDeclarations entry' );
+  # hermes: tools ride the prompt (chat_with_tools_f); chat_f leaves the list
+  # alone, so the object goes out through TO_JSON as before.
+  is_deeply( chat_f_tools( hermes => [$obj] ), [ $obj->to_hash ], 'hermes: list left alone' );
+};
+
+subtest 'a function-tool hash in another shape is converted, per item' => sub {
+  for my $fmt (qw( openai anthropic ollama responses )) {
+    is_deeply( chat_f_tools( $fmt, [$mcp] ), [ $mcp_tool->to($fmt) ], "$fmt: an MCP hash is converted" );
+  }
+  is_deeply( chat_f_tools( gemini => [$mcp] ), [ { functionDeclarations => [ $mcp_tool->to('gemini') ] } ],
+    'gemini: an MCP hash becomes a declaration' );
+  my $canonical = { name => 'mcp', description => 'An MCP tool', input_schema => $schema };
+  is_deeply( chat_f_tools( openai => [$canonical] ), [ $mcp_tool->to('openai') ],
+    'openai: a canonical input_schema hash is converted' );
+  my $nested = { type => 'function', function => { name => 'mcp', description => 'An MCP tool', parameters => $schema } };
+  is_deeply( chat_f_tools( anthropic => [$nested] ), [ $mcp_tool->to('anthropic') ],
+    'anthropic: an OpenAI-nested hash is converted' );
+  is_deeply( chat_f_tools( hermes => [$mcp] ), [$mcp], 'hermes: list left alone' );
+};
+
+subtest 'a converted hash keeps the extras its target wire takes' => sub {
+  my $strict = { %$mcp, strict => JSON->true };
+  is( chat_f_tools( openai => [$strict] )->[0]{function}{strict}, JSON->true,
+    'openai: strict lands on function.strict' );
+  my $cached = { %$mcp, cache_control => { type => 'ephemeral' } };
+  is_deeply( chat_f_tools( anthropic => [$cached] )->[0]{cache_control}, { type => 'ephemeral' },
+    'anthropic: cache_control is kept' );
+  my $nested = { type => 'function', function => { name => 'n', parameters => { type => 'object', properties => {} }, strict => JSON->false } };
+  is( chat_f_tools( anthropic => [$nested] )->[0]{strict}, JSON->false,
+    'anthropic: an explicit function.strict wins over the schema guess' );
+  my $decl = { name => 'decl', parameters => $schema, behavior => 'NON_BLOCKING' };
+  is_deeply( chat_f_tools( gemini => [$decl] ), [ { functionDeclarations => [$decl] } ],
+    'gemini: a bare declaration is not round-tripped, so its extra fields stay' );
+};
+
+subtest 'a Langertha::ServerTool: native on its wire, refused elsewhere' => sub {
+  my $st = Langertha::ServerTool->new( wire => 'responses', spec => { type => 'web_search' } );
+  is_deeply( chat_f_tools( responses => [$st] ), [ { type => 'web_search' } ], 'responses: its native hash' );
+  for my $fmt (qw( openai anthropic gemini ollama hermes )) {
+    my ( $engine, $mock ) = engine_for($fmt);
+    ok( !eval { $engine->chat_f( messages => ['hi'], tools => [$st] )->get; 1 }, "$fmt: croaks" );
+    like( $@, qr/does not supports\('server_tools'\)/, "$fmt: says why" );
+    is( $mock->request_count, 0, "$fmt: nothing was sent" );
+  }
+};
+
+subtest 'mixed lists keep the caller order' => sub {
+  my $st = Langertha::ServerTool->new( wire => 'responses', spec => { type => 'code_interpreter', container => { type => 'auto' } } );
+  my %mixed = (
+    openai    => [ [ $native{openai}[0], $obj, $mcp, $native{openai}[1] ],
+                   [ $native{openai}[0], $obj->to('openai'), $mcp_tool->to('openai'), $native{openai}[1] ] ],
+    ollama    => [ [ $native{ollama}[0], $obj, $mcp ],
+                   [ $native{ollama}[0], $obj->to('ollama'), $mcp_tool->to('ollama') ] ],
+    anthropic => [ [ $native{anthropic}[0], $obj, $mcp, $native{anthropic}[1] ],
+                   [ $native{anthropic}[0], $obj->to('anthropic'), $mcp_tool->to('anthropic'), $native{anthropic}[1] ] ],
+    responses => [ [ $native{responses}[0], $obj, $mcp, $native{responses}[1], $st ],
+                   [ $native{responses}[0], $obj->to('responses'), $mcp_tool->to('responses'),
+                     $native{responses}[1], $st->to('responses') ] ],
+    hermes    => [ [ $native{hermes}[0], $obj, $mcp ], [ $native{hermes}[0], $obj->to_hash, $mcp ] ],
+  );
+  for my $fmt ( sort keys %mixed ) {
+    my ( $in, $want ) = @{ $mixed{$fmt} };
+    is_deeply( chat_f_tools( $fmt, $in ), $want, "$fmt: every item in place" );
+  }
+  is_deeply( chat_f_tools( gemini => [ { google_search => {} }, $obj, $mcp ] ),
+    [ { google_search => {} }, { functionDeclarations => [ $obj->to('gemini'), $mcp_tool->to('gemini') ] } ],
+    'gemini: declarations grouped where the first one was, built-in in place' );
+};
+
+subtest 'gemini: one functionDeclarations entry (k221 review M4)' => sub {
+  my $raw = $native{gemini}[1];
+  my $raw_decl = $raw->{functionDeclarations}[0];
+  is_deeply( chat_f_tools( gemini => [ $raw, { google_search => {} }, $obj ] ),
+    [ { functionDeclarations => [ $raw_decl, $obj->to('gemini') ] }, { google_search => {} } ],
+    'a raw functionDeclarations entry absorbs the converted declarations' );
+  is_deeply( chat_f_tools( gemini => [ $obj, $raw ] ),
+    [ { functionDeclarations => [ $obj->to('gemini'), $raw_decl ] } ],
+    'declarations keep the caller order across the merge' );
+  my $second = { functionDeclarations => [ { name => 'two' } ] };
+  is_deeply( chat_f_tools( gemini => [ $raw, $second ] ),
+    [ { functionDeclarations => [ $raw_decl, { name => 'two' } ] } ],
+    'two raw functionDeclarations entries merge into the first' );
+  my $combined = { functionDeclarations => [ { name => 'two' } ], codeExecution => {} };
+  is_deeply( chat_f_tools( gemini => [ $raw, $combined ] ),
+    [ { functionDeclarations => [ $raw_decl, { name => 'two' } ] }, { codeExecution => {} } ],
+    'a later entry gives up its declarations and keeps its other fields' );
+};
+
 done_testing;

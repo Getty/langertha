@@ -359,12 +359,12 @@ subtest 'tools: the caller\'s order is kept' => sub {
   my $obj2 = Langertha::Tool->new( name => 'obj2', input_schema => { type => 'object', properties => {} } );
   my $hash = { type => 'function', function => { name => 'hash', parameters => { type => 'object', properties => {} } } };
   my $oa = Langertha::Engine::OpenAI->new( api_key => 'k', model => 'gpt-4o-mini' );
-  is_deeply( $oa->_stream_wire_tools( [ $hash, $obj, $hash, $obj2 ] ),
+  is_deeply( $oa->_wire_tools( [ $hash, $obj, $hash, $obj2 ] ),
     [ $hash, $obj->to('openai'), $hash, $obj2->to('openai') ], 'openai: every tool in place' );
 
   my $gemini = Langertha::Engine::Gemini->new( api_key => 'k', model => 'gemini-3-flash-preview' );
   my $search = { google_search => {} };
-  is_deeply( $gemini->_stream_wire_tools( [ $search, $obj, $obj2 ] ),
+  is_deeply( $gemini->_wire_tools( [ $search, $obj, $obj2 ] ),
     [ $search, @{ Langertha::Tool->format_list( 'gemini', [ $obj, $obj2 ] ) } ],
     'gemini: objects grouped into one functionDeclarations entry at the first object' );
 };

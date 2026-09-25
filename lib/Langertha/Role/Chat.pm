@@ -616,6 +616,8 @@ async sub chat_f {
   # have set response_format) and hand them to chat_request under `controls`.
   my $controls = $self->_extract_controls(\%opts);
 
+  $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
+
   my $t0 = [gettimeofday];
   my $request = $self->chat_request( $self->chat_messages(@messages),
     ( %$controls ? ( controls => $controls ) : () ),
@@ -708,11 +710,22 @@ acting on any C<tool_calls> the engine emits — C<chat_f> does not
 loop. For the multi-turn MCP tool-calling loop use
 L<Langertha::Role::Tools/chat_with_tools_f> instead.
 
-C<tools> in C<chat_f> can be a mix of provider-shape HashRefs
-(OpenAI, Anthropic, MCP, Gemini); the engine's C<chat_request> handles
-the per-provider serialization. The L<Langertha::Tool> value object is
-the canonical normalizer (C<from_hash> accepts every shape, the
-C<to_PROVIDER> methods produce the wire payload).
+C<tools> in C<chat_f> can mix L<Langertha::Tool> objects,
+L<Langertha::ServerTool> objects and HashRefs of any provider shape (OpenAI,
+Anthropic, MCP, Gemini, provider built-ins). Before the request is built,
+each item is put into the engine's C<tool_wire_format> in place, keeping
+the caller's order (L<Langertha::Tool/request_list>, the same path
+L</chat_stream_realtime_f> takes): an object goes through its C<to>; a
+hash already in the wire's shape goes out verbatim, extras such as
+C<function.strict> and C<cache_control> included; a function-tool hash in
+another shape (for example an MCP tool with C<inputSchema>) is converted;
+built-ins and unknown typed items go out verbatim for the provider to
+judge. On Gemini all function declarations share one
+C<functionDeclarations> entry. The Responses envelope decides per item
+itself (L<Langertha::Role::ResponsesCompatible>), and on a C<hermes> engine
+the list is left as given -- tools ride the prompt there, via
+L<Langertha::Role::Tools/chat_with_tools_f>. A C<Langertha::ServerTool>
+croaks on an engine that does not C<supports('server_tools')>.
 
 The canonical per-request controls (karr #46) are normalized like
 C<messages>/C<tools> instead of being spread as raw target-wire kwargs:
@@ -787,7 +800,7 @@ async sub chat_stream_realtime_f {
   # Same canonical-control extraction as chat_f (karr #46).
   my $controls = $self->_extract_controls(\%opts);
 
-  $opts{tools} = $self->_stream_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
+  $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
 
   my $request = $self->chat_stream_request( $self->chat_messages(@messages),
     ( %$controls ? ( controls => $controls ) : () ),
@@ -890,37 +903,26 @@ async sub chat_stream_realtime_f {
   }, $thinking);
 }
 
-# Streaming callers pass canonical Langertha::Tool objects too, as
-# chat_with_tools_f's callers do; the JSON encoder would put such an object on
-# the wire in its canonical to_hash shape, which only the Anthropic wire reads.
-# Serialize the objects for this engine's tool_wire_format through the value
-# objects (ADR 0001, karr k221). A tool hash is already the caller's wire shape
-# and passes through untouched, as before: the Tool round trip is lossy (it
-# would drop wire extras such as OpenAI's function.strict or Anthropic's
-# cache_control) and would croak on provider built-ins. The hermes wire (tools
-# ride the prompt) and an engine without Role::Tools get the list unchanged.
-# Every tool keeps its place: order is caller intent, and an Anthropic
-# cache_control breakpoint caches the prefix of the list. Gemini wraps all
-# function declarations in one functionDeclarations entry, which goes where
-# the first object was.
-sub _stream_wire_tools {
+# The one path that puts a caller's tools list on the wire, for chat_f and
+# chat_stream_realtime_f alike (karr k221, k227; ADR 0001). A tools list is
+# often built by hand: Langertha::Tool / ServerTool objects next to hashes of
+# any shape. The JSON encoder would put an object on the wire in its canonical
+# to_hash shape, which only the Anthropic wire reads, so the value objects
+# shape the list for this engine's tool_wire_format, item by item and in the
+# caller's order (Langertha::Tool->request_list): objects serialize, hashes
+# already in the wire's shape pass through verbatim (extras and built-ins
+# included), other function-tool hashes convert. Order is caller intent, and
+# an Anthropic cache_control breakpoint caches the prefix of the list.
+# Left alone: an engine without Role::Tools, the hermes wire (tools ride the
+# prompt, via chat_with_tools_f), and the Responses envelope, which already
+# decides per item itself and needs the ServerTool objects for its engine
+# hook and default-tool dedup (_responses_tools_kwarg, k210/k206).
+sub _wire_tools {
   my ( $self, $tools ) = @_;
   return $tools unless $self->can('tool_wire_format');
   my $fmt = $self->tool_wire_format;
-  return $tools if $fmt eq 'hermes';
-  my $is_tool = sub { blessed( $_[0] ) && $_[0]->isa('Langertha::Tool') };
-  my @objects = grep { $is_tool->($_) } @$tools;
-  return $tools unless @objects;
-  if ( $fmt eq 'gemini' ) {
-    my ( @out, $placed );
-    for my $tool (@$tools) {
-      if ( !$is_tool->($tool) ) { push @out, $tool; next }
-      next if $placed++;
-      push @out, @{ Langertha::Tool->format_list( $fmt, \@objects ) };
-    }
-    return \@out;
-  }
-  return [ map { $is_tool->($_) ? $_->to($fmt) : $_ } @$tools ];
+  return $tools if $fmt eq 'hermes' || $fmt eq 'responses';
+  return Langertha::Tool->request_list( $fmt, $tools );
 }
 
 sub aggregate_tool_calls {

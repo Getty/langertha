@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak carp );
 use JSON::MaybeXS;
+use Scalar::Util qw( blessed );
 
 has name => (
   is       => 'ro',
@@ -468,6 +469,135 @@ sub format_list {
   }
   return [ map { $_->to($fmt) } @items ];
 }
+
+# --- A caller's request tools list (k227, ADR 0001) ---
+#
+# chat_f and chat_stream_realtime_f take a tools list the caller built by
+# hand: Tool objects, ServerTool objects and hashes of any shape, often mixed.
+# Unlike format_list (whose callers only ever emit function tools), this keeps
+# everything the caller meant and decides per item, in place:
+#   - a Tool or ServerTool object goes through its own to($fmt);
+#   - a function-tool hash already in $fmt's own shape goes out verbatim, so
+#     the extras the value object does not model survive (function.strict,
+#     cache_control, Gemini's declaration fields);
+#   - a function-tool hash in another shape (MCP inputSchema, canonical
+#     input_schema, the other dialect's shape) is converted, carrying over
+#     the extras $fmt takes (%CARRY);
+#   - anything else -- a built-in, a typed item Langertha does not know, a
+#     Gemini { functionDeclarations => [...] } -- goes out verbatim: the
+#     provider judges it, as the Responses envelope does for typed items
+#     (k210). Nothing is dropped and nothing becomes a function tool.
+# Gemini keeps all function declarations in ONE functionDeclarations entry
+# (k221 review M4), placed where the first declaration came from; a later
+# raw functionDeclarations entry gives up its declarations to it and keeps
+# its other fields.
+
+# True when a function-tool hash is already in $fmt's own tools-list shape.
+sub _is_wire_function {
+  my ( $hash, $fmt ) = @_;
+  my $type = $hash->{type} // '';
+  return $type eq 'function' && ref $hash->{function} eq 'HASH'
+    if $fmt eq 'openai' || $fmt eq 'ollama';
+  return ( $type eq '' || $type eq 'custom' )
+    && ref $hash->{input_schema} eq 'HASH' && !exists $hash->{inputSchema}
+    if $fmt eq 'anthropic';
+  # A Gemini declaration (name + parameters, and fields such as behavior).
+  return $type eq '' && !exists $hash->{inputSchema} && !exists $hash->{input_schema}
+    if $fmt eq 'gemini';
+  return 0;
+}
+
+# The extras a converted hash keeps, per target wire. strict may sit on the
+# hash or in OpenAI's nested function; an explicit value beats the schema
+# guess of to_anthropic.
+sub _carry_extras {
+  my ( $hash, $out, $fmt ) = @_;
+  my $fn = ref $hash->{function} eq 'HASH' ? $hash->{function} : {};
+  my $strict = exists $hash->{strict} ? $hash->{strict} : $fn->{strict};
+  if ( $fmt eq 'openai' ) {
+    $out->{function}{strict} = $strict if defined $strict;
+  }
+  elsif ( $fmt eq 'anthropic' ) {
+    $out->{strict} = $strict if defined $strict;
+    $out->{cache_control} = $hash->{cache_control} if exists $hash->{cache_control};
+  }
+  return $out;
+}
+
+# One item on $fmt; for gemini, a function tool comes back as a declaration.
+sub _request_item {
+  my ( $class, $item, $fmt ) = @_;
+  return $item->to($fmt)
+    if blessed($item) && ( $item->isa(__PACKAGE__) || $item->isa('Langertha::ServerTool') );
+  return $item unless _is_function_hash($item);
+  return $item if _is_wire_function( $item, $fmt );
+  return _carry_extras( $item, $class->from_hash($item)->to($fmt), $fmt );
+}
+
+sub _is_function_hash {
+  my ($item) = @_;
+  return ref $item eq 'HASH' && scalar __PACKAGE__->classify($item) eq 'function';
+}
+
+sub request_list {
+  my ( $class, $fmt, $tools ) = @_;
+  return $tools unless ref $tools eq 'ARRAY';
+  return [ map { $class->_request_item( $_, $fmt ) } @$tools ] unless $fmt eq 'gemini';
+  my ( @out, @decls, $group );
+  for my $item (@$tools) {
+    if ( ( blessed($item) && $item->isa(__PACKAGE__) ) || _is_function_hash($item) ) {
+      push @decls, $class->_request_item( $item, $fmt );
+      push @out, $group = {} unless $group;
+    }
+    elsif ( ref $item eq 'HASH' && ref $item->{functionDeclarations} eq 'ARRAY' ) {
+      push @decls, @{ $item->{functionDeclarations} };
+      my %rest = %$item;
+      delete $rest{functionDeclarations} if $group;
+      push @out, \%rest if !$group || %rest;
+      $group //= \%rest;
+    }
+    else {
+      push @out, $class->_request_item( $item, $fmt );
+    }
+  }
+  $group->{functionDeclarations} = \@decls if $group;
+  return \@out;
+}
+
+=method request_list
+
+    my $wire_tools = Langertha::Tool->request_list( $engine->tool_wire_format, \@tools );
+
+Shapes a caller's C<tools> list for one request on the wire C<$fmt>
+(C<openai>, C<anthropic>, C<gemini> or C<ollama>); the Responses envelope
+and the C<hermes> wire shape their own. L<Langertha::Role::Chat/chat_f> and
+L<Langertha::Role::Chat/chat_stream_realtime_f> call it. Each item is decided
+on its own and keeps its place:
+
+=over 4
+
+=item * a C<Langertha::Tool> or L<Langertha::ServerTool> goes through its
+C<to($fmt)> (a server tool croaks off its own wire);
+
+=item * a function-tool hash already in the wire's shape goes out verbatim,
+extras such as C<function.strict> and C<cache_control> included;
+
+=item * a function-tool hash in another shape (MCP C<inputSchema>, canonical
+C<input_schema>, another dialect's shape) is converted through L</from_hash>,
+keeping C<strict> (OpenAI and Anthropic) and C<cache_control> (Anthropic);
+
+=item * anything else -- a provider built-in, a typed item Langertha does not
+know, a Gemini C<< { functionDeclarations => [...] } >> entry -- goes out
+verbatim, for the provider to judge.
+
+=back
+
+On C<gemini> every function declaration ends up in one
+C<functionDeclarations> entry, where the first declaration came from; a later
+raw C<functionDeclarations> entry is merged into it and keeps its other
+fields.
+
+=cut
 
 __PACKAGE__->meta->make_immutable;
 1;
