@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-25T22:36:33Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T22:36:33Z
+created: 2026-09-25T22:12:59Z
+id: 315
+priority: low
+started: 2026-09-25T22:16:43Z
+status: done
+tags:
+- advisor
+- mistral
+- transcription
+title: 'Advisor: Mistral transcription list fields — timestamp_granularities[] vs
+  plain name'
+updated: 2026-09-25T22:36:33Z
+---
+
+k309 sends list extras for Mistral /v1/audio/transcriptions as name[] (k286 convention). Mistral OpenAPI names them timestamp_granularities / context_bias without []. Verify which form Mistral reads (SDK source, docs); if plain name, add a per-engine switch for repeated plain-name fields.
+
+2026-09-25 22:16 Advisor ruling (2026-09-26, public sources only, no keyed calls): send Mistral list fields as REPEATED PLAIN NAME (timestamp_granularities=segment, context_bias=a, context_bias=b), NOT name[].
+Evidence: (1) mistralai/client-python .speakeasy/gen.yaml multipartArrayFormat: standard; src/mistralai/client/utils/forms.py serialize_multipart_form sets array_field_name = f_name (httpx data dict w/ list -> repeated parts). True for every 2.x wheel 2.0.0..2.10.1 (PyPI). (2) mistralai/client-ts gen.yaml multipartArrayFormat: standard; src/lib/encodings.ts appendForm iterates arrays -> fd.append(key, v) per element, key plain. (3) Official docs docs.mistral.ai/studio/audio/speech_to_text/offline_transcription.md curl examples: --form 'timestamp_granularities="segment"' and one --form 'context_bias="X"' per word. (4) OpenAPI/SDK models name the fields without [].
+Caveat: python SDK 1.x (<=1.12.x, which already had context_bias) was generated with Speakeasy legacy format and sent name[] (form[f_name + "[]"]). Mistral moved to 'standard' at 2.0. Whether the server still honours name[] is unverified; FastAPI-style parsers silently drop unknown keys, so name[] risks a silent no-op (no segment timestamps / no bias) rather than a 400.
+Comparison: OpenAI SDK _base_client._serialize_multipartform uses array_format=brackets -> timestamp_granularities[] (keep k286 for OpenAI). Groq API reference documents the field as timestamp_granularities[] (console.groq.com/docs/speech-to-text.md) -> keep [] for Groq.
+Recommendation: per-engine switch so an ArrayRef list field goes out under the plain key for Mistral (e.g. overridable key-mapping hook in generate_multipart_body or Mistral stripping [] at serialization); plain-key ArrayRef cannot be used directly today because generate_multipart_body reads it as a file spec. Test: request-building test asserting repeated plain-name parts and no [] key for Mistral. Side finding: docs say timestamp_granularities is NOT compatible with language -- Mistral.pm transcription_request POD example passes both; fix the example. Optional: one cheap live probe (short clip, word granularity, [] vs plain) would settle server tolerance of [], needs Getty's approval.
