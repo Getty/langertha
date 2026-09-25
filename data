@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T18:28:07Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T18:28:07Z
+created: 2026-09-25T18:03:21Z
+id: 279
+priority: low
+started: 2026-09-25T18:21:13Z
+status: done
+tags:
+- vision
+- timeouts
+title: Content::Image sync fetch should honor inline_image_fetch_timeout (hardcoded
+  30s)
+updated: 2026-09-25T18:28:07Z
+---
+
+From k276: the async prefetch uses the engine's inline_image_fetch_timeout; the sync ensure_base64 path still hardcodes LWP timeout 30. Pass the engine's value through (ensure_base64(timeout=>...)) from the request-build call sites. After k273 lands (same file).
+
+Done on worktree-agent-a09fba2794995dc46 508d811; prove -lr t/ PASS
