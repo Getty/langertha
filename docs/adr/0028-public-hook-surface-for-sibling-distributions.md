@@ -111,3 +111,30 @@ lifted off the parsed `Usage` like every other engine. The existing `usage` hash
 (`prompt_tokens`, `completion_tokens`) are unchanged; one key, `cached_tokens`, is added. Both
 the `from_raw` door and the engine path now report all three AKI counts, which resolves the
 consequence above that listed these gaps.
+
+## Update (k226 — the hook surface grows to the plugin host)
+
+The original inventory covered engine privates only. Raider also composes `Role::PluginHost`
+and runs its own hook chain on top of it: `Raider.pm` iterates `$self->_plugin_instances` at ten
+call sites and calls `$self->_plugin_pipeline_tool_call`, `Raider/CLI.pm` reads
+`$raider->_plugin_instances`, and Raider's POD and tests use the `_plugin_args` constructor key.
+langertha-knarr and langertha-skeid touch no plugin-host privates.
+
+`Role::PluginHost` gains three public names, sized to exactly those uses:
+
+1. **`plugin_instances`** — the read-only, lazily built ArrayRef of plugin objects, in
+   `plugins` order. It is the attribute now; `_plugin_instances` is a method that returns the
+   same list. The constructor key stays `_plugin_instances`, unchanged, so the public name
+   does not become a new injection point.
+2. **`plugin_args`** — the HashRef of constructor args for every plugin built from a name. The
+   old `_plugin_args` constructor key is still accepted and used when `plugin_args` is absent;
+   `plugin_args` wins when both are given. `_plugin_args` is a reader alias.
+3. **`plugin_pipeline_tool_call_f`** — runs `plugin_before_tool_call` through the plugins as a
+   pipeline and resolves to the final `($name, $input)`, or to the empty list when a plugin
+   skips the call (later plugins are not asked). The `_f` suffix follows `fire_event_f`: both
+   return Futures. `_plugin_pipeline_tool_call` delegates to it.
+
+As with the engine hooks, the private names stay as aliases and the sibling migrates in its own
+repository. The contract is pinned in `t/46_public_plugin_hooks.t`. Core's own hosts (`Chat`,
+`Embedder`, `ImageGen`) still call the private names internally; that is behavior-neutral and can
+move in a later change.

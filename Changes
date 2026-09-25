@@ -139,6 +139,15 @@ Revision history for Langertha
       core promises no loop, so use $engine->async_loop // IO::Async::Loop->new.
       The private _async_http and _langfuse_timestamp keep working. (ADR 0028.)
 
+    - Plugin hosts (Chat, Embedder, ImageGen, engines, and langertha-raider's
+      Raider) have public names for what a host running its own hook chain
+      needs: plugin_instances (the built plugin objects, read-only),
+      plugin_args (constructor args for every plugin built from a name) and
+      plugin_pipeline_tool_call_f (runs plugin_before_tool_call through the
+      plugins; an empty list means skip the call). The private
+      _plugin_instances, _plugin_args and _plugin_pipeline_tool_call keep
+      working. (ADR 0028.)
+
     - Langertha::Usage->from_response on a raw response body now also reads
       Gemini usageMetadata, Ollama's native top-level counts and response.usage.
       Such bodies used to yield zero usage; figures built on it (for example
