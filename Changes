@@ -1142,6 +1142,13 @@ Revision history for Langertha
       indentation; after removed blocks only the whitespace they leave at
       either end goes.
 
+    - metrics_url keeps a path prefix the server is mounted under
+      (http://host/vllm gives http://host/vllm/metrics) and strips only a
+      trailing /v1 segment. The Prometheus parser reads label values that
+      contain commas (vLLM's LoRA adapter lists), } or escaped quotes,
+      backslashes and newlines, and no longer puts the space after a comma
+      into the next label name.
+
 0.502    2026-05-15 23:02:10Z
 
     - Fix Langertha::Engine::OpenAIResponses to handle function_call as a

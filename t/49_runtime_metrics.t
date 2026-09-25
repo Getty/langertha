@@ -136,6 +136,53 @@ EOF
   is($by_name{'vllm:another'}{value}, 2, 'second valid record kept');
 }
 
+# --- Label values the exposition format allows (karr k306) ---
+# vLLM joins its LoRA adapter list with commas inside one quoted value and
+# prometheus_client escapes \ " and newlines; a comma split lost the adapter
+# list, a leading space leaked into the next label name, and a } in a value
+# made the whole sample unparseable. The payload follows vLLM's metric and
+# label names (lora_requests_info, engine/model_name); the escape line is
+# built to the exposition-format spec, not captured.
+{
+  use Path::Tiny;
+  my $records = $metrics->parse( path('t/data/vllm_metrics_lora.prom')->slurp_raw );
+  my %by_name = map { $_->{name} => $_ } @$records;
+
+  is_deeply( $by_name{'vllm:lora_requests_info'}{labels},
+    { max_lora => '2', running_lora_adapters => 'sql-lora,chat-lora', waiting_lora_adapters => '' },
+    'a comma inside a quoted value stays in the value' );
+  is_deeply( $by_name{'vllm:num_requests_running'}{labels},
+    { engine => '0', model_name => 'Qwen/Qwen3-8B' },
+    'whitespace after a comma is no part of the next label name' );
+  is_deeply( $by_name{'vllm:request_success_total'}{labels},
+    { engine => '0', finished_reason => 'stop', model_name => 'Qwen/Qwen3-8B' },
+    'a trailing comma is allowed' );
+  is( $by_name{'vllm:request_success_total'}{value}, 12, 'value after a trailing comma' );
+  ok( exists $by_name{'vllm:escaped_info'}, 'a } inside a quoted value keeps the sample' );
+  is_deeply( $by_name{'vllm:escaped_info'}{labels},
+    { path => 'C:\\models\\qwen', quote => 'say "hi"', multi => "a\nb", brace => 'a}b' },
+    'escapes \\\\ \\" \\n are unescaped once' );
+}
+
+# --- metrics_url keeps a mount prefix and strips only a /v1 segment (k306) ---
+{
+  use Langertha::Engine::vLLM;
+  my %want = (
+    'http://h:8000/v1'   => 'http://h:8000/metrics',
+    'http://h:8000/v1/'  => 'http://h:8000/metrics',
+    'http://h:8000'      => 'http://h:8000/metrics',
+    'http://h:8000/'     => 'http://h:8000/metrics',
+    'http://h/vllm/v1'   => 'http://h/vllm/metrics',
+    'http://h/vllm'      => 'http://h/vllm/metrics',
+    'http://h/vllm/'     => 'http://h/vllm/metrics',
+    'http://h/api/v1v1'  => 'http://h/api/v1v1/metrics',
+  );
+  for my $url ( sort keys %want ) {
+    is( Langertha::Engine::vLLM->new( url => $url, model => 'm' )->metrics_url,
+      $want{$url}, "metrics_url for $url" );
+  }
+}
+
 # --- Empty / blank input ---
 {
   my $records = $metrics->parse('');

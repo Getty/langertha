@@ -71,12 +71,13 @@ sub metrics_url {
   croak "metrics_url requires a url attribute" unless $self->has_url;
   my $uri = URI->new($self->url);
   my $path = $uri->path;
-  # Strip a trailing /v1 (and any preceding slash) so we get the bare
-  # server root before appending /metrics. /v1 is the OpenAI-compatible
-  # base; /metrics lives at the root for vLLM, SGLang, llama.cpp.
-  $path =~ s{/v1/?$}{/};
-  $path = '/' unless length $path;
-  $uri->path($path . 'metrics');
+  # Strip trailing slashes and then a trailing /v1 segment so we get the
+  # bare server root before appending /metrics. /v1 is the OpenAI-compatible
+  # base; /metrics lives at the root for vLLM, SGLang, llama.cpp. A prefix
+  # the server is mounted under (a proxy's /vllm) stays (k306).
+  $path =~ s{/+\z}{};
+  $path =~ s{/v1\z}{};
+  $uri->path($path . '/metrics');
   return $uri->as_string;
 }
 
@@ -85,7 +86,10 @@ sub metrics_url {
     my $url = $engine->metrics_url;
 
 Derives the C</metrics> URL from the engine's C<url> attribute by
-stripping the trailing C</v1>. Returns the full URL as a string.
+stripping trailing slashes and a trailing C</v1> path segment, then
+appending C</metrics>. Any other path prefix is kept, so
+C<http://host/vllm/v1> and C<http://host/vllm> both give
+C<http://host/vllm/metrics>. Returns the full URL as a string.
 
 =cut
 

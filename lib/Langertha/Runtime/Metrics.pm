@@ -93,7 +93,8 @@ sub parse {
     # numeric anchor, plain English lines like "this is a comment" match
     # the lenient name+value pattern and become bogus records.
     my ( $name, $labels_str, $value );
-    if ( $line =~ /^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|NaN|\+?Inf|-Inf)/ ) {
+    # A quoted label value may itself contain } (k306).
+    if ( $line =~ /^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{(?:[^"}]|"(?:[^"\\]|\\.)*")*\})?\s+(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|NaN|\+?Inf|-Inf)/ ) {
       ( $name, $labels_str, $value ) = ( $1, $2, $3 );
     }
     else {
@@ -152,17 +153,14 @@ sub _parse_labels {
   return {} unless length $labels_str;
 
   my %labels;
-  # Naive label parser: split on commas at the top level, then on the
-  # first '=' per pair. Prometheus label values may contain commas,
-  # backslashes, and double-quotes when escaped — we handle the common
-  # unescaped case (which is what every shipped engine emits). Escape
-  # handling can be tightened later if a real payload demands it.
-  for my $pair ( split /,/, $labels_str ) {
-    next unless $pair =~ /^([^=]+)="(.*)"\s*$/;
+  # name="value" pairs per the exposition format: optional whitespace
+  # around names, '=' and ',', a trailing comma allowed; a quoted value may
+  # hold commas, '}' and the escapes \\ \" \n (vLLM joins its LoRA adapter
+  # list with commas — k306). A malformed rest ends the parse; the pairs
+  # read so far are kept.
+  while ( $labels_str =~ /\G\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*"((?:[^"\\]|\\.)*)"\s*(?:,|\z)/gc ) {
     my ( $k, $v ) = ( $1, $2 );
-    $v =~ s/\\"/"/g;
-    $v =~ s/\\\\/\\/g;
-    $v =~ s/\\n/\n/g;
+    $v =~ s/\\(.)/$1 eq 'n' ? "\n" : $1/ge;
     $labels{$k} = $v;
   }
   return \%labels;
