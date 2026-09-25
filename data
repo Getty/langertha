@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-25T08:36:52Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T08:36:52Z
+created: 2026-09-25T08:26:49Z
+id: 258
+priority: high
+started: 2026-09-25T08:36:52Z
+status: done
+tags:
+- release
+title: Changes:379-391 Raider extraction (feat!, ADR 0026) not flagged breaking, no
+  ADR citation
+updated: 2026-09-25T08:36:52Z
+---
+
+Changes:379-391 documents the Raider/Raid extraction to langertha-raider. This is the ONLY feat!: (breaking) commit in the entire 461-commit unreleased window (d326f95 "feat!: extract the Raider/Raid layer into langertha-raider"), backed by docs/adr/0026-raider-extracted-to-sibling-distribution.md, which itself states: "Breaking for the core distribution (feat!:). Installing Langertha alone no longer gives you Langertha::Raider, Langertha::Raid et al."
+
+Two things are missing from the Changes entry, both inconsistent with this same file's own conventions:
+
+1. No explicit breaking-change marker. Changes:278 uses "Incompatible change:" inline for a smaller breaking change (OpenAIResponses client-executed built-ins). The 0.404 release (Changes ~1118-1138) used a "[BREAKING]" prefix on each breaking bullet, with a heads-up banner. The Raider-extraction bullet uses neither convention, despite being the highest-impact breaking change in the release (removes Langertha::Raider and Langertha::Raid entirely from core).
+
+2. No ADR citation. Every other major paragraph in the unreleased Changes section cites its ADR in the form "(ADR NNNN.)" (e.g. ADR 0028, 0029, 0027, 0021, 0022, 0023, 0020, 0017, 0014, 0012, 0009, 0004, 0011). The Raider-extraction paragraph never cites "(ADR 0026.)" even though it is exactly what that ADR documents.
+
+Fix: add an explicit "[BREAKING]" or "Incompatible change:" marker (matching whichever convention the release-prep pass picks) to Changes:379-391, and close the paragraph with "(ADR 0026.)" for consistency with the rest of the file.
+
+Separate, lower-priority point for the maintainer only (not something to fix in Changes): dist.ini has no major_version/manual_version configured, so [@Author::GETTY] will auto-bump 0.502 -> 0.503 (a plain decimal increment) regardless of this breaking change. Project history shows manual "century" jumps at past milestones (0.100/0.200/0.300/0.400/0.500). Whether 0.503 sufficiently signals a breaking removal to downstream consumers, or a manual bump is warranted, is the maintainer's call -- flagging only, not blocking.
+
+2026-09-25 08:30 Duplicate finding from a second concurrent pre-release audit this run (langertha-release-checker, ticket #260) — same conclusion, no new content. #258 is the more detailed writeup (ADR 0026 citation, 0.404's prior [BREAKING] convention); closing #260 as the duplicate.
