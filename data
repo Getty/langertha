@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T04:45:46Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T04:45:46Z
+created: 2026-09-25T03:28:24Z
+id: 224
+priority: low
+started: 2026-09-25T04:13:49Z
+status: done
+tags:
+- skeid
+- anthropic
+- errors
+title: 'skeid: /v1/messages-Fehler sind OpenAI-geformt statt Anthropic-geformt'
+updated: 2026-09-25T04:45:46Z
+---
+
+Aus k216 (skeid-Branch k216, 6751909): alle Fehler auf skeids /v1/messages (Invalid JSON body, 403, 429, 503, Upstream-Fehler) nutzen {error:{message,type}} ohne Anthropics top-level type:"error". Nur der neue k216-400 ist Anthropic-geformt. Anthropic-Clients (SDKs) parsen {type:"error",error:{type,message}}. Fix im skeid-Repo: einheitlicher Anthropic-Error-Renderer fuer den Messages-Face. Gehoert auf skeids eigenes Board, hier als Handoff.
+
+2026-09-25 04:21 Implemented in langertha-skeid branch k224, commit a7245f83e2f530a904214806a8638c1f58edb4c0 (not pushed). One Anthropic renderer (Protocol::Anthropic error_type_for_status/error_body + Proxy _render_error keyed on a /v1/messages stash flag) for invalid JSON, k216 400, 403/429/503, upstream errors; streaming: upstream error status before open -> HTTP error, failure after open (transport error, truncated chunked body, upstream error chunk) -> event: error, no message_stop, metered ok=0. OpenAI/Ollama faces unchanged. t/38-anthropic-errors.t, full suite 29 files/915 tests green. 402 billing_error / 504 timeout_error not live-verified; 502/503 fall back to api_error.
+
+2026-09-25 04:22 Correction: the full skeid suite on a7245f8 is 29 files / 908 tests, all green (the earlier 915 was wrong).
+
+2026-09-25 04:38 Review round 1 fixed on skeid branch k224, commit 88f341d (not pushed): cut-stream ok=0 on every face, 409 conflict_error, CL truncation tests, ADR 0001 Update, upstream error.message pass-through, error-chunk type passthrough (known Anthropic types only). Full suite 29 files / 955 tests green.
+
+skeid k224 (a7245f8, 88f341d) reviewt (Ready) und lokal per ff in skeid main gemerged (nicht gepusht).
