@@ -1,0 +1,35 @@
+---
+claimed_at: 2026-09-25T21:04:12Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:04:12Z
+created: 2026-09-25T20:23:31Z
+id: 303
+priority: high
+started: 2026-09-25T20:25:23Z
+status: done
+tags:
+- langfuse
+- async
+- timeouts
+- observability
+- bug
+title: 'Langfuse flush can stall chat calls: blocking LWP with default 180s timeout,
+  run inside async plugin hooks when auto_flush is set; 207 partial failures ignored;
+  no batch size cap'
+updated: 2026-09-25T21:04:12Z
+---
+
+Found in read-only bug hunt (langertha-reviewer, 2026-09-25). Confirmed by code reading (no Langfuse endpoint contacted).
+
+Where:
+- lib/Langertha/Plugin/Langfuse.pm:362 and lib/Langertha/Role/Langfuse.pm:496: LWP::UserAgent->new(agent => ...) with no timeout -> LWP default 180s. Synchronous $ua->request.
+- Plugin::Langfuse plugin_after_llm_response / after_image_gen / after_embedding call $self->flush when auto_flush (Plugin/Langfuse.pm:476, 537, 581). These are async hooks awaited inside Chat::simple_chat_f / chat_with_tools_f; a sync LWP call there blocks the whole IO::Async loop.
+
+Impact: with auto_flush => 1 a Langfuse outage that black-holes or slow-drips (accepts TCP, never answers) delays EVERY chat iteration by up to 180s and freezes all other futures on the loop (knarr/skeid/raider style servers). The k278 timeout helper (_async_do_request_f / user_agent_timeout) is not used by either flush. A refused connection returns fast (LWP synthesizes 500 and flush only warns), so failure isolation for hard-down is fine; the slow case is not.
+
+Also:
+- Langfuse ingestion answers 207 Multi-Status with per-event errors; is_success is true for 207, so rejected events are silently lost.
+- The whole batch goes in one POST with no size cap; Langfuse limits the ingestion body (a few MB). A large batch gets 413 and flush then clears it (all events lost).
+
+Suggested fix: give both flushes a short timeout (own attribute, default ~5-10s), and in the async hooks send via the engine/host async transport (async_request_f with timeout) or defer with ->retain instead of blocking; inspect a 207 body and warn on errors; chunk the batch. Tests: local daemon that never answers (t/lib/Test/LocalHTTPDaemon) proving flush returns within the timeout and a chat_f with auto_flush is not delayed.
