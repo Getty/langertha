@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T23:20:54Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:20:54Z
+created: 2026-09-25T22:47:29Z
+id: 322
+priority: medium
+started: 2026-09-25T22:49:38Z
+status: done
+tags:
+- tools
+- gemini
+- mistral
+title: 'Tool loop final text diverges from chat_response: Gemini thought parts leak,
+  array message.content returned as ARRAY ref'
+updated: 2026-09-25T23:20:54Z
+---
+
+Role/Tools.pm:397-433 response_text_content is a second, weaker text extractor used by chat_with_tools_f and Langertha::Chat tool loops for the final answer.
+- gemini (l.412-416): joins every part with text, including {thought:true} parts; Gemini chat_response (Engine/Gemini.pm ~l.781-796) excludes them. Repro: parts [{text:"**Planning**...",thought:true},{text:"Answer: 4"}] -> loop returns "**Planning** I will just answer.Answer: 4", chat_f content "Answer: 4".
+- openai (l.400-403): returns message.content verbatim; a Mistral/Magistral content-chunk ARRAY (k296) comes back as an ARRAY ref (filter_think_content leaves it). Repro: content [{type:thinking,...},{type:text,text:"Answer: 4"}] -> loop returns ARRAY ref; chat_f "Answer: 4".
+
+Fix: derive the final text from the dialect chat_response (build the Response from the same HTTP response and use ->content) or reuse its helpers (_openai_content_parts, the Gemini thought filter). Tests with verbatim captures.
