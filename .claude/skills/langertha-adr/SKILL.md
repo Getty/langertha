@@ -93,6 +93,7 @@ the same change, or stops and reports.
 | `Response.tool_calls` as the single source | 0003 |
 | Structured output ↔ forced tool, the `chat_f` rewrite matrix | 0005 |
 | Capability registry, per-engine / per-model corrections, pairwise exclusions | 0002, 0019, 0021, 0024 |
+| Learned model capabilities (metadata probe, `ModelProbe`, `model_metadata_format`) | 0032 |
 | Dialect inheritance vs capability roles, `*Compatible` envelopes, `-excludes` | 0006, 0013, 0015, 0016, 0020 |
 | Wire extras on the body / `Response` | 0004 |
 | Request-side controls (reasoning, cache, knobs), temperature gate | 0009, 0012, 0023, 0025 |

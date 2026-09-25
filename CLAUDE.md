@@ -81,6 +81,7 @@ refactors:
 - **0029** — provider manifest v1 (`Langertha::Manifest`): strict structure, open values, no secrets, dialect vocabulary incl. `anthropic-compat`, model-scoped capability allowlist
 - **0030** — server-side tools are a wire-pinned value object (`Langertha::ServerTool`, croaks off its wire) + `Role::ServerTools`/`server_tools` flag; provider-executed calls go to `Response.server_tool_calls`, never `tool_calls`; citations merged, deduped by url without `utm_*`
 - **0031** — `Usage.input_tokens` keeps the wire's meaning; `input_includes_cache` records whether cache reads/writes are in it, and `Pricing` (optional cache rates) prices each token once
+- **0032** — learned model capabilities: explicit `probe_model_capabilities_f` reads the provider's own model metadata (`Langertha::ModelProbe`, keyed by `model_metadata_format`) into a per-instance store applied after layer 3 (authoritative for reported models, under the layer-1/2 wire gates); `image_input` only; never implicit
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision

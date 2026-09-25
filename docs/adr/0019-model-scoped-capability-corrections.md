@@ -282,3 +282,15 @@ sent as usual, and the provider decides. Probing live model metadata (OpenRouter
 not part of this table. The DeepSeek (`deepseek-flash` = V4.1, vision since 2026-09-10) and
 Mistral (`mistral-small-latest` = Small 4) rows rest on facts the advisor flagged as recent; they
 were not re-verified, and the engine comments carry the date.
+
+## Update (k270 — the gateway / self-hosted `image_input` no-claim moves to layer 3; a learned layer follows it)
+
+The k266 Update put the no-claim of gateways and self-hosted servers in layer 2. It was never a
+wire fact, only "the client does not know the model", and ADR 0032 adds a learned layer (facts
+probed from the provider's own model metadata) that runs right after this table and must be able
+to answer over it. On the engines that can probe (OpenRouter, Ollama, OllamaOpenAI, LMStudio,
+LMStudioOpenAI, LlamaCpp) the `delete $caps->{image_input}` in the `around` is therefore a
+catch-all row `qr/\A/ => { image_input => 0 }`; the other no-claim engines keep the layer-2
+clear. Without a probe the answers are unchanged. The table walk now resolves `chat_model`
+through `_capability_model`, which turns the croak of an engine without a default model
+(OpenRouter, OllamaOpenAI) into "no model", matched as `''` like the k209 rule above.
