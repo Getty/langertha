@@ -56,12 +56,25 @@ Give the `_f` path a synchronous fallback so `IO::Async` and `Net::Async::HTTP` 
      `X-Died` on a response that still looks successful. The shim captures the original exception
      (or the `X-Died` text) and **fails** the future with it, sending no `undef` end signal —
      a truncated stream is never resolved as success. On `Net::Async::HTTP` the same die fails
-     that request's future with the original exception too: `chat_stream_realtime_f` catches it
-     in its chunk-sub, so it never unwinds out of the event loop, fails the request and cancels
-     the transfer; other requests on the same loop carry on (karr #194).
+     that request's future with the original exception too (karr #194): `chat_stream_realtime_f`
+     catches it in its chunk-sub, so it never unwinds out of the event loop, and stops delivering.
+     It must not stop the transfer from inside that chunk-sub: the cancel closes the connection
+     while `Net::Async::HTTP` is still inside its read handler, the rest of an already-read burst
+     then lands on a connection with no request left, and the library dies with "Spurious
+     on_read of connection while idle", again out of the loop. So the cancel runs on the next loop
+     iteration (`$loop->later`), and the future fails once the transfer has ended; if the response
+     completed within that read there is nothing to cancel. A client whose futures carry no loop
+     is drained instead. Limit: cancelling a `Net::Async::HTTP` request closes its connection, and
+     with the client defaults Langertha uses (`pipeline => 1`, `max_connections_per_host => 1`)
+     a third concurrent request on the same engine can already be pipelined behind the aborted
+     one on that keep-alive connection; it then fails with `Connection closed`. Requests through
+     other engines, and later requests on the same one, are unaffected.
    Both are covered by `t/45_sync_http_real_lwp.t`, a real LWP (and `Net::Async::HTTP`) against a
    forked local daemon, including sync/async parity on a 4xx with a body; the `Net::Async::HTTP`
-   chunk-sub die by `t/45_async_http_stream_die.t`.
+   chunk-sub die by `t/45_async_http_stream_die.t`, in three framings (paced chunks, a chunked
+   burst and a `Content-Length` body in one read), each followed by a request on the same engine.
+   The pipelining limit was reproduced against a keep-alive daemon, which the shared test daemon
+   (`Connection: close` on every response) cannot exercise.
 
 2. **One shared selection seam** — `Langertha::Role::AsyncHTTP` — owns the `_async_http` /
    `_async_loop` attributes and the backend choice, ending the duplication: an injected
