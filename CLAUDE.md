@@ -162,7 +162,7 @@ Engine::Remote              url required, JSON + HTTP
   │     ├── OllamaOpenAI    Ollama /v1 endpoint, embeddings
   │     ├── vLLM            high-throughput inference, single-model server
   │     │     └── VLLMHook  vLLM + IBM vLLM-Hook plugin (attention/hidden-state/steering probes)
-  │     ├── SGLang          SGLang OpenAI-compatible server, fast structured output
+  │     ├── SGLang          SGLang OpenAI-compatible server, fast structured output, embeddings
   │     ├── LlamaCpp        llama.cpp server, embeddings
   │     └── LMStudioOpenAI  LM Studio's OpenAI-compatible endpoint
   │
@@ -171,7 +171,7 @@ Engine::Remote              url required, JSON + HTTP
   │
   │  Non-OpenAI formats (own request/response handling)
   ├── Perplexity            Agent API (/v1/agent), Open-Responses envelope via Role::ResponsesCompatible; search-augmented, citations; client function tools, no `tool_choice` (k213)
-  ├── Gemini                ?key= auth, functionDeclarations, thought parts
+  ├── Gemini                ?key= auth, functionDeclarations, thought parts, embedContent embeddings
   ├── Ollama                native /api/chat, NDJSON streaming, OpenAPI spec
   ├── AKI                   key-in-body auth, EU/Germany, /api/call/{model}
   └── LMStudio              LM Studio native API (non-OpenAI/non-Anthropic)
