@@ -45,22 +45,38 @@ accepted by the orchestrator, red-teamed by the llm-advisor). Three OpenAI captu
 3. **`Tool->format_list($fmt, …)` keeps a server tool of `$fmt` in place** (object → `to`,
    recognized hash → its spec). Everything else still goes through the k210 door, so a server
    tool of another wire, a client-executed built-in or an unknown type still croaks there.
-   `Tool->from_hash` stays function-only and refuses a `ServerTool` object.
+   `Tool->from_hash` stays function-only and refuses a `ServerTool` object. `format_list` sees
+   no engine, so it never runs an engine hook; that is why the one rule every Responses
+   provider needs at emission (decision 5) lives in `ServerTool->to`. Deviation from spec
+   §3.7: the envelope did *not* switch to `format_list('responses', …)`. It keeps its own
+   per-item step, because it must stay values-open for unknown typed items, which
+   `format_list` (k210) croaks on. So there are two partitioners; both route server tools
+   through `ServerTool->to`.
 
 4. **Capability: one flag, `server_tools`**, from the new capability role
    `Langertha::Role::ServerTools` (ADR 0002; ADR 0016: a capability role is a role from day
    one). It means *the wire accepts provider-native server-side entries in `tools`* — not which
    types. The role also carries the engine attribute `server_tools` (defaults appended to every
    request, so `simple_chat` and `chat_with_tools_f` send them without changes) and the hook
-   `_server_tool_wire_check($server_tool) → $spec`. It does not require `Role::Tools`.
+   `_server_tool_wire_check($server_tool) → $spec`. A default must be a server tool (a
+   `ServerTool`, or a hash `ServerTool->from_hash` recognizes); a bare string, a function tool
+   or an unlisted type croaks when the request is built, unlike a request's own tools, which
+   stay values-open. **The request wins:** a default is left out when the request already
+   carries a server tool of the same kind (same `type`; for `mcp`, also the same
+   `server_label`), so one tool is never sent twice. It does not require `Role::Tools`.
    Composed into `Engine::OpenAIResponses` only. The manifest Builder publishes the flag per
    model (ADR 0029 Update k206).
 
-5. **Provider divergence goes through the engine hook, not the shared wire.** OpenAI and xAI
-   share the `responses` tag but disagree on remote MCP `require_approval` (OpenAI defaults to
-   `"always"`; xAI does not support the field). `OpenAIResponses::_server_tool_wire_check`
-   croaks unless `require_approval` is the plain string `'never'` — there is no approval flow
-   (orchestrator ruling Q2). This mirrors ADR 0020's divergence hooks.
+5. **Remote MCP approval is checked in the value object; other provider divergence goes
+   through the engine hook.** `ServerTool->to('responses')` croaks on an `mcp` tool unless
+   `require_approval` is the plain string `'never'` — OpenAI defaults to `"always"` and there
+   is no approval flow (orchestrator ruling Q2). The spec (and advisor must-change 2) put this
+   rule in an engine hook because xAI does not support the field; review M3 showed that
+   `Tool->format_list`, which sees no engine, would skip a hook, so the orchestrator moved it
+   to the one door every emission passes, enforced once. The price: an xAI user must also
+   write `'never'`, and `XAIResponses::_server_tool_wire_check` (Phase 1b) strips
+   `require_approval` / `connector_id` afterwards. The hook stays the place for such
+   provider divergence, mirroring ADR 0020's divergence hooks.
 
 6. **Fail loud before the request.** In `Role::ResponsesCompatible` a server tool on an engine
    without `supports('server_tools')` is left on today's path (verbatim hash), but a

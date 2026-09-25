@@ -11,7 +11,9 @@ Revision history for Langertha
       mcp, hosted shell and tool_search) go in the tools list of chat_f,
       mixed with function tools, as native hashes or Langertha::ServerTool
       objects, or once on the engine with server_tools => [...], which also
-      covers simple_chat and chat_with_tools_f. supports('server_tools') and
+      covers simple_chat and chat_with_tools_f (an entry that is no server
+      tool croaks; a server tool of the same type in the request replaces the
+      default). supports('server_tools') and
       the provider manifest tell which engines take them (OpenAIResponses
       only so far). What the provider ran lands on the new
       Response->server_tool_calls (Langertha::ServerToolCall records, item
@@ -20,7 +22,8 @@ Revision history for Langertha
       answer's url_citation annotations land on Response->citations as
       { url, title, start_index, end_index }, one entry per page (compared
       without utm_* parameters; the url itself is kept). A remote mcp tool
-      must set require_approval => 'never', and a ServerTool on an engine
+      must set require_approval => 'never' (also in Tool->format_list), and
+      a ServerTool on an engine
       without the capability croaks before the request is sent. Built on
       three recorded OpenAI replies (gpt-5.6-luna).
 

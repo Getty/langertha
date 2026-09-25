@@ -190,10 +190,10 @@ events around the verbatim non-streaming capture `responses_web_search_function_
 ## Update (k206 — server tools, citations merge, `max_output_tokens` gate in the shared envelope)
 
 Three envelope-level changes from ADR 0030. (1) Both body builders run the `tools` kwarg through
-one per-item step (`_responses_tools_kwarg`), which also appends the engine's `server_tools` and
-routes a server tool through `Langertha::ServerTool` and the engine hook
-`_server_tool_wire_check` — a sixth, capability-scoped divergence point in the same shape as
-the five. (2) A `citations` key from `_responses_extra_fields` no longer passes through
+one per-item step (`_responses_tools_kwarg`), which also appends the engine's `server_tools`
+(validated; a request tool of the same kind replaces a default) and routes a server tool
+through `Langertha::ServerTool` and the engine hook `_server_tool_wire_check` — a sixth,
+capability-scoped divergence point in the same shape as the five. (2) A `citations` key from `_responses_extra_fields` no longer passes through
 blindly: `_responses_merge_citations` merges it with the answer's `url_citation` annotations
 (hook first, one entry per page); with no annotations the hook's list is returned unchanged, so
 Perplexity is unaffected. (3) `max_output_tokens` is sent only when
