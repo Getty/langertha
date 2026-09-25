@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T20:55:27Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:55:27Z
+created: 2026-09-25T20:21:39Z
+id: 293
+priority: low
+started: 2026-09-25T20:23:55Z
+status: done
+tags:
+- transcription
+- openai
+- bug
+title: OpenAI->whisper drops user_agent_timeout, custom user_agent and the parent
+  transcription_model
+updated: 2026-09-25T20:55:27Z
+---
+
+Engine/OpenAI.pm:189-196 _build_whisper passes only api_key, url and a hard-coded transcription_model=>"whisper-1". Verified offline: OpenAI->new(api_key=>"k", user_agent_timeout=>7, transcription_model=>"gpt-4o-transcribe")->whisper has no user_agent_timeout (LWP default 180s applies) and transcription_model "whisper-1". The parent itself composes Transcription and honours both, so $openai->simple_transcription and $openai->whisper->simple_transcription behave differently.
+Fix: forward user_agent_timeout (when has_), user_agent_agent, and transcription_model from the parent (fall back to whisper-1 only when unset); consider passing the parent user_agent. Test in t/22.
