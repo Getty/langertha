@@ -111,8 +111,10 @@ for my $chat ( sort keys %CHAT_LIKE ) {
 # these ids is curated, so they are unknown ids: the k186 rule makes an unknown
 # id non-reasoning (temperature kept) with the unlisted-id passthrough on every
 # wire. The same guard keeps gemini-2.50 off the Gemini 2.5 budget family and
-# qwen3.10 off the Qwen3.x template vocabulary.
+# qwen3.10 off the Qwen3.x template vocabulary, and the undotted gpt-6 / o-series
+# rows get the same guard: gpt-60 is not gpt-6, o10 is not the o1 line.
 my @MULTI_DIGIT = qw(
+  gpt-60 gpt-600 gpt-61-mini o10 o100 o10-mini
   gpt-5.10 gpt-5.11 gpt-5.19 gpt-5.10-codex-max gpt-5.12-pro gpt-5.10-mini
   gpt-5.20 gpt-5.40 gpt-5.50 gpt-5.60 gpt-5.99
   gpt-5.10-chat gpt-5.10-chat-latest gpt-5.60-chat

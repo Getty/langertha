@@ -563,7 +563,7 @@ sub _family_profiles {
     # gpt-6 and gpt-5.6 carry a per-wire split (karr k176): 'max' is
     # Responses-only, so their openai (Chat Completions) set drops max while the
     # responses set (== levels) keeps it. gpt-5.6 live-confirmed, gpt-6 doc-sourced.
-    _openai_profile( qr/\Agpt-6/,
+    _openai_profile( qr/\Agpt-6(?!\d)/,
       [qw( low medium high xhigh max )],
       openai_levels => [qw( low medium high xhigh )],
       source        => $OPENAI_K176_DOC,
@@ -612,10 +612,11 @@ sub _family_profiles {
     # reasoning classification is added. Matched after the curated gpt-5.N
     # families above. Every dotted family pattern ends in (?!\d) (karr k196):
     # gpt-5.10 is not gpt-5.1, and a multi-digit id matches no gpt-5.N row at
-    # all, so it is an unknown id (non-reasoning, temperature kept).
+    # all, so it is an unknown id (non-reasoning, temperature kept). The undotted
+    # gpt-6 and o-series rows carry the same guard (gpt-60, o10 are unknown).
     _openai_passthrough( qr/\Agpt-5\.\d(?!\d)/, 1,
       'k186: uncurated gpt-5.N reasoning line; effort ladder passthrough' ),
-    _openai_passthrough( qr/\Ao\d/, 1,
+    _openai_passthrough( qr/\Ao\d(?!\d)/, 1,
       'k186: OpenAI o-series reasoning models; effort ladder passthrough' ),
     # Non-reasoning OpenAI chat models (karr k186), marked explicitly so the
     # classification never falls out of the default: gpt-4o / gpt-4.1 (and the

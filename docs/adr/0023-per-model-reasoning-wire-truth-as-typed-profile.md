@@ -295,7 +295,9 @@ digits and lost two hand-kept assumptions.
   default, is non-reasoning (temperature kept) and gets the unlisted-id passthrough on every wire.
   The same holds for `gpt-5.1x`-style ids (`gpt-5.11` … `gpt-5.19`), `gemini-2.50` and `qwen3.10`.
   A letter suffix (`gpt-5.1-codex`, `gpt-5.5-pro`) still belongs to its family. Curating a
-  two-digit generation later means adding its own row.
+  two-digit generation later means adding its own row. The undotted `\Agpt-6` and `\Ao\d` rows
+  carry the same `(?!\d)` guard, so `gpt-60` and `o10` are unknown ids while `gpt-6-astra`,
+  `gpt-6.1` and `o3-mini` keep their families.
 - **Chat carve-outs are generated per digit.** The hand-written mapping (`gpt-5.[24]-chat` →
   gpt-5.2, a generic `gpt-5.\d+-chat` row → gpt-5.3) is replaced by `gpt-5-chat` → `gpt-5` plus
   one `gpt-5.N-chat` → `gpt-5.N` carve-out for each N in 0..9, each cloned from the profile its own
