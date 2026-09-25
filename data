@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T17:01:26Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T17:01:26Z
+created: 2026-09-25T16:49:14Z
+id: 268
+priority: low
+started: 2026-09-25T16:56:24Z
+status: done
+tags:
+- llm
+- lmstudio
+- wire
+title: 'LMStudio native: text input items sent as type message, docs say type text'
+updated: 2026-09-25T17:01:26Z
+---
+
+Found during k267. Engine::LMStudio::_normalize_input emits {type:"message", content} for multi-message input; lmstudio.ai/docs/developer/rest/chat documents input array items as {type:"text", content} and {type:"image", data_url}. k267 kept "message" (text-only bodies byte-identical). Needs llm-advisor / live check against an LM Studio server which spelling is accepted; also: the native wire has no role on items, so multi-turn history is flattened.
+
+2026-09-25 16:51 llm-advisor (2026-09-25, docs-only, no live call): (1) SPELLING: send {type:"text",content}. lmstudio-ai/docs commit 9b8bc20 (2026-09-08, will-lms @ LM Studio, PR #254 "Fix REST chat text input type in docs" / "Fix docs error") changed the param table from "message" to "text"; the curl example had always used "text". Our "message" copied the pre-fix doc error. Server is closed-source, no public schema says "message" is an accepted alias -> treat as unverified, do not rely on it. Images: {type:"image",data_url:"data:<mime>;base64,..."} (same page). (2) ROLES: none. rest/index.mdx comparison table: /api/v1/chat "Include assistant messages in the request: NO" (yes on /v1/responses, /v1/chat/completions, /v1/messages). Array items are content PARTS of ONE user turn, not messages. Current flattening puts prior assistant replies in as user text -> semantically wrong, not just lossy. (3) Multi-turn on this wire = stateful only: store (default true) returns response_id "resp_..."; previous_response_id continues/branches. (4) Side finding: we never send store:false, so every stateless Langertha call persists a chat thread in LM Studio. Careful: line ~426 derives stream finish_reason from response_id, which disappears with store:false. RECOMMEND: "text" parts; send only the trailing user turn(s) as parts (+ images as image parts); if history contains assistant turns either croak/carp pointing to ->openai/->anthropic, or pass previous_response_id through %extra; consider store=>0 default for stateless calls (fix finish_reason first). Live check against a local LM Studio >=0.4 still advisable (no key needed).
+
+2026-09-25 17:00 Implemented on branch worktree-agent-ad63a1d7644fdf0bf commit 3216e0b: type text parts, trailing-user-turn cut + per-request carp, previous_response_id/store passthrough documented, lmstudio.yaml updated, t/24_lmstudio_native_input.t. Open: history ending in an assistant turn sends an empty input (no ruling). store default untouched; stream finish_reason still keyed on response_id (absent with store:false).
