@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T07:04:17Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:04:17Z
+created: 2026-09-25T06:45:56Z
+id: 244
+priority: low
+started: 2026-09-25T06:53:20Z
+status: done
+tags:
+- sglang
+- capabilities
+- llm
+title: 'SGLang: tool_choice_auto/none cleared but SGLang''s OpenAI server likely accepts
+  them (under-claim after k239 gate)'
+updated: 2026-09-25T07:04:17Z
+---
+
+From k239: Engine::SGLang clears tool_choice_auto and tool_choice_none ('not in its docs'). After k239's _gate_tool_choice, auto is dropped silently and none withholds tools — same outcome, but possibly under-claimed; SGLang's protocol.py likely accepts tool_choice auto/none/required/named. llm-advisor: check SGLang source (python/sglang/srt/openai_api/protocol.py or entrypoints/openai/protocol.py) and docs; restore flags that the server accepts.
+
+2026-09-25 06:47 llm-advisor 2026-09-25 (source-verified, no live calls; sglang main @ 0fb699ac03e2): ChatCompletionRequest.tool_choice = Union[ToolChoice{type:function,function:{name}}, Literal['auto','required','none']], default 'auto' (python/sglang/srt/entrypoints/openai/protocol.py L883, blame 70c471a868 2025-06-17 — accepted since at least mid-2025, i.e. already true when k138 cleared the flags). serving_chat.py honors none (L1007/L1345 skip parsing), required/named validated L1042-1058 and EBNF-constrained. parallel_tool_calls: bool=True (L886), threaded into the tool-call constraint (serving_chat L1335/1363/1398). Docs (docs/docs/advanced_features/tool_parser.mdx 'Tool Choice Mode') list only required+named because they need the grammar backend — the docs omission is the origin of the k138 clear, not a wire rejection. RECOMMEND: restore tool_choice_auto + tool_choice_none; keep tool_choice_any + tool_choice_named + parallel_tool_use; keep prompt_cache_key cleared (k200). Caveat: all tool fields need server started with --tool-call-parser; named/required need xgrammar (default). New finding filed separately: forced tool (required/named) + response_format now 400s (protocol.py L1181-1189, 307a90f6d3 2026-08-18).
