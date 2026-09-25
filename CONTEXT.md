@@ -256,8 +256,10 @@ serves `gpt-oss-120b` + `tools` + a `json_schema` `response_format` at HTTP 200.
 So the rule lives **on the affected engines**; there is no shared wire-dialect-base
 rule — the earlier `Engine::OpenAIBase` `gpt-oss` rule was removed (2026-09-19,
 karr #184 Option C) as a false-positive on the AKIOpenAI / TSystems defaults and
-the aggregator routes, which now send both fields on the wire. An engine that
-constrains nothing composes no rule.
+the aggregator routes, which now send both fields on the wire. SGLang declares
+an all-models rule for a *forced* `tool_choice` (`required` / named) with a
+constraining `response_format`; rules receive `tool_choice_forced` for that
+(k245). An engine that constrains nothing composes no rule.
 → **ADR 0024**, **ADR 0021**, **ADR 0019**.
 _Avoid_: "capability_exclusions DSL" (the payload is a coderef, deliberately not
 a declarative constraint language); "the exclusion capability" (it is not a flag)

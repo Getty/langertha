@@ -210,3 +210,38 @@ a consumer without a `chat_model` method. Only a matcher that accepts the empty 
 model-specific rule starts firing for a missing model. The seam's contract is otherwise
 unchanged. `t/78_model_capability_exclusions.t` asserts the croak for `model => ''` on both
 engines.
+
+## Update (k245 — rules also receive `tool_choice_forced`; SGLang refuses a forced tool with a `response_format`)
+
+SGLang's OpenAI server (`python/sglang/srt/entrypoints/openai/protocol.py`, since 307a90f6d3 /
+17ba2c2e7c, source-checked 2026-09-25, no live call) raises *"tool_choice 'required' or a named tool
+cannot be combined with response_format, regex, or ebnf"* when the tools carry a tool-call
+constraint, the request carries an output constraint (`json_schema`; `json_object`, which SGLang
+turns into `json_schema '{"type":"object"}'`; `structural_tag` — not `text`) and `tool_choice` is
+`required` or a named tool. `tool_choice auto` with a `response_format` is accepted. SGLang claims
+`tool_choice_any` / `tool_choice_named` and `response_format_json_schema`, so no ADR 0005 rewrite
+applies and the caller got an opaque 400.
+
+The rule needs to know whether the choice is **forced**, which `has_tools` cannot say (it is true
+for tools + `auto` too, which SGLang accepts). So the seam's request context gains one key:
+
+- **`tool_choice_forced`** — true when the caller's `tool_choice` reads (via
+  `ToolChoice->from_hash`) as `any` or a named tool. It is computed next to `has_tools` at both
+  call sites (`chat_f`, `chat_stream_realtime_f`), from the request **as the caller passed it**:
+  the `tool_choice` gate (`_gate_tool_choice`) runs later, inside `chat_request`, so a rule sees
+  what was asked. After the ADR 0005 forced-tool rewrite, which deletes `tool_choice`, it is 0.
+- The existing keys (`has_tools`, `response_format`, `streaming`) and the Groq / Cerebras rules
+  are unchanged; a rule that ignores the new key behaves as before.
+
+`Engine::SGLang` declares an all-models `qr//` rule
+(`_exclude_forced_tool_choice_with_response_format`): `has_tools` + `tool_choice_forced` + a
+`response_format` of type `json_schema` / `json_object` / `structural_tag` croaks, naming the
+SGLang server restriction. It stays a croak, not a rewrite (ADR 0021's premise). The server
+exempts tool parsers whose constraint is `full_assistant_ebnf`; that is a launch-time choice
+Langertha cannot see, so the rule holds for every model — a possible over-croak on such a server,
+accepted for the same reason Groq and Cerebras use all-models rules. Verified offline:
+`t/23_sglang_forced_tool_exclusion.t`.
+
+The guard reads the `response_format` passed to the call, not one set as an engine attribute
+(`$engine->response_format`), which the request builder still sends. That gap predates this
+Update and applies to every rule; it is filed separately as karr k249.
