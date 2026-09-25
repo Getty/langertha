@@ -340,3 +340,24 @@ data URL, as `to_gemini` always did, and a failed fetch croaks with the engine's
 any request exists. The hook is wire truth for the serializer, deliberately not a capability
 flag: whether a model *sees* images is the separate `image_input` question (k266). Messages
 without a `Langertha::Content` object are passed through unchanged on every format.
+
+## Update (k330 — Gemini declarations carry `parametersJsonSchema`, which ties them to v1beta)
+
+`Tool->to_gemini` sent `input_schema` as `functionDeclarations[].parameters`. That field is
+Gemini's OpenAPI-subset `Schema` proto, which rejects every keyword outside its allowlist with a
+400 ("Unknown name ..."), and MCP input schemas routinely carry such keywords
+(`additionalProperties`, `$ref` / `$defs`, `const`, `$schema`). `to_gemini` now emits
+`parametersJsonSchema`, the same JSON-Schema engine as the `responseJsonSchema` Gemini structured
+output already uses, with the schema passed through unchanged. The two fields are mutually
+exclusive, so `parameters` is never sent, and no sanitizer is written: stripping keywords would
+silently loosen a tool's contract. Only a top-level `$schema` is dropped (not documented as
+accepted), and a tool without arguments (no `properties`, nothing beyond `type` / `required` /
+`additionalProperties`) declares no schema at all. Every Gemini declaration Langertha builds
+goes through `to_gemini` (`format_list`, `request_list`, `Langertha::CachedContent`); a caller's
+own raw Gemini declaration still goes out verbatim, in whichever spelling it chose. Inbound,
+`from_gemini` keeps reading both spellings (ADR 0018).
+
+The dependency this creates: `parametersJsonSchema` exists on the v1beta `FunctionDeclaration`
+only; v1 (GA) has `parameters` alone. `Engine::Gemini` pins `gemini_api_version` to `v1beta`, so
+the wire is consistent today. A subclass or future change that serves `v1` must revisit
+`to_gemini` (fall back to `parameters`, and then face the keyword allowlist) in the same change.

@@ -372,12 +372,32 @@ sub _schema_is_strict {
 
 sub to_ollama { $_[0]->to_openai }
 
+# Gemini: the schema goes out as parametersJsonSchema (v1beta), which takes JSON
+# Schema as-is -- `parameters` is an OpenAPI-subset proto that 400s on MCP's
+# additionalProperties, $ref/$defs, const. The two are mutually exclusive, so
+# `parameters` is never sent; no sanitizer. Only a top-level $schema is dropped,
+# and a tool without arguments declares no schema at all (karr k330, ADR 0001).
+my %NO_ARG_KEY = map { $_ => 1 } qw( type properties required additionalProperties );
+
+sub _gemini_schema {
+  my ($self) = @_;
+  my $schema = $self->input_schema;
+  return undef unless ref $schema eq 'HASH';
+  my %schema = %$schema;
+  delete $schema{'$schema'};
+  my $props = $schema{properties};
+  my $no_args = !( ref $props eq 'HASH' && %$props )
+    && !grep { !$NO_ARG_KEY{$_} } keys %schema;
+  return $no_args ? undef : \%schema;
+}
+
 sub to_gemini {
   my ($self) = @_;
+  my $schema = $self->_gemini_schema;
   return {
     name        => $self->name,
     description => $self->description,
-    parameters  => $self->input_schema,
+    ( $schema ? ( parametersJsonSchema => $schema ) : () ),
   };
 }
 

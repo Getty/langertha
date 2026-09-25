@@ -11,7 +11,7 @@ use Langertha::Engine::Gemini;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(57);
+plan(58);
 
 my $gemini = Langertha::Engine::Gemini->new(
   api_key => 'test_api_key_123',
@@ -266,6 +266,41 @@ eval {
   my $body = $json->decode($e->chat('hi')->content);
   ok(!exists $body->{generationConfig}{thinkingConfig},
     'gemini-2.5-pro with no knobs emits no thinkingConfig');
+};
+
+# Tool declarations carry the MCP inputSchema as parametersJsonSchema (karr
+# k330). `parameters` is Gemini's OpenAPI-subset Schema proto: MCP schemas
+# routinely carry additionalProperties, $ref/$defs, const, which it rejects
+# with a 400 ("Unknown name ..."). parametersJsonSchema (v1beta, the version
+# the engine pins) takes JSON Schema as-is; the two are mutually exclusive.
+subtest 'tool declarations send parametersJsonSchema' => sub {
+  my $schema = {
+    '$schema'            => 'http://json-schema.org/draft-07/schema#',
+    type                 => 'object',
+    additionalProperties => JSON::MaybeXS::false(),
+    properties           => {
+      message => { type => 'string' },
+      unit    => { '$ref' => '#/$defs/unit' },
+    },
+    '$defs'  => { unit => { type => 'string', const => 'C' } },
+    required => ['message'],
+  };
+  my $tools = $gemini->format_tools([
+    { name => 'echo', description => 'Echo', inputSchema => $schema },
+    { name => 'now',  description => 'Time', inputSchema => { type => 'object', properties => {} } },
+    { name => 'ping', description => 'Ping' },
+  ]);
+  my $body = $json->decode(
+    $gemini->build_tool_chat_request([ { role => 'user', parts => [ { text => 'hi' } ] } ], $tools)->content );
+  my ($echo, $now, $ping) = @{ $body->{tools}[0]{functionDeclarations} };
+  ok(!exists $echo->{parameters}, 'no parameters key');
+  my %expect = %$schema;
+  delete $expect{'$schema'};
+  is_deeply($echo->{parametersJsonSchema}, $json->decode($json->encode(\%expect)),
+    'schema passes through unchanged, top-level $schema dropped');
+  ok(exists $schema->{'$schema'}, 'the caller\'s schema is not mutated');
+  is_deeply($now, { name => 'now', description => 'Time' }, 'no-argument tool declares no schema');
+  is_deeply($ping, { name => 'ping', description => 'Ping' }, 'schemaless tool declares no schema');
 };
 
 done_testing;

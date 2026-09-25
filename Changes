@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Gemini tool declarations send the input schema unchanged as
+      parametersJsonSchema instead of parameters, so MCP schemas with
+      additionalProperties, $ref or const no longer get a 400. A top-level
+      $schema is dropped, and tools without arguments declare no schema.
+
     - Tool results carry the call's correlation key: Gemini functionResponse
       echoes the functionCall id when there is one, and Ollama tool messages
       send tool_name plus tool_call_id when the call had an id.

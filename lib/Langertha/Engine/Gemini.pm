@@ -251,7 +251,8 @@ sub gemini_model_url {
 =method gemini_api_version
 
 The API version segment of every endpoint, C<v1beta> for the Generative
-Language API. Override in a subclass serving a different version.
+Language API. Override in a subclass serving a different version. Tool
+declarations are sent as C<parametersJsonSchema>, which C<v1> does not have.
 
 =method gemini_auth_query
 
