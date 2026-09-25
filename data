@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T21:56:49Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:56:49Z
+created: 2026-09-25T21:30:08Z
+id: 312
+priority: low
+started: 2026-09-25T21:40:33Z
+status: done
+tags:
+- ratelimit
+- http
+title: 'Rate limit follow-ups after k300: native engines, retry-after-ms, sync/async
+  error text'
+updated: 2026-09-25T21:56:49Z
+---
+
+From k300: (1) Gemini, Ollama native, AKI, LMStudio native record no rate_limit (base parser returns undef) - check which of them send rate-limit/Retry-After headers and parse them (llm-advisor). (2) OpenAI retry-after-ms header is not collected into RateLimit raw / retry_after - consider preferring it (sub-second precision). (3) Sync parse_response croak appends the body, async chat_f does not - make the error text identical on both backends (ADR 0027 parity).
+
+llm-advisor 2026-09-25 (public docs/source only, no live calls):
+(1) Native engines: Gemini (generativelanguage) documents NO rate-limit headers and no Retry-After; its only retry hint is in the 429 BODY: error.details[] google.rpc.RetryInfo.retryDelay ('9.98s'), often absent (bare RESOURCE_EXHAUSTED body reported Aug 2026). Docs say: exponential backoff (ai.google.dev/gemini-api/docs/troubleshooting, rate-limits). Ollama local: server/routes.go (main) sets no Retry-After/x-ratelimit; overload is 503 'server busy', 429 only listed generically (docs.ollama.com/api/errors). Ollama Cloud: no quota/rate headers (ollama/ollama#15663, headers shown bare, closed as duplicate, still requested May 2026). AKI.IO + LM Studio native: nothing documented (aki.io/docs, lmstudio.ai/docs/developer/rest) - UNVERIFIED, no live probe. RULING: no per-engine parsers. Optionally a generic fallback in the base parser: if a response carries only Retry-After, record retry_after (covers any engine that starts sending it). Gemini RetryInfo.retryDelay is error-path body parsing - separate, low priority.
+(2) retry-after-ms: NOT in OpenAI's documented header table (developers.openai.com/api/docs/guides/rate-limits: Retry-After seconds + x-ratelimit-*; Retry-After only on temporary-limit 429 and 503 server_is_overloaded). It is an Azure OpenAI header (learn.microsoft.com provisioned-get-started, 2026-09-11: 429 carries retry-after-ms AND retry-after). openai-python _base_client parses retry-after-ms (/1000) before retry-after, then HTTP-date. Anthropic: retry-after (seconds) only, absent on spend-cap 429 (platform.claude.com/docs/en/api/rate-limits). RULING: prefer retry-after-ms when present (ms/1000), else Retry-After (int secs or HTTP-date); keep both in raw. Benefits Azure/proxies (OpenAI engine with custom url), harmless elsewhere.
