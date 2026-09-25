@@ -5,8 +5,10 @@ Revision history for Langertha
     - chat_f on a Hermes engine (NousResearch, AKI native) sends the tools
       the way chat_with_tools_f does, in the system prompt instead of an
       ignored tools key, and <tool_call> blocks in the reply land on
-      Response->tool_calls. A tool_choice other than auto is ignored there
-      with a warning; chat_stream_realtime_f puts the tools in the prompt too.
+      Response->tool_calls. tool_choice => 'none' withholds the tools, any
+      other tool_choice but auto is ignored with a warning, and a built-in
+      tool croaks there; chat_stream_realtime_f puts the tools in the prompt
+      too.
 
     - chat_f and chat_stream_realtime_f put every tools item into the
       engine's wire format, in the caller's order: Langertha::Tool objects

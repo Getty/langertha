@@ -265,7 +265,11 @@ engine's `chat_response` already did (AKI native, k123). The lift runs only when
 sent, so `simple_chat_f` on a hermes engine keeps its content. A streamed turn keeps the tags in
 its text: chunks carry no Hermes call.
 
-The prompt cannot force or forbid a tool, so `tool_choice` other than `auto` is dropped with a
-carp rather than sent. The ADR 0005 forced-tool rewrite does not fire here, because the hermes
+`tool_choice` is never sent. `none` withholds the tools: no tool prompt, so no reply lift
+either, with a carp saying so — the rule k233 set for the Responses envelope (ADR 0020), since a
+prompt cannot forbid a tool it offers. The prompt cannot force a tool either, so any other value
+but `auto` is dropped with a carp; an explicit `undef` is no choice and stays silent, as in
+`OpenAICompatible`. Only function tools fit the prompt: a built-in or other non-function item
+croaks in `format_tools` rather than going out verbatim as on the other wires. The ADR 0005 forced-tool rewrite does not fire here, because the hermes
 engines still claim `tool_choice_named` (and `tools_native`) through `Role::Tools` in
 `%ROLE_TO_CAPS` — an over-claim for this wire, left for k234, not changed here.
