@@ -198,25 +198,44 @@ sub _responses_tools_kwarg {
     return;
 }
 
-# Shapes the `tool_choice` kwarg in place, for both request builders.
+# Shapes the `tool_choice` kwarg in place, for both request builders; runs
+# after _responses_tools_kwarg, since it may withhold the shaped tools.
 # Normalized to the Responses (flat function) format, pinned to the literal
 # 'responses' rather than $self->tool_wire_format: the envelope is always
 # Responses-shaped (mirrors OpenAICompatible pinning 'openai'). A choice whose
 # kind the engine does not support (tool_choice_auto / _any / _none / _named)
 # is not sent: Perplexity's Agent API has no tool_choice field at all (karr
 # k213). Dropping 'auto' is silent -- it is the wire default -- any other drop
-# carps, since the model is then free to call or skip tools. A value
-# ToolChoice cannot read passes through as given.
+# carps, since the model is then free to call or skip tools. An unsendable
+# 'none' also withholds every tool of the request -- function tools, native
+# built-ins and server-tool defaults alike, since 'none' rules out any tool
+# call -- so the caller's "call no tool" holds without the field (karr k233).
+# A value ToolChoice cannot read (a provider-native choice) passes through as
+# given where the wire has a tool_choice field, and is dropped with a carp
+# where it has none (k233).
 sub _responses_tool_choice_kwarg {
     my ( $self, $extra ) = @_;
     return unless exists $extra->{tool_choice} && defined $extra->{tool_choice};
-    my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} ) or return;
+    my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} );
+    unless ($tc) {
+        return if grep { $self->supports("tool_choice_$_") } qw( auto any none named );
+        delete $extra->{tool_choice};
+        carp "".( ref $self ).": dropping tool_choice -- this engine has no tool_choice "
+          . "field and the value is not one Langertha can read; the model decides whether to call a tool";
+        return;
+    }
     my $cap = $tc->type eq 'tool' ? 'tool_choice_named' : 'tool_choice_' . $tc->type;
     if ( $self->supports($cap) ) {
         $extra->{tool_choice} = $tc->to('responses');
         return;
     }
     delete $extra->{tool_choice};
+    if ( $tc->type eq 'none' ) {
+        delete $extra->{tools};
+        carp "".( ref $self ).": dropping tool_choice 'none' -- this engine does not "
+          . "support('tool_choice_none'); the request's tools are withheld instead";
+        return;
+    }
     carp "".( ref $self ).": dropping tool_choice '"
       . ( $tc->type eq 'tool' ? 'tool ' . ( $tc->name // '' ) : $tc->type )
       . "' -- this engine does not support('$cap'); the model decides whether to call a tool"
@@ -283,8 +302,8 @@ sub chat_request {
     # attributes on a per-key basis; the rest of %extra passes straight through.
     my $controls = delete $extra{controls} // {};
 
-    $self->_responses_tool_choice_kwarg(\%extra);
     $self->_responses_tools_kwarg(\%extra);
+    $self->_responses_tool_choice_kwarg(\%extra);
 
     # parallel_tool_use -> parallel_tool_calls (only when tools present, and
     # only where the wire has the field: Perplexity's Agent API does not, k213).
@@ -711,8 +730,8 @@ sub chat_stream_request {
 
     my $controls = delete $extra{controls} // {};
 
-    $self->_responses_tool_choice_kwarg(\%extra);
     $self->_responses_tools_kwarg(\%extra);
+    $self->_responses_tool_choice_kwarg(\%extra);
 
     my @input;
     for my $msg (@$messages) {

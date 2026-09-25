@@ -48,7 +48,11 @@ Revision history for Langertha
       other built-in tool items. Taken from Perplexity's documentation, not
       verified against the live API. On the Responses wire a tool_choice the
       engine does not support is no longer sent (dropping anything but auto
-      carps).
+      carps); an unsendable tool_choice => 'none' leaves the request's tools
+      out instead, so the model cannot call a tool you ruled out, and a
+      tool_choice Langertha cannot read is dropped where the engine has no
+      tool_choice at all (OpenAIResponses still passes it through).
+      ToolChoice->to_perplexity is marked legacy (the old Sonar forms).
 
     - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
       item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,

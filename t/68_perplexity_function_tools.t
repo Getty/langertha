@@ -119,6 +119,75 @@ subtest 'request: flat function tools, never tool_choice or parallel_tool_calls'
     is( $body->{tool_choice}, 'auto', 'OpenAIResponses still sends tool_choice' );
 };
 
+# karr k233 / ADR 0020 (k233 Update): tool_choice => 'none' means "call no
+# tool". An engine that cannot send 'none' (Perplexity has no tool_choice
+# field) would otherwise ship the tools with no restriction, and the model could
+# call a tool the caller ruled out. The caller's intent is honored by
+# withholding every tool for that request -- function tools, native built-in
+# hashes and server-tool defaults alike, since 'none' covers them all.
+{
+    package K233::NoNone;
+    use Moose;
+    extends 'Langertha::Engine::OpenAIResponses';
+    around engine_capabilities => sub {
+        my ( $orig, $self, @rest ) = @_;
+        my $caps = $self->$orig(@rest);
+        delete $caps->{tool_choice_none};
+        return $caps;
+    };
+    __PACKAGE__->meta->make_immutable;
+}
+
+subtest "tool_choice 'none' the engine cannot send withholds the tools (k233)" => sub {
+    for my $builder (qw( chat_request chat_stream_request )) {
+        my @warns;
+        local $SIG{__WARN__} = sub { push @warns, $_[0] };
+        my $body = body_of( ppx()->$builder( [ { role => 'user', content => 'weather?' } ],
+            tools => [ $mcp_tool, { type => 'web_search' } ], tool_choice => 'none',
+            controls => { parallel_tool_use => 1 } ) );
+        ok( !exists $body->{tools}, "$builder: no tools sent" );
+        ok( !exists $body->{tool_choice}, "$builder: no tool_choice sent" );
+        ok( !exists $body->{parallel_tool_calls}, "$builder: no parallel_tool_calls sent" );
+        ok( ( grep { /tool_choice 'none'.*withh[oe]ld/ } @warns ), "$builder: carps that the tools were withheld" )
+            or diag @warns;
+    }
+
+    # Server-tool defaults are withheld as well: 'none' rules out every tool call.
+    my @warns;
+    local $SIG{__WARN__} = sub { push @warns, $_[0] };
+    my $body = body_of( K233::NoNone->new( api_key => 'k', model => 'gpt-5.6-luna',
+        server_tools => [ { type => 'web_search' } ] )
+        ->chat_request( [ { role => 'user', content => 'x' } ], tools => [$mcp_tool], tool_choice => 'none' ) );
+    ok( !exists $body->{tools}, 'no function tools and no server-tool defaults' );
+    ok( !exists $body->{tool_choice}, 'no tool_choice' );
+
+    # Where 'none' can be sent, it is, with the tools: unchanged.
+    $body = body_of( Langertha::Engine::OpenAIResponses->new( api_key => 'k', model => 'gpt-5.6-luna' )
+        ->chat_request( [ { role => 'user', content => 'x' } ], tools => [$mcp_tool], tool_choice => 'none' ) );
+    is( $body->{tool_choice}, 'none', "OpenAIResponses sends tool_choice 'none'" );
+    is( scalar @{ $body->{tools} }, 1, 'OpenAIResponses keeps the tools alongside it' );
+};
+
+# karr k233 / ADR 0020 (k233 Update): a tool_choice ToolChoice cannot read
+# (a provider-native hosted-tool choice such as web_search_preview) is the
+# provider's to judge -- but only where the wire has a tool_choice field. On
+# Perplexity there is none, so passing it through is a certain 400: drop + carp.
+subtest 'unreadable tool_choice: dropped where there is no field, passed through elsewhere (k233)' => sub {
+    my $native = { type => 'web_search_preview' };
+    for my $builder (qw( chat_request chat_stream_request )) {
+        my @warns;
+        local $SIG{__WARN__} = sub { push @warns, $_[0] };
+        my $body = body_of( ppx()->$builder( [ { role => 'user', content => 'x' } ],
+            tools => [$mcp_tool], tool_choice => $native ) );
+        ok( !exists $body->{tool_choice}, "$builder: unreadable choice not sent on Perplexity" );
+        ok( ( grep { /dropping tool_choice/ } @warns ), "$builder: dropping it carps" ) or diag @warns;
+        is( scalar @{ $body->{tools} }, 1, "$builder: tools still sent" );
+    }
+    my $body = body_of( Langertha::Engine::OpenAIResponses->new( api_key => 'k', model => 'gpt-5.6-luna' )
+        ->chat_request( [ { role => 'user', content => 'x' } ], tools => [$mcp_tool], tool_choice => $native ) );
+    is_deeply( $body->{tool_choice}, $native, 'OpenAIResponses passes the unreadable choice through' );
+};
+
 subtest 'chat_f: native tools, function_call lands on Response.tool_calls' => sub {
     my $mock = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response($turn1) ] );
     my $resp = ppx( _async_http => $mock )->chat_f(
@@ -200,7 +269,11 @@ subtest 'echo filter: format_tool_results on Perplexity' => sub {
     # OpenAIResponses keeps the verbatim echo (default hook passes through).
     my @verbatim = Langertha::Engine::OpenAIResponses->new( api_key => 'k' )
         ->format_tool_results( $turn1, \@results );
-    is( scalar @verbatim, 5, 'OpenAIResponses echoes all four output items plus the result' );
+    is_deeply( \@verbatim, [
+        @{ $turn1->{output} },
+        { type => 'function_call_output', call_id => 'call_abc',
+          output => $json->encode( [ { type => 'text', text => 'Sunny, 21C' } ] ) },
+    ], 'OpenAIResponses echoes all four output items verbatim, in order, plus the result' );
 };
 
 {

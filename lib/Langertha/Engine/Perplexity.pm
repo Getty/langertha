@@ -98,7 +98,9 @@ Perplexity's documentation, not verified against the live API.
 
 There is no C<tool_choice> and no C<parallel_tool_calls> on the Agent API, so
 every C<tool_choice_*> capability and C<parallel_tool_use> are off and neither
-field is ever sent (a forced choice that cannot be sent carps). Perplexity's
+field is ever sent (a forced choice that cannot be sent carps). C<tool_choice
+=E<gt> 'none'> is honored by leaving the request's tools out (with a carp); a
+choice Langertha cannot read is dropped with a carp. Perplexity's
 built-in tools (C<web_search>, C<fetch_url>, C<sandbox>, ...) are not modelled
 yet; a native hash of one in C<tools> is sent as given.
 
