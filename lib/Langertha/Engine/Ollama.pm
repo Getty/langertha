@@ -199,6 +199,8 @@ sub embedding_request {
   return $self->generate_request( embed => sub { $self->embedding_response(shift, $prompt) },
     model => $self->embedding_model,
     input => $prompt,
+    # /api/embed truncates and renormalizes to `dimensions` for any model (k319).
+    defined $self->embedding_dimensions ? ( dimensions => $self->embedding_dimensions ) : (),
     %extra,
   );
 }

@@ -246,12 +246,30 @@ to bypass the cache.
 
 sub embedding_operation_id { 'createEmbedding' }
 
+# The body field embedding_dimensions goes out as, or undef when the engine
+# documents none for its embedding_model: then the attribute is not sent and
+# carps once per instance (k319). Engines override it.
+sub _embedding_dimensions_field { 'dimensions' }
+
 sub embedding_request {
   my ( $self, $input, %extra ) = @_;
+  my @dimensions;
+  my $size = $self->embedding_dimensions;
+  if ( defined $size && !exists $extra{dimensions} ) {
+    my $field = $self->_embedding_dimensions_field;
+    if ( !defined $field ) {
+      $self->_langertha_carp( "".( ref $self ).": not sending embedding_dimensions=$size -- no "
+        . "documented dimensions field for embedding model '"
+        . ( $self->embedding_model // 'served by the server' ) . "'", 'embedding_dimensions' );
+    }
+    elsif ( !exists $extra{$field} ) {
+      @dimensions = ( $field => $size );
+    }
+  }
   return $self->generate_request( $self->embedding_operation_id, sub { $self->embedding_response(shift, $input) },
     defined $self->embedding_model ? ( model => $self->embedding_model ) : (),
     input => $input,
-    defined $self->embedding_dimensions ? ( dimensions => $self->embedding_dimensions ) : (),
+    @dimensions,
     %extra,
   );
 }
@@ -264,8 +282,13 @@ Generates an OpenAI-format embedding request for C<$input>: a string, or
 an ArrayRef of strings for a batch (sent as one C<input> array). Uses
 C<embedding_model> (default: C<text-embedding-3-large>). C<%extra> goes
 into the body unchanged (C<dimensions>, C<encoding_format>, ...);
-L<Langertha::Role::Embedding/embedding_dimensions>, when set, is sent as
-C<dimensions> unless C<%extra> carries one. The
+L<Langertha::Role::Embedding/embedding_dimensions>, when set, is sent under
+the field the private hook C<_embedding_dimensions_field> names
+(C<dimensions> by default; L<Langertha::Engine::Mistral> overrides it with
+C<output_dimension>), unless C<%extra> carries C<dimensions> or that field.
+An engine whose hook returns C<undef> documents no such field for its
+C<embedding_model>: the attribute is then not sent and carps once per engine
+instance, while an explicit C<dimensions> extra still goes out untouched. The
 request's response parser knows the input shape, so a batch comes back as
 one vector per input (see L</embedding_response>). Returns an HTTP request
 object.

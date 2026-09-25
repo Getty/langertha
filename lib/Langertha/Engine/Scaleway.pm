@@ -33,6 +33,11 @@ embeddings are supported; the default embedding model is
 C<qwen3-embedding-8b> (C<bge-multilingual-gemma2> is also served, set it
 with C<embedding_model>).
 
+L<Langertha::Role::Embedding/embedding_dimensions> is not sent (it carps
+once): Scaleway's embeddings API documentation lists C<dimensions> under its
+unsupported parameters. Pass a C<dimensions> extra to C<embedding_request> to
+send it anyway.
+
 If you want to scope requests to a specific Scaleway project, override C<url>
 with C<https://api.scaleway.ai/E<lt>PROJECT_IDE<gt>/v1>.
 
@@ -62,6 +67,9 @@ sub default_model { 'llama-3.3-70b-instruct' }
 # bge-multilingual-gemma2 is also served). The OpenAI role's
 # text-embedding-3-large is not (k291).
 sub default_embedding_model { 'qwen3-embedding-8b' }
+
+# Undocumented: the embeddings API docs list dimensions as unsupported (k319).
+sub _embedding_dimensions_field { undef }
 
 # Scaleway's Generative APIs narrow two flags the OpenAI role inventory grants
 # (scaleway.com/en/docs/generative-apis, verified 2026-09-01):

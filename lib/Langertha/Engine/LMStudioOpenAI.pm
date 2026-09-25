@@ -55,6 +55,10 @@ L<Langertha::Role::PromptCache>); LMStudioOpenAI itself additionally
 composes L<Langertha::Role::Embedding> (C</v1/embeddings>) and
 L<Langertha::Role::Tools> (MCP tool calling).
 
+L<Langertha::Role::Embedding/embedding_dimensions> is not sent (it carps
+once): LM Studio does not document a C<dimensions> field for
+C</v1/embeddings>, so whether it is honored is unknown.
+
 Authentication is optional. If C<api_key> (or C<LANGERTHA_LMSTUDIO_API_KEY>)
 is set, it is sent as a bearer token.
 
@@ -85,6 +89,9 @@ defaults to C<lmstudio>.
 sub default_model { 'default' }
 # No fixed embedding model: the caller's model, else no model field (k297).
 sub default_embedding_model { undef }
+
+# LM Studio documents no dimensions field for /v1/embeddings (k319).
+sub _embedding_dimensions_field { undef }
 
 # Shares the LM Studio key with the native engine (derivation would name the
 # protocol variant); optional, the local server accepts the 'lmstudio' dummy.

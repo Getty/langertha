@@ -45,6 +45,10 @@ frontier models. GDPR-compliant.
 Get a trial API key at L<https://apikey.llmhub.t-systems.net/> and set
 C<LANGERTHA_TSYSTEMS_API_KEY> in your environment.
 
+L<Langertha::Role::Embedding/embedding_dimensions> is not sent (it carps
+once): AIFS does not document a C<dimensions> field for its embedding models,
+and Langertha cannot verify it without a key.
+
 B<THIS API IS WORK IN PROGRESS>
 
 =cut
@@ -63,6 +67,9 @@ sub _build_api_key {
 sub default_model { 'gpt-oss-120b' }
 
 sub default_embedding_model { 'text-embedding-bge-m3' }
+
+# Docs-only engine, a dimensions field is not documented or verifiable (k319).
+sub _embedding_dimensions_field { undef }
 
 sub _build_supported_operations {[qw(
   createChatCompletion

@@ -58,11 +58,33 @@ has embedding_dimensions => (
 =attr embedding_dimensions
 
 Optional size of the returned vectors, for models that can shorten them
-(OpenAI C<text-embedding-3-*>, C<gemini-embedding-001>). OpenAI-compatible
-engines send it as C<dimensions>, L<Langertha::Engine::Gemini> as
-C<embedContentConfig.outputDimensionality>; a matching extra passed to
-C<embedding_request> wins over it. Unset (the default), nothing is sent and
-the model answers in its native size. Other engines do not send it.
+(OpenAI C<text-embedding-3-*>, C<gemini-embedding-001>, Mistral
+C<codestral-embed>, matryoshka models on vLLM / SGLang). How it reaches the
+wire:
+
+=over 4
+
+=item * C<dimensions> — L<Langertha::Engine::OpenAI>,
+L<Langertha::Engine::OllamaOpenAI>, L<Langertha::Engine::vLLM>,
+L<Langertha::Engine::VLLMHook>, L<Langertha::Engine::SGLang>, and top-level
+on the native C</api/embed> of L<Langertha::Engine::Ollama>.
+
+=item * C<output_dimension> — L<Langertha::Engine::Mistral>, for
+C<codestral-embed*> models only.
+
+=item * C<embedContentConfig.outputDimensionality> —
+L<Langertha::Engine::Gemini>.
+
+=item * not sent, with one C<carp> per engine instance — Mistral's other
+embedding models (C<mistral-embed> included), L<Langertha::Engine::Scaleway>,
+L<Langertha::Engine::LlamaCpp>, L<Langertha::Engine::LMStudioOpenAI> and
+L<Langertha::Engine::TSystems>; each engine's POD says why.
+
+=back
+
+A matching extra passed to C<embedding_request> wins over it, and an
+explicit C<dimensions> extra is always sent untouched. Unset (the default),
+nothing is sent and the model answers in its native size.
 
 =cut
 

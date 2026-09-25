@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: embedding_dimensions reaches the wire as dimensions / outputDimensionality; no translation operation
+# ABSTRACT: embedding_dimensions reaches the wire per engine (dimensions / output_dimension / outputDimensionality, or not at all); no translation operation
 use strict;
 use warnings;
 use Test2::Bundle::More;
@@ -37,6 +37,98 @@ subtest 'OpenAI-compatible: dimensions' => sub {
 
   my $vllm = Langertha::Engine::vLLM->new( url => 'http://localhost:8000/v1', embedding_dimensions => 32 );
   is body( $vllm->embedding('x') )->{dimensions}, 32, 'any OpenAI-compatible engine sends it';
+};
+
+# karr k319: embedding_dimensions is spelled per engine, and an engine that
+# documents no such field does not send it (a silent drop on llama.cpp, a 400 on
+# Mistral's additionalProperties:false schema, unverified elsewhere): the caller
+# gets one carp instead of a vector of the wrong size or a rejected request.
+sub warnings_of {
+  my ( $code ) = @_;
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+  $code->();
+  return \@warnings;
+}
+
+subtest 'k319: dimensions on OpenAI, OllamaOpenAI, vLLM, VLLMHook, SGLang' => sub {
+  require Langertha::Engine::OllamaOpenAI;
+  require Langertha::Engine::VLLMHook;
+  require Langertha::Engine::SGLang;
+  for my $engine (
+    Langertha::Engine::OpenAI->new( api_key => 'k', embedding_dimensions => 256 ),
+    Langertha::Engine::OllamaOpenAI->new( url => 'http://localhost:11434/v1', embedding_dimensions => 256 ),
+    Langertha::Engine::vLLM->new( url => 'http://localhost:8000/v1', embedding_dimensions => 256 ),
+    Langertha::Engine::VLLMHook->new( url => 'http://localhost:8000/v1', embedding_dimensions => 256 ),
+    Langertha::Engine::SGLang->new( url => 'http://localhost:30000/v1', embedding_dimensions => 256 ),
+  ) {
+    my $body;
+    my $warnings = warnings_of( sub { $body = body( $engine->embedding('x') ) } );
+    is $body->{dimensions}, 256, ref($engine).': dimensions sent';
+    is scalar @$warnings, 0, ref($engine).': no carp';
+  }
+};
+
+subtest 'k319: Mistral output_dimension for codestral-embed only' => sub {
+  require Langertha::Engine::Mistral;
+  my $codestral = Langertha::Engine::Mistral->new(
+    api_key => 'k', embedding_model => 'codestral-embed-2505', embedding_dimensions => 512 );
+  my $body;
+  my $warnings = warnings_of( sub { $body = body( $codestral->embedding('x') ) } );
+  is $body->{output_dimension}, 512, 'codestral-embed: output_dimension sent';
+  ok !exists $body->{dimensions}, 'codestral-embed: not as dimensions';
+  is scalar @$warnings, 0, 'codestral-embed: no carp';
+  is body( $codestral->embedding_request( 'x', output_dimension => 256 ) )->{output_dimension}, 256,
+    'an output_dimension extra wins';
+
+  my $mistral = Langertha::Engine::Mistral->new( api_key => 'k', embedding_dimensions => 512 );
+  $warnings = warnings_of( sub {
+    $body = body( $mistral->embedding('x') );
+    $mistral->embedding('y');
+  } );
+  ok !exists $body->{dimensions} && !exists $body->{output_dimension},
+    'mistral-embed: nothing sent';
+  is scalar @$warnings, 1, 'mistral-embed: carps once per instance';
+  like $warnings->[0], qr/embedding_dimensions=512.*mistral-embed/, 'carp names value and model';
+  like $warnings->[0], qr/at \Q${\ __FILE__}\E line/, 'carp points at the caller';
+};
+
+subtest 'k319: not sent + carp on Scaleway, LlamaCpp, LMStudioOpenAI, TSystems' => sub {
+  require Langertha::Engine::Scaleway;
+  require Langertha::Engine::LlamaCpp;
+  require Langertha::Engine::LMStudioOpenAI;
+  require Langertha::Engine::TSystems;
+  for my $engine (
+    Langertha::Engine::Scaleway->new( api_key => 'k', embedding_dimensions => 128 ),
+    Langertha::Engine::LlamaCpp->new( url => 'http://localhost:8080/v1', embedding_dimensions => 128 ),
+    Langertha::Engine::LMStudioOpenAI->new( embedding_dimensions => 128 ),
+    Langertha::Engine::TSystems->new( api_key => 'k', embedding_dimensions => 128 ),
+  ) {
+    my $name = ref $engine;
+    my $body;
+    my $warnings = warnings_of( sub {
+      $body = body( $engine->embedding('x') );
+      $engine->embedding('y');
+    } );
+    ok !exists $body->{dimensions}, "$name: dimensions not sent";
+    is scalar @$warnings, 1, "$name: carps once";
+    like $warnings->[0], qr/not sending embedding_dimensions=128/, "$name: carp says why";
+
+    $warnings = warnings_of( sub { $body = body( $engine->embedding_request( 'x', dimensions => 64 ) ) } );
+    is $body->{dimensions}, 64, "$name: an explicit dimensions extra passes through untouched";
+    is scalar @$warnings, 0, "$name: and does not carp";
+  }
+  my $unset = Langertha::Engine::LlamaCpp->new( url => 'http://localhost:8080/v1' );
+  is scalar @{ warnings_of( sub { $unset->embedding('x') } ) }, 0, 'unset attribute: no carp';
+};
+
+subtest 'k319: Ollama native /api/embed sends top-level dimensions' => sub {
+  require Langertha::Engine::Ollama;
+  my $plain = Langertha::Engine::Ollama->new( url => 'http://localhost:11434' );
+  ok !exists body( $plain->embedding('x') )->{dimensions}, 'unset: no dimensions field';
+  my $ollama = Langertha::Engine::Ollama->new( url => 'http://localhost:11434', embedding_dimensions => 128 );
+  is body( $ollama->embedding('x') )->{dimensions}, 128, 'dimensions sent';
+  is body( $ollama->embedding_request( 'x', dimensions => 64 ) )->{dimensions}, 64, 'extra wins';
 };
 
 subtest 'Gemini: embedContentConfig.outputDimensionality' => sub {

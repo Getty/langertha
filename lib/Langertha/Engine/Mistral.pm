@@ -55,6 +55,12 @@ default model C<voxtral-mini-latest>, see L</transcription_request>. The audio
 is given as for every engine: a path, C<\$bytes> or a filehandle (see
 L<Langertha::Role::Transcription/transcription_file_part>).
 
+L<Langertha::Role::Embedding/embedding_dimensions> is sent as Mistral's
+C<output_dimension> (not C<dimensions>, which the embeddings endpoint
+rejects) for C<codestral-embed*> models, the only ones Mistral documents it
+for. With any other embedding model, C<mistral-embed> (fixed 1024) included,
+it is not sent and carps once.
+
 Dynamic model listing via C<list_models()>. Get your API key at
 L<https://docs.mistral.ai/getting-started/quickstart/> and set
 C<LANGERTHA_MISTRAL_API_KEY>.
@@ -124,6 +130,13 @@ sub embedding_operation_id { 'embeddings_v1_embeddings_post' }
 # Mistral's embedding model; the OpenAI role's text-embedding-3-large is not
 # served here (k291).
 sub default_embedding_model { 'mistral-embed' }
+
+# Mistral spells it output_dimension (EmbeddingRequest is
+# additionalProperties:false) and documents it for codestral-embed only (k319).
+sub _embedding_dimensions_field {
+  my ( $self ) = @_;
+  return ( $self->embedding_model // '' ) =~ /\Acodestral-embed/ ? 'output_dimension' : undef;
+}
 
 sub transcription_operation_id { 'audio_api_v1_transcriptions_post' }
 

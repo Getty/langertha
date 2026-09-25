@@ -40,6 +40,10 @@ model (loaded at server startup), no model name or API key is needed.
 
 Supports chat, streaming, embeddings, and MCP tool calling.
 
+L<Langertha::Role::Embedding/embedding_dimensions> is not sent (it carps
+once): llama.cpp's server does not parse a C<dimensions> field, drops it
+silently and returns the full vector.
+
 See L<https://github.com/ggml-org/llama.cpp/blob/master/examples/server/README.md>
 for server setup.
 
@@ -50,6 +54,9 @@ B<THIS API IS WORK IN PROGRESS>
 sub default_model { 'default' }
 # No fixed embedding model: the caller's model, else no model field (k297).
 sub default_embedding_model { undef }
+
+# llama-server parses no dimensions field and drops it silently (k319).
+sub _embedding_dimensions_field { undef }
 
 # LANGERTHA_LLAMACPP_API_KEY is derived from the class name; a local server
 # needs no key, a --api-key-protected `llama-server` does.

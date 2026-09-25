@@ -10,16 +10,19 @@ Revision history for Langertha
       those embedding and image generations. The engine's
       simple_embedding_result takes request extras such as model.
 
+    - New engine attribute embedding_dimensions shortens every embedding:
+      sent as dimensions (OpenAI, OllamaOpenAI, vLLM, SGLang, Ollama native),
+      output_dimension (Mistral codestral-embed) or
+      embedContentConfig.outputDimensionality (Gemini); engines without a
+      documented field (Scaleway, LlamaCpp, LMStudioOpenAI, TSystems, other
+      Mistral models) skip it with one carp. A per-request extra still wins.
+      Transcription engines no longer allow the unimplemented
+      createTranslation operation.
+
     - A finish_reason of error with no error object croaks ("response|stream
       ended with finish_reason error") instead of passing as a normal finish,
       and a Gemini stream chunk carrying an error object fails the stream
       ("stream carried an error: message (code)").
-
-    - New engine attribute embedding_dimensions shortens every embedding:
-      sent as dimensions on OpenAI-compatible engines and as
-      embedContentConfig.outputDimensionality on Gemini, a per-request extra
-      still wins. Transcription engines no longer allow the unimplemented
-      createTranslation operation.
 
     - New simple_embedding_result, simple_image_result and
       simple_transcription_call (each with an _f variant) return a
