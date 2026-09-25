@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T18:05:49Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T18:05:49Z
+created: 2026-09-25T17:55:08Z
+id: 277
+priority: low
+started: 2026-09-25T17:57:24Z
+status: done
+tags:
+- chat
+- drift
+title: Langertha::Chat drops the engine's system_prompt (and NousResearch reasoning_prompt)
+updated: 2026-09-25T18:05:49Z
+---
+
+Found during k275. Langertha::Chat::_build_messages builds the conversation itself and only prepends the wrapper system_prompt; the engine system_prompt is never sent through the wrapper (chat_request does not add it, chat_messages does), nor is the NousResearch reasoning_prompt (around chat_messages). POD of Chat.pm system_prompt says "overriding any system prompt on the engine itself", implying the engine one applies when the wrapper has none. Decide: fall back to the engine system_prompt when the wrapper has none (behavior change), or document that the wrapper ignores it. k275 kept current behavior.
+
+Commit 0a71073 on worktree-agent-ae1bcb165b39edded. Role::Chat::_system_messages(@override) shared by chat_messages and Langertha::Chat; NousResearch wraps _system_messages so its reasoning prompt leads also under a wrapper persona. t/93_chat_system_prompt.t (red before fix). prove -lr t/ PASS, live tests skipped (no keys).
