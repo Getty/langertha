@@ -120,6 +120,7 @@ Perplexity (`/v1/agent`) has client function tools (no `tool_choice` / `parallel
 | `Langertha::ToolResult` | `name`, `id`, `content` (MCP content array), `is_error`; `->to($fmt)` gives the result block |
 | `Langertha::Usage`, `RateLimit`, `Moment` | see above; `Moment->from_wire($v)` returns undef instead of dying |
 | `Langertha::Content::Image` | `from_url` / `from_file` / `from_data` / `from_base64`; put it in `content => [ $text, $img ]` |
+| `Langertha::CallResult` | from `simple_embedding_result(_f)` / `simple_transcription_call(_f)` / `simple_image_result(_f)`: `value` plus `usage`, `rate_limit`, `model`, `total_seconds`, `raw` (the bare `simple_embedding` / `simple_transcription` / `simple_image` and their `_f` return only the value) |
 | `Langertha::RunContext`, `Role::Runnable` | generic run context + `run_f` contract, used by Raider/Raid nodes |
 
 `$fmt` is a `tool_wire_format`: `openai`, `anthropic`, `gemini`, `ollama`, `responses`
