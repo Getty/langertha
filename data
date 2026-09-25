@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-25T03:00:13Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:00:13Z
+created: 2026-09-25T01:59:19Z
+id: 210
+priority: medium
+started: 2026-09-25T01:59:37Z
+status: done
+tags:
+- tools
+- wire
+- bug
+title: 'Tool-Liste: Provider-Built-ins werden still verworfen bzw. korrumpieren den
+  Request'
+updated: 2026-09-25T03:00:13Z
+---
+
+Aus der k206-Spec (langertha-wire-worker, 2026-09-25), unabhaengig vom ServerTool-Feature: (1) {type=>"web_search"} wird in der Tool-Liste still verworfen (nicht zur namenlosen Function). (2) Anthropics {type=>"web_search_20250305", name=>"web_search"} wird zu einer normalen Function-Tool-Definition -> korrumpiert den Request still. (3) Der Responses-Formatierungs-Shortcut ("erstes Tool hat type") bricht bei gemischten Listen in beiden Reihenfolgen. Minimal-Fix bis ServerTool (k206) landet: laut scheitern (croak mit Hinweis auf k206) statt still verwerfen/korrumpieren; Shortcut auf per-Item-Pruefung umstellen. ADR 0001. Spec: docs/superpowers/specs/2026-09-25-server-side-tools-design.md (Branch k206).
+
+2026-09-25 02:01 Pinned accepted function-tool input forms in t/92_tool_input_forms.t before the guard
+
+2026-09-25 02:17 Fixed in f7ae799 (pin 3f6ecc4). Tool->from_hash croaks on non-function hashes: known server-side tools named per wire (responses/anthropic/gemini, per advisor correction), others 'unsupported tool type'. Responses chat_request decides per item; flat function/custom/namespace/Responses server tools verbatim. ADR 0001 Update. Sibling impact: langertha-skeid Protocol/Anthropic.pm calls Tool->from_list on client request tools -> now croaks on server/client built-ins (was silent corruption).
+
+Ready for review: f7ae799
+
+2026-09-25 02:40 Fix round 1: bc1e8ee (classify, fail-closed nameless hashes, Responses denylist, Changes compat note) + a00a7a2 (ADR 0001 Update rewritten). M4 filed as k217.
+
+2026-09-25 02:40 Correction: fix round 1 SHAs are f512c87 (feat) and 20091c7 (docs), not bc1e8ee/a00a7a2.
