@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T19:03:57Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T19:03:57Z
+created: 2026-09-25T17:12:48Z
+id: 270
+priority: low
+started: 2026-09-25T18:28:34Z
+status: done
+tags:
+- capabilities
+- vision
+title: 'image_input: live model-metadata probe for no-claim engines (gateways, self-hosted)'
+updated: 2026-09-25T19:03:57Z
+---
+
+Follow-up to k266 (branch k266-image-input, 2998380 + 9ebfb83). The cloud allowlists (Groq, Cerebras, Scaleway, TSystems, Moonshot, Mistral, OpenAI/Gemini exceptions) are done from the advisor table (docs, 2026-09-25). Open: (1) Gateways and self-hosted engines clear image_input engine-wide because the model is unknown to the client. A live metadata probe would let them answer per model: OpenRouter architecture.input_modalities, Ollama /api/show capabilities, llama.cpp /props modalities.vision, LM Studio capabilities.vision (also Mistral /v1/models capabilities.vision, Anthropic /v1/models capabilities.image_input, TSystems meta_data.input_modalities as cross-checks for the static tables). (2) XAI: only grok-4.7 claims; widen to other grok-4.x once the docs confirm vision there. (3) Re-verify the dated fresh facts: deepseek-flash = V4.1 vision (2026-09-10), mistral-small-latest = Small 4, the Mistral dated ids (derived from release dates), and the TSystems docs-only list (no key).
+
+2026-09-25 18:50 Part (1) implemented on branch k270-model-capability-probe (4547e53 feat, 8182006 ADR 0032 + 0019 k270 Update). probe_model_capabilities_f on OpenRouter, Mistral, Ollama, OllamaOpenAI, LMStudio, LMStudioOpenAI, LlamaCpp; image_input only; learned layer after layer 3, authoritative for reported models, under the layer-1/2 wire gates. NOT done: TSystems (docs document GET /v2/models without a response schema; meta_data.input_modalities unconfirmed, no key), Anthropic /v1/models cross-check, LMStudioAnthropic reuse. Parts (2) XAI grok-4.x and (3) re-verification of dated facts untouched.
+
+Merged (4547e53, 8182006, 971e750): opt-in probe_model_capabilities (ADR 0032). Remaining: XAI other grok-4.x vision, re-verify dated facts, TSystems probe (docs silent).
