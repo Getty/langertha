@@ -16,6 +16,12 @@ Revision history for Langertha
       your own, also puts the schema in the system prompt
       (hermes_schema_prompt). Use AKIOpenAI to force a tool on AKI.
 
+    - On engines that send a forced tool as a json_schema response_format
+      (Perplexity, Ollama native, NousResearch), chat_f croaks when the same
+      call also passes a response_format other than text; pick one. A
+      response_format set on the engine is replaced for that request, with
+      a warning.
+
     - NousResearch lists Hermes-4.3-36B and documents that it serves Hermes
       models only; use an OpenAI-compatible engine such as OpenRouter for
       other models on the Nous gateway.

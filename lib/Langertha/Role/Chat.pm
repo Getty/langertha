@@ -590,6 +590,27 @@ sub _chat_effective_response_format {
   return $rf;
 }
 
+# The ADR 0005 forced-tool rewrite sets a per-request response_format, which
+# replaces any other one (karr k250). A structured response_format the caller
+# passed in the same request is a conflicting intent: croak. One that only
+# comes from the engine attribute yields to the request's forced tool: carp.
+# A `text` response_format asks for no structure, so it is no conflict.
+sub _chat_rewrite_replaces_response_format {
+  my ( $self, $opts, $name ) = @_;
+  my $rf = $self->_chat_effective_response_format($opts);
+  return unless defined $rf;
+  my $type = ref $rf eq 'HASH' ? $rf->{type} : $rf;
+  return if defined $type && !ref $type && $type eq 'text';
+  croak "".(ref $self).": chat_f got both a forced tool_choice '$name' and a "
+    . "response_format; this engine carries a forced tool as a response_format "
+    . "(no native named tool_choice), so the two conflict -- pick one"
+    if exists $opts->{response_format};
+  carp "".(ref $self).": the forced tool_choice '$name' is sent as a "
+    . "response_format (no native named tool_choice); the engine's "
+    . "response_format is replaced for this request";
+  return;
+}
+
 async sub chat_f {
   my ( $self, %opts ) = @_;
 
@@ -617,6 +638,7 @@ async sub chat_f {
         map  { Langertha::Tool->from_hash($_) }
         @{ $opts{tools} };
       if ($tool) {
+        $self->_chat_rewrite_replaces_response_format( \%opts, $name );
         delete $opts{tools};
         delete $opts{tool_choice};
         $opts{response_format} = {
@@ -817,6 +839,13 @@ request is automatically rewritten to use the JSON Schema path and the
 response is loose-parsed; the resulting L<Langertha::Response> exposes
 the parsed arguments via L<Langertha::Response/tool_call_args> with
 C<synthetic =E<gt> 1> on the synthesized tool_call entry.
+
+The rewrite takes the request's C<response_format>. Passing a forced named
+tool and a C<response_format> other than C<text> in the same C<chat_f> call
+therefore croaks: the two ask for different output, so pick one. When the
+C<response_format> only comes from the engine attribute, the forced tool wins
+for that request and a warning says so. A C<text> response_format is replaced
+silently.
 
 On a C<hermes> engine that takes C<response_format>
 (L<Langertha::Engine::NousResearch>), every C<json_schema> response format
