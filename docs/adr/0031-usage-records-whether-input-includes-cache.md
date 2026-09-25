@@ -58,3 +58,32 @@ their numbers.
   reports as 65 / 64 — its count includes the reads — but it is marked false. An engine-scoped
   correction (ADR 0018 layer 3) is follow-up work; the other `/anthropic` shims are unverified.
 - `Usage->merge` still sums only input and output; it drops the cache counts and the flag.
+
+## Update (k265 — engine-scoped correction for shims; merge keeps the cache counts)
+
+The spelling is not the meaning on every `/anthropic` shim, so the flag gets an engine-scoped
+correction (ADR 0018 tier 3). `Role::AnthropicCompatible` has a hook,
+`_usage_input_includes_cache`, that returns `undef` by default (keep the inference). When an
+engine answers it, the role hands `Response` and the final stream chunk a *copy* of the usage
+block with a canonical `input_includes_cache` key; `Usage->from_hash` lets that key beat the
+inference whenever a cache count was found. One key serves both paths, since a stream chunk
+carries its usage as a plain hash and consumers build the `Usage` from it themselves. The wire
+body in `Response.raw` stays unmodified; the key does show in `$response->usage->{...}`, as
+`Engine::AKI`'s canonical `cached_tokens` already does.
+
+- `AKIAnthropic` answers 1 (the captures above: 65 / 64 on both faces).
+- `MiniMaxAnthropic` and `MoonshotAnthropic` keep the default: both providers document that
+  `input_tokens` excludes cache reads and writes (platform.minimax.io
+  anthropic-api-compatible-cache, platform.kimi.ai context-caching, both read 2026-09-25).
+- `LMStudioAnthropic` keeps the default; its behavior is unknown.
+- A shim found to count the cache inside opts in with `sub _usage_input_includes_cache { 1 }`.
+
+`Usage->from_hash` also sums `cache_creation.ephemeral_5m_input_tokens` /
+`ephemeral_1h_input_tokens` into `cache_write_tokens` when the flat total is missing (Moonshot
+reports the split; with the flat key present the flat key wins).
+
+`Usage->merge` now sums `cached_tokens` and `cache_write_tokens` (`undef` only when neither side
+reported one) and takes the flag from the sides that reported a cache count: kept when they
+agree, `undef` when one counts the cache inside and the other beside, because the summed
+`input_tokens` then means neither. Merging across wires with cache traffic therefore prices
+reads as included; merge Usages of one wire when cost matters.

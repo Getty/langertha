@@ -128,6 +128,14 @@ see L</DESCRIPTION>), so this class always sends an explicit model.
 
 sub api_key_env { 'LANGERTHA_AKI_API_KEY' }
 
+# AKI.IO's /anthropic shim spells the cache read the Anthropic way but counts it
+# inside input_tokens: the captures t/data/akianthropic_chat_response.json and
+# akiopenai_chat_response.json answer the same request with input_tokens 65 +
+# cache_read_input_tokens 64 here and prompt_tokens 65 / cached_tokens 64 on the
+# OpenAI face. Without this, Pricing with a cache rate bills the 64 reads twice.
+# -- ADR 0031, k265
+sub _usage_input_includes_cache { 1 }
+
 # AKI.IO's machine-readable agent config states "default_max_output_tokens":
 # 8192, which is below the documented output limit of every listed model. The
 # Anthropic dialect requires max_tokens on every request, so this overrides the

@@ -550,7 +550,7 @@ sub chat_response {
     $data->{id} ? ( id => $data->{id} ) : (),
     $data->{model} ? ( model => $data->{model} ) : (),
     defined $data->{stop_reason} ? ( finish_reason => $data->{stop_reason} ) : (),
-    $data->{usage} ? ( usage => $data->{usage} ) : (),
+    $data->{usage} ? ( usage => $self->_wire_usage( $data->{usage} ) ) : (),
     defined $thinking ? ( thinking => $thinking ) : (),
     @tcs ? ( tool_calls => [ @tcs ] ) : (),
   );
@@ -564,6 +564,41 @@ Parses an Anthropic-format message response into a L<Langertha::Response>
 object. When C<$rf_routed> (a synthetic tool name, or truthy for the
 attribute path) and tool calls are present, lifts the first tool_use
 arguments back into C<content> as JSON.
+
+=cut
+
+# Whether this endpoint counts the cache reads/writes inside usage.input_tokens.
+# Langertha::Usage infers it from the spelling, and the flat Anthropic keys mean
+# "beside" -- first-party Anthropic's truth, also documented by MiniMax and
+# Moonshot. A shim that reuses the spelling but counts the cache inside
+# input_tokens overrides this to 1 (ADR 0018 tier 3, ADR 0031, k265). undef
+# keeps the inference.
+sub _usage_input_includes_cache { return }
+
+# The usage block as it goes onto the Response / the final stream chunk: a copy
+# carrying the canonical input_includes_cache key when the engine sets one, so
+# Usage->from_hash reads the same flag on the non-streaming and streaming path.
+# The wire hash itself is never modified.
+sub _wire_usage {
+  my ( $self, $usage ) = @_;
+  return $usage unless ref $usage eq 'HASH';
+  my $includes = $self->_usage_input_includes_cache;
+  return $usage unless defined $includes;
+  return { %$usage, input_includes_cache => $includes ? 1 : 0 };
+}
+
+=method _usage_input_includes_cache
+
+Internal hook. Returns whether this endpoint counts the prompt-cache reads and
+writes it reports (C<cache_read_input_tokens> / C<cache_creation_input_tokens>)
+inside C<usage.input_tokens>. The default returns C<undef>, which keeps the
+inference of L<Langertha::Usage/from_hash>: the flat Anthropic keys are counted
+beside C<input_tokens>, as first-party Anthropic reports them. An
+Anthropic-compatible shim that counts them inside overrides it with
+C<sub _usage_input_includes_cache { 1 }>, as L<Langertha::Engine::AKIAnthropic>
+does. The answer reaches L<Langertha::Usage/input_includes_cache> on both the
+L</chat_response> path and the streamed final chunk, as an
+C<input_includes_cache> key in a copy of the usage block.
 
 =cut
 
@@ -761,7 +796,7 @@ sub parse_stream_chunk {
     # -- k167
     my %final = (
       $delta->{stop_reason} ? (finish_reason => $delta->{stop_reason}) : (),
-      $data->{usage} ? (usage => $data->{usage}) : (),
+      $data->{usage} ? (usage => $self->_wire_usage( $data->{usage} )) : (),
     );
     $state->{anthropic_final_meta} = %final ? { %final } : undef;
     return Langertha::Stream::Chunk->new(

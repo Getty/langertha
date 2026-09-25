@@ -141,12 +141,25 @@ sub from_hash {
   elsif ( $itd && defined $itd->{cache_write_tokens} )          { $cache_write = $itd->{cache_write_tokens};           $write_in_input = 1 }
   elsif ( $itd && defined $itd->{cache_creation_input_tokens} ) { $cache_write = $itd->{cache_creation_input_tokens};  $write_in_input = 1 }
   elsif ( defined $hash->{cache_creation_input_tokens} )        { $cache_write = $hash->{cache_creation_input_tokens}; $write_in_input = 0 }
+  elsif ( ref( $hash->{cache_creation} ) eq 'HASH' ) {
+    # Anthropic's per-TTL split (ephemeral_5m / ephemeral_1h), which Moonshot's
+    # /anthropic shim also reports; only read when the flat total is missing.
+    my @tiers = grep { defined } map { $hash->{cache_creation}{"ephemeral_${_}_input_tokens"} } qw( 5m 1h );
+    if (@tiers) { $cache_write = 0; $cache_write += $_ for @tiers; $write_in_input = 0 }
+  }
 
   # One flag for both counts: every wire above nests both or flattens both. If
   # a hash ever mixes the two, "not included" wins — pricing a count on top of
   # input_tokens can overcharge, subtracting it can go below zero.
   my $includes = defined $cached_in_input ? $cached_in_input : $write_in_input;
   $includes = 0 if defined $write_in_input && !$write_in_input;
+
+  # A canonical input_includes_cache key in the hash beats the inference from
+  # the spelling. Role::AnthropicCompatible adds it for a shim that spells the
+  # counts the Anthropic way but counts them inside input_tokens (AKIAnthropic,
+  # ADR 0031 / k265). It only applies when a cache count was found.
+  $includes = $hash->{input_includes_cache}
+    if defined $includes && defined $hash->{input_includes_cache};
 
   my %args = ( input_tokens => $input, output_tokens => $output );
   $args{total_tokens}       = 0 + $total       if defined $total;
@@ -249,14 +262,47 @@ counts described under L</cached_tokens> and L</cache_write_tokens>.
 =cut
 
 # Immutable merge — returns a new Usage that is the sum of self + other.
+# Cache counts are summed (undef only when neither side reported one). The
+# flag comes from the sides that reported a cache count; when those disagree
+# the sum has no single meaning and the flag is undef (k265).
 sub merge {
   my ($self, $other) = @_;
   return $self unless $other;
+  my %cache;
+  for my $count (qw( cached_tokens cache_write_tokens )) {
+    my @seen = grep { defined } $self->$count, $other->$count;
+    next unless @seen;
+    $cache{$count} = 0;
+    $cache{$count} += $_ for @seen;
+  }
+  my @reported = grep { defined $_->cached_tokens || defined $_->cache_write_tokens } $self, $other;
+  my $includes = @reported ? $reported[0]->input_includes_cache : undef;
+  if ( @reported == 2 ) {
+    my $two = $reported[1]->input_includes_cache;
+    $includes = undef unless defined $includes && defined $two && !$includes == !$two;
+  }
   return ref($self)->new(
     input_tokens  => $self->input_tokens  + $other->input_tokens,
     output_tokens => $self->output_tokens + $other->output_tokens,
+    %cache,
+    defined $includes ? ( input_includes_cache => $includes ? 1 : 0 ) : (),
   );
 }
+
+=method merge
+
+    my $sum = $usage->merge($other);
+
+Returns a new Usage holding the sum of both: C<input_tokens>, C<output_tokens>,
+and L</cached_tokens> / L</cache_write_tokens> (a side that did not report a
+count adds nothing; the sum stays C<undef> when neither did). L</input_includes_cache>
+comes from the sides that reported a cache count: kept when they agree, C<undef>
+when one counts the cache inside C<input_tokens> and the other beside it — the
+summed C<input_tokens> then means neither, and L</uncached_input_tokens> reads
+C<undef> as "included". Merge Usages of one wire when cost matters. L</raw> is
+not carried over.
+
+=cut
 
 # Canonical hash representation (input_tokens / output_tokens / total_tokens).
 sub to_hash {
@@ -389,8 +435,9 @@ it at C<usage.input_tokens_details.cache_creation_input_tokens>, and Anthropic
 reports it flat as C<usage.cache_creation_input_tokens> (Anthropic further splits
 that count across TTL tiers under C<usage.cache_creation>, which stays verbatim
 in L</raw>). The OpenAI Chat nesting wins, then the Responses nesting, then the
-Anthropic flat key. C<undef> when the provider does not report a cache-write
-count.
+Anthropic flat key; without the flat key the C<ephemeral_5m_input_tokens> /
+C<ephemeral_1h_input_tokens> of C<usage.cache_creation> are summed. C<undef>
+when the provider does not report a cache-write count.
 
 =attr input_includes_cache
 
@@ -410,7 +457,11 @@ not passed.
 The Anthropic-compatible shims follow the Anthropic spelling, but not always
 its meaning: AKI.IO's C</anthropic> endpoint reports the same numbers under
 C<input_tokens> as its OpenAI face does under C<prompt_tokens> (cached reads
-included). Such a Usage is marked false here all the same.
+included). A canonical C<input_includes_cache> key in the usage hash therefore
+beats the inference when a cache count was found;
+L<Langertha::Role::AnthropicCompatible> adds it for an engine whose
+C<_usage_input_includes_cache> hook answers (L<Langertha::Engine::AKIAnthropic>
+answers true), so the key also shows in C<< $response->usage->{...} >>.
 
 =method uncached_input_tokens
 
