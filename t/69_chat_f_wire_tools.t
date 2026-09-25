@@ -126,8 +126,10 @@ subtest 'a Langertha::Tool goes out in the wire shape of the engine' => sub {
   is_deeply( chat_f_tools( gemini => [$obj] ), [ { functionDeclarations => [ $obj->to('gemini') ] } ],
     'gemini: wrapped in one functionDeclarations entry' );
   # hermes: tools ride the prompt (chat_with_tools_f); chat_f leaves the list
-  # alone, so the object goes out through TO_JSON as before.
-  is_deeply( chat_f_tools( hermes => [$obj] ), [ $obj->to_hash ], 'hermes: list left alone' );
+  # alone, so the object goes out through TO_JSON. Pinned unchanged, not
+  # endorsed -- a known gap, karr #231.
+  is_deeply( chat_f_tools( hermes => [$obj] ), [ $obj->to_hash ],
+    'hermes: list unchanged (known gap, karr #231)' );
 };
 
 subtest 'a function-tool hash in another shape is converted, per item' => sub {
@@ -142,7 +144,8 @@ subtest 'a function-tool hash in another shape is converted, per item' => sub {
   my $nested = { type => 'function', function => { name => 'mcp', description => 'An MCP tool', parameters => $schema } };
   is_deeply( chat_f_tools( anthropic => [$nested] ), [ $mcp_tool->to('anthropic') ],
     'anthropic: an OpenAI-nested hash is converted' );
-  is_deeply( chat_f_tools( hermes => [$mcp] ), [$mcp], 'hermes: list left alone' );
+  # Unchanged, not endorsed -- a known gap, karr #231.
+  is_deeply( chat_f_tools( hermes => [$mcp] ), [$mcp], 'hermes: list unchanged (known gap, karr #231)' );
 };
 
 subtest 'a converted hash keeps the extras its target wire takes' => sub {
@@ -211,6 +214,30 @@ subtest 'gemini: one functionDeclarations entry (k221 review M4)' => sub {
   is_deeply( chat_f_tools( gemini => [ $raw, $combined ] ),
     [ { functionDeclarations => [ $raw_decl, { name => 'two' } ] }, { codeExecution => {} } ],
     'a later entry gives up its declarations and keeps its other fields' );
+
+  # k227 review M1: the REST API reads function_declarations too (ADR 0018);
+  # both spellings fold into the one entry, or Gemini gets two.
+  my $snake = { function_declarations => [ { name => 'snake' } ] };
+  is_deeply( chat_f_tools( gemini => [ $snake, $obj ] ),
+    [ { functionDeclarations => [ { name => 'snake' }, $obj->to('gemini') ] } ],
+    'a function_declarations entry absorbs the converted declarations' );
+  is_deeply( chat_f_tools( gemini => [ $raw, { function_declarations => [ { name => 'two' } ], codeExecution => {} } ] ),
+    [ { functionDeclarations => [ $raw_decl, { name => 'two' } ] }, { codeExecution => {} } ],
+    'a later function_declarations entry merges into the first and keeps its other fields' );
+};
+
+subtest 'a Gemini declaration with parametersJsonSchema keeps its schema off Gemini (k227 review M2)' => sub {
+  # Gemini declares a schema as parameters OR parametersJsonSchema (ADR 0018:
+  # accept both). Read only as parameters, the other spelling went out on a
+  # non-Gemini wire with an empty schema -- a tool whose arguments vanished.
+  for my $key (qw( parametersJsonSchema parameters_json_schema )) {
+    my $decl = { name => 'mcp', description => 'An MCP tool', $key => $schema };
+    for my $fmt (qw( openai anthropic ollama )) {
+      is_deeply( chat_f_tools( $fmt, [$decl] ), [ $mcp_tool->to($fmt) ], "$fmt: $key becomes the schema" );
+    }
+    is_deeply( chat_f_tools( gemini => [$decl] ), [ { functionDeclarations => [$decl] } ],
+      "gemini: a $key declaration goes out verbatim" );
+  }
 };
 
 done_testing;

@@ -72,7 +72,8 @@ sub from_mcp {
   );
 }
 
-# Gemini functionDeclarations: name + description + parameters (flat).
+# Gemini functionDeclarations: name + description + parameters (flat), or
+# the JSON-Schema parametersJsonSchema (both spellings, ADR 0018).
 sub from_gemini {
   my ($class, $hash) = @_;
   return undef unless ref($hash) eq 'HASH';
@@ -81,7 +82,8 @@ sub from_gemini {
   return $class->new(
     name         => $name,
     description  => ( $hash->{description} // '' ),
-    input_schema => ( $hash->{parameters} || $class->_empty_schema ),
+    input_schema => ( $hash->{parameters} || $hash->{parametersJsonSchema}
+      || $hash->{parameters_json_schema} || $class->_empty_schema ),
   );
 }
 
@@ -98,7 +100,8 @@ sub from_hash {
   return $class->from_openai($hash)    if ( $hash->{type} // '' ) eq 'function';
   return $class->from_mcp($hash)       if ref( $hash->{inputSchema} )  eq 'HASH';
   return $class->from_anthropic($hash) if ref( $hash->{input_schema} ) eq 'HASH';
-  return $class->from_gemini($hash)    if ref( $hash->{parameters} )   eq 'HASH';
+  return $class->from_gemini($hash)
+    if grep { ref( $hash->{$_} ) eq 'HASH' } qw( parameters parametersJsonSchema parameters_json_schema );
   # Last resort: name-only / schemaless
   return $class->from_anthropic($hash);
 }
@@ -489,8 +492,8 @@ sub format_list {
 #     (k210). Nothing is dropped and nothing becomes a function tool.
 # Gemini keeps all function declarations in ONE functionDeclarations entry
 # (k221 review M4), placed where the first declaration came from; a later
-# raw functionDeclarations entry gives up its declarations to it and keeps
-# its other fields.
+# raw functionDeclarations (or function_declarations) entry gives up its
+# declarations to it and keeps its other fields.
 
 # True when a function-tool hash is already in $fmt's own tools-list shape.
 sub _is_wire_function {
@@ -539,6 +542,17 @@ sub _is_function_hash {
   return ref $item eq 'HASH' && scalar __PACKAGE__->classify($item) eq 'function';
 }
 
+# The key a raw Gemini tool entry keeps its declarations under; the REST API
+# reads both spellings (ADR 0018), the merged entry is written in camelCase.
+sub _declarations_key {
+  my ($item) = @_;
+  return undef unless ref $item eq 'HASH';
+  for my $key (qw( functionDeclarations function_declarations )) {
+    return $key if ref $item->{$key} eq 'ARRAY';
+  }
+  return undef;
+}
+
 sub request_list {
   my ( $class, $fmt, $tools ) = @_;
   return $tools unless ref $tools eq 'ARRAY';
@@ -549,10 +563,10 @@ sub request_list {
       push @decls, $class->_request_item( $item, $fmt );
       push @out, $group = {} unless $group;
     }
-    elsif ( ref $item eq 'HASH' && ref $item->{functionDeclarations} eq 'ARRAY' ) {
-      push @decls, @{ $item->{functionDeclarations} };
+    elsif ( my $key = _declarations_key($item) ) {
+      push @decls, @{ $item->{$key} };
       my %rest = %$item;
-      delete $rest{functionDeclarations} if $group;
+      delete $rest{$key};
       push @out, \%rest if !$group || %rest;
       $group //= \%rest;
     }
@@ -594,8 +608,8 @@ verbatim, for the provider to judge.
 
 On C<gemini> every function declaration ends up in one
 C<functionDeclarations> entry, where the first declaration came from; a later
-raw C<functionDeclarations> entry is merged into it and keeps its other
-fields.
+raw C<functionDeclarations> or C<function_declarations> entry is merged into it
+and keeps its other fields. The merged entry is spelled C<functionDeclarations>.
 
 =cut
 

@@ -92,6 +92,17 @@ use Langertha::ToolChoice;
   is( $t->name, 'calc', 'name' );
 }
 
+# from_gemini / from_hash: Gemini declares a schema as parameters or
+# parametersJsonSchema; the door reads both (ADR 0018, k227 review M2), or a
+# declaration converted for another wire loses its arguments.
+{
+  my $schema = { type => 'object', properties => { q => { type => 'string' } } };
+  for my $key (qw( parameters parametersJsonSchema parameters_json_schema )) {
+    my $t = Langertha::Tool->from_hash( { name => 'g', $key => $schema } );
+    is( $t->input_schema, $schema, "from_hash: $key is the schema" );
+  }
+}
+
 # from_list mixed
 {
   my $list = Langertha::Tool->from_list([

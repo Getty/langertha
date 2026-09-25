@@ -8,7 +8,9 @@ Revision history for Langertha
       Anthropic in their shape instead of as an invalid tool, while hashes
       already in the wire's shape (strict, cache_control, built-ins) go out
       unchanged. On Gemini all function declarations share one
-      functionDeclarations entry.
+      functionDeclarations entry, including those of a function_declarations
+      entry. A Gemini declaration's parametersJsonSchema is read as its
+      schema when it goes to another wire.
 
     - Groq and Cerebras with model => '' now croak on tools combined with a
       response_format, as they do for every named model, instead of sending
