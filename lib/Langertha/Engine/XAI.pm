@@ -84,13 +84,17 @@ sub _build_api_key {
 
 sub default_model { 'grok-4.7' }
 
-# image_input (k266, ADR 0019 k266 Update): grok-4.7 takes image input
-# (llm-advisor, docs only, 2026-09-25); other ids are unchecked, so the
-# catch-all first row clears the flag.
+# image_input (k266, k280, ADR 0019 k266 Update): every grok-4 chat model in
+# the docs.x.ai catalogue lists text+image input -- grok-4.3, 4.5, 4.6, 4.7,
+# the grok-4.20 family and grok-build-0.1 (aliases grok-code-fast-1 /
+# grok-code-fast); retired grok-4-0709 / grok-4-fast-* / grok-4-1-fast-*
+# redirect to grok-4.3 (llm-advisor, docs only, read 2026-09-25). Other
+# families are unchecked, so the catch-all first row clears the flag.
 sub model_capability_corrections {
   return (
-    qr/\A/              => { image_input => 0 },
-    qr/\Agrok-4\.7(?!\d)/ => { image_input => 1 },
+    qr/\A/                         => { image_input => 0 },
+    qr/\Agrok-4(?:[.-]|\z)/        => { image_input => 1 },
+    qr/\Agrok-(?:build-|code-fast)/ => { image_input => 1 },
   );
 }
 

@@ -74,7 +74,12 @@ sub _build_supported_operations {[qw(
 # catch-all first row clears the flag (the default gpt-oss-120b makes no
 # claim); the listed vision models re-assert it. The docs spell ids
 # inconsistently (qwen-3.6-35b-fp8 vs Qwen3.6-35B-A3B-FP8), so every row is
-# case-insensitive and tolerates a missing dash before the version.
+# case-insensitive and tolerates a missing dash before the version. The hub
+# documents gpt-5.4+/5.5/5.6-*, gemini-3.1-pro(-long-context), gemini-3.5-flash,
+# claude-opus-4.8 / claude-*-5 and GLM-5.2 as TEXT-ONLY, so the gpt-5 and
+# gemini-3 rows are pinned to the listed vision ids (gpt-5, gpt-5-mini,
+# gpt-5-codex; gemini-3-flash, gemini-3-pro[-long-context|-image]) (k280,
+# llm-advisor re-read 2026-09-25).
 sub model_capability_corrections {
   return (
     qr/\A/                                   => { image_input => 0 },
@@ -83,9 +88,9 @@ sub model_capability_corrections {
     qr/\Amistral-small-?4(?!\d)/i            => { image_input => 1 },
     qr/\Amistral-medium-?3(?!\d)/i           => { image_input => 1 },
     qr/\Aqwen-?3\.[68](?!\d)/i               => { image_input => 1 },
-    qr/\Agpt-5/i                             => { image_input => 1 },
+    qr/\Agpt-5(?:-mini|-codex)?\z/i          => { image_input => 1 },
     qr/\Aclaude-(?:[a-z]+-)?4[.-][56](?!\d)/i => { image_input => 1 },
-    qr/\Agemini-?3/i                         => { image_input => 1 },
+    qr/\Agemini-3-(?:flash|pro)\b/i          => { image_input => 1 },
   );
 }
 

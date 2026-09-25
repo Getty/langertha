@@ -164,6 +164,10 @@ my @ROWS = (
   [ Hetzner         => 'Qwen3.8-27B'                 => 1 ],
   [ DeepSeek        => 'deepseek-v4-pro'             => 0 ],
   [ DeepSeek        => 'deepseek-chat'               => 0 ],
+  [ DeepSeek        => 'deepseek-v4-flash'           => 1 ],  # legacy id, served by V4.1-Flash (k280)
+  [ DeepSeek        => 'deepseek-v4-flash-vision-exp'=> 1 ],  # legacy id (k280)
+  [ DeepSeek        => 'deepseek-v4-flash-x'         => 0 ],  # anchored alias rows
+  [ DeepSeek        => 'deepseek-v4-pro-0813'        => 0 ],  # V4-Pro, no vision
   [ Mistral         => 'pixtral-large-latest'        => 1 ],
   [ Mistral         => 'codestral-latest'            => 0 ],
   [ Mistral         => 'mistral-medium-latest'       => 1 ],
@@ -179,9 +183,29 @@ my @ROWS = (
   [ Mistral         => 'mistral-large-2407'          => 0 ],
   [ Mistral         => 'ministral-8b-2410'           => 0 ],
   [ Mistral         => 'open-mistral-nemo'           => 0 ],
+  [ Mistral         => 'mistral-medium-3-5'          => 1 ],  # Medium 3.5 card alias (k280)
+  [ Mistral         => 'mistral-medium-3'            => 1 ],  # Medium 3.5 card alias (k280)
+  [ Mistral         => 'mistral-medium-3-6'          => 0 ],  # anchored, unconfirmed
+  [ Mistral         => 'ministral-3b-latest'         => 1 ],  # Ministral 3 alias (k280)
+  [ Mistral         => 'ministral-14b-latest'        => 1 ],
+  [ Mistral         => 'ministral-8b-latest-x'       => 0 ],  # anchored
   [ XAI             => 'grok-4.7-fast'               => 1 ],
   [ XAI             => 'grok-3'                      => 0 ],
-  [ XAI             => 'grok-4.75'                   => 0 ],  # multi-digit guard
+  [ XAI             => 'grok-4.3'                    => 1 ],  # every grok-4.x lists image input (k280)
+  [ XAI             => 'grok-4.3-latest'             => 1 ],
+  [ XAI             => 'grok-4.5'                    => 1 ],
+  [ XAI             => 'grok-4.6'                    => 1 ],
+  [ XAI             => 'grok-4.75'                   => 1 ],  # family-wide since k280
+  [ XAI             => 'grok-4.20-reasoning'         => 1 ],
+  [ XAI             => 'grok-4.20-multi-agent'       => 1 ],
+  [ XAI             => 'grok-4-0709'                 => 1 ],  # retired, redirects to grok-4.3
+  [ XAI             => 'grok-4-1-fast-reasoning'     => 1 ],
+  [ XAI             => 'grok-4'                      => 1 ],
+  [ XAI             => 'grok-40'                     => 0 ],  # multi-digit guard on the major
+  [ XAI             => 'grok-build-0.1'              => 1 ],
+  [ XAI             => 'grok-code-fast-1'            => 1 ],
+  [ XAI             => 'grok-code-fast'              => 1 ],
+  [ XAI             => 'grok-3-mini'                 => 0 ],
   [ MiniMax         => 'MiniMax-M2.7'                => 0 ],
   [ MiniMaxAnthropic=> 'MiniMax-M2.5'                => 0 ],
   [ Moonshot        => 'kimi-k2.6'                   => 1 ],
@@ -206,10 +230,35 @@ my @ROWS = (
   [ TSystems        => 'glm-5.3-flash'               => 1 ],
   [ TSystems        => 'Mistral-Small-4'             => 1 ],
   [ TSystems        => 'mistral-medium-3'            => 1 ],
-  [ TSystems        => 'gpt-5.6-terra'               => 1 ],
+  [ TSystems        => 'gpt-5'                       => 1 ],
+  [ TSystems        => 'GPT-5-mini'                  => 1 ],
+  [ TSystems        => 'gpt-5-codex'                 => 1 ],
+  [ TSystems        => 'gpt-5.6-terra'               => 0 ],  # documented text-only (k280)
+  [ TSystems        => 'gpt-5.6-luna'                => 0 ],
+  [ TSystems        => 'gpt-5.6-sol'                 => 0 ],
+  [ TSystems        => 'gpt-5.5'                     => 0 ],
+  [ TSystems        => 'gpt-5.4'                     => 0 ],
+  [ TSystems        => 'gpt-5.4-mini'                => 0 ],
+  [ TSystems        => 'gpt-oss-120b'                => 0 ],
   [ TSystems        => 'claude-sonnet-4.5'           => 1 ],
   [ TSystems        => 'Claude-4.6-Opus'             => 1 ],
   [ TSystems        => 'gemini-3-flash'              => 1 ],
+  [ TSystems        => 'gemini-3-pro'                => 1 ],
+  [ TSystems        => 'gemini-3-pro-long-context'   => 1 ],
+  [ TSystems        => 'gemini-3-pro-image'          => 1 ],
+  [ TSystems        => 'gemini-3.1-pro'              => 0 ],  # documented text-only (k280)
+  [ TSystems        => 'gemini-3.1-pro-long-context' => 0 ],
+  [ TSystems        => 'gemini-3.5-flash'            => 0 ],
+  [ TSystems        => 'claude-haiku-4.5'            => 1 ],
+  [ TSystems        => 'claude-opus-4.6'             => 1 ],
+  [ TSystems        => 'claude-opus-4.8'             => 0 ],  # documented text-only
+  [ TSystems        => 'claude-opus-5'               => 0 ],
+  [ TSystems        => 'claude-sonnet-5'             => 0 ],
+  [ TSystems        => 'GLM-5.2'                     => 0 ],
+  [ TSystems        => 'GLM-5.3-Flash-Preview'       => 1 ],
+  [ TSystems        => 'Mistral-Small-4-119B-2603'   => 1 ],
+  [ TSystems        => 'Qwen3.8-27B-FP8-Preview'     => 1 ],
+  [ TSystems        => 'gemma-4-31B-it-FP8'          => 1 ],
   [ TSystems        => 'Llama-3.3-70B-Instruct'      => 0 ],
   [ TSystems        => 'claude-sonnet-4'             => 0 ],
   [ TSystems        => 'qwen-3.65'                   => 0 ],  # multi-digit guard

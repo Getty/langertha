@@ -72,9 +72,13 @@ sub default_model { 'mistral-small-latest' }
 # small/medium/large -latest aliases, Pixtral, Small >= 3.1 (2503 on, Small 4 =
 # 2603), Medium 3.x (2505 on), Large 3 (2512 on) and Ministral 3 (2512 on).
 # Codestral, Nemo, Large 2407/2411, Ministral 2410 and Small 2409/2501 are
-# text-only and fall to the catch-all. UNCERTAIN: the exact dated ids are
-# derived from the release dates, not read from a model list, and
-# mistral-small-latest -> Small 4 is a fresh fact the advisor did not re-verify.
+# text-only and fall to the catch-all. Confirmed against the model cards
+# (llm-advisor, docs only, read 2026-09-25; the vision guide itself is stale):
+# mistral-small-latest -> mistral-small-2603 (Small 4, text+image); Medium 3.5
+# = mistral-medium-3-5 / mistral-medium-3 / mistral-medium-latest (no dated
+# id on the card); Large 3 = mistral-large-2512 / mistral-large-latest;
+# Ministral 3 = ministral-{3,8,14}b-2512 / ministral-{3,8,14}b-latest. The
+# retired Pixtral, Small 2503/2506 and Medium 2505/2508 rows stay (harmless).
 sub model_capability_corrections {
   return (
     qr/\A/                                              => { image_input => 0 },
@@ -84,6 +88,8 @@ sub model_capability_corrections {
     qr/\Amistral-medium-(?:250[5-9]|251\d|2[6-9]\d\d)/  => { image_input => 1 },
     qr/\Amistral-large-(?:251[2-9]|2[6-9]\d\d)/         => { image_input => 1 },
     qr/\Aministral-\d+b-(?:251[2-9]|2[6-9]\d\d)/        => { image_input => 1 },
+    qr/\Amistral-medium-3(?:-5)?\z/                     => { image_input => 1 },
+    qr/\Aministral-\d+b-latest\z/                       => { image_input => 1 },
   );
 }
 
