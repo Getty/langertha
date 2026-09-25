@@ -443,6 +443,10 @@ my $OPENAI_K174_DOC  = "$OPENAI_SRC; k174 gpt-5.1 gate (Azure Foundry reasoning 
 # — Anthropic's effort doc lists 4.6 under `max` yet not under `xhigh`; 4.7+/5
 # take the full set. Advisor-verified 2026-09-16 (doc-sourced, NOT live-probed).
 my $ANTHROPIC_K177_DOC = 'platform.claude.com output_config.effort doc; k177 2026-09-16 claude-4.6 no xhigh (advisor-verified, doc-sourced not live)';
+# karr k208: xAI reasoning page (updated 2026-09-21), advisor-verified
+# 2026-09-25 — doc-sourced, NOT live-probed (the reply to an off-enum value,
+# 400 or ignored, is unverified).
+my $XAI_K208_DOC = 'docs.x.ai/developers/model-capabilities/text/reasoning; k208 2026-09-25 (advisor-verified, doc-sourced not live)';
 
 # $levels is the superset a family accepts on the `responses` (Responses API)
 # wire; $extra{openai_levels} is the narrower Chat Completions set, defaulting to
@@ -629,6 +633,18 @@ sub _family_profiles {
     # rest of gpt-4*). Same passthrough serialization as the unlisted default.
     _openai_passthrough( qr/\Agpt-4/, 0,
       'k186: non-reasoning gpt-4 line (gpt-4o, gpt-4.1); effort ladder passthrough' ),
+
+    # xAI grok (karr k208): grok-4.6 / grok-4.7 (and later single-digit 4.N)
+    # accept low|medium|high|xhigh, grok-4.5 low|medium|high; reasoning cannot
+    # be disabled (default high), so none/minimal/max drop and the server
+    # default applies. Same set on chat and responses. The (?!\d) guard keeps
+    # grok-4.20-multi-agent (effort = agent count) an unknown id.
+    _openai_profile( qr/\Agrok-4\.[6-9](?!\d)/,
+      [qw( low medium high xhigh )],
+      source => $XAI_K208_DOC, can_disable => 0, disable_form => 'absent' ),
+    _openai_profile( qr/\Agrok-4\.5(?!\d)/,
+      [qw( low medium high )],
+      source => $XAI_K208_DOC, can_disable => 0, disable_form => 'absent' ),
 
     # Self-hosted Qwen3.x reasoning family (vLLM / SGLang / llama.cpp), matched
     # with or without its HuggingFace org prefix (served ids look like

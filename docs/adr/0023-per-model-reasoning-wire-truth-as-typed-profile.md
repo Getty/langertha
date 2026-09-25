@@ -318,3 +318,16 @@ digits and lost two hand-kept assumptions.
   green throughout. The multi-digit rows in `t/79_openai_reasoning_model_classification.t` and the
   passthrough-removal case in `t/48_reasoning_profile_registry_order.t` were red before the fix.
   The carve-out parity test now loops over the digits 0–9 on all five wires.
+
+## Update (k208 — xAI grok rows: the first always-on family on the OpenAI wire)
+
+`Engine::XAI` resolved every grok id to the unlisted-id passthrough, so `none`/`minimal`/`max`
+reached `chat/completions` although xAI documents `low|medium|high|xhigh` for grok-4.6/4.7,
+`low|medium|high` for grok-4.5, default `high`, and "reasoning cannot be disabled". Two rows now
+carry that: `\Agrok-4\.[6-9](?!\d)` and `\Agrok-4\.5(?!\d)`, same set on the `openai` and
+`responses` wires, `can_disable 0`, `disable_form 'absent'`. The mechanism is the existing one:
+an effort outside the set drops (drop, not clamp), and the server default applies. The single-digit
+point-release coverage follows the k201 gpt-6 precedent; the `(?!\d)` guard keeps
+`grok-4.20-multi-agent`, whose effort field is an agent count, an unknown id. Source: the xAI
+reasoning page (updated 2026-09-21), advisor-verified 2026-09-25 — documentation only; whether an
+off-enum value 400s or is ignored is not live-verified.

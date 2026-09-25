@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - XAI: reasoning_effort reaches the wire only with a level grok accepts:
+      low, medium, high or xhigh on grok-4.6 and later, low, medium or high on
+      grok-4.5. none, minimal and max are dropped, since grok cannot turn
+      reasoning off; the server default (high) applies. Taken from xAI's
+      documentation, not verified against the live API.
+
     - Role::ReasoningEffort::reasoning_kwargs_for now returns nothing unless
       the engine supports reasoning_effort or thinking_budget (the registry
       gate, as for prompt_cache_key). The MiniMax and Moonshot per-engine

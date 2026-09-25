@@ -46,6 +46,12 @@ xAI's audio (Voice API) and image/video (Imagine API) live on separate
 endpoints and are not exposed by this engine; it covers chat, streaming,
 tool calling, and structured output.
 
+C<reasoning_effort> goes out on C<chat/completions> only with a level the
+model accepts: C<low>/C<medium>/C<high>/C<xhigh> on C<grok-4.6> and later,
+C<low>/C<medium>/C<high> on C<grok-4.5>. Grok always reasons (server default
+C<high>), so C<none>, C<minimal> and C<max> are dropped and the default
+applies (see L<Langertha::Reasoning::Profile>).
+
 Set C<prompt_cache_key> to a stable per-conversation value to steer xAI's
 best-effort prompt-cache routing: it goes out as a C<prompt_cache_key> body
 field on C<chat/completions>, which xAI plumbs internally to its
