@@ -476,6 +476,41 @@ sub _openai_finish_reason {
   return $finish_reason;
 }
 
+# message.content / delta.content is a string on most OpenAI-compatible
+# servers, but Mistral's reasoning models (Magistral, or any model called with
+# reasoning_effort) send a list of content chunks instead:
+#   [ { type => 'thinking', thinking => [ { type => 'text', text => ... } ] },
+#     { type => 'text', text => ... } ]
+# and a stream switches from the list to plain strings mid-answer.
+# Response.content and Stream::Chunk.content are Str, so the list is read here,
+# in the dialect role (ADR 0018 tier 2): text chunks and bare strings join into
+# content, the text of thinking chunks (a list of text chunks, or a string)
+# joins into thinking, and any other chunk type (image_url, reference, ...)
+# carries no answer text and is skipped. Returns ($content, $thinking);
+# $thinking is undef when no thinking chunk carried text. -- karr k296
+sub _openai_content_parts {
+  my ( $self, $content ) = @_;
+  return ( $content // '', undef ) unless ref $content;
+  return ( '', undef ) unless ref $content eq 'ARRAY';
+  my ( $text, $thinking ) = ( '', undef );
+  for my $part (@$content) {
+    if ( !ref $part ) { $text .= $part if defined $part; next }
+    next unless ref $part eq 'HASH';
+    my $type = $part->{type} // '';
+    if ( $type eq 'text' ) {
+      $text .= $part->{text} if defined $part->{text} && !ref $part->{text};
+    }
+    elsif ( $type eq 'thinking' ) {
+      my $inner = $part->{thinking};
+      my @texts = ref $inner eq 'ARRAY'
+        ? map { !ref $_ ? $_ : ref $_ eq 'HASH' && !ref $_->{text} ? $_->{text} : undef } @$inner
+        : ( !ref $inner ? $inner : undef );
+      $thinking = ( $thinking // '' ) . $_ for grep { defined } @texts;
+    }
+  }
+  return ( $text, $thinking );
+}
+
 sub chat_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
@@ -496,12 +531,15 @@ sub chat_response {
   # that keeps `reasoning_content` as an empty back-compat stub beside a filled
   # `reasoning` must not mask it -- the exact failure mode the vLLM migration
   # note warns about. -- karr k127, k129, k79
+  # A content-chunk list (Mistral reasoning models) carries its own thinking
+  # chunks; they fill thinking only when neither reasoning field did. -- k296
+  my ( $content, $part_thinking ) = $self->_openai_content_parts( $msg->{content} );
   my $thinking =
       length( $msg->{reasoning_content} // '' ) ? $msg->{reasoning_content}
     : ( defined $msg->{reasoning} && !ref $msg->{reasoning} ) ? $msg->{reasoning}
-    : undef;
+    : $part_thinking;
   return Langertha::Response->new(
-    content       => $msg->{content} // '',
+    content       => $content,
     raw           => $data,
     $data->{id} ? ( id => $data->{id} ) : (),
     $data->{model} ? ( model => $data->{model} ) : (),
@@ -530,6 +568,12 @@ carries tool calls but says C<stop> (gpt-oss on vLLM-style servers, e.g.
 AKI.IO) reports C<tool_calls>, so it agrees with C<tool_calls>. Every other
 value, C<length> included, passes through; the wire value stays readable in
 C<raw>.
+
+C<message.content> may be a list of content chunks instead of a string, as
+Mistral's reasoning models send it: the text of C<text> chunks becomes
+C<content>, the text inside C<thinking> chunks becomes C<thinking> (unless
+C<reasoning_content> / C<reasoning> already filled it), and other chunk types
+are skipped.
 
 =cut
 
@@ -665,7 +709,10 @@ sub parse_stream_chunk {
   my $choice = $data->{choices}[0];
   return undef unless $choice;
 
-  my $content = $choice->{delta}{content} // '';
+  # delta.content may be a content-chunk list too (k296, see
+  # _openai_content_parts); its thinking chunks feed the thinking below.
+  my ( $content, $part_thinking ) = $self->_openai_content_parts(
+    ref $choice->{delta} eq 'HASH' ? $choice->{delta}{content} : undef );
   my $finish_reason = $choice->{finish_reason};
 
   # A streamed tool call arrives as delta.tool_calls fragments keyed by
@@ -725,7 +772,7 @@ sub parse_stream_chunk {
   my $thinking =
       length( $delta->{reasoning_content} // '' ) ? $delta->{reasoning_content}
     : ( defined $delta->{reasoning} && !ref $delta->{reasoning} ) ? $delta->{reasoning}
-    : undef;
+    : $part_thinking;
 
   # An empty-string finish_reason is no finish here either (as for the tool
   # call flush above): the chunk is not final and carries no finish_reason,
@@ -758,7 +805,9 @@ a L<Langertha::Stream::Chunk> with C<content>, C<is_final>, C<finish_reason>,
 C<model>, C<usage>, C<cached_tokens> (lifted from
 C<usage.prompt_tokens_details.cached_tokens> when present), and C<thinking>
 (the streamed C<delta.reasoning_content> / bare C<delta.reasoning>, guarded
-C<!ref>). Returns C<undef> only when the payload carries no C<choices>.
+C<!ref>). A C<delta.content> that is a list of content chunks is read as in
+L</chat_response>: C<text> chunks into C<content>, C<thinking> chunks into
+C<thinking>. Returns C<undef> only when the payload carries no C<choices>.
 
 C<delta.tool_calls> fragments are assembled per C<index> (a fragment without
 C<index> by its C<id>, and by its position only when it has neither) in

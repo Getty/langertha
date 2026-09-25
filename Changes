@@ -358,6 +358,12 @@ Revision history for Langertha
       streamed chunk with an empty finish_reason no longer counts as the
       final chunk or reports that empty value; the stream goes on.
 
+    - OpenAI-compatible replies whose content is a list of chunks, as
+      Mistral's reasoning models (Magistral) send it, no longer die: text
+      chunks become content, thinking chunks become thinking, other chunk
+      types are skipped. Streams too. Built from Mistral's documentation,
+      not verified against a live reply.
+
     - Streamed tool calls are no longer lost on Chat-Completions, Anthropic,
       Gemini and Ollama-native streams: each call arrives once, as the same
       Langertha::ToolCall the non-streaming reply has, and

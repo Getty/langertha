@@ -219,6 +219,17 @@ models, and is reported beyond AKI.IO. The rewrite fires only on a reply that co
 so a correct server is never changed and no spelling table grows. An engine-scoped `around` on
 `AKIOpenAI` would have to be copied onto vLLM, SGLang and every gateway that serves gpt-oss.
 
+## Update (karr k296 — `content` as a list of content chunks, dialect tier)
+
+Mistral's reasoning models send `message.content` / `delta.content` as a list of chunks
+(`{type:"thinking", thinking:[{type:"text",…}]}`, `{type:"text",…}`) instead of a string, and
+the `Str` constructors died on it. `Role::OpenAICompatible::_openai_content_parts`, shared by
+`chat_response` and `parse_stream_chunk`, reads the list: text chunks join into `content`,
+thinking chunks into `thinking` (after `reasoning_content` / `reasoning`), other chunk types are
+skipped. **Home 2**, for the k248 reason: the list reaches every engine that relays those models
+(Mistral, OpenRouter, Scaleway, HuggingFace, self-hosted), the read fires only on a non-string
+`content`, and a string `content` is untouched. Documentation-derived, not live-verified.
+
 ## Future work
 
 - **karr k130** — *realized* (see the Update above): the `cached_tokens` (and now
