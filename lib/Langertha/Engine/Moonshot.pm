@@ -95,8 +95,9 @@ than C<1> is dropped with a warning.
 
 B<Response size:> Kimi counts reasoning toward C<max_tokens> and recommends at
 least 16000 while thinking is on, so C<kimi-k3>, C<kimi-k2.7-code>,
-C<kimi-k2.7-code-highspeed> and C<kimi-k2.6> default to 16000; other ids keep
-4096. An explicit C<response_size> is always sent as given.
+C<kimi-k2.7-code-highspeed> and C<kimi-k2.6> default to 16000 (per model, so
+C<kimi-k2.6> keeps 16000 even with C<< reasoning_effort => 'none' >>); other ids
+keep 4096. An explicit C<response_size> is always sent as given.
 
 Supports chat, streaming, tool calling, and structured output. Embeddings,
 transcription, and image generation are not supported via this endpoint.
