@@ -83,22 +83,57 @@ for my $model ( @NON_REASONING, @DOTTED_CHAT, '' ) {
 }
 
 # A chat carve-out changes only the classification, never the reasoning wire:
-# it serializes exactly like the family it sits in.
+# it serializes exactly like the family it sits in, on every reasoning wire.
+# Looped over every digit (karr k196): the carve-outs are generated per digit
+# from each id's own family, so a newly curated gpt-5.N family is covered
+# without anyone remembering to add its -chat pair.
 my %CHAT_LIKE = (
-  'gpt-5-chat-latest'   => 'gpt-5',
-  'gpt-5.1-chat-latest' => 'gpt-5.1',
-  'gpt-5.2-chat-latest' => 'gpt-5.2',
-  'gpt-5.5-chat-latest' => 'gpt-5.5',
-  'gpt-5.6-chat'        => 'gpt-5.6',
-  'gpt-5.3-chat-latest' => 'gpt-5.3',
+  'gpt-5-chat'        => 'gpt-5',
+  'gpt-5-chat-latest' => 'gpt-5',
+  map { ( "gpt-5.$_-chat" => "gpt-5.$_", "gpt-5.$_-chat-latest" => "gpt-5.$_" ) } 0 .. 9,
 );
 for my $chat ( sort keys %CHAT_LIKE ) {
-  for my $wire (qw( openai responses )) {
+  is( Langertha::Reasoning::Profile->for_model($chat)->is_reasoning_model, 0,
+    "Profile $chat: chat carve-out is not is_reasoning_model" );
+  for my $wire (qw( openai responses anthropic gemini ollama )) {
     for my $effort (qw( none minimal low medium high xhigh max )) {
       is_deeply(
         { Langertha::Reasoning->new( model => $chat, effort => $effort )->to($wire) },
         { Langertha::Reasoning->new( model => $CHAT_LIKE{$chat}, effort => $effort )->to($wire) },
         "$chat serializes like $CHAT_LIKE{$chat} ($wire, $effort)" );
+    }
+  }
+}
+
+# Multi-digit guard (karr k196): a dotted family pattern must not match a second
+# digit, so gpt-5.10 does not inherit gpt-5.1 (reasoning, default-off, gated
+# ladder), gpt-5.20 does not inherit gpt-5.2, and gpt-5.50 not gpt-5.5. None of
+# these ids is curated, so they are unknown ids: the k186 rule makes an unknown
+# id non-reasoning (temperature kept) with the unlisted-id passthrough on every
+# wire. The same guard keeps gemini-2.50 off the Gemini 2.5 budget family and
+# qwen3.10 off the Qwen3.x template vocabulary.
+my @MULTI_DIGIT = qw(
+  gpt-5.10 gpt-5.11 gpt-5.19 gpt-5.10-codex-max gpt-5.12-pro gpt-5.10-mini
+  gpt-5.20 gpt-5.40 gpt-5.50 gpt-5.60 gpt-5.99
+  gpt-5.10-chat gpt-5.10-chat-latest gpt-5.60-chat
+  gemini-2.50 gemini-2.50-pro qwen3.10 Qwen/Qwen3.10-32B
+);
+for my $model (@MULTI_DIGIT) {
+  is( Langertha::Reasoning::Profile->for_model($model)->is_reasoning_model, 0,
+    "Profile $model: multi-digit id is not is_reasoning_model" );
+  for my $class (qw( Langertha::Engine::OpenAI Langertha::Engine::OpenAIResponses )) {
+    is( classified_reasoning( $class, $model ), 0,
+      "$class $model: multi-digit id keeps temperature" );
+    my $engine = $class->new( api_key => 'k', model => $model );
+    is( $engine->_temperature_rejected_by_reasoning( {} ), 0,
+      "$class $model: multi-digit id keeps temperature with no effort" );
+  }
+  for my $wire (qw( openai responses anthropic gemini ollama )) {
+    for my $effort (qw( none minimal low medium high xhigh max )) {
+      my $got = eval { +{ Langertha::Reasoning->new( model => $model, effort => $effort )->to($wire) } };
+      is_deeply( $got,
+        { Langertha::Reasoning->new( model => 'some-unknown-model', effort => $effort )->to($wire) },
+        "$model serializes like an unknown id ($wire, $effort)" );
     }
   }
 }

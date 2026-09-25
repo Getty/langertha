@@ -196,7 +196,9 @@ has is_reasoning_model => (
 
 Whether the model is a curated OpenAI reasoning model — one that can reject a
 non-default C<temperature> while reasoning is active. C<1> is set explicitly on
-the o-series, the gpt-5 line (non-chat), the gpt-5.N lines (non-chat) and gpt-6.
+the o-series, the gpt-5 line (non-chat), the single-digit gpt-5.N lines
+(non-chat) and gpt-6. A multi-digit id such as C<gpt-5.10> matches no gpt-5.N
+family and is an unknown id (karr k196).
 The explicit non-reasoning entries (gpt-4o / gpt-4.1 and every C<gpt-5-chat> /
 C<gpt-5.N-chat> id) carry C<0>, and so does the unlisted-id default: an unknown
 model never classifies as reasoning, because wrongly dropping a caller's
@@ -475,11 +477,11 @@ sub _openai_passthrough {
 }
 
 # A non-reasoning chat carve-out that serializes exactly like the reasoning
-# family it sits in ($like_id resolves to that family): only the classification
-# differs, so the carve-out changes nothing on the reasoning wire (karr k186).
+# family it sits in ($like is that family's resolved profile): only the
+# classification differs, so the carve-out changes nothing on the reasoning wire
+# (karr k186).
 sub _non_reasoning_like {
-  my ( $match, $like_id ) = @_;
-  my $like = _resolve($like_id);
+  my ( $match, $like ) = @_;
   return $like->meta->clone_object( $like,
     model_match        => $match,
     is_reasoning_model => 0,
@@ -502,7 +504,46 @@ sub _gemini3_profile {
 sub _ensure_registry {
   return if @REGISTRY;
 
-  @REGISTRY = (
+  # Provider default: an unrecognized id keeps the full normalized enum on the
+  # openai wire (no per-wire restriction), takes the fixed set on anthropic, and
+  # the binary collapse on gemini. Shared by every OpenAI-compatible provider
+  # (and no model at all). Never a reasoning model (is_reasoning_model 0). Built
+  # first: a chat carve-out whose family id matches no row copies the default,
+  # so the registry must not depend on a passthrough row existing (karr k196).
+  $DEFAULT = __PACKAGE__->new(
+    model_match        => '',
+    control            => 'effort',
+    wire_format        => 'openai',
+    levels             => [@ANTHROPIC_EFFORT_LEVELS],
+    is_reasoning_model => 0,
+    source             => 'normalized OpenAI superset passthrough (unlisted id)',
+  );
+
+  my @families = _family_profiles();
+
+  # Non-reasoning chat carve-outs (karr k186): gpt-5-chat and every dotted
+  # gpt-5.N-chat id (gpt-5.1-chat-latest, gpt-5.2-chat-latest, ...) are
+  # non-reasoning chat models inside reasoning families. Listed first so they
+  # win over the family patterns. Generated per digit (karr k196): each copies
+  # the profile of its own family id (gpt-5.N-chat -> gpt-5.N), so a newly
+  # curated gpt-5.N family is picked up without a hand-kept mapping. The
+  # literal "-chat" after the digit already rejects a second digit.
+  my @carve_outs = map {
+    my ( $match, $like_id ) = @$_;
+    _non_reasoning_like( $match, _match( $like_id, @families ) );
+  } (
+    [ qr/\Agpt-5-chat/, 'gpt-5' ],
+    map { my $digit = $_; [ qr/\Agpt-5\.${digit}-chat/, "gpt-5.$digit" ] } 0 .. 9,
+  );
+
+  @REGISTRY = ( @carve_outs, @families );
+  return;
+}
+
+# The family rows, most-specific-first (everything except the chat carve-outs
+# and the provider default).
+sub _family_profiles {
+  return (
     # Anthropic always-on Fable/Mythos: matched before the generic claude
     # family. Case-insensitive substring, mirroring the legacy _is_fable_class.
     __PACKAGE__->new(
@@ -527,12 +568,12 @@ sub _ensure_registry {
       openai_levels => [qw( low medium high xhigh )],
       source        => $OPENAI_K176_DOC,
       disable_form => 'absent', can_disable => 1, is_reasoning_model => 1 ),
-    _openai_profile( qr/\Agpt-5\.6/,
+    _openai_profile( qr/\Agpt-5\.6(?!\d)/,
       [qw( none low medium high xhigh max )],
       openai_levels => [qw( none low medium high xhigh )],
       source        => $OPENAI_K176_LIVE,
       disable_form => 'explicit_none', is_reasoning_model => 1 ),
-    _openai_profile( qr/\Agpt-5\.5/,
+    _openai_profile( qr/\Agpt-5\.5(?!\d)/,
       [qw( none low medium high xhigh )], disable_form => 'explicit_none',
       is_reasoning_model => 1 ),
     # gpt-5.1 (karr k174), most-specific-first: codex-max re-adds xhigh, base
@@ -543,7 +584,7 @@ sub _ensure_registry {
       [qw( none low medium high xhigh )],
       source => $OPENAI_K174_DOC, disable_form => 'explicit_none',
       default_reasoning_off => 1, is_reasoning_model => 1 ),
-    _openai_profile( qr/\Agpt-5\.1/,
+    _openai_profile( qr/\Agpt-5\.1(?!\d)/,
       [qw( none low medium high )],
       source => $OPENAI_K174_DOC, disable_form => 'explicit_none',
       default_reasoning_off => 1, is_reasoning_model => 1 ),
@@ -554,7 +595,7 @@ sub _ensure_registry {
     # rather than an invented gate — only the default-reasoning-off signal is
     # sourced. gpt-5.3, if it appears, falls through to the reasoning-on default.
     __PACKAGE__->new(
-      model_match           => qr/\Agpt-5\.[24]/,
+      model_match           => qr/\Agpt-5\.[24](?!\d)/,
       control               => 'effort',
       wire_format           => 'openai',
       levels                => [@ANTHROPIC_EFFORT_LEVELS],
@@ -569,8 +610,10 @@ sub _ensure_registry {
     # ...) and the o-series are reasoning models, but their effort ladder is not
     # curated, so they keep the unlisted-id passthrough serialization — only the
     # reasoning classification is added. Matched after the curated gpt-5.N
-    # families above.
-    _openai_passthrough( qr/\Agpt-5\.\d/, 1,
+    # families above. Every dotted family pattern ends in (?!\d) (karr k196):
+    # gpt-5.10 is not gpt-5.1, and a multi-digit id matches no gpt-5.N row at
+    # all, so it is an unknown id (non-reasoning, temperature kept).
+    _openai_passthrough( qr/\Agpt-5\.\d(?!\d)/, 1,
       'k186: uncurated gpt-5.N reasoning line; effort ladder passthrough' ),
     _openai_passthrough( qr/\Ao\d/, 1,
       'k186: OpenAI o-series reasoning models; effort ladder passthrough' ),
@@ -591,7 +634,7 @@ sub _ensure_registry {
     # passthrough default and keep going raw (correct for an unknown chat
     # template, k180).
     __PACKAGE__->new(
-      model_match    => qr{(?:\A|/)qwen3\.\d}i,
+      model_match    => qr{(?:\A|/)qwen3\.\d(?!\d)}i,
       control        => 'effort',
       wire_format    => 'openai',
       levels         => [qw( none low medium xhigh )],
@@ -621,7 +664,7 @@ sub _ensure_registry {
       disable_form => 'absent', source => $GEMINI25_SRC,
     ),
     __PACKAGE__->new(
-      model_match => qr/\Agemini-2\.5/,
+      model_match => qr/\Agemini-2\.5(?!\d)/,
       control => 'budget', wire_format => 'gemini', levels => [],
       budget_min => 0, budget_max => 24576, off_value => 0, dynamic_value => -1,
       disable_form => 'budget_zero', source => $GEMINI25_SRC,
@@ -671,34 +714,6 @@ sub _ensure_registry {
       source        => 'live-probed 2026-09-17 via ollama.com gpt-oss:20b (k175)',
     ),
   );
-
-  # Non-reasoning chat carve-outs (karr k186): gpt-5-chat and every dotted
-  # gpt-5.N-chat id (gpt-5.1-chat-latest, gpt-5.2-chat-latest, ...) are
-  # non-reasoning chat models inside reasoning families. Prepended so they win
-  # over the family patterns; each keeps its family's serialization.
-  unshift @REGISTRY, map { _non_reasoning_like(@$_) } (
-    [ qr/\Agpt-5-chat/,       'gpt-5'   ],
-    [ qr/\Agpt-5\.1-chat/,    'gpt-5.1' ],
-    [ qr/\Agpt-5\.[24]-chat/, 'gpt-5.2' ],
-    [ qr/\Agpt-5\.5-chat/,    'gpt-5.5' ],
-    [ qr/\Agpt-5\.6-chat/,    'gpt-5.6' ],
-    [ qr/\Agpt-5\.\d+-chat/,  'gpt-5.3' ],
-  );
-
-  # Provider default: an unrecognized id keeps the full normalized enum on the
-  # openai wire (no per-wire restriction), takes the fixed set on anthropic, and
-  # the binary collapse on gemini. Shared by every OpenAI-compatible provider
-  # (and no model at all). Never a reasoning model (is_reasoning_model 0).
-  $DEFAULT = __PACKAGE__->new(
-    model_match        => '',
-    control            => 'effort',
-    wire_format        => 'openai',
-    levels             => [@ANTHROPIC_EFFORT_LEVELS],
-    is_reasoning_model => 0,
-    source             => 'normalized OpenAI superset passthrough (unlisted id)',
-  );
-
-  return;
 }
 
 =method for_model
@@ -714,14 +729,15 @@ no-model case falls through to). Never dies.
 sub for_model {
   my ( $class, $id ) = @_;
   _ensure_registry();
-  return _resolve($id);
+  return _match( $id, @REGISTRY );
 }
 
-# Walk the registry most-specific-first; the default when nothing matches.
-sub _resolve {
-  my ( $id ) = @_;
+# First profile in @profiles (most-specific-first) whose model_match matches
+# $id, else the provider default.
+sub _match {
+  my ( $id, @profiles ) = @_;
   $id = '' unless defined $id;
-  for my $profile (@REGISTRY) {
+  for my $profile (@profiles) {
     my $match = $profile->model_match;
     if ( ref $match eq 'Regexp' ) {
       return $profile if $id =~ $match;

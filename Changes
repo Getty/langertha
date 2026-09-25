@@ -6,7 +6,10 @@ Revision history for Langertha
       non-default temperature, is now decided by
       Langertha::Reasoning::Profile->is_reasoning_model. Dotted chat ids such as
       gpt-5.1-chat-latest and gpt-5.2-chat-latest now count as non-reasoning and
-      keep their temperature. Unknown ids count as non-reasoning too.
+      keep their temperature. Unknown ids count as non-reasoning too, and so do
+      multi-digit ids such as gpt-5.10 or gpt-5.20: they no longer inherit the
+      gpt-5.1 / gpt-5.2 profile (the same guard keeps gemini-2.50 and qwen3.10
+      out of the Gemini 2.5 and Qwen3.x families).
 
     - Public hooks for code outside core that sends its own requests (such as
       langertha-raider): $engine->async_request_f($http_request) sends through
