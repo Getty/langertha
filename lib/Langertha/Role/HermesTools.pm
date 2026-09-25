@@ -164,19 +164,23 @@ PROMPT
 
 The system prompt template for Hermes structured output, in the form of the
 Hermes function-calling prompt format. Must contain a C<%s> placeholder where
-the JSON schema is inserted. L<Langertha::Role::Chat/chat_f> puts it in front
-of the conversation when it rewrites a forced tool into a C<json_schema>
-C<response_format> on the C<hermes> wire, so a backend that ignores
-C<response_format> still sees the schema.
+the JSON schema is inserted. L<Langertha::Role::Chat/chat_f> and
+L<Langertha::Role::Chat/chat_stream_realtime_f> put it in front of the
+conversation for every C<json_schema> C<response_format> on a C<hermes>
+engine that takes C<response_format> (including the rewrite of a forced
+tool), so a backend that ignores C<response_format> still sees the schema.
 
 =cut
 
-# The hermes wire puts the JSON schema of a forced-tool rewrite (ADR 0005) into
-# a leading system message as well, as _hermes_tool_messages does with the
-# tools (karr k234).
+# The hermes wire puts the schema of a json_schema response_format into a
+# leading system message as well, as _hermes_tool_messages does with the tools
+# (karr k234). Any other response_format leaves the conversation alone.
 sub _hermes_schema_messages {
-  my ( $self, $conversation, $schema ) = @_;
-  my $prompt = sprintf( $self->hermes_schema_prompt, $self->json->encode($schema) );
+  my ( $self, $conversation, $format ) = @_;
+  return $conversation
+    unless ref $format eq 'HASH' && ( $format->{type} // '' ) eq 'json_schema'
+      && ref $format->{json_schema} eq 'HASH' && ref $format->{json_schema}{schema} eq 'HASH';
+  my $prompt = sprintf( $self->hermes_schema_prompt, $self->json->encode( $format->{json_schema}{schema} ) );
   return [ { role => 'system', content => $prompt }, @$conversation ];
 }
 

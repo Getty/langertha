@@ -273,10 +273,13 @@ rewritten to `response_format=json_schema` plus a synthetic `ToolCall`, as on Pe
 rewrite runs before `_hermes_prompt_tools`, so the tools and the choice are already gone and no
 tool prompt is sent.
 
-On this wire the rewrite also puts the schema into a leading system message, built from
-`hermes_schema_prompt` (the Hermes structured-output form, `<schema>…</schema>`). Whether the
+On a hermes engine that takes `response_format` (NousResearch), every `json_schema` response
+format also goes into a leading system message, built from `hermes_schema_prompt` (the Hermes
+structured-output form, `<schema>…</schema>`). That covers the rewrite, a `response_format` the
+caller passes to `chat_f` or `chat_stream_realtime_f`, and the engine's own attribute. Whether the
 Nous backend enforces `response_format` is not documented, and a Hermes model follows a schema in
-its system prompt, so the synthetic `ToolCall` does not depend on the backend honoring the field.
+its system prompt, so neither the synthetic `ToolCall` nor a caller's structured output depends on
+the backend honoring the field. The schema prompt goes in front of the tool prompt.
 `AKI` native has no `response_format` field, so direction 1 cannot fire there: a forced choice is
-still dropped with a carp (k231), and the POD points to `AKIOpenAI`. Streaming has no rewrite and
-is unchanged. Documentation only, not live-verified. Pinned in `t/69_chat_f_wire_tools.t`.
+still dropped with a carp (k231), and the POD points to `AKIOpenAI`. Streaming has no rewrite, but
+it does get the schema prompt. Documentation only, not live-verified. Pinned in `t/69_chat_f_wire_tools.t`.

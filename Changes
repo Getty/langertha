@@ -9,10 +9,11 @@ Revision history for Langertha
       built-in tool croaks there, and chat_stream_realtime_f puts the tools
       in the prompt too. The Hermes engines no longer claim tools_native,
       tool_choice_any, tool_choice_named or parallel_tool_use. A forced tool
-      on NousResearch is sent as a json_schema response_format, with the
-      schema also in the system prompt (hermes_schema_prompt), and the reply
-      lands as a synthetic tool call; on AKI native any tool_choice but auto
-      or none is ignored with a warning (use AKIOpenAI to force a tool).
+      on NousResearch is sent as a json_schema response_format and the reply
+      lands as a synthetic tool call. On NousResearch every json_schema
+      response_format, forced tool or your own, also puts the schema in the
+      system prompt (hermes_schema_prompt). On AKI native any tool_choice but
+      auto or none is ignored with a warning (use AKIOpenAI to force a tool).
 
     - NousResearch lists Hermes-4.3-36B and documents that it serves Hermes
       models only; use an OpenAI-compatible engine such as OpenRouter for

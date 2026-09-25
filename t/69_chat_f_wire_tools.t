@@ -457,6 +457,44 @@ subtest 'hermes: <tool_call> blocks in the reply land on Response.tool_calls' =>
   };
 }
 
+subtest 'hermes: any json_schema response_format also rides the schema prompt (k234)' => sub {
+  # Not only the rewrite: a json_schema the caller passes on NousResearch --
+  # per request or on the engine -- goes into the Hermes <schema> prompt too,
+  # for the same reason: a backend that ignores response_format still sees it.
+  my $rf = { type => 'json_schema', json_schema => { name => 'out', schema => $schema } };
+  my $send = sub {
+    my ( $engine_args, @chat_args ) = @_;
+    my $mock = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response( $reply{hermes} ) ] );
+    $make{hermes}->( _async_http => $mock, @$engine_args )->chat_f( messages => ['hi'], @chat_args )->get;
+    return $json->decode( ( $mock->requests )[0]->content );
+  };
+  my $schema_in = sub { my ($m) = $_[0]{messages}[0]{content} =~ m{<schema>\s*(.*?)\s*</schema>}s; $m };
+
+  my $direct = $send->( [], response_format => $rf );
+  is_deeply( $direct->{response_format}, $rf, 'per request: response_format still on the body' );
+  is( $direct->{messages}[0]{role}, 'system', 'per request: a system message leads' );
+  is_deeply( $json->decode( $schema_in->($direct) // 'null' ), $schema, 'per request: the schema in <schema> tags' );
+  is_deeply( $direct->{messages}[1], { role => 'user', content => 'hi' }, 'per request: the user turn follows' );
+
+  my $engine_rf = $send->( [ response_format => $rf ] );
+  is_deeply( $json->decode( $schema_in->($engine_rf) // 'null' ), $schema, 'engine attribute: the schema in the prompt' );
+
+  my $with_tools = $send->( [], response_format => $rf, tools => [$obj] );
+  is( scalar @{ $with_tools->{messages} }, 3, 'with tools: schema prompt, tool prompt, user turn' );
+  like( $with_tools->{messages}[0]{content}, qr/<schema>/, 'with tools: the schema prompt first' );
+  like( $with_tools->{messages}[1]{content}, qr/<tools>/, 'with tools: then the tool prompt' );
+
+  my $object = $send->( [], response_format => { type => 'json_object' } );
+  is_deeply( $object->{messages}, [ { role => 'user', content => 'hi' } ], 'json_object: no schema, no prompt' );
+
+  my $engine = Moose::Util::with_traits( 'Langertha::Engine::NousResearch', 'Test::StopAtHermesStream' )
+    ->new( api_key => 'k', model => 'Hermes-4-70B' );
+  ok( !eval { $engine->chat_stream_realtime_f( messages => ['hi'], response_format => $rf )->get; 1 },
+    'stream: stopped at chat_stream_request' );
+  is( $@, "stop before sending\n", 'stream: for the recording stop' );
+  like( $engine->seen->[0][0]{content}, qr/<schema>/, 'stream: the schema prompt leads too' );
+};
+
 subtest 'hermes: chat_stream_realtime_f renders the tools into the prompt too' => sub {
   my $engine = Moose::Util::with_traits( 'Langertha::Engine::NousResearch', 'Test::StopAtHermesStream' )
     ->new( api_key => 'k', model => 'Hermes-4-70B' );

@@ -572,7 +572,7 @@ async sub chat_f {
   # native named-tool-forcing but supports json_schema response_format.
   # Rewrite tools+tool_choice into a response_format and remember the
   # tool name so we can synthesize a tool_calls entry afterwards.
-  my ( $synth_tool_name, $synth_schema );
+  my $synth_tool_name;
   if ( exists $opts{tool_choice}
     && exists $opts{tools}
     && !$self->supports('tool_choice_named')
@@ -596,7 +596,6 @@ async sub chat_f {
           },
         };
         $synth_tool_name = $name;
-        $synth_schema    = $tool->input_schema;
         $log->debugf("[%s] forced-tool fallback: tool '%s' rerouted via response_format",
           ref $self, $name);
       }
@@ -621,10 +620,7 @@ async sub chat_f {
     $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
   $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
 
-  # On the hermes wire the rewritten schema also rides a system message (karr
-  # k234), so a backend that ignores response_format still sees it.
-  $conversation = $self->_hermes_schema_messages( $conversation, $synth_schema )
-    if $synth_tool_name && $self->tool_wire_format eq 'hermes';
+  $conversation = $self->_hermes_prompt_schema( $controls, $conversation );
 
   my $t0 = [gettimeofday];
   my $request = $self->chat_request( $conversation,
@@ -775,10 +771,14 @@ L<Langertha::Engine::NousResearch>), the
 request is automatically rewritten to use the JSON Schema path and the
 response is loose-parsed; the resulting L<Langertha::Response> exposes
 the parsed arguments via L<Langertha::Response/tool_call_args> with
-C<synthetic =E<gt> 1> on the synthesized tool_call entry. On the C<hermes>
-wire the schema also goes into a leading system message built from
-L<Langertha::Role::HermesTools/hermes_schema_prompt>, for a backend that
-ignores C<response_format>.
+C<synthetic =E<gt> 1> on the synthesized tool_call entry.
+
+On a C<hermes> engine that takes C<response_format>
+(L<Langertha::Engine::NousResearch>), every C<json_schema> response format
+(the rewritten one, one passed to C<chat_f> or
+L</chat_stream_realtime_f>, or the engine's own) also goes into a leading
+system message built from L<Langertha::Role::HermesTools/hermes_schema_prompt>,
+for a backend that ignores C<response_format>.
 
 =cut
 
@@ -834,6 +834,7 @@ async sub chat_stream_realtime_f {
   my $controls = $self->_extract_controls(\%opts);
 
   my ($conversation) = $self->_hermes_prompt_tools( \%opts, $self->chat_messages(@messages) );
+  $conversation = $self->_hermes_prompt_schema( $controls, $conversation );
   $opts{tools} = $self->_wire_tools( $opts{tools} ) if ref $opts{tools} eq 'ARRAY';
 
   my $request = $self->chat_stream_request( $conversation,
@@ -987,6 +988,21 @@ sub _hermes_prompt_tools {
     if defined $given && $type ne 'auto';
   return ( $conversation, 0 ) unless ref $tools eq 'ARRAY' && @$tools;
   return ( $self->_hermes_tool_messages( $conversation, $self->format_tools($tools) ), 1 );
+}
+
+# On the hermes wire a json_schema response_format -- the caller's, the
+# engine's, or the ADR 0005 rewrite's -- also rides a leading system message
+# (karr k234), so a backend that ignores response_format still sees the
+# schema. Only on an engine whose wire takes response_format (NousResearch).
+sub _hermes_prompt_schema {
+  my ( $self, $controls, $conversation ) = @_;
+  return $conversation
+    unless $self->can('tool_wire_format') && $self->tool_wire_format eq 'hermes'
+      && $self->supports('response_format_json_schema');
+  my $format = exists $controls->{response_format} ? $controls->{response_format}
+    : ( $self->can('has_response_format') && $self->has_response_format ) ? $self->response_format
+    : undef;
+  return $self->_hermes_schema_messages( $conversation, $format );
 }
 
 sub aggregate_tool_calls {
