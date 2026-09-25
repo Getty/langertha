@@ -124,6 +124,27 @@ C<language> can be passed as C<%extra> key/value pairs.
 
 =cut
 
+sub simple_transcription_result {
+  my ( $self, $file_or_content, %extra ) = @_;
+  croak "".(ref $self)." has no transcription_result" unless $self->can('transcription_result');
+  my $request = $self->transcription($file_or_content, %extra);
+  return $self->transcription_result( $self->user_agent->request($request) );
+}
+
+=method simple_transcription_result
+
+    my $result = $engine->simple_transcription_result('/path/to/audio.mp3',
+        response_format => 'verbose_json',
+        'timestamp_granularities[]' => [qw( word segment )],
+    );
+    say $_->{word}, ' @ ', $_->{start} for @{ $result->{words} };
+
+Like L</simple_transcription>, but returns the whole parsed answer as a
+HashRef (see L<Langertha::Role::OpenAICompatible/transcription_result>)
+instead of only the text.
+
+=cut
+
 =seealso
 
 =over

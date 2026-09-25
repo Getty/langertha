@@ -65,6 +65,13 @@ Revision history for Langertha
       upload (default "audio"; hosted APIs detect the format from the
       extension). Audio passed as a character string croaks.
 
+    - Transcription reads every response_format: text, srt and vtt answers
+      return their body (decoded as UTF-8 unless a charset is named)
+      instead of croaking on JSON decoding. New transcription_result and
+      simple_transcription_result return the whole answer as a HashRef,
+      so verbose_json segments, words, language and duration stay
+      reachable; simple_transcription still returns the text.
+
     - Langertha::Chat without a system_prompt of its own sends the
       engine's system_prompt, as the engine itself would. A wrapper
       system_prompt still replaces the engine's; NousResearch's

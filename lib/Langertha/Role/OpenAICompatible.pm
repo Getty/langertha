@@ -506,18 +506,49 @@ request object.
 
 =cut
 
+sub transcription_result {
+  my ( $self, $response ) = @_;
+  # response_format json / verbose_json answer JSON; text, srt and vtt answer
+  # the transcript as a plain body. Decide by Content-Type, and by the body
+  # only when the type says neither (a transcript can start with "{" but is
+  # then served as text/*). -- karr k288
+  my $type = lc( $response->content_type // '' );
+  my $is_json = $type =~ /json/
+    || ( $type !~ m{\Atext/} && $response->content =~ /\A\s*\{/ );
+  return $self->parse_response($response) if $is_json || !$response->is_success;
+  $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
+  return { text => $response->decoded_content( default_charset => 'UTF-8' ) };
+}
+
+=method transcription_result
+
+    my $result = $engine->transcription_result($http_response);
+    say $result->{text};
+    for my $segment ( @{ $result->{segments} // [] } ) { ... }
+
+Parses a transcription response into a HashRef. A JSON answer
+(C<response_format> C<json> or C<verbose_json>) is returned as decoded, so
+C<segments>, C<words>, C<language>, C<duration> and C<usage> stay reachable. A
+plain-text answer (C<text>, C<srt>, C<vtt>) becomes C<< { text => $body } >>,
+decoded as UTF-8 unless the response names another charset. Croaks like
+L<Langertha::Role::HTTP/parse_response> on an HTTP error.
+
+=cut
+
 sub transcription_response {
   my ( $self, $response ) = @_;
-  my $data = $self->parse_response($response);
-  return $data->{text};
+  return $self->transcription_result($response)->{text};
 }
 
 =method transcription_response
 
     my $text = $engine->transcription_response($http_response);
 
-Parses an OpenAI-format transcription response. Returns the transcribed
-text as a string.
+Parses an OpenAI-format transcription response and returns the transcript as
+a string, for every C<response_format>: the C<text> field of a C<json> or
+C<verbose_json> answer, the body of a C<text>, C<srt> or C<vtt> answer (the
+subtitle markup included). Use L</transcription_result> to keep segments and
+word timestamps.
 
 =cut
 
