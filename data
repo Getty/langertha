@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T00:35:39Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T00:35:39Z
+created: 2026-09-24T22:22:20Z
+id: 192
+priority: medium
+started: 2026-09-25T00:10:51Z
+status: done
+tags:
+- raider
+- async
+- http
+- cross-dist
+title: langertha-raider greift auf $engine->_async_http->loop zu (Injection-Vertrag
+  garantiert nur do_request)
+updated: 2026-09-25T00:35:39Z
+---
+
+Aus k188-Final-Review: langertha-raider Raider.pm:1554/1910/2085 ruft $engine->_async_http->loop. Der dokumentierte Injection-Vertrag (Role::AsyncHTTP, ADR 0027) garantiert nur do_request; ein injizierter Client oder der SyncHTTP-Fallback hat kein ->loop. Heute sicher, weil Raider Net::Async::HTTP requires. Verwandt mit k190 (oeffentliche Hooks statt Privatzugriffen). Loesung vermutlich dort: oeffentlicher loop-Accessor oder Raider bringt eigenen Loop mit.
+
+Choice (b): raider brings its own loop via IO::Async::Loop->new (process-wide, same loop the default Net::Async::HTTP backend uses). Core: no loop accessor, documented in Role::AsyncHTTP EVENT LOOP POD + test. Raider side in k195.
