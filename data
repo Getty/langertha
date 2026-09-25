@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T19:25:44Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T19:25:44Z
+created: 2026-09-25T19:17:22Z
+id: 282
+priority: medium
+started: 2026-09-25T19:17:49Z
+status: done
+tags:
+- vision
+- probe
+- performance
+title: Share probed model capabilities across engine instances (one metadata fetch
+  per endpoint)
+updated: 2026-09-25T19:25:44Z
+---
+
+From knarr k37: learned facts are per instance, so a gateway with N discovered models (one engine instance each, e.g. 300 OpenRouter slugs) fetches the full /models document N times. Add a public, explicit sharing mechanism: e.g. probe_model_capabilities_f(models=>[...]) returns the learned map and a public import_learned_capabilities(\%map) (or a shared store object passed at construction, keyed by metadata URL, with TTL) so one probe fills many instances. Keep 'no hidden network I/O'. Update ADR 0032.
