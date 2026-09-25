@@ -369,6 +369,49 @@ subtest 'tools: the caller\'s order is kept' => sub {
     'gemini: objects grouped into one functionDeclarations entry at the first object' );
 };
 
+{
+  # Records the tools chat_stream_realtime_f hands to chat_stream_request and
+  # stops there: the claim is the request body, not the transport.
+  package Test::StopAtStreamRequest;
+  use Moose::Role;
+  has seen_tools => ( is => 'rw' );
+  around chat_stream_request => sub {
+    my ( $orig, $self, $messages, %extra ) = @_;
+    $self->seen_tools( $extra{tools} );
+    die "stop before sending\n";
+  };
+}
+
+subtest 'tools: chat_stream_realtime_f shapes them per item, as chat_f (k227 review M4)' => sub {
+  # k227: the streaming path goes through the same Tool->request_list as
+  # chat_f, so an MCP hash is converted rather than sent in a shape the wire
+  # rejects, and Gemini gets ONE functionDeclarations entry.
+  my $schema = { type => 'object', properties => { q => { type => 'string' } } };
+  my $mcp  = { name => 'mcp', description => 'An MCP tool', inputSchema => $schema };
+  my $obj  = Langertha::Tool->new( name => 'obj', input_schema => $schema );
+  my $stop = sub {
+    my ( $engine, @tools ) = @_;
+    ok( !eval { $engine->chat_stream_realtime_f( messages => ['hi'], tools => \@tools )->get; 1 },
+      'stopped at chat_stream_request' );
+    is( $@, "stop before sending\n", 'for the recording stop, not an earlier croak' );
+    return $engine->seen_tools;
+  };
+
+  my $oa = Moose::Util::with_traits( 'Langertha::Engine::OpenAI', 'Test::StopAtStreamRequest' )
+    ->new( api_key => 'k', model => 'gpt-4o-mini' );
+  is_deeply( $stop->( $oa, $mcp ), [ Langertha::Tool->from_hash($mcp)->to('openai') ],
+    'openai: an MCP hash is converted' );
+
+  my $gemini = Moose::Util::with_traits( 'Langertha::Engine::Gemini', 'Test::StopAtStreamRequest' )
+    ->new( api_key => 'k', model => 'gemini-3-flash-preview' );
+  my $raw = { functionDeclarations => [ { name => 'raw', parameters => $schema } ] };
+  is_deeply( $stop->( $gemini, { google_search => {} }, $obj, $raw, $mcp ),
+    [ { google_search => {} },
+      { functionDeclarations => [ $obj->to('gemini'), $raw->{functionDeclarations}[0],
+          Langertha::Tool->from_hash($mcp)->to('gemini') ] } ],
+    'gemini: object, raw entry and MCP hash merged into one functionDeclarations entry' );
+};
+
 # ---------------------------------------------------------------------------
 # Across the real transport (ADR 0027): chat_stream_realtime_f over the sync
 # LWP shim and Net::Async::HTTP against a local daemon. The engines record the
