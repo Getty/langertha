@@ -7,6 +7,7 @@ use Carp qw( croak );
 extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools',
+     'Langertha::Role::Embedding',
      'Langertha::Role::Runtime::MetricsPoll',
      'Langertha::Role::RuntimeKnobs';
 
@@ -55,6 +56,14 @@ sub _build_knob_wire_format { 'sglang' }
     # 5. Prometheus /metrics scraping (Runtime::MetricsPoll)
     my $records = await $sglang->poll_metrics_f('sglang:');
 
+    # 6. Embeddings (server launched with an embedding model)
+    my $embedder = Langertha::Engine::SGLang->new(
+        url   => 'http://localhost:30000/v1',
+        model => 'Alibaba-NLP/gte-Qwen2-1.5B-instruct',
+    );
+    my $vector  = $embedder->simple_embedding('Some text to embed');
+    my $vectors = $embedder->simple_embedding([ 'first', 'second' ]);
+
 =head1 DESCRIPTION
 
 Adapter for SGLang's OpenAI-compatible endpoint.
@@ -68,17 +77,27 @@ L<Langertha::Role::ResponseSize>, L<Langertha::Role::SystemPrompt>,
 L<Langertha::Role::ResponseFormat>, L<Langertha::Role::Streaming>,
 L<Langertha::Role::Chat>, L<Langertha::Role::ReasoningEffort>, and
 L<Langertha::Role::PromptCache>); SGLang itself additionally composes
-L<Langertha::Role::Tools> (MCP tool calling) and
+L<Langertha::Role::Tools> (MCP tool calling), L<Langertha::Role::Embedding>
+(OpenAI-compatible C</v1/embeddings>) and
 L<Langertha::Role::Runtime::MetricsPoll> (Prometheus C</metrics> scrape).
 
-Supports chat, streaming, tool calling, structured output, multimodal
-input, and Prometheus /metrics scraping. Embeddings and transcription are
-not exposed on the OpenAI-compatible surface SGLang serves by default.
+Supports chat, streaming, tool calling, embeddings, structured output,
+multimodal input, and Prometheus /metrics scraping. Transcription is not
+exposed on the OpenAI-compatible surface SGLang serves.
 
 Only C<url> is required. Use the full C</v1> base URL.
 No API key is required for local setups.
 
 See L<https://docs.sglang.ai/> for installation and configuration details.
+
+=head1 EMBEDDINGS
+
+Composes L<Langertha::Role::Embedding>. SGLang serves C</v1/embeddings> when
+launched with an embedding model (decoder-style models also need
+C<--is-embedding>). The request carries C<embedding_model> if you set it,
+else C<model> if you set it, else no C<model> field at all: the server
+embeds with the model it serves. A string returns one vector, an ArrayRef of
+strings one vector per input, in input order.
 
 =cut
 
@@ -87,6 +106,9 @@ has '+url' => (
 );
 
 sub default_model { 'default' }
+# No fixed embedding model: the caller's model, else no model field (the vLLM
+# rule, k297); the server embeds with the model it was launched with (k309).
+sub default_embedding_model { undef }
 
 # LANGERTHA_SGLANG_API_KEY is derived from the class name; a local server
 # needs no key, a --api-key-protected `sglang.launch_server` does.
@@ -99,6 +121,7 @@ sub _build_api_key {
 sub _build_supported_operations {[qw(
   createChatCompletion
   createCompletion
+  createEmbedding
 )]}
 
 # tool_choice: all four forms stay. ChatCompletionRequest.tool_choice is
@@ -165,6 +188,8 @@ Advertised flags (derived from composed roles via L<Langertha::Role::Capabilitie
 =item * C<tools_native> + C<tool_choice_{auto,any,none,named}> — L<Langertha::Role::Tools>
 (tool calling needs the server started with C<--tool-call-parser>; C<any> (wire
 C<required>) and a named tool also need the grammar backend, xgrammar by default)
+
+=item * C<embedding> — L<Langertha::Role::Embedding>
 
 =item * C<runtime_metrics> — L<Langertha::Role::Runtime::MetricsPoll>
 

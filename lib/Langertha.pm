@@ -327,7 +327,7 @@ namespace) rather than for direct use.
 
 =item * L<Langertha::Engine::MoonshotAnthropic> - Moonshot AI Kimi via Anthropic-compatible endpoint
 
-=item * L<Langertha::Engine::Gemini> - Google Gemini models (Flash, Pro)
+=item * L<Langertha::Engine::Gemini> - Google Gemini models (Flash, Pro), embeddings
 
 =item * L<Langertha::Engine::XAI> - xAI Grok models
 
@@ -335,7 +335,7 @@ namespace) rather than for direct use.
 
 =item * L<Langertha::Engine::VLLMHook> - vLLM inference server with vLLM-Hook probe capture
 
-=item * L<Langertha::Engine::SGLang> - SGLang inference server
+=item * L<Langertha::Engine::SGLang> - SGLang inference server (chat, embeddings)
 
 =item * L<Langertha::Engine::HuggingFace> - HuggingFace Inference Providers
 

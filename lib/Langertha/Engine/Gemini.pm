@@ -23,6 +23,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   Tools
   CachedContent
   ImageInput
+  Embedding
 );
 
 sub _build_reasoning_wire_format { 'gemini' }
@@ -116,6 +117,10 @@ sub model_capability_corrections {
         say $response;
     }
 
+    # Embeddings (gemini-embedding-001 unless embedding_model is set)
+    my $vector  = $gemini->simple_embedding('Some text to embed');
+    my $vectors = $gemini->simple_embedding([ 'first', 'second' ]);
+
 =head1 DESCRIPTION
 
 Provides access to Google's Gemini models via the Generative Language API.
@@ -131,6 +136,11 @@ models C<gemini-3.1-flash-image-preview> and C<gemini-3-pro-image-preview>.
 The C<gemini-2.5-*> generation is still served but now classed as
 previous-generation. The default API endpoint is
 C<https://generativelanguage.googleapis.com>.
+
+Embeddings (L<Langertha::Role::Embedding>) use C<gemini-embedding-001> by
+default; C<gemini-embedding-2> embeds into a different, incompatible vector
+space, so do not mix vectors of the two. See L</embedding_request> for
+C<task_type> and C<output_dimensionality>.
 
 B<THIS API IS WORK IN PROGRESS>
 
@@ -396,6 +406,109 @@ sub chat_request {
     %extra,
   );
 }
+
+# --- embeddings (k309) -----------------------------------------------------
+#
+# A string goes to models/{m}:embedContent, an ArrayRef to
+# models/{m}:batchEmbedContents with one EmbedContentRequest per input
+# (ai.google.dev/api/embeddings, fetched 2026-09-25). taskType / title /
+# outputDimensionality belong in embedContentConfig; the top-level spellings
+# are deprecated, so the snake_case extras are placed there. Everything else
+# in %extra goes into each EmbedContentRequest verbatim (ADR 0004).
+
+sub default_embedding_model { 'gemini-embedding-001' }
+
+my %EMBED_CONFIG_KEY = (
+  task_type             => 'taskType',
+  output_dimensionality => 'outputDimensionality',
+  title                 => 'title',
+);
+
+sub embedding_request {
+  my ( $self, $input, %extra ) = @_;
+  my $model = $self->embedding_model;
+
+  my %config = %{ delete $extra{embedContentConfig} // {} };
+  for my $key ( sort keys %EMBED_CONFIG_KEY ) {
+    $config{ $EMBED_CONFIG_KEY{$key} } = delete $extra{$key} if exists $extra{$key};
+  }
+  my $embed_request = sub {
+    my ( $text ) = @_;
+    return {
+      model   => 'models/' . $model,
+      content => { parts => [ { text => $text } ] },
+      %config ? ( embedContentConfig => {%config} ) : (),
+      %extra,
+    };
+  };
+
+  if ( ref $input eq 'ARRAY' ) {
+    return $self->generate_http_request(
+      POST => $self->gemini_model_url( $model, 'batchEmbedContents' ),
+      sub { $self->embedding_response( shift, $input ) },
+      requests => [ map { $embed_request->($_) } @{$input} ],
+    );
+  }
+  return $self->generate_http_request(
+    POST => $self->gemini_model_url( $model, 'embedContent' ),
+    sub { $self->embedding_response( shift, $input ) },
+    %{ $embed_request->($input) },
+  );
+}
+
+=method embedding_request
+
+    my $request = $engine->embedding_request($text, %extra);
+    my $request = $engine->embedding_request(\@texts,
+        task_type => 'RETRIEVAL_DOCUMENT', output_dimensionality => 768);
+
+Builds an embedding request with C<embedding_model> (default
+C<gemini-embedding-001>). A string goes to C<models/{model}:embedContent>, an
+ArrayRef of strings to C<models/{model}:batchEmbedContents> as one request per
+input. The optional C<task_type>, C<title> and C<output_dimensionality> are
+placed in C<embedContentConfig> (as C<taskType>, C<title>,
+C<outputDimensionality>), merged with an C<embedContentConfig> you pass
+yourself; any other key goes into each request unchanged. In a batch every
+input gets the same settings.
+
+=cut
+
+sub embedding_response {
+  my ( $self, $response, $input ) = @_;
+  my $data = $self->parse_response($response);
+  my $batch = ref $input eq 'ARRAY';
+  my @embeddings = ref $data ne 'HASH' ? ()
+    : $batch ? ( ref $data->{embeddings} eq 'ARRAY' ? @{ $data->{embeddings} } : () )
+    : ( defined $data->{embedding} ? $data->{embedding} : () );
+  my @vectors = map { ref $_ eq 'HASH' ? $_->{values} : undef } @embeddings;
+  # No vector is no result: never hand back undef as if it were one (k290).
+  if ( !@vectors || grep { ref $_ ne 'ARRAY' || !@{$_} } @vectors ) {
+    my $err = ref $data eq 'HASH' && $data->{error}
+      ? ( ref $data->{error} eq 'HASH' ? $data->{error}{message} : $data->{error} )
+      : undef;
+    croak "".(ref $self)." embedding response contained no vector"
+      . ( defined $err ? " (error: $err)" : '' );
+  }
+  return $vectors[0] unless $batch;
+  croak "".(ref $self)." embedding response returned ".scalar(@vectors)
+    ." vectors for ".scalar(@{$input})." inputs"
+    unless @vectors == @{$input};
+  return \@vectors;
+}
+
+=method embedding_response
+
+    my $vector  = $engine->embedding_response($http_response);
+    my $vectors = $engine->embedding_response($http_response, \@texts);
+
+Parses an embedding answer; the parser built by L</embedding_request> passes
+the input itself. For a string it returns C<embedding.values>, for an ArrayRef
+input C<embeddings[].values>, one vector per input in input order. A count
+that does not match the number of inputs croaks, and so does a body without a
+vector, naming the engine and any C<error> it carries; it never returns
+C<undef>.
+
+=cut
 
 sub update_request {
   my ( $self, $request ) = @_;
@@ -778,6 +891,10 @@ __PACKAGE__->meta->make_immutable;
 =item * L<Langertha::Role::Tools> - MCP tool calling interface
 
 =item * L<Langertha::Role::Streaming> - Streaming support (SSE format)
+
+=item * L<Langertha::Role::Embedding> - Embedding interface (C<simple_embedding>, C<simple_embedding_f>)
+
+=item * L<https://ai.google.dev/api/embeddings> - embedContent / batchEmbedContents reference
 
 =item * L<Langertha::Engine::Anthropic> - Another non-OpenAI-compatible engine
 

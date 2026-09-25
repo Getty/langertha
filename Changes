@@ -21,6 +21,11 @@ Revision history for Langertha
       languages[] for it, and languages => [...] is sent as languages[] for
       every model.
 
+    - Embeddings on SGLang (/v1/embeddings; the model you set, else none)
+      and Gemini (embedContent, batchEmbedContents for an ArrayRef; default
+      gemini-embedding-001, task_type / title / output_dimensionality go
+      into embedContentConfig). Both answer supports('embedding').
+
     - A chat answer without a choice is no longer an empty Response: an
       OpenAI-compatible 200 body with an error object (as gateways such as
       OpenRouter send) or no choices croaks, naming the engine and the error,
