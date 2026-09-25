@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Langertha::Content::Image reaches more wires intact. OpenAIResponses
+      and Perplexity send input_text / input_image parts (image_url as a
+      string), Ollama native puts the text in content and the images in
+      the message's base64 images array, and LM Studio native sends
+      image items instead of dropping them. On endpoints that take no
+      image URLs (Ollama native and /v1, Cerebras, Moonshot, LM Studio
+      native) a URL image is fetched and sent inline, and a failed fetch
+      croaks before the request. New Image methods to_responses,
+      to_ollama, to_lmstudio and data_url; to_openai takes inline => 1.
+      A class composing Langertha::Content must now provide to_responses,
+      to_ollama and to_lmstudio too.
+
     - Langertha::Pricing rules take optional cached_input_per_million and
       cache_write_per_million. With either set, cost_for prices each
       input token once: cache reads and writes at their rates (a missing

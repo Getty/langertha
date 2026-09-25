@@ -323,3 +323,20 @@ kept it. The door is now the one implementation: it keeps such blocks in the tex
 takes an optional `tag => ...` (default `tool_call`); `Role::Tools::_hermes_split_text` delegates
 to it with `hermes_call_tag` and returns `{name, arguments}` hashes, so a non-object `arguments`
 now reaches the tool loop as `{}` on every path, as `Response` already coerced it.
+
+## Update (k267 — `content_format` gains `responses`, `ollama`, `lmstudio`; inline-only images)
+
+Multimodal content follows the same rule as tools: `Langertha::Content::Image` owns one
+`to_<fmt>` per `content_format` (the `Role::Chat` tag, independent of `tool_wire_format`), and
+`Role::Chat::_normalize_content_blocks` dispatches on it. Three wires were served the
+chat-completions shape and are now their own formats: `responses` (supplied by
+`Role::ResponsesCompatible`: `input_text` / `input_image` with `image_url` as a plain string,
+`output_text` for an assistant turn's text), `ollama` (native `/api/chat`: text joined into a
+string `content`, raw base64 lifted into the message `images` array) and `lmstudio` (native
+`/api/v1/chat`: `{ type => 'image', data_url }` input items). Endpoints that take a chat-shaped
+image but reject remote URLs (Ollama `/v1`, Cerebras, Moonshot Kimi, LM Studio native) set the
+internal engine hook `_content_inline_images_only`; a URL image is then fetched and sent as a
+data URL, as `to_gemini` always did, and a failed fetch croaks with the engine's name before
+any request exists. The hook is wire truth for the serializer, deliberately not a capability
+flag: whether a model *sees* images is the separate `image_input` question (k266). Messages
+without a `Langertha::Content` object are passed through unchanged on every format.

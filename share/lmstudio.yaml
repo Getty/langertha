@@ -36,6 +36,9 @@ paths:
                             type: string
                           content:
                             type: string
+                          data_url:
+                            type: string
+                            description: Base64 data URL (image items)
                 system_prompt:
                   type: string
                 temperature:

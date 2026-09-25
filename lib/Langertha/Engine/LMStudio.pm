@@ -96,6 +96,11 @@ sub update_request {
 }
 
 sub default_model { 'default' }
+
+# Native /api/v1/chat input takes { type => 'image', data_url } items carrying a
+# base64 data URL only (lmstudio.ai/docs/developer/rest/chat), karr k267.
+sub content_format { 'lmstudio' }
+sub _content_inline_images_only { 1 }
 sub default_response_size { 1024 }
 
 # api_key_env derives LANGERTHA_LMSTUDIO_API_KEY, the variable _build_api_key
@@ -266,6 +271,11 @@ sub _normalize_input {
     next unless ref $msg eq 'HASH';
     next if ($msg->{role} // '') eq 'system';
     next unless defined $msg->{content};
+    if ( ref $msg->{content} eq 'ARRAY'
+      && grep { ref $_ eq 'HASH' && ( $_->{type} // '' ) eq 'image' } @{ $msg->{content} } ) {
+      push @items, _input_items_with_images($msg->{content});
+      next;
+    }
     my $content = ref $msg->{content} ? _extract_text($msg->{content}) : $msg->{content};
     push @items, {
       type => 'message',
@@ -274,8 +284,31 @@ sub _normalize_input {
   }
 
   return '' unless @items;
-  return $items[0]{content} if @items == 1;
+  return $items[0]{content} if @items == 1 && $items[0]{type} eq 'message';
   return \@items;
+}
+
+# A content array holding image items (Content::Image->to_lmstudio, karr k267):
+# the images become their own { type => 'image', data_url } input items, in
+# order, between the text runs around them.
+sub _input_items_with_images {
+  my ( $parts ) = @_;
+  my ( @items, @run );
+  my $flush = sub {
+    push @items, { type => 'message', content => _extract_text([ @run ]) } if @run;
+    @run = ();
+  };
+  for my $part (@{$parts}) {
+    if ( ref $part eq 'HASH' && ( $part->{type} // '' ) eq 'image' ) {
+      $flush->();
+      push @items, { type => 'image', data_url => $part->{data_url} };
+    }
+    else {
+      push @run, $part;
+    }
+  }
+  $flush->();
+  return @items;
 }
 
 sub _normalize_system_prompt {

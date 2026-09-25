@@ -52,6 +52,10 @@ sub _build_api_key {
 
 sub default_model { 'gpt-oss-120b' }
 
+# Image inputs are base64 data URLs only
+# (inference-docs.cerebras.ai/capabilities/image-inputs), karr k267.
+sub _content_inline_images_only { 1 }
+
 sub _build_supported_operations {[qw(
   createChatCompletion
 )]}

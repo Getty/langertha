@@ -66,6 +66,10 @@ has '+url' => (
 sub default_model { croak "".(ref $_[0])." requires model to be set" }
 sub default_embedding_model { 'mxbai-embed-large' }
 
+# Ollama's /v1 takes base64 images only, no image URLs
+# (docs.ollama.com/api/openai-compatibility), karr k267.
+sub _content_inline_images_only { 1 }
+
 # Shares the Ollama key (derivation would name LANGERTHA_OLLAMAOPENAI_API_KEY)
 # and, like the native engine, only needs it for Ollama Cloud.
 sub api_key_env { 'LANGERTHA_OLLAMA_API_KEY' }

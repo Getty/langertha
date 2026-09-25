@@ -21,19 +21,36 @@ requires qw(
 
 =method content_format
 
-    my $fmt = $engine->content_format;  # 'openai' | 'anthropic' | 'gemini'
+    my $fmt = $engine->content_format;
+    # 'openai' | 'anthropic' | 'gemini' | 'responses' | 'ollama' | 'lmstudio'
 
 Wire format for multimodal content blocks. Controls how
 L<Langertha::Content> objects embedded in a message's C<content> arrayref
 are serialized during L</chat_messages>. Defaults to C<'openai'>; overridden
-by L<Langertha::Engine::AnthropicBase> and L<Langertha::Engine::Gemini>.
+by L<Langertha::Engine::AnthropicBase>, L<Langertha::Engine::Gemini>,
+L<Langertha::Role::ResponsesCompatible> (C<responses>: C<input_text> /
+C<input_image> parts, C<output_text> on assistant turns),
+L<Langertha::Engine::Ollama> (C<ollama>: text joined into a string content,
+images lifted into the message C<images> array) and
+L<Langertha::Engine::LMStudio> (C<lmstudio>).
+
+A message whose content is a plain string, or an arrayref without any
+L<Langertha::Content> object, is passed through unchanged on every format.
 
 =cut
 
-# Defaults to the OpenAI dialect; AnthropicBase (via AnthropicCompatible) and
-# Engine::Gemini override the builder. The POD =method above documents the
-# same override points from the engine-user perspective.
+# Defaults to the OpenAI dialect; AnthropicBase (via AnthropicCompatible),
+# ResponsesCompatible, Engine::Gemini, Engine::Ollama and Engine::LMStudio
+# override it. The POD =method above documents the same override points from
+# the engine-user perspective.
 sub content_format { 'openai' }
+
+# Internal wire truth, deliberately not a capability flag (karr k267): true on
+# engines whose endpoint rejects remote image URLs (base64 / data: URLs only).
+# URL-sourced Content::Image blocks are then inlined -- fetched, as to_gemini
+# always does -- before serialization, and a failed fetch croaks before any
+# request is sent.
+sub _content_inline_images_only { 0 }
 
 =method engine_capabilities
 
@@ -235,15 +252,46 @@ sub _normalize_content_blocks {
 
   my $fmt    = $self->content_format;
   my $method = "to_$fmt";
+  my $role   = $msg->{role} // 'user';
+  # Only the URL-capable formats take the inline switch; gemini / ollama /
+  # lmstudio always inline.
+  my @opt = ( $self->_content_inline_images_only
+      && ( $fmt eq 'openai' || $fmt eq 'responses' ) ) ? ( inline => 1 ) : ();
+
+  # Ollama native /api/chat: content is a string, images a sibling base64 array.
+  if ( $fmt eq 'ollama' ) {
+    my ( @text, @images );
+    for my $part (@$content) {
+      if ( blessed($part) && $part->does('Langertha::Content') ) {
+        push @images, $self->_content_block( $part, $method );
+      }
+      elsif ( !ref $part ) {
+        push @text, $part;
+      }
+      elsif ( ref $part eq 'HASH' && ( $part->{type} // '' ) eq 'text' && defined $part->{text} ) {
+        push @text, $part->{text};
+      }
+      else {
+        croak ref($self).": Ollama native /api/chat takes a string message content; "
+          . "a content part may be a string, a { type => 'text' } hash or a Langertha::Content object";
+      }
+    }
+    return { %$msg, content => join( "\n", @text ),
+      images => [ @{ $msg->{images} // [] }, @images ] };
+  }
+
+  my $text_type = $fmt ne 'responses' ? 'text'
+                : $role eq 'assistant' ? 'output_text'
+                :                        'input_text';
 
   my @blocks = map {
     if ( blessed($_) && $_->does('Langertha::Content') ) {
-      $_->$method;
+      $self->_content_block( $_, $method, @opt );
     }
     elsif ( !ref $_ ) {
       $fmt eq 'gemini'
         ? { text => $_ }
-        : { type => 'text', text => $_ };
+        : { type => $text_type, text => $_ };
     }
     else {
       $_;
@@ -251,10 +299,26 @@ sub _normalize_content_blocks {
   } @$content;
 
   if ( $fmt eq 'gemini' ) {
-    my $role = ( $msg->{role} // 'user' ) eq 'assistant' ? 'model' : ( $msg->{role} // 'user' );
-    return { role => $role, parts => \@blocks };
+    return { role => ( $role eq 'assistant' ? 'model' : $role ), parts => \@blocks };
   }
   return { %$msg, content => \@blocks };
+}
+
+# Serializes one Langertha::Content block. A URL-only image that has to be
+# inlined (fetched) and cannot be says so in the engine's name before any
+# request is built (karr k267).
+sub _content_block {
+  my ( $self, $block, $method, @opt ) = @_;
+  my $out;
+  return $out if eval { $out = $block->$method(@opt); 1 };
+  my $err = $@;
+  if ( $block->can('has_url') && $block->has_url && !$block->has_base64 ) {
+    $err =~ s/ at \S+ line \d+.*//s;
+    croak ref($self).": this endpoint takes only inline images (base64 or a data: URL) "
+      . "and the image URL could not be inlined ($err); pass the image as base64 "
+      . "or from a local file instead";
+  }
+  die $err;
 }
 
 =method chat_messages

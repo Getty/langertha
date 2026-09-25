@@ -1,5 +1,5 @@
 package Langertha::Content::Image;
-# ABSTRACT: Canonical image content block with cross-provider conversion (OpenAI / Anthropic / Gemini)
+# ABSTRACT: Canonical image content block with cross-provider conversion
 our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
@@ -32,8 +32,8 @@ with 'Langertha::Content';
 =head1 DESCRIPTION
 
 Provider-neutral image block. Carries either a remote URL, a base64 payload,
-or both, plus an IANA C<media_type>. Serializes to the three dominant
-vision-chat wire formats:
+or both, plus an IANA C<media_type>. Serializes to these vision-chat wire
+formats:
 
 =over
 
@@ -43,10 +43,18 @@ vision-chat wire formats:
 
 =item * Google Gemini — C<{ inline_data => { mime_type => ..., data => <base64> } }>
 
+=item * Open-Responses — C<{ type => 'input_image', image_url => <url or data: URL> }>
+
+=item * Ollama native — the raw base64 string, for the message C<images> array
+
+=item * LM Studio native — C<{ type => 'image', data_url => <data: URL> }>
+
 =back
 
-Gemini requires base64, so C<to_gemini> will transparently download a
-remote URL on first call (cached on the object).
+Gemini, Ollama native and LM Studio native require inline data, so their
+serializers transparently download a remote URL on first call (cached on the
+object). Engines whose OpenAI-compatible endpoint rejects remote image URLs
+get the same treatment through C<< to_openai( inline => 1 ) >>.
 
 =cut
 
@@ -218,24 +226,96 @@ image was URL-only. Caches the result on the object.
 
 # --- Serializers ---
 
-sub to_openai {
+sub data_url {
   my ($self) = @_;
-  my $url = $self->has_url
-    ? $self->url
-    : sprintf('data:%s;base64,%s',
-        ($self->media_type // 'application/octet-stream'),
-        $self->base64,
-      );
-  return { type => 'image_url', image_url => { url => $url } };
+  $self->ensure_base64;
+  return sprintf('data:%s;base64,%s',
+    ($self->media_type // 'application/octet-stream'),
+    $self->base64,
+  );
+}
+
+=method data_url
+
+    my $uri = $img->data_url;   # data:image/png;base64,...
+
+Returns the image as a C<data:> URL, fetching a URL-only image first (see
+L</ensure_base64>). The media type falls back to C<application/octet-stream>.
+
+=cut
+
+# The image as one string for wires that take "URL or data URL" in one field.
+# inline => 1 forces the data URL (fetching a URL-only image first, like
+# to_gemini) for endpoints that reject remote image URLs (karr k267).
+sub _url_or_data_url {
+  my ( $self, %opt ) = @_;
+  return $self->url if $self->has_url && !$opt{inline};
+  return $self->data_url;
+}
+
+sub to_openai {
+  my ( $self, %opt ) = @_;
+  return { type => 'image_url', image_url => { url => $self->_url_or_data_url(%opt) } };
 }
 
 =method to_openai
 
     my $block = $img->to_openai;
     # { type => 'image_url', image_url => { url => ... } }
+    my $block = $img->to_openai( inline => 1 );   # always a data: URL
 
 Serializes to the OpenAI chat-completions image block. Uses the URL when
-available, otherwise emits a C<data:> URL from the base64 payload.
+available, otherwise emits a C<data:> URL from the base64 payload. With
+C<< inline => 1 >> it always emits the C<data:> URL, fetching a URL-only image
+first; L<Langertha::Role::Chat> passes it for engines whose endpoint rejects
+remote image URLs.
+
+=cut
+
+sub to_responses {
+  my ( $self, %opt ) = @_;
+  return { type => 'input_image', image_url => $self->_url_or_data_url(%opt) };
+}
+
+=method to_responses
+
+    my $block = $img->to_responses;
+    # { type => 'input_image', image_url => 'https://...' }   (or a data: URL)
+
+Serializes to the Open-Responses C<input_image> part (OpenAI C</v1/responses>,
+Perplexity C</v1/agent>). C<image_url> is a plain string, not an object: the
+URL when available, otherwise a C<data:> URL. Takes C<< inline => 1 >> like
+L</to_openai>.
+
+=cut
+
+sub to_ollama {
+  my ($self) = @_;
+  return $self->ensure_base64;
+}
+
+=method to_ollama
+
+    my $b64 = $img->to_ollama;
+
+Returns the raw base64 payload (no C<data:> prefix) for one entry of the
+Ollama native C</api/chat> message C<images> array. Fetches a URL-only image
+first, because that wire takes no image URLs.
+
+=cut
+
+sub to_lmstudio {
+  my ($self) = @_;
+  return { type => 'image', data_url => $self->data_url };
+}
+
+=method to_lmstudio
+
+    my $item = $img->to_lmstudio;
+    # { type => 'image', data_url => 'data:image/png;base64,...' }
+
+Serializes to an LM Studio native C</api/v1/chat> C<input> image item. That
+wire takes only base64 data URLs, so a URL-only image is fetched first.
 
 =cut
 

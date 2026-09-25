@@ -569,6 +569,11 @@ sub parse_stream_chunk {
 # Tool calling support (MCP) is the tag-driven default in Langertha::Role::Tools.
 sub _build_tool_wire_format { 'ollama' }
 
+# Native /api/chat messages carry a string content plus a sibling images array
+# of raw base64 (docs.ollama.com/api/chat): Role::Chat lifts Content::Image
+# blocks there (karr k267).
+sub content_format { 'ollama' }
+
 # Native /api/chat's ChatRequest (api/types.go, main 2026-09-24, v0.34.4) is
 # model, messages, stream, format, keep_alive, tools, options, think, truncate,
 # shift, logprobs, top_logprobs: no tool_choice and no parallel knob. The Go

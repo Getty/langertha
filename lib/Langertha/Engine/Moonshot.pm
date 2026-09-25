@@ -124,6 +124,10 @@ sub _build_api_key {
 
 sub default_model { 'kimi-k3' }
 
+# Kimi vision takes base64 data URLs (or ms:// file ids), no remote image URLs
+# (platform.kimi.ai/docs/guide/use-kimi-vision-model), karr k267.
+sub _content_inline_images_only { 1 }
+
 sub default_response_size { 4096 }
 
 # Kimi counts reasoning_content against max_tokens and recommends

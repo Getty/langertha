@@ -25,7 +25,8 @@ with 'Langertha::Role::Models',
      'Langertha::Role::SystemPrompt',
      'Langertha::Role::ResponseFormat',
      'Langertha::Role::Streaming',
-     'Langertha::Role::Chat',
+     # Role::Chat::content_format defaults to 'openai'; ResponsesCompatible supplies 'responses'.
+     'Langertha::Role::Chat' => { -excludes => ['content_format'] },
      'Langertha::Role::StaticModels',
      'Langertha::Role::ResponsesCompatible';
 

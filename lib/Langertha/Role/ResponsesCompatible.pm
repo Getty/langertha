@@ -100,6 +100,12 @@ its Agent input schema accepts).
 sub _build_tool_wire_format { 'responses' }
 sub _build_reasoning_wire_format { 'responses' }
 
+# Content parts in input[] are typed input_text / input_image (output_text on an
+# assistant turn); the chat-style text / image_url parts are a 400 (karr k267).
+# Role::Chat::content_format defaults to 'openai'; a consumer composing both in
+# one `with` excludes it from Role::Chat (Perplexity).
+sub content_format { 'responses' }
+
 # Default endpoint is the OpenAI Responses operation; Perplexity's Agent engine
 # overrides _responses_dispatch to POST /v1/agent directly.
 sub chat_operation_id { 'createResponse' }
