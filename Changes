@@ -41,6 +41,11 @@ Revision history for Langertha
       parts into one string (newline-separated) instead of sending the array,
       which /api/chat rejects; OpenAI-style image_url parts go to images.
 
+    - The cachedContent lifecycle methods (create/get/list/update/
+      delete_cached_content_f) send through the engine's async transport:
+      they no longer block the event loop, honor an injected client and
+      user_agent_timeout, and fail with the same text as the sync methods.
+
     - Gemini cachedContents: create sends tools in the generateContent
       shape ([{functionDeclarations}]), a returned cache reads its top-level
       expireTime/ttl so is_expired works, and a chat request with a bound

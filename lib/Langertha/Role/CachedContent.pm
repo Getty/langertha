@@ -69,10 +69,14 @@ Developer API):
 
 =back
 
-All methods are async via L<Future::AsyncAwait>. The sync L<Langertha::Role::Chat>
-wrappers (L</create_cached_content>, etc.) delegate to the async versions
-through the engine's L<IO::Async> loop when one is wired up; otherwise
-they run synchronously.
+The C<_f> methods are async via L<Future::AsyncAwait> and send through the
+engine's async transport (L<Langertha::Role::AsyncHTTP>): L<Net::Async::HTTP>
+when installed, an injected C<_async_http> client, or the synchronous LWP
+fallback. On L<Net::Async::HTTP> the engine's C<user_agent_timeout> bounds each
+request. The sync methods (L</create_cached_content>, etc.) send over the
+engine's C<user_agent>. Both give the same result, and an HTTP error croaks /
+fails with the same text (the engine's C<request failed> message, see
+L<Langertha::Role::HTTP/parse_response>).
 
 The role owns the resource paths and the HTTP plumbing only. Base URL, API
 version and the credential are the consumer's — every request URL is built by
@@ -122,7 +126,7 @@ sub _cached_contents_url {
 # (ADC bearer token, mTLS) is a legitimate consumer of this role.
 sub _assert_http_seam {
   my ( $self ) = @_;
-  for my $m (qw( user_agent generate_http_request parse_response json )) {
+  for my $m (qw( user_agent _async_do_request_f generate_http_request parse_response json )) {
     croak "Langertha::Role::CachedContent: consumer must provide '$m'"
       unless $self->can($m);
   }
@@ -166,6 +170,13 @@ Returns the persisted CachedContent.
 
 async sub create_cached_content_f {
   my ( $self, @args ) = @_;
+  my $req = $self->_create_cached_content_request(@args);
+  my $http_res = await $self->_async_do_request_f( request => $req );
+  return $req->response_call->($http_res);
+}
+
+sub _create_cached_content_request {
+  my ( $self, @args ) = @_;
 
   $self->_assert_http_seam;
 
@@ -180,14 +191,11 @@ async sub create_cached_content_f {
   my $url = $self->gemini_url( $self->_cached_contents_path );
   my $body = $cc->to_create_body;
 
-  my $req = $self->generate_http_request(
+  return $self->generate_http_request(
     POST => $url,
     sub { $self->_parse_cached_content_response(shift) },
     %$body,
   );
-
-  my $http_res = $self->user_agent->request($req);
-  return $req->response_call->($http_res);
 }
 
 =method create_cached_content
@@ -200,7 +208,7 @@ Sync wrapper around L</create_cached_content_f>.
 
 sub create_cached_content {
   my ( $self, @args ) = @_;
-  return $self->create_cached_content_f(@args)->get;
+  return $self->_cached_content_sync( $self->_create_cached_content_request(@args) );
 }
 
 =method get_cached_content_f
@@ -214,22 +222,26 @@ Fetch a single cache by C<name> (or bare id).
 
 async sub get_cached_content_f {
   my ( $self, $name ) = @_;
+  my $req = $self->_get_cached_content_request($name);
+  my $http_res = await $self->_async_do_request_f( request => $req );
+  return $req->response_call->($http_res);
+}
+
+sub _get_cached_content_request {
+  my ( $self, $name ) = @_;
   $self->_assert_http_seam;
   $name = $self->_normalize_name($name);
 
   my $url = $self->gemini_url( $self->_cached_content_path($name) );
-  my $req = $self->generate_http_request(
+  return $self->generate_http_request(
     GET => $url,
     sub { $self->_parse_cached_content_response(shift) },
   );
-
-  my $http_res = $self->user_agent->request($req);
-  return $req->response_call->($http_res);
 }
 
 sub get_cached_content {
   my ( $self, $name ) = @_;
-  return $self->get_cached_content_f($name)->get;
+  return $self->_cached_content_sync( $self->_get_cached_content_request($name) );
 }
 
 =method list_cached_contents_f
@@ -249,45 +261,19 @@ async sub list_cached_contents_f {
 
   my @all;
   my $token = $opts{page_token};
-  my $page_size = $opts{page_size};
 
-  # A real loop block, not a do{}while: the two exits below are `last`, and
-  # `last` inside a do-BLOCK-while is fatal at runtime ("Can't last outside a
-  # loop block") — it killed both one-page options after the request had
-  # already gone on the wire (karr #104, t/49). while(1) keeps the do{}while
-  # semantics (always issue at least one request) with working exits.
+  # A real loop block, not a do{}while: the exit below is `last`, and `last`
+  # inside a do-BLOCK-while is fatal at runtime ("Can't last outside a loop
+  # block") — it killed both one-page options after the request had already
+  # gone on the wire (karr #104, t/49). while(1) keeps the do{}while semantics
+  # (always issue at least one request) with a working exit.
   while (1) {
-    my $url = $self->gemini_url( $self->_cached_contents_path );
-
-    # Pagination goes on with URI rather than through the seam's query list:
-    # pageToken is opaque server data that has to be percent-encoded, whereas
-    # the seam interpolates verbatim (it carries the credential and fixed
-    # switches like alt=sse). Same handling as
-    # Langertha::Engine::Gemini::list_models_request.
-    my %params;
-    $params{pageSize}  = $page_size if defined $page_size;
-    $params{pageToken} = $token     if defined $token;
-    if (%params) {
-      my $uri = URI->new($url);
-      my %query = $uri->query_form;
-      $uri->query_form( %query, %params );
-      $url = $uri->as_string;
-    }
-
-    my $req = $self->generate_http_request(
-      GET => $url,
-      sub { $self->_parse_list_response(shift) },
-    );
-    my $http_res = $self->user_agent->request($req);
+    my $req = $self->_list_cached_contents_request( $token, $opts{page_size} );
+    my $http_res = await $self->_async_do_request_f( request => $req );
     my ( $items, $next ) = $req->response_call->($http_res);
     push @all, @$items;
     $token = $next;
-
-    # If the caller constrained to one page, stop after the first response.
-    last if defined $opts{page_token} || defined $opts{page_size};
-
-    # Otherwise walk on for as long as the server hands out a next page.
-    last unless defined $token && length $token;
+    last if $self->_list_cached_contents_done( \%opts, $token );
   }
 
   return @all;
@@ -295,7 +281,51 @@ async sub list_cached_contents_f {
 
 sub list_cached_contents {
   my ( $self, %opts ) = @_;
-  return [ $self->list_cached_contents_f(%opts)->get ];
+  $self->_assert_http_seam;
+
+  my @all;
+  my $token = $opts{page_token};
+  while (1) {
+    my ( $items, $next ) = $self->_cached_content_sync(
+      $self->_list_cached_contents_request( $token, $opts{page_size} ) );
+    push @all, @$items;
+    $token = $next;
+    last if $self->_list_cached_contents_done( \%opts, $token );
+  }
+  return \@all;
+}
+
+sub _list_cached_contents_request {
+  my ( $self, $token, $page_size ) = @_;
+  my $url = $self->gemini_url( $self->_cached_contents_path );
+
+  # Pagination goes on with URI rather than through the seam's query list:
+  # pageToken is opaque server data that has to be percent-encoded, whereas
+  # the seam interpolates verbatim (it carries the credential and fixed
+  # switches like alt=sse). Same handling as
+  # Langertha::Engine::Gemini::list_models_request.
+  my %params;
+  $params{pageSize}  = $page_size if defined $page_size;
+  $params{pageToken} = $token     if defined $token;
+  if (%params) {
+    my $uri = URI->new($url);
+    my %query = $uri->query_form;
+    $uri->query_form( %query, %params );
+    $url = $uri->as_string;
+  }
+
+  return $self->generate_http_request(
+    GET => $url,
+    sub { $self->_parse_list_response(shift) },
+  );
+}
+
+# If the caller constrained to one page, stop after the first response;
+# otherwise walk on for as long as the server hands out a next page.
+sub _list_cached_contents_done {
+  my ( $self, $opts, $token ) = @_;
+  return 1 if defined $opts->{page_token} || defined $opts->{page_size};
+  return !( defined $token && length $token );
 }
 
 =method update_cached_content_f
@@ -312,6 +342,13 @@ the caller is updating.
 =cut
 
 async sub update_cached_content_f {
+  my ( $self, $name, %opts ) = @_;
+  my $req = $self->_update_cached_content_request( $name, %opts );
+  my $http_res = await $self->_async_do_request_f( request => $req );
+  return $req->response_call->($http_res);
+}
+
+sub _update_cached_content_request {
   my ( $self, $name, %opts ) = @_;
   $self->_assert_http_seam;
   $name = $self->_normalize_name($name);
@@ -338,19 +375,16 @@ async sub update_cached_content_f {
   my $url = $self->gemini_url(
     $self->_cached_content_path($name), updateMask => join(',', @mask) );
 
-  my $req = $self->generate_http_request(
+  return $self->generate_http_request(
     PATCH => $url,
     sub { $self->_parse_cached_content_response(shift) },
     %$body,
   );
-
-  my $http_res = $self->user_agent->request($req);
-  return $req->response_call->($http_res);
 }
 
 sub update_cached_content {
   my ( $self, $name, %opts ) = @_;
-  return $self->update_cached_content_f( $name, %opts )->get;
+  return $self->_cached_content_sync( $self->_update_cached_content_request( $name, %opts ) );
 }
 
 =method delete_cached_content_f
@@ -363,22 +397,35 @@ Delete a cache. Returns C<1> on success.
 
 async sub delete_cached_content_f {
   my ( $self, $name ) = @_;
+  my $req = $self->_delete_cached_content_request($name);
+  my $http_res = await $self->_async_do_request_f( request => $req );
+  return $req->response_call->($http_res);
+}
+
+sub _delete_cached_content_request {
+  my ( $self, $name ) = @_;
   $self->_assert_http_seam;
   $name = $self->_normalize_name($name);
 
   my $url = $self->gemini_url( $self->_cached_content_path($name) );
-  my $req = $self->generate_http_request(
+  return $self->generate_http_request(
     DELETE => $url,
     sub { $self->_parse_delete_response(shift) },
   );
-
-  my $http_res = $self->user_agent->request($req);
-  return $req->response_call->($http_res);
 }
 
 sub delete_cached_content {
   my ( $self, $name ) = @_;
-  return $self->delete_cached_content_f($name)->get;
+  return $self->_cached_content_sync( $self->_delete_cached_content_request($name) );
+}
+
+# The sync methods send over the engine's user_agent, like every other sync
+# call; the _f methods above go through _async_do_request_f (k329, ADR 0027).
+# Both hand the response to the same response_call, so value and error text
+# match on every backend.
+sub _cached_content_sync {
+  my ( $self, $req ) = @_;
+  return $req->response_call->( $self->user_agent->request($req) );
 }
 
 # --- Internal response parsers ---

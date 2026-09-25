@@ -11,6 +11,7 @@ use LWP::UserAgent;
 use URI;
 
 use Langertha::Engine::Gemini;
+use Langertha::Request::SyncHTTP;
 
 # list_cached_contents_f walks the cachedContents collection until the server
 # stops handing out a nextPageToken, but the documented page_size / page_token
@@ -20,7 +21,8 @@ use Langertha::Engine::Gemini;
 # wire. t/47 only ever called the method without options, so nothing caught it.
 #
 # Everything here is offline: a scripted LWP::UserAgent subclass answers from a
-# queue and records what was asked for, so the assertions are about the URLs
+# queue and records what was asked for (the sync methods use it directly, the
+# _f methods through the sync transport shim), so the assertions are about the URLs
 # that would actually go on the wire.
 #
 # Each scenario is a named sub called at file scope, deliberately NOT a bare
@@ -81,6 +83,9 @@ sub engine_with {
     api_key    => 'k',
     model      => 'gemini-2.5-pro',
     user_agent => $ua,
+    # The _f methods send through the async transport (k329); the sync shim
+    # over the same scripted UA keeps the pages and the record in one place.
+    _async_http => Langertha::Request::SyncHTTP->new( user_agent => $ua ),
   );
   return ( $engine, $ua );
 }
