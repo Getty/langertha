@@ -119,9 +119,10 @@ would be wrong.
 - responses, server: `web_search` (also dated `web_search_YYYY_MM_DD`), `web_search_preview*`,
   `file_search`, `code_interpreter`, `image_generation`, `mcp`, `x_search`,
   `collections_search`, `tool_search` unless `execution: "client"`, and `shell` with a
-  `container_*` environment.
+  `container_auto` or `container_reference` environment.
 - responses, client-executed: `local_shell`, `computer`, `computer_use_preview`, `apply_patch`,
-  `shell` with a local environment, and `tool_search` with `execution: "client"`.
+  any other `shell` (local, missing or unrecognized environment, so an unknown shell fails
+  loud rather than going out verbatim), and `tool_search` with `execution: "client"`.
 - anthropic: server `web_search_*`, `web_fetch_*`, `code_execution_*`, `tool_search_tool_*`
   (versioned) and `mcp_toolset`. Client-executed `bash_*`, `text_editor_*`, `computer_*` and
   `memory_*`.
@@ -144,7 +145,7 @@ first sent an MCP tool out unformatted (400). An MCP tool first dropped a built-
 `custom` / `namespace` into function tools. Now each item is decided on its own and the order is
 kept, as spec §3.4 says (`_is_native_responses_tool`). A flat `{type=>'function', …}`, a
 Responses `server` tool, and any typed `unknown` go out verbatim, so the provider judges them
-(values open). That covers `custom`, `namespace`, a `shell` without an environment and future
+(values open). That covers `custom`, `namespace` and future
 server types. Other function-tool forms (MCP, canonical, OpenAI chat's nested `function`, a
 `Langertha::Tool`, an Anthropic `custom`) are formatted. A Responses `client_builtin`, a
 `foreign` built-in, and an untyped nameless hash croak at the door. Known client-executed

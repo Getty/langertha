@@ -38,8 +38,8 @@ Revision history for Langertha
       shell, types Langertha does not know) go out verbatim, and other
       function-tool forms are converted. Incompatible change: the
       client-executed built-ins local_shell, computer, computer_use_preview,
-      apply_patch, shell with a local environment and tool_search with
-      execution "client" now croak. They used to be sent when listed first, but
+      apply_patch, a shell outside a container_auto / container_reference
+      environment and tool_search with execution "client" now croak. They used to be sent when listed first, but
       Langertha cannot run them or report their calls, so a shell or
       computer-use loop built on chat_f and Response->raw no longer works.
 

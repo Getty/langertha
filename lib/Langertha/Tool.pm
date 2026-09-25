@@ -2,7 +2,7 @@ package Langertha::Tool;
 # ABSTRACT: Immutable canonical tool definition with cross-provider format conversion
 our $VERSION = '0.503';
 use Moose;
-use Carp qw( croak );
+use Carp qw( croak carp );
 use JSON::MaybeXS;
 
 has name => (
@@ -144,10 +144,11 @@ sub _builtin_kind {
       return ( ( $hash->{execution} // '' ) eq 'client' ? 'client_builtin' : 'server', 'responses' );
     }
     if ( $type eq 'shell' ) {
+      # Hosted only in one of the two container environments; a bare, local
+      # or unrecognised environment runs on the client (spec k206 3.4, Q3).
       my $env = ref $hash->{environment} eq 'HASH' ? ( $hash->{environment}{type} // '' ) : '';
-      return ( client_builtin => 'responses' ) if $env eq 'local';
-      return ( server         => 'responses' ) if $env =~ /\Acontainer_/;
-      return ();
+      return ( ( $env eq 'container_auto' || $env eq 'container_reference' )
+        ? 'server' : 'client_builtin', 'responses' );
     }
     return ( server => 'responses' )
       if $RESPONSES_SERVER_TYPE{$type}
@@ -206,8 +207,13 @@ C<computer_use> (Gemini).
 
 =item C<foreign>
 
-Only with C<$fmt>: a C<server> or C<client_builtin> tool of a different
-wire than C<$fmt>.
+Only with C<$fmt>: a C<server> or C<client_builtin> tool whose own wire is
+not C<$fmt> -- that is, for any C<$fmt> other than the built-in's own wire
+(C<responses>, C<anthropic> or C<gemini>), including C<openai>, C<ollama> or
+C<hermes>, which have no built-ins of their own. A C<$fmt> outside the known
+C<tool_wire_format> values carps once per value. C<foreign> hides whether
+the tool is server-side or client-executed; to learn that, call
+C<classify> again without C<$fmt>.
 
 =item C<unknown>
 
@@ -228,8 +234,15 @@ responses.
 
 =cut
 
+my %KNOWN_FMT = map { $_ => 1 } qw( openai anthropic gemini ollama responses mcp hermes );
+my %CARPED_FMT;
+
 sub classify {
   my ( $class, $hash, $fmt ) = @_;
+  if ( defined $fmt && !$KNOWN_FMT{$fmt} && !$CARPED_FMT{$fmt}++ ) {
+    carp "Langertha::Tool->classify: unknown tool_wire_format '$fmt'; "
+      . "every built-in counts as foreign for it";
+  }
   my @none = ( undef, undef );
   if ( ref($hash) && eval { $hash->isa(__PACKAGE__) } ) {
     return wantarray ? ( 'function', @none ) : 'function';
@@ -258,8 +271,10 @@ sub classify {
   return wantarray ? ( $category, $wire, $label ) : $category;
 }
 
-# Build from a list of any-shape tool definitions. A hash that is not a function
-# tool croaks in from_hash (k210); only a non-reference is still skipped.
+# Build from a list of any-shape tool definitions. A plain hash that is not a
+# function tool croaks in from_hash (k210). Anything that is not a plain HASH
+# and not a Langertha::Tool -- a string, an array ref, a blessed non-Tool
+# object even if it is hash-based -- is still skipped silently.
 sub from_list {
   my ($class, $list) = @_;
   return [] unless ref($list) eq 'ARRAY';

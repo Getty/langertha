@@ -24,11 +24,13 @@ use Langertha::Engine::OpenAIResponses;
 # reference, 2026-09-25). The Responses envelope therefore decides per item by
 # a denylist: those croak, another wire's built-ins croak, and every other
 # typed item goes out verbatim (spec k206 section 3.4, values open) -- so a
-# dated web_search_2025_08_26, a hosted shell or a future type still reaches
-# the provider, which judges it. It used to decide for the WHOLE list from the
-# first item only: a typed item first sent an MCP tool unformatted (400), an
-# MCP tool first dropped a built-in and turned custom / namespace into
-# function tools.
+# dated web_search_2025_08_26, a hosted shell (container_auto /
+# container_reference) or a future type still reaches the provider, which
+# judges it. A shell is client-executed unless its environment is one of those
+# two containers, so a bare or local shell croaks. The envelope used to decide
+# for the WHOLE list from the first item only: a typed item first sent an MCP
+# tool unformatted (400), an MCP tool first dropped a built-in and turned
+# custom / namespace into function tools.
 
 my $server = sub { my $w = shift; qr/is a server-side tool \($w\)/ };
 my $client = sub { my $w = shift; qr/is a client-executed built-in tool \($w\), not a server tool/ };
@@ -60,6 +62,8 @@ my @table = (
     { type => 'computer_use_preview', display_width => 1024 },
     { type => 'apply_patch' },
     { type => 'shell', environment => { type => 'local' } },
+    { type => 'shell' },
+    { type => 'shell', environment => { type => 'something_new' } },
     { type => 'tool_search', execution => 'client' },
   ),
   # Anthropic built-ins: foreign on the Responses wire, so they croak there
@@ -94,7 +98,6 @@ my @table = (
   map( { [ $_, unknown => undef, 'unknown', $unsupported, 'verbatim' ] }
     { type => 'custom', name => 'sql', format => { type => 'grammar' } },
     { type => 'namespace', name => 'ns', tools => [] },
-    { type => 'shell' },
     { type => 'programmatic_tool_calling' },
     { type => 'frobnicate', name => 'x' },
   ),
@@ -159,6 +162,20 @@ subtest 'classify never croaks on odd input' => sub {
   is( scalar Langertha::Tool->classify('string'), 'unknown', 'plain string' );
   is( scalar Langertha::Tool->classify( [] ),     'unknown', 'array ref' );
   is( scalar Langertha::Tool->classify( Langertha::Tool->new( name => 'x' ) ), 'function', 'Tool object' );
+};
+
+subtest 'classify: foreign for any other $fmt, carp once on an unknown $fmt' => sub {
+  my $ws = { type => 'web_search' };
+  is( scalar Langertha::Tool->classify( $ws, $_ ), 'foreign', "web_search on $_ is foreign" )
+    for qw( openai anthropic gemini ollama hermes );
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  is( scalar Langertha::Tool->classify( $ws, 'reponses' ), 'foreign', 'typo fmt: foreign' );
+  Langertha::Tool->classify( $ws, 'reponses' );
+  is( scalar @warnings, 1, 'carped once for the unknown fmt' );
+  like( $warnings[0] // '', qr/unknown tool_wire_format 'reponses'/, 'carp names it' );
+  Langertha::Tool->classify( $ws, 'responses' );
+  is( scalar @warnings, 1, 'no carp for a known fmt' );
 };
 
 subtest 'Responses envelope: function-tool forms per item' => sub {
