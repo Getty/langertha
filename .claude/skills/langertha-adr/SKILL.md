@@ -2,8 +2,6 @@
 name: langertha-adr
 description: Use when recording or backfilling an Architecture Decision Record in Langertha, or when asked whether a decision is ADR-worthy.
 user-invocable: false
-allowed-tools: Read, Grep, Glob, Bash
-model: sonnet
 ---
 
 ADRs capture the **WHY** behind architecturally-significant Langertha decisions, so the
@@ -18,10 +16,19 @@ codify the format, do not reinvent it.
 - Metadata as a bullet list, directly under H1:
   - `- Status: proposed | accepted | superseded | deprecated`
   - `- Date: YYYY-MM-DD`
-  - `- Tags: a, b, c` (optional)
-- Sections (`##`): `Context` · `Decision` · `Rationale` (optional — may fold into Decision) · `Consequences`
+  - `- Tags: a, b, c`
+  - optional, when they apply: `- Cross-links: ADR NNNN, CONTEXT.md`, `- Supersedes: ADR NNNN`
+    / `- Superseded-in-part-by: ADR NNNN`, `- karr: #NNN`
+- Sections (`##`): `Context` · `Decision` · `Rationale` · `Consequences`
 - Optional last section: `## Future work` — drift to reconcile or follow-ups that should not
   block; name the karr ticket and stop. Don't do that work in the ADR.
+
+## Amend, don't fork
+
+When a later change refines an accepted decision without replacing its mechanism, append
+`## Update (kNNN — <what changed, one line>)` to that ADR, stating the new fact and why. Keep
+`Status: accepted`. Write a new ADR only when the mechanism itself is replaced; then set
+`Supersedes:` on the new one and `Superseded-in-part-by:` (or `Status: superseded`) on the old.
 
 ## What counts as ADR-worthy
 
@@ -30,13 +37,16 @@ Two sorts, **both** count:
 1. **Deliberate centralization / seam** — a decision to route many engines through one place:
    the `tool_wire_format` tag and the Tool/ToolCall/ToolResult/ToolChoice value objects; the
    `%ROLE_TO_CAPS` capability registry; `Response.tool_calls` as the single tool-call shape;
-   the `chat_f` auto-rewrite matrix; the `TranscriptionBase` split; the Raider history model.
+   the `chat_f` auto-rewrite matrix; the `TranscriptionBase` split; the model-scoped capability
+   tables; the sync fallback of the `_f` transport.
 2. **Deliberate keep** — structure a review tempted us to change and we chose **not** to (e.g.
    keeping a per-format branch explicit rather than over-abstracting it).
 
 Architecturally significant = touches the public API, engine/role composition, the tool
-wire-translation seam, capabilities, structured-output handling, streaming, async, or the
-Raider loop. **Not** ADR-worthy: local style, naming, single-use code.
+wire-translation seam, capabilities, structured-output handling, request-control wire formats,
+response observability seams, streaming, or the async transport. Raider decisions (since ADR
+0026) are recorded in langertha-raider's own `docs/adr/`; 0007/0008 stay here as history.
+**Not** ADR-worthy: local style, naming, single-use code.
 
 ## Where ADRs come from — backfill, structure first
 
@@ -51,7 +61,8 @@ already living in the structure:
    single record of intent for that area. Hold it against the code; where they disagree, that
    drift is a finding (record it, or file a karr reconciliation ticket).
 4. **Git history** — the refactor commits and their messages confirm the WHY.
-5. To judge significance, load the architecture skill on demand — [[perl-ai-langertha]].
+5. To judge significance, use the implementer vocabulary in `langertha-internals` (and the
+   public API in `perl-ai-langertha`).
 
 ## Two run modes
 
@@ -63,7 +74,34 @@ already living in the structure:
 
 Per repo, monotonic from `0001`. Read the existing `docs/adr/` for the highest number; never reuse.
 
+Parallel worktree branches pick numbers independently. Before merging, re-read `docs/adr/` on
+the target branch; if the number is taken, the later branch renumbers (file name, H1 and every
+reference).
+
+Every new ADR also gets its one-line entry in the ADR index in `CLAUDE.md`, and a row in the
+area map below, in the same commit.
+
+## Which ADR owns which area
+
+Read the owning ADR before changing an area. A change that contradicts it amends that ADR in
+the same change, or stops and reports.
+
+| Area | ADRs |
+|---|---|
+| Tool value objects, `tool_wire_format`, inbound `extract` / outbound `to` | 0001, 0010, `CONTEXT.md` |
+| `Response.tool_calls` as the single source | 0003 |
+| Structured output ↔ forced tool, the `chat_f` rewrite matrix | 0005 |
+| Capability registry, per-engine / per-model corrections, pairwise exclusions | 0002, 0019, 0021, 0024 |
+| Dialect inheritance vs capability roles, `*Compatible` envelopes, `-excludes` | 0006, 0013, 0015, 0016, 0020 |
+| Wire extras on the body / `Response` | 0004 |
+| Request-side controls (reasoning, cache, knobs), temperature gate | 0009, 0012, 0023, 0025 |
+| Normalizing a provider's wire spelling | 0018 |
+| Response observability: timing, `created`, rate-limit reset | 0011, 0017, 0022 |
+| Runtime metrics scrape | 0014 |
+| Async transport, sync fallback | 0027 |
+| Distribution boundary (Raider extraction) | 0026 (0007/0008 history) |
+
 ## Companion
 
 `CONTEXT.md` is the domain language (ubiquitous terms), not a decision log — ADRs link to it,
-they don't restate it. Langertha architecture vocabulary → [[perl-ai-langertha]].
+they don't restate it. Langertha implementer vocabulary → `langertha-internals`.
