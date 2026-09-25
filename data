@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T17:29:35Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T17:29:35Z
+created: 2026-09-25T17:22:36Z
+id: 271
+priority: low
+started: 2026-09-25T17:23:05Z
+status: done
+tags:
+- aki
+- vision
+- live
+title: 'AKIOpenAI: probe image input on its vision models (Qwen3.6/3.8, Gemma4) and
+  claim image_input if accepted'
+updated: 2026-09-25T17:29:35Z
+---
+
+From k266/k270: AKIOpenAI hosts vision models but doesn't document image input on /v1. AKI.IO live calls need no approval. Probe (max 3 calls): list models, then one small base64 PNG chat on a vision model; if the model describes the image, add an image_input allowlist for those ids on AKIOpenAI; record the capture as a fixture (sanitized).
+
+2026-09-25 17:28 Probe 2026-09-25, 3 live AKI calls: (1) GET /openai/v1/models -> 13 ids, no modality field in metadata (vision candidates: qwen3.6-35b, qwen3.6-chat-35b, qwen3.8-27b, gemma4-26b, gemma4-chat-26b). (2) qwen3.6-chat-35b + 8x8 red PNG, max_tokens=64 -> 500 'Response finished before thinking was completed' (budget, not an image rejection; the chat variant still reasons). (3) same with max_tokens=2048 -> 200, content 'Red', reasoning describes a solid uniform block. Claimed image_input for qr/\Aqwen3\.6(?!\d)/ only; qwen3.8-27b and gemma4-* unprobed (budget spent) -> no claim, follow-up candidate. Commit 8c1f7e6.
+
+2026-09-25 17:28 qwen3.6 claimed on live evidence; gemma4/qwen3.8 left unclaimed pending a probe
