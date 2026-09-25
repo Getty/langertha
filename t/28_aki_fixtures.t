@@ -226,6 +226,34 @@ subtest 'AKIAnthropic native tool call (karr k124 gate)' => sub {
   }
 };
 
+# --- 6. AKIOpenAI image input on qwen3.6 — the karr k271 probe ---
+# The evidence behind AKIOpenAI's image_input claim for the qwen3.6 family:
+# an 8x8 solid-red base64 PNG went out as an image_url part and the model
+# named the color. Captured 2026-09-25 through the engine's own request
+# builder; LWP's local client-* headers stripped, nothing else touched. If the
+# claim is ever widened or dropped, this is the capture it rests on.
+
+subtest 'AKIOpenAI qwen3.6 image answer (karr k271 probe capture)' => sub {
+  my $engine = Langertha::Engine::AKIOpenAI->new(
+    api_key => 'testkey',
+    model   => 'qwen3.6-chat-35b',
+  );
+  ok($engine->supports('image_input'), 'qwen3.6-chat-35b claims image_input');
+  my $resp = eval { $engine->chat_response( fixture_http('akiopenai_qwen36_image_response') ) };
+  ok(defined $resp, 'Response constructed, no type-constraint croak') or diag($@);
+
+  SKIP: {
+    skip 'no Response to inspect', 6 unless defined $resp;
+    is("$resp", 'Red', 'the model named the color of the image');
+    is($resp->model, 'qwen3.6-chat-35b', 'the probed model answered, no substitution');
+    is($resp->finish_reason, 'stop', 'finished normally');
+    like($resp->thinking, qr/solid, uniform block of color/,
+      'its reasoning describes the image, so the answer is not a guess from the text');
+    is($resp->prompt_tokens, 116, 'prompt_tokens from usage');
+    ok(!$engine->has_rate_limit, 'no rate-limit headers on this capture either');
+  }
+};
+
 # --- Captured response headers ---
 # t/12_rate_limit.t hand-writes every rate-limit header it tests. These headers
 # were captured alongside the bodies and run through the engines' real

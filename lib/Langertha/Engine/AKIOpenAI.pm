@@ -68,6 +68,11 @@ C<reasoning> key on the message. The shared OpenAI-compatible path reads that
 spelling (canonical C<reasoning_content> first, then bare C<reasoning>) onto
 L<Langertha::Response/thinking>, so C<< $response->thinking >> is populated.
 
+B<Vision:> images in C<content> go out as C<image_url> parts.
+C<< supports('image_input') >> is true only for the C<qwen3.6-*> models, the
+family verified to see an image on this endpoint; other models make no claim,
+which never stops an image from being sent.
+
 B<Client errors arrive as HTTP 529:> AKI.IO returns some B<caller-side> errors
 as C<529> C<overloaded_error> — notably a token budget too small to finish a
 tool call (C<"Response finished before tool_call was completed! Try to raise
@@ -136,10 +141,23 @@ around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete $caps->{parallel_tool_use};
-  # image_input (k266, ADR 0019): vision is undocumented / unverified on this face, so no claim.
-  delete $caps->{image_input};
   return $caps;
 };
+
+# image_input (k266/k271, ADR 0019 k266 Update): AKI.IO documents no image
+# input on this face and /models carries no modality field, so the catch-all
+# row clears the flag (the default gpt-oss-120b makes no claim). Live probe
+# 2026-09-25 (k271): an 8x8 solid-red base64 PNG sent as an image_url part to
+# qwen3.6-chat-35b answered "Red", its reasoning describing "a solid, uniform
+# block of color" (t/data/akiopenai_qwen36_image_response.json). Only the
+# probed Qwen3.6 family is claimed; gemma4-* and qwen3.8-27b are vision models
+# upstream but were not probed on AKI's serving stack, so they stay unclaimed.
+sub model_capability_corrections {
+  return (
+    qr/\A/               => { image_input => 0 },
+    qr/\Aqwen3\.6(?!\d)/ => { image_input => 1 },
+  );
+}
 
 __PACKAGE__->meta->make_immutable;
 
