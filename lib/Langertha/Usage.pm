@@ -79,6 +79,11 @@ sub from_hash {
   $output = $hash->{completion_tokens} if !defined $output && defined $hash->{completion_tokens};
   $output = $hash->{eval_count}        if !defined $output && defined $hash->{eval_count};
 
+  # Gemini's usageMetadata spelling (the raw body, before the engine renames it).
+  $input  = $hash->{promptTokenCount}     if !defined $input  && defined $hash->{promptTokenCount};
+  $output = $hash->{candidatesTokenCount} if !defined $output && defined $hash->{candidatesTokenCount};
+  $total  = $hash->{totalTokenCount}      if !defined $total  && defined $hash->{totalTokenCount};
+
   $input  = 0 + ($input  // 0);
   $output = 0 + ($output // 0);
 
@@ -130,10 +135,72 @@ sub from_response {
     return $class->from_hash( $usage || {} );
   }
   if ( ref($response) eq 'HASH' ) {
-    return $class->from_hash( $response->{usage} || {} );
+    return $class->from_raw($response) // $class->from_hash( $response->{usage} || {} );
   }
   return $class->new;
 }
+
+# Build a Usage from a raw decoded provider response body; undef when the body
+# reports no usage. Probes with lexicals so the caller's body never autovivifies.
+sub from_raw {
+  my ($class, $data) = @_;
+  return undef unless ref($data) eq 'HASH';
+  for my $key (qw( usage usageMetadata )) {
+    return $class->from_hash( $data->{$key} ) if ref( $data->{$key} ) eq 'HASH';
+  }
+  my $envelope = $data->{response};
+  if ( ref($envelope) eq 'HASH' && ref( $envelope->{usage} ) eq 'HASH' ) {
+    return $class->from_hash( $envelope->{usage} );
+  }
+  if ( defined $data->{prompt_eval_count} || defined $data->{eval_count} ) {
+    return $class->from_hash({
+      map { defined $data->{$_} ? ( $_ => $data->{$_} ) : () } qw( prompt_eval_count eval_count )
+    });
+  }
+  return undef;
+}
+
+=method from_raw
+
+    my $data  = $engine->parse_response($http_response);
+    my $usage = Langertha::Usage->from_raw($data)
+      or return;   # the body reported no usage
+    printf "%d in / %d out\n", $usage->input_tokens, $usage->output_tokens;
+
+Class method. Builds a Usage from a B<raw decoded provider response body>, the
+HashRef C<parse_response> returns — for callers that send their own requests
+and never get a L<Langertha::Response>. It finds the usage block wherever the
+provider puts it: C<usage> (OpenAI-compatible, Anthropic, Open-Responses),
+C<usageMetadata> (Gemini), C<response.usage> (an Open-Responses event
+envelope), or the top-level C<prompt_eval_count> / C<eval_count> of Ollama's
+native API; the counts are then read by L</from_hash>, so every spelling it
+knows applies.
+
+Returns C<undef> when the body reports no usage (or is not a HashRef), so a
+caller can tell "not reported" from "zero tokens". Engine-specific spellings
+that only an engine's own response parsing translates (for example AKI's
+native C<prompt_length>) are not recognized here.
+
+=method from_response
+
+    my $usage = Langertha::Usage->from_response($response_or_body);
+
+Class method. Builds a Usage from a L<Langertha::Response> (its C<usage>), or
+from a raw body HashRef via L</from_raw>. Always returns a Usage: all-zero
+when nothing is reported.
+
+=method from_hash
+
+    my $usage = Langertha::Usage->from_hash($usage_block);
+
+Class method. Builds a Usage from a provider's usage block, accepting the
+OpenAI (C<prompt_tokens> / C<completion_tokens>), Anthropic and Open-Responses
+(C<input_tokens> / C<output_tokens>), Ollama (C<prompt_eval_count> /
+C<eval_count>) and Gemini (C<promptTokenCount> / C<candidatesTokenCount> /
+C<totalTokenCount>) spellings, in that order of preference, plus the cache
+counts described under L</cached_tokens> and L</cache_write_tokens>.
+
+=cut
 
 # Immutable merge — returns a new Usage that is the sum of self + other.
 sub merge {

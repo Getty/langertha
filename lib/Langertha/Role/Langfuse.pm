@@ -188,13 +188,35 @@ sub _langfuse_id {
   );
 }
 
-sub _langfuse_timestamp {
+sub langfuse_timestamp {
   my ( $self ) = @_;
   my ($s, $us) = gettimeofday;
   my @t = gmtime($s);
   return sprintf("%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
     $t[5]+1900, $t[4]+1, $t[3], $t[2], $t[1], $t[0], int($us/1000));
 }
+
+=method langfuse_timestamp
+
+    my $t0 = $engine->langfuse_timestamp;   # 2026-09-25T12:34:56.789Z
+    ...
+    $engine->langfuse_span(
+      trace_id   => $trace_id,
+      name       => 'tool: search',
+      start_time => $t0,
+      end_time   => $engine->langfuse_timestamp,
+    );
+
+Returns the current time as an ISO-8601 UTC string with millisecond
+precision (C<YYYY-MM-DDTHH:MM:SS.mmmZ>) — the format this role stamps on
+every Langfuse event. Use it for C<start_time> / C<end_time> when you create
+spans or generations yourself. The older private name C<_langfuse_timestamp>
+still works and returns the same.
+
+=cut
+
+# Private alias kept for existing callers; the internal call sites use it too.
+sub _langfuse_timestamp { $_[0]->langfuse_timestamp }
 
 sub langfuse_trace {
   my ( $self, %opts ) = @_;
