@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T05:27:09Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T05:26:59Z
+created: 2026-09-25T03:42:26Z
+id: 227
+priority: medium
+started: 2026-09-25T04:33:25Z
+status: done
+tags:
+- tools
+- wire
+title: 'chat_f puts tools on the wire raw: Langertha::Tool objects go out in to_hash
+  shape'
+updated: 2026-09-25T05:27:09Z
+---
+
+Found in k221. chat_f (and chat_request of the OpenAI/Gemini/Ollama/Anthropic dialects) never runs tools through Tool->format_list; a Langertha::Tool object is JSON-encoded via TO_JSON as {name,description,input_schema}, which only the Anthropic wire reads (OpenAI/Gemini/Ollama get an invalid tool). The chat_f POD claims chat_request handles per-provider serialization, which is false outside ResponsesCompatible. k221 fixed only chat_stream_realtime_f (Role::Chat::_stream_wire_tools: objects serialized, hashes pass through, because the Tool round trip drops wire extras like function.strict and cache_control). Done: chat_f uses the same helper (or it moves into chat_request), POD corrected, request-building test per dialect. Wire-worker lane.
+
+2026-09-25 04:10 Scope from k221 review (point 4): the consistent end state for both chat_f and chat_stream_realtime_f is per-item classification against the engine wire (Tool->classify($item, $fmt)): pass through anything already in the wire's shape or a server built-in, convert canonical/MCP hashes (inputSchema, input_schema) through the value objects without losing wire extras (strict, cache_control) -- as the Responses path already does via format_tools. k221 serializes only Tool objects, in place. Also review M4 (advisor): with Tool objects plus a wire hash, Gemini may get several functionDeclarations Tool entries or one next to a built-in; some Gemini versions reportedly reject that -- unverified.
+
+2026-09-25 04:39 Pinned wire-shaped hash bodies for chat_f on all six wires (t/69_chat_f_wire_tools.t) before the change
+
+2026-09-25 04:56 Done on branch k227: chat_f + chat_stream_realtime_f share Role::Chat::_wire_tools -> Tool->request_list; per-item classify (wire-shaped hashes verbatim, other function hashes converted with strict/cache_control carried, built-ins/unknown verbatim); Gemini merges functionDeclarations (M4: merge, not croak); responses/hermes deferred. ADR 0001 k227 Update. prove -lr t/ green.
+
+Fix round: POD, function_declarations merge, parametersJsonSchema door, stream test; hermes gap -> #231
