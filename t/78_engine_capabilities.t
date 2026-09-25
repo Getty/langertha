@@ -11,6 +11,13 @@ use Langertha::Engine::Anthropic;
 use Langertha::Engine::MiniMax;
 use Langertha::Engine::Whisper;
 use Langertha::Engine::Ollama;
+use Langertha::Engine::DeepSeek;
+use Langertha::Engine::Moonshot;
+use Langertha::Engine::HuggingFace;
+use Langertha::Engine::Replicate;
+use Langertha::Engine::AKIOpenAI;
+use Langertha::Engine::TSystems;
+use Langertha::Engine::MoonshotAnthropic;
 
 use JSON::MaybeXS;
 
@@ -167,5 +174,31 @@ ok( Langertha::Engine::NousResearch->new( api_key => 'x' )->supports('response_f
   ok !$e->supports('keep_alive'), 'openai does not advertise keep_alive (role not composed)';
   ok !$e->can('get_keep_alive'),  'openai has no keep-alive surface at all';
 }
+
+# parallel_tool_use means the wire documents parallel_tool_calls (k242, ADR
+# 0002). None of these chat/completions endpoints does: DeepSeek ignores it,
+# Moonshot/Kimi, the HuggingFace router and AKI.IO leave it out of the chat
+# schema, Replicate's OpenAPI has no chat/completions path at all. With the flag
+# on, a caller's parallel_tool_use=0 goes out and is silently not honored;
+# cleared, k241 drops it with a carp and the raw kwarg stays the escape hatch.
+for my $e (
+  Langertha::Engine::DeepSeek->new( api_key => 'x' ),
+  Langertha::Engine::Moonshot->new( api_key => 'x' ),
+  Langertha::Engine::HuggingFace->new( api_key => 'x', model => 'org/m' ),
+  Langertha::Engine::Replicate->new( api_key => 'x', model => 'owner/m' ),
+  Langertha::Engine::AKIOpenAI->new( api_key => 'x' ),
+) {
+  my $name = lc( ( split /::/, ref $e )[-1] );
+  ok !$e->supports('parallel_tool_use'), "$name clears parallel_tool_use (not in its chat schema, k242)";
+  ok  $e->supports('tools_native'),      "$name keeps tools_native";
+}
+# TSystems' LLM Server OpenAPI lists parallel_tool_calls on ChatCompletionRequest.
+ok( Langertha::Engine::TSystems->new( api_key => 'x' )->supports('parallel_tool_use'),
+  'tsystems keeps parallel_tool_use (documented in its OpenAPI, k242)' );
+# MoonshotAnthropic rides the /anthropic shim: the field there is
+# tool_choice.disable_parallel_tool_use, not the chat/completions
+# parallel_tool_calls k242 audited, so the flag stays as on the other shims.
+ok( Langertha::Engine::MoonshotAnthropic->new( api_key => 'x' )->supports('parallel_tool_use'),
+  'moonshot anthropic shim keeps parallel_tool_use (different field, outside k242)' );
 
 done_testing;

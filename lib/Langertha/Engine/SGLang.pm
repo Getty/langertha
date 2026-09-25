@@ -100,11 +100,13 @@ sub _build_supported_operations {[qw(
   createCompletion
 )]}
 
-# SGLang documents only the named tool_choice form (via the xgrammar grammar
-# backend) plus the grammar backends; `auto` and `none` are not listed
-# (docs.sglang.io/docs/advanced_features/tool_parser, verified 2026-09-01).
-# Clear tool_choice_auto and tool_choice_none; tool_choice_named (grammar-backed)
-# and tool_choice_any stay.
+# tool_choice: all four forms stay. ChatCompletionRequest.tool_choice is
+# auto|required|none or a named function, default auto
+# (python/sglang/srt/entrypoints/openai/protocol.py, source-checked 2026-09-25,
+# karr k244), and serving_chat honors none. The tool_parser docs list only
+# required and named because those two need the grammar backend (xgrammar, the
+# default); that omission, not a wire rejection, was why k138 cleared auto and
+# none. Every tool field needs the server started with --tool-call-parser.
 # prompt_cache_key (OpenAI's cache-routing hint) is not a field of SGLang's
 # ChatCompletionRequest, a pydantic model that silently drops unknown keys
 # (python/sglang/srt/entrypoints/openai/protocol.py, checked 2026-09-25, karr
@@ -112,7 +114,7 @@ sub _build_supported_operations {[qw(
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
-  delete @{$caps}{ qw( tool_choice_auto tool_choice_none prompt_cache_key ) };
+  delete $caps->{prompt_cache_key};
   return $caps;
 };
 
@@ -128,9 +130,9 @@ Advertised flags (derived from composed roles via L<Langertha::Role::Capabilitie
 
 =item * C<streaming> — L<Langertha::Role::Streaming>
 
-=item * C<tools_native> + C<tool_choice_{any,named}> — L<Langertha::Role::Tools>
-(C<tool_choice_auto> and C<tool_choice_none> are cleared: SGLang documents only
-the named/grammar-backed forms — see the C<around engine_capabilities> above)
+=item * C<tools_native> + C<tool_choice_{auto,any,none,named}> — L<Langertha::Role::Tools>
+(tool calling needs the server started with C<--tool-call-parser>; C<any> (wire
+C<required>) and a named tool also need the grammar backend, xgrammar by default)
 
 =item * C<runtime_metrics> — L<Langertha::Role::Runtime::MetricsPoll>
 

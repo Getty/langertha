@@ -185,6 +185,17 @@ sub model_capability_corrections {
   );
 }
 
+# Kimi's chat/completions schema (platform.kimi.ai/docs/api/chat) has no
+# parallel_tool_calls field; only its separate Responses API lists one. Clear
+# parallel_tool_use engine-wide so it is dropped with a carp rather than sent
+# unhonored (karr k242, docs only).
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{parallel_tool_use};
+  return $caps;
+};
+
 # Kimi's chat/completions speaks the K2.x `thinking` on/off toggle as a
 # top-level object (karr k219; ADR 0023 k209 Update: the toggle is an
 # endpoint's opt-in). Only kimi-k2.6 reaches it: its Profile row maps none ->

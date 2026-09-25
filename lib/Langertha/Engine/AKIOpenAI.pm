@@ -127,6 +127,18 @@ sub api_key_env { 'LANGERTHA_AKI_API_KEY' }
 
 sub _build_supported_operations {[qw( createChatCompletion )]}
 
+# AKI.IO's OpenAI-compatibility page documents no parallel_tool_calls (nor
+# tools). One live probe (2026-09-25, gpt-oss-120b, two independent tools,
+# parallel_tool_calls=false) answered 200 with one tool call: the field is
+# accepted, but one call cannot show it is honored. Clear parallel_tool_use
+# until the docs or more evidence say otherwise (karr k242).
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{parallel_tool_use};
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

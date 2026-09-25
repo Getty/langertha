@@ -61,6 +61,16 @@ sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
 
+# Replicate's OpenAPI (api.replicate.com/openapi.json) has no chat/completions
+# path, so nothing documents parallel_tool_calls: clear parallel_tool_use
+# (karr k242, docs only; the endpoint question itself is karr k243).
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{parallel_tool_use};
+  return $caps;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

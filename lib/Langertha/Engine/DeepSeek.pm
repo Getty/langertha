@@ -71,10 +71,14 @@ sub default_model { 'deepseek-flash' }
 # on the /beta base URL). Clear the json_schema flag so chat_f routes a
 # json_schema request through the forced-tool path rather than shipping a
 # response_format the wire rejects; json_object stays.
+# parallel_tool_calls is not in the chat/completions schema, and DeepSeek's own
+# Responses guide calls it "Ignored (parallel tool calling is always enabled)":
+# clear parallel_tool_use so a parallel_tool_use=0 is dropped with a carp
+# instead of sent and ignored (karr k242, docs only).
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
-  delete $caps->{response_format_json_schema};
+  delete @{$caps}{ qw( response_format_json_schema parallel_tool_use ) };
   return $caps;
 };
 

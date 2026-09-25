@@ -63,6 +63,18 @@ sub _build_supported_operations {[qw(
   createChatCompletion
 )]}
 
+# The router's chat-completion spec lists tools / tool_choice / tool_prompt but
+# not parallel_tool_calls; whether a backend provider honors it varies. Clear
+# parallel_tool_use (the flag means the wire documents the field); the raw
+# parallel_tool_calls kwarg still reaches a backend that honors it
+# (karr k242, docs only).
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete $caps->{parallel_tool_use};
+  return $caps;
+};
+
 has hub_url => (
   is => 'ro',
   isa => 'Str',

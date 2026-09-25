@@ -72,13 +72,16 @@ Revision history for Langertha
       engines and on Ollama and LM Studio native: auto is dropped quietly,
       a forced choice with a warning, and an unsendable tool_choice =>
       'none' leaves the request's tools out instead (warning only when
-      there were tools), so the model cannot call a tool you ruled out. A tool_choice Langertha cannot read passes
-      through only where the engine has a tool_choice at all. Ollama native
-      no longer claims tool_choice_* (its /api/chat has none, like its /v1),
-      so chat_f turns a forced named tool into a format schema and a
-      synthetic tool call there. LM Studio native croaks on a non-empty
-      tools list (an empty list or undef is not sent); use LMStudioOpenAI
-      or LMStudioAnthropic for tool calling.
+      there were tools), so the model cannot call a tool you ruled out. A
+      tool_choice Langertha cannot read passes through only where the
+      engine has a tool_choice at all. Ollama native no longer claims
+      tool_choice_* (its /api/chat has none, like its /v1), so chat_f turns
+      a forced named tool into a format schema and a synthetic tool call
+      there. LM Studio native croaks on a non-empty tools list (an empty
+      list or undef is not sent); use LMStudioOpenAI or LMStudioAnthropic
+      for tool calling. SGLang claims tool_choice_auto and tool_choice_none
+      again, so tool_choice => 'none' is sent there rather than leaving the
+      tools out.
 
     - tool_choice accepts a Langertha::ToolChoice object (ToolChoice->none,
       ->any, ->specific($name), ...) wherever it accepts a string or hash:
@@ -95,7 +98,10 @@ Revision history for Langertha
       included), and an explicit
       parallel_tool_calls argument always passes. Gemini, Ollama native and
       OllamaOpenAI no longer claim parallel_tool_use: their wires have no
-      such knob.
+      such knob. Neither do DeepSeek (always parallel), Moonshot, HuggingFace,
+      Replicate and AKIOpenAI, whose chat APIs do not document the field
+      (AKI.IO accepts it, but nothing shows it is honored); pass
+      parallel_tool_calls directly to send it anyway.
 
     - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
       item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,

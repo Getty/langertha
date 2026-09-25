@@ -114,3 +114,16 @@ flag is cleared (Hetzner) — only `tool_choice` and `parallel_tool_calls` are g
 no tools to withhold drops silently (k246). A flag cleared for want of
 confirmation is re-added once confirmed, and the field comes back with it. Tests: `t/76_tool_choice_capability_gate.t`,
 `t/76_parallel_tool_use_capability_gate.t`.
+
+## Update (k242, k244 — the parallel_tool_use audit; SGLang tool_choice re-added)
+
+`parallel_tool_use` is cleared at layer 2 on DeepSeek (ignored, always parallel), Moonshot,
+the HuggingFace router and AKIOpenAI (not in the chat schema) and Replicate (no chat/completions
+path in its OpenAPI). All docs-derived; AKIOpenAI also had one live probe (2026-09-25,
+`gpt-oss-120b`, two tools, `parallel_tool_calls: false`): HTTP 200, one call — accepted, not
+shown honored, so still cleared. TSystems keeps it: its LLM Server OpenAPI lists the field.
+MoonshotAnthropic keeps it: the shim field is `tool_choice.disable_parallel_tool_use`, outside
+this audit. SGLang gets `tool_choice_auto` / `tool_choice_none` back, the re-add the k239
+Update foresees: `protocol.py` types `tool_choice` as auto|required|none|named and
+`serving_chat` honors none; the docs list only the grammar-backed forms. Pinned in
+`t/78_engine_capabilities.t` and `t/78_model_scoped_capabilities.t`.

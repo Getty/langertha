@@ -85,8 +85,13 @@ ok !$llama->supports('tool_choice_named'), 'llama.cpp clears tool_choice_named (
 ok  $llama->supports('tool_choice_auto'),  'llama.cpp keeps tool_choice_auto (string form parses)';
 
 my $sglang = Langertha::Engine::SGLang->new( url => 'http://x/v1' );
-ok !$sglang->supports('tool_choice_auto'),  'sglang clears tool_choice_auto (undocumented)';
-ok !$sglang->supports('tool_choice_none'),  'sglang clears tool_choice_none (undocumented)';
+# k244: protocol.py types tool_choice as auto|required|none|named (default
+# auto) and serving_chat honors none; the docs list only required/named because
+# those need the grammar backend. Clearing auto/none (k138) was an under-claim.
+ok  $sglang->supports('tool_choice_auto'),  'sglang keeps tool_choice_auto (protocol.py Literal, k244)';
+ok  $sglang->supports('tool_choice_none'),  'sglang keeps tool_choice_none (serving_chat skips parsing, k244)';
+ok  $sglang->supports('tool_choice_any'),   'sglang keeps tool_choice_any (wire required)';
+ok !$sglang->supports('prompt_cache_key'),  'sglang still clears prompt_cache_key (k200)';
 ok  $sglang->supports('tool_choice_named'), 'sglang keeps tool_choice_named (grammar-backed)';
 
 my $hetzner = Langertha::Engine::Hetzner->new( api_key => 'x' );
