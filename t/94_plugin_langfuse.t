@@ -13,6 +13,7 @@ use HTTP::Response;
 
 use Langertha::Plugin::Langfuse;
 use Langertha::Chat;
+use Langertha::Response;
 use Langertha::Embedder;
 
 my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
@@ -30,11 +31,20 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 }
 
 {
+  # What MockUserAgent answers for a request carrying a wire body: a
+  # successful HTTP response whose decoded body is that wire body.
+  package MockHTTPResponse;
+  sub new { bless { wire_body => $_[1] }, $_[0] }
+  sub is_success { 1 }
+  sub wire_body { $_[0]->{wire_body} }
+}
+
+{
   package MockUserAgent;
   sub new { bless {}, $_[0] }
   sub request {
     my ($self, $request) = @_;
-    return $request->wire_body
+    return MockHTTPResponse->new($request->wire_body)
       if ref $request && $request->can('wire_body') && $request->wire_body;
     return 'fake_response';
   }
@@ -418,6 +428,20 @@ subtest 'Chat with Langfuse + tools creates spans for tool calls' => sub {
     }
     sub response_text_content { $_[1]->{final_text} // '' }
     sub parse_response { $_[1] }
+    # The tool loops read each reply through the engine's chat_response, as
+    # chat_f does (karr k321, k322); this mock's "wire" is final_text plus a
+    # tool_calls list of { name, input }.
+    sub _tool_loop_response {
+      my ($self, $http_response) = @_;
+      my $data = $http_response->wire_body;
+      return Langertha::Response->new(
+        content    => $data->{final_text} // '',
+        raw        => $data,
+        tool_calls => [ map { { name => $_->{name}, arguments => $_->{input} // {} } }
+          @{ $data->{tool_calls} // [] } ],
+      );
+    }
+
     sub think_tag_filter { 0 }
 
     __PACKAGE__->meta->make_immutable;

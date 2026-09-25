@@ -17,6 +17,16 @@ Revision history for Langertha
       to another scheme is not followed. Restricting private hosts (SSRF)
       remains the caller's job.
 
+    - The MCP tool loops (chat_with_tools_f, and Langertha::Chat's
+      simple_chat_with_tools and simple_chat_with_tools_f) fail on a response
+      whose body reports an error, with the same message chat_f gives, instead
+      of returning an empty answer. A failed request in the sync Chat loop now
+      reports "tool chat request failed", like the async loops.
+
+    - The final text of the MCP tool loops is the text chat_f returns for the
+      same reply: Gemini thought parts stay out of it, and a Mistral
+      content-chunk list comes back as text instead of an array reference.
+
     - Langertha::Embedder and Langertha::ImageGen have simple_embedding_result
       and simple_image_result (each with an _f variant): the wrapper's
       overrides and plugin hooks around the engine's CallResult. The

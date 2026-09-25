@@ -5,6 +5,7 @@ use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );
 use JSON::MaybeXS;
+use Scalar::Util qw( blessed );
 use Log::Any qw( $log );
 use Langertha::Tool;
 use Langertha::ToolCall;
@@ -441,6 +442,23 @@ L</tool_wire_format>. For C<hermes>, strips C<E<lt>tool_callE<gt>> tags.
 
 =cut
 
+# A result's tool_call is a Langertha::ToolCall (the tool loops read
+# Response.tool_calls, ADR 0003) or the raw wire structure response_tool_calls
+# locates (langertha-raider). The id / name the result block pairs with, from
+# either -- karr k321.
+sub _result_call_id {
+  my ( $tc ) = @_;
+  return $tc->id if blessed $tc;
+  return $tc->{call_id} // $tc->{id} // '';
+}
+
+sub _result_call_name {
+  my ( $tc ) = @_;
+  return $tc->name if blessed $tc;
+  return $tc->{functionCall}{name} // '' if ref $tc->{functionCall} eq 'HASH';
+  return $tc->{name} // '';
+}
+
 sub format_tool_results {
   my ( $self, $data, $results ) = @_;
   my $fmt = $self->tool_wire_format;
@@ -448,7 +466,7 @@ sub format_tool_results {
   if ( $fmt eq 'anthropic' ) {
     my @blocks = map {
       Langertha::ToolResult->new(
-        id       => ( $_->{tool_call}{id} // '' ),
+        id       => _result_call_id( $_->{tool_call} ),
         content  => ( $_->{result}{content} // [] ),
         is_error => ( $_->{result}{isError} ? 1 : 0 ),
       )->to('anthropic')
@@ -462,7 +480,7 @@ sub format_tool_results {
   if ( $fmt eq 'gemini' ) {
     my @parts = map {
       Langertha::ToolResult->new(
-        name    => ( $_->{tool_call}{functionCall}{name} // '' ),
+        name    => _result_call_name( $_->{tool_call} ),
         content => ( $_->{result}{content} // [] ),
       )->to('gemini')
     } @$results;
@@ -522,7 +540,7 @@ sub format_tool_results {
       @echo,
       map {
         Langertha::ToolResult->new(
-          id      => ( $_->{tool_call}{call_id} // $_->{tool_call}{id} // '' ),
+          id      => _result_call_id( $_->{tool_call} ),
           content => ( $_->{result}{content} // [] ),
         )->to('responses')
       } @$results,
@@ -537,7 +555,7 @@ sub format_tool_results {
       map {
         { role    => 'tool',
           content => Langertha::ToolResult->new(
-            name    => ( $_->{tool_call}{name} // '' ),
+            name    => _result_call_name( $_->{tool_call} ),
             content => ( $_->{result}{content} // [] ),
           )->to( 'hermes', response_tag => $res_tag ) }
       } @$results,
@@ -566,7 +584,7 @@ sub format_tool_results {
     \%echo,
     map {
       Langertha::ToolResult->new(
-        id      => ( $_->{tool_call}{id} // '' ),
+        id      => _result_call_id( $_->{tool_call} ),
         content => ( $_->{result}{content} // [] ),
       )->to('openai')
     } @$results,
@@ -591,7 +609,29 @@ straight onto the conversation with
 C<< push @$conversation, $engine->format_tool_results(...) >>, so a single
 arrayref would land as one bogus conversation element.
 
+Each result's C<tool_call> may be a L<Langertha::ToolCall> (what the tool
+loops pass) or the raw structure L</response_tool_calls> located.
+
 =cut
+
+# One tool-loop turn's reply, read by the parser chat_f uses: chat_response
+# croaks on an error-in-body 200 exactly as chat_f does (k301/k311/k317) and
+# yields the same final text (Gemini thought parts out, content-chunk arrays
+# joined, think tags filtered) -- karr k321, k322. The calls to run are
+# Response.tool_calls (ADR 0003); hermes calls ride in the text and are lifted
+# as chat_f lifts them, unless the engine's chat_response already did (AKI
+# native). ->raw stays the wire body the assistant echo is built from.
+# Shared by chat_with_tools_f and both Langertha::Chat tool loops.
+sub _tool_loop_response {
+  my ( $self, $http_response ) = @_;
+  my $response = $self->chat_response($http_response);
+  if ( $self->tool_wire_format eq 'hermes'
+       && !( $response->has_tool_calls && @{ $response->tool_calls } ) ) {
+    my ( $clean, $calls ) = $self->_hermes_split_text( $response->content );
+    $response = $response->clone_with( content => $clean, tool_calls => $calls ) if @$calls;
+  }
+  return $response;
+}
 
 async sub chat_with_tools_f {
   my ( $self, @messages ) = @_;
@@ -630,22 +670,17 @@ async sub chat_with_tools_f {
       die $self->_request_failed_message( $response, 'tool chat request' );
     }
 
-    my $data = $self->parse_response($response);
-    my $tool_calls = $self->response_tool_calls($data);
+    my $reply = $self->_tool_loop_response($response);
+    my $data  = $reply->raw;
+    my @tool_calls = $reply->has_tool_calls ? @{ $reply->tool_calls } : ();
 
     # No tool calls means the LLM is done — return final text
-    unless (@$tool_calls) {
-      my $text = $self->response_text_content($data);
-      if ($self->think_tag_filter) {
-        ($text) = $self->filter_think_content($text);
-      }
-      return $text;
-    }
+    return $reply->content unless @tool_calls;
 
     # Execute each tool call via the appropriate MCP server
     my @results;
-    for my $tc (@$tool_calls) {
-      my ( $name, $input ) = $self->extract_tool_call($tc);
+    for my $tc (@tool_calls) {
+      my ( $name, $input ) = ( $tc->name, $tc->arguments );
 
       $log->debugf("[%s] Calling tool: %s", ref $self, $name);
 
@@ -679,6 +714,11 @@ L<Langertha::Role::Chat/simple_chat>. Gathers tools from all L</mcp_servers>,
 sends the request, executes any tool calls returned by the LLM, and repeats
 until the LLM returns a final text response or L</tool_max_iterations> is
 exceeded. Returns a L<Future> that resolves to the final text response.
+
+Each reply is read by the engine's C<chat_response>, the parser
+L<Langertha::Role::Chat/chat_f> uses: a response whose body reports an error
+fails with the text C<chat_f> croaks, the calls run are the reply's
+L<Langertha::Response/tool_calls>, and the final text is its C<content>.
 
 =cut
 

@@ -315,23 +315,22 @@ sub _tool_loop_iteration {
   my $request = $engine->build_tool_chat_request($conversation, $formatted_tools, $self->_extra);
 
   my $response = $engine->user_agent->request($request);
+  # The same failure text and rate-limit update as the async loop (karr k312).
+  die $self->_failed_message( $engine, $response, 'tool chat request' )
+    unless $response->is_success;
 
-  # The tool loop needs the RAW decoded wire body, not the engine's
-  # Langertha::Response: response_tool_calls, response_text_content and
-  # format_tool_results all walk the provider's own block list
-  # (content[] / choices[] / message / candidates[] / output[]).
-  # Role::HTTP::generate_http_request ALWAYS installs a response_call, and every
-  # chat_response flattens the wire body into a Langertha::Response whose
-  # ->{content} is a plain string -- so going through response_call here dropped
-  # the tool_use blocks and then blew up on the flattened text (karr #81).
-  # Same choice as the async sibling simple_chat_with_tools_f and
-  # Langertha::Role::Tools::chat_with_tools_f.
-  my $data = $engine->parse_response($response);
+  # The reply is read by the parser chat_f uses (karr k321, k322): an
+  # error-in-body 200 croaks as it does there, and the final text is chat_f's.
+  # The calls to run are Response.tool_calls (ADR 0003). The hook and the
+  # assistant echo (format_tool_results) still get the RAW decoded wire body
+  # -- ->raw, the provider's own block list, never the flattened Response
+  # (karr #81).
+  my $reply = $engine->_tool_loop_response($response);
 
   # Plugin hook: after LLM response
-  $data = $self->_run_plugin_after_llm_response($data, $iteration)->get;
+  my $data = $self->_run_plugin_after_llm_response($reply->raw, $iteration)->get;
 
-  return ($conversation, $data);
+  return ($conversation, $data, $reply);
 }
 
 sub simple_chat_with_tools {
@@ -347,24 +346,17 @@ sub simple_chat_with_tools {
   my $conversation = $self->_build_messages(@messages);
 
   for my $iteration (1..$self->tool_max_iterations) {
-    ($conversation, my $data) = $self->_tool_loop_iteration(
+    ($conversation, my $data, my $reply) =$self->_tool_loop_iteration(
       $engine, $conversation, $formatted_tools, $iteration,
     );
 
-    my $tool_calls = $engine->response_tool_calls($data);
-
-    unless (@$tool_calls) {
-      my $text = $engine->response_text_content($data);
-      if ($engine->think_tag_filter) {
-        ($text) = $engine->filter_think_content($text);
-      }
-      return $text;
-    }
+    my @tool_calls = $reply->has_tool_calls ? @{ $reply->tool_calls } : ();
+    return $reply->content unless @tool_calls;
 
     # Execute each tool call
     my @results;
-    for my $tc (@$tool_calls) {
-      my ( $name, $input ) = $engine->extract_tool_call($tc);
+    for my $tc (@tool_calls) {
+      my ( $name, $input ) = ( $tc->name, $tc->arguments );
 
       $log->debugf("[Chat] Calling tool: %s", $name);
 
@@ -411,6 +403,13 @@ returns a final text response. Fires plugin hooks at each step:
 C<plugin_before_llm_call>, C<plugin_after_llm_response>,
 C<plugin_before_tool_call>, and C<plugin_after_tool_call>.
 
+Each reply is read by the engine's C<chat_response>, as in
+L<Langertha::Role::Chat/chat_f>: a response whose body reports an error fails
+with the same text, the final text is the reply's C<content>, and the calls
+run are its L<Langertha::Response/tool_calls>. C<plugin_after_llm_response>
+still receives the raw decoded wire body. A failed request dies with
+C<tool chat request failed>, in the sync and the async loop alike.
+
 =cut
 
 async sub simple_chat_with_tools_f {
@@ -433,22 +432,16 @@ async sub simple_chat_with_tools_f {
       die $self->_failed_message( $engine, $response, 'tool chat request' );
     }
 
-    my $data = $engine->parse_response($response);
-    $data = await $self->_run_plugin_after_llm_response($data, $iteration);
+    # As the sync loop: chat_f's parser, the raw body to the hook (k321, k322).
+    my $reply = $engine->_tool_loop_response($response);
+    my $data = await $self->_run_plugin_after_llm_response($reply->raw, $iteration);
 
-    my $tool_calls = $engine->response_tool_calls($data);
-
-    unless (@$tool_calls) {
-      my $text = $engine->response_text_content($data);
-      if ($engine->think_tag_filter) {
-        ($text) = $engine->filter_think_content($text);
-      }
-      return $text;
-    }
+    my @tool_calls = $reply->has_tool_calls ? @{ $reply->tool_calls } : ();
+    return $reply->content unless @tool_calls;
 
     my @results;
-    for my $tc (@$tool_calls) {
-      my ( $name, $input ) = $engine->extract_tool_call($tc);
+    for my $tc (@tool_calls) {
+      my ( $name, $input ) = ( $tc->name, $tc->arguments );
 
       my @plugin_tc = await $self->_plugin_pipeline_tool_call($name, $input);
       unless (@plugin_tc) {
