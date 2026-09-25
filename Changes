@@ -20,6 +20,14 @@ Revision history for Langertha
       a conversation with previous_response_id => $response->id, or use
       ->openai / ->anthropic for client-side history.
 
+    - Gemini sends array message content as parts, with or without a
+      Content object in it: strings and type text parts become text
+      parts, an image_url part becomes inline_data, native Gemini parts
+      (text, inline_data, fileData, ...) pass through, and any other
+      typed part croaks before the request. A system message with array
+      content goes into systemInstruction as its text.
+
+
     - Langertha::Pricing rules take optional cached_input_per_million and
       cache_write_per_million. With either set, cost_for prices each
       input token once: cache reads and writes at their rates (a missing

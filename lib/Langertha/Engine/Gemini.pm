@@ -274,7 +274,10 @@ sub chat_request {
     if ($message->{role} eq 'system') {
       # Gemini uses systemInstruction field for system messages
       $system_instruction .= "\n\n" if $system_instruction;
-      $system_instruction .= $message->{content};
+      # Array content arrives as parts (Role::Chat, karr k269); keep its text.
+      $system_instruction .= $message->{parts}
+        ? join( "\n", map { $_->{text} // () } @{ $message->{parts} } )
+        : $message->{content};
     } elsif ($message->{parts}) {
       # Already in Gemini format (e.g. from format_tool_results)
       push @gemini_contents, $message;
@@ -468,7 +471,10 @@ sub chat_stream_request {
   for my $message (@{$messages}) {
     if ($message->{role} eq 'system') {
       $system_instruction .= "\n\n" if $system_instruction;
-      $system_instruction .= $message->{content};
+      # Array content arrives as parts (Role::Chat, karr k269); keep its text.
+      $system_instruction .= $message->{parts}
+        ? join( "\n", map { $_->{text} // () } @{ $message->{parts} } )
+        : $message->{content};
     } elsif ($message->{parts}) {
       # Already in Gemini format (e.g. from format_tool_results)
       push @gemini_contents, $message;

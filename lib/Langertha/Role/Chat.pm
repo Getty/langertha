@@ -248,9 +248,11 @@ sub _normalize_content_blocks {
       last;
     }
   }
-  return $msg unless $needs_convert;
-
   my $fmt    = $self->content_format;
+  # Gemini has no string-or-array content field: every array becomes parts,
+  # Content object or not (karr k269).
+  return $msg unless $needs_convert || $fmt eq 'gemini';
+
   my $method = "to_$fmt";
   my $role   = $msg->{role} // 'user';
   # Only the URL-capable formats take the inline switch; gemini / ollama /
@@ -293,6 +295,9 @@ sub _normalize_content_blocks {
         ? { text => $_ }
         : { type => $text_type, text => $_ };
     }
+    elsif ( $fmt eq 'gemini' ) {
+      $self->_gemini_part( $_, $method );
+    }
     else {
       $_;
     }
@@ -302,6 +307,31 @@ sub _normalize_content_blocks {
     return { role => ( $role eq 'assistant' ? 'model' : $role ), parts => \@blocks };
   }
   return { %$msg, content => \@blocks };
+}
+
+# One hash part of a Gemini message. A part without `type` is already native
+# (text, inline_data / inlineData, fileData / file_data, functionCall, ...) and
+# passes through; the OpenAI-style text and image_url parts are translated, an
+# image through Content::Image so it gets the same inline_data a Content object
+# gets. Any other typed part has no Gemini counterpart and croaks (karr k269).
+sub _gemini_part {
+  my ( $self, $part, $method ) = @_;
+  return $part unless ref $part eq 'HASH' && defined $part->{type};
+  my $type = $part->{type};
+  return { text => $part->{text} } if $type eq 'text' && defined $part->{text};
+  if ( $type eq 'image_url' ) {
+    my $url = ref $part->{image_url} eq 'HASH' ? $part->{image_url}{url} : $part->{image_url};
+    if ( defined $url && length $url ) {
+      require Langertha::Content::Image;
+      my $img = $url =~ m{\Adata:([^;,]+);base64,(.*)\z}s
+        ? Langertha::Content::Image->from_base64( $2, media_type => $1 )
+        : Langertha::Content::Image->from_url($url);
+      return $self->_content_block( $img, $method );
+    }
+  }
+  croak ref($self).": a Gemini message content part may be a string, a native Gemini part, "
+    . "a { type => 'text' } or { type => 'image_url' } hash or a Langertha::Content object; "
+    . "got type '$type'";
 }
 
 # Serializes one Langertha::Content block. A URL-only image that has to be
