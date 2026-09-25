@@ -54,7 +54,10 @@ B<The request wins.> A default is left out when the request's own C<tools>
 already carry a server tool of the same kind: the same C<type>, and for
 C<mcp> the same C<server_label> as well. So a per-request
 C<< { type => 'web_search', search_context_size => 'high' } >> replaces a
-default C<web_search> instead of sending it twice.
+default C<web_search> instead of sending it twice. The kind is the C<type>
+only, not the tool's target: a request C<file_search> over other
+C<vector_store_ids> also replaces a default C<file_search>, so pass both
+stores in the request when both should be searched.
 
 Defaults to an empty ArrayRef.
 
