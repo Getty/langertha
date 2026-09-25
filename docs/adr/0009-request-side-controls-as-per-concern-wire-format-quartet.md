@@ -203,3 +203,51 @@ silently drop it. The request body changes only where `prompt_cache_key` was cle
 the provider manifest (ADR 0029) reads the same registry, those engines' model entries stop
 publishing `prompt_cache_key` too. ADR 0015's direction-pair table still holds per family;
 this refines "all subclasses of `OpenAIBase`" per engine.
+
+## Update (k204 — the reasoning concern follows the registry too; the engine stubs retire)
+
+After k200 the quartet stated "this engine takes no such control" two ways: `prompt_cache_key`
+through the registry gate in its role, reasoning through empty `reasoning_kwargs_for` stubs on
+`MiniMax` and `Moonshot`, each sitting next to an `around engine_capabilities` that already
+cleared `reasoning_effort`. The fact now has one home, the registry.
+`Role::ReasoningEffort::reasoning_kwargs_for` returns an empty list when the engine advertises
+**neither `reasoning_effort` nor `thinking_budget`**, and the two stubs are gone. Point 5's
+"engines stub it to an empty list" is retired. The Perplexity stub it also names had already gone:
+Perplexity now keeps `reasoning_effort` and sends `reasoning.effort` over the `responses` wire.
+
+**Why both flags, not `reasoning_effort` alone.** The concern has two request flags. Only three
+places clear `reasoning_effort`, all at layer 2: `MiniMax` and `Moonshot` for every model, and
+`Gemini` for `gemini-2.5-*`. No `model_capability_corrections` entry (layer 3) touches it today.
+Gemini 2.5 clears `reasoning_effort` because it takes an integer `thinkingBudget` instead, and it
+advertises `thinking_budget`. A gate on `reasoning_effort` alone would have dropped that
+accepted `thinkingBudget`, which would be a regression. It would also have turned the deliberate
+`effort`-on-2.5 croak of `Langertha::Reasoning::BUILD` (ADR 0023) into a silent drop. Gated on
+"neither flag", Gemini 2.5 is untouched: the concern is live there, and the value object stays
+responsible for rejecting the wrong sub-control loudly. MiniMax and Moonshot advertise neither
+flag, so the gate drops everything the stubs dropped, `thinking_budget` included, which would
+otherwise croak in `BUILD`.
+
+**The k200 hazard does not apply.** k200 left `prompt_cache` ungated because its flag is cleared
+family-wide on `OpenAIBase` while `cache_wire_format` is a public override (a proxy in front of
+Claude). `reasoning_effort` is never cleared on a dialect base, only on the two leaf engines and
+one Gemini model family. Their stubs ignored a `reasoning_wire_format` override too, so the gate
+drops nothing new.
+
+**`DeepSeek::reasoning_kwargs_for` stays.** It does more than gate: it picks the placement per
+model (V4 flat `reasoning_effort` vs V3.2 `thinking:{type:enabled}`) and clamps the V4 value set.
+DeepSeek never clears the flag, so bypassing the role's gate costs nothing today. A future
+DeepSeek flag clear must add the gate to that override.
+
+**The drop stays silent.** The stubs were silent, and so is the k200 gate. ADR 0025's
+temperature carp covers a value the model would reject with a 400 while the caller cannot see
+why. Here the engine publicly declares, through `supports('reasoning_effort')`, that it takes no
+reasoning control, and nothing would error. Adding a carp would be a new warning on every request
+for users who set the attribute once. That is a behavior change a pure consolidation should not
+carry, and it is open for its own ticket if wanted.
+
+The change is behavior-preserving. `t/47_reasoning_capability_gate.t` pins the canonical chat and
+stream request bodies (or the croak) of every engine that composes the role, across
+representative models and every reasoning setting (1118 rows, captured from the stub-based code
+before the change, byte-identical after). It also proves that the wire follows the flag in both
+directions: a MiniMax subclass that re-asserts `reasoning_effort` emits it, and an OpenAI subclass
+that clears it stops emitting without a stub. No `Changes` entry, since no body changed.
