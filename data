@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T01:49:12Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T01:49:12Z
+created: 2026-09-25T01:26:36Z
+id: 204
+priority: low
+started: 2026-09-25T01:33:22Z
+status: done
+tags:
+- capabilities
+- wire-format
+title: 'Pick one pattern for ''engine does not take this control'': registry gate
+  vs per-engine kwargs stubs'
+updated: 2026-09-25T01:49:12Z
+---
+
+Since k200, Role::PromptCache::prompt_cache_kwargs_for drops prompt_cache_key when supports() is false (registry-driven gate in the shared role). Reasoning still uses per-engine reasoning_kwargs_for stubs next to a cleared reasoning_effort flag (MiniMax.pm, Moonshot.pm). Two mechanisms express the same fact. Decide whether reasoning_kwargs_for adopts the supports-gate and the stubs retire, or document why the two concerns differ. Mind DeepSeek::reasoning_kwargs_for (model-gated override, not a stub) and the cache_wire_format override lesson from the k200 review (gate only a flag that is not cleared family-wide against a public wire-format attribute). Owning ADR: 0009 (k200 Update).
+
+2026-09-25 01:43 Decision (A, narrowed): Role::ReasoningEffort::reasoning_kwargs_for returns () unless supports('reasoning_effort') || supports('thinking_budget'); MiniMax/Moonshot stubs removed. A reasoning_effort-only gate would regress Gemini 2.5 (clears reasoning_effort per model but takes thinkingBudget; its effort croak from ADR 0023 would turn silent). No layer-3 correction clears reasoning_effort today; the only clears are layer 2 (MiniMax, Moonshot, Gemini 2.5). DeepSeek override stays (placement + clamp) and bypasses the gate, which is harmless while it never clears the flag. The drop stays silent, like the stubs and k200. Byte-identity: t/47_reasoning_capability_gate.t has 1118 golden rows captured before the change. Commits 7c13b04 (refactor), 56b1682 (ADR 0009 k204 Update). prove -lr green, live tests skipped.
