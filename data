@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T21:27:24Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T21:27:24Z
+created: 2026-09-25T20:27:54Z
+id: 308
+priority: high
+started: 2026-09-25T21:06:01Z
+status: done
+tags:
+- openai
+- deprecation
+- images
+- transcription
+title: 'OpenAI defaults deprecated: gpt-image-1 -> gpt-image-2, whisper-1 -> gpt-transcribe;
+  GPT image models reject response_format'
+updated: 2026-09-25T21:27:24Z
+---
+
+From k297 advisor (2026-09-25, OpenAI deprecations page): gpt-image-1/-1-mini/-1.5 removed 2026-12-01 (replacement gpt-image-2; gpt-image-2.5-flare/sunburst released 2026-09-08); whisper-1, gpt-4o-transcribe, gpt-4o-mini-transcribe removed 2027-02-26 (replacement gpt-transcribe). GPT image models always return b64 and 400 on response_format. Change: default_image_model gpt-image-2, default_transcription_model gpt-transcribe (OpenAICompatible.pm ~125 + OpenAI->whisper), image_request never sends response_format for gpt-image-*, image_response handles b64_json-only; POD ~747 fix; gpt-transcribe accepts only json response_format -> don't default verbose_json/srt. Tests.
