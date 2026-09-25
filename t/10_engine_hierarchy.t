@@ -468,6 +468,7 @@ test_openai_cloud_engine(
   env_var => 'LANGERTHA_MISTRAL_API_KEY',
   has_tools => 1,
   has_embedding => 1,
+  has_transcription => 1,
   has_response_format => 1,
 );
 is(Langertha::Engine::Mistral->new(api_key => 'k')->default_model, 'mistral-small-latest', 'Mistral default_model');

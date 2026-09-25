@@ -10,6 +10,7 @@ extends 'Langertha::Engine::OpenAIBase';
 
 with map { 'Langertha::Role::'.$_ } qw(
   Embedding
+  Transcription
   Tools
 );
 
@@ -29,6 +30,16 @@ with map { 'Langertha::Role::'.$_ } qw(
     my $vector = $mistral->simple_embedding($content);
     # async: await $mistral->simple_embedding_f($content)
 
+    # Voxtral transcription
+    my $text = $mistral->simple_transcription('/path/to/audio.mp3');
+    my $result = $mistral->simple_transcription_result('/path/to/audio.mp3',
+        timestamp_granularities => ['segment'],
+        diarize                 => 'true',
+        context_bias            => [qw( Langertha Voxtral )],
+    );
+    print "$_->{speaker_id}: $_->{text}\n" for @{ $result->{segments} };
+    # async: await $mistral->simple_transcription_f(...)
+
 =head1 DESCRIPTION
 
 Provides access to Mistral AI's models via their API. Composes
@@ -38,8 +49,11 @@ L<Langertha::Role::OpenAICompatible> with Mistral's endpoint
 Popular models: C<mistral-small-latest> (default, fast), C<mistral-large-latest>
 (most capable, 675B parameters), C<codestral-latest> (code generation),
 C<devstral-latest> (development workflows), C<pixtral-large-latest> (vision).
-Supports chat, embeddings (default embedding model C<mistral-embed>), and
-tool calling; transcription is not available.
+Supports chat, embeddings (default embedding model C<mistral-embed>), tool
+calling, and audio transcription with Voxtral: C</v1/audio/transcriptions>,
+default model C<voxtral-mini-latest>, see L</transcription_request>. The audio
+is given as for every engine: a path, C<\$bytes> or a filehandle (see
+L<Langertha::Role::Transcription/transcription_file_part>).
 
 Dynamic model listing via C<list_models()>. Get your API key at
 L<https://docs.mistral.ai/getting-started/quickstart/> and set
@@ -111,6 +125,64 @@ sub embedding_operation_id { 'embeddings_v1_embeddings_post' }
 # served here (k291).
 sub default_embedding_model { 'mistral-embed' }
 
+sub transcription_operation_id { 'audio_api_v1_transcriptions_post' }
+
+sub default_transcription_model { 'voxtral-mini-latest' }
+
+# Mistral's list-valued form fields go out as one part per element under the
+# `name[]` key, generate_multipart_body's multi-valued convention (k286); an
+# ArrayRef under the plain spec name would be read as a file spec and its
+# first element opened as a path. -- karr k309
+around transcription_request => sub {
+  my ( $orig, $self, $file, %extra ) = @_;
+  for my $field (qw( timestamp_granularities context_bias )) {
+    next unless ref $extra{$field} eq 'ARRAY';
+    $extra{"${field}[]"} = delete $extra{$field};
+  }
+  return $self->$orig( $file, %extra );
+};
+
+=method transcription_request
+
+    my $request = $mistral->transcription_request($audio,
+        language                => 'en',
+        timestamp_granularities => ['segment'],
+        diarize                 => 'true',
+        context_bias            => [qw( Langertha Voxtral )],
+    );
+
+Builds the Voxtral transcription request: C<POST /v1/audio/transcriptions> as
+C<multipart/form-data>, with C<transcription_model> (default:
+C<voxtral-mini-latest>). C<filename> in C<%extra> names the upload; the other
+pairs are sent as form fields:
+
+=over
+
+=item * C<timestamp_granularities> - C<segment> and/or C<word>; the
+C<segments> of the answer then carry C<start> and C<end>.
+
+=item * C<diarize> - C<'true'> labels each segment with a C<speaker_id>. Form
+fields are text, so pass the string rather than a JSON boolean object.
+
+=item * C<context_bias> - words or names the model should favour, each
+without commas or whitespace.
+
+=item * C<language>, C<temperature>.
+
+=back
+
+C<timestamp_granularities> and C<context_bias> take an ArrayRef and send one
+part per element under the C<[]> key (C<timestamp_granularities[]>, the
+multi-valued form field convention of
+L<Langertha::Role::HTTP/generate_multipart_body>); passing the C<[]> key
+yourself works too. Get the whole answer (C<text>, C<language>, C<segments>,
+C<usage>) with
+L<Langertha::Role::Transcription/simple_transcription_result>, or the text
+alone with L<Langertha::Role::Transcription/simple_transcription>; both have
+C<_f> variants.
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso
@@ -122,6 +194,10 @@ __PACKAGE__->meta->make_immutable;
 =item * L<https://mistral.ai/models> - Official Mistral models documentation
 
 =item * L<Langertha::Role::OpenAICompatible> - OpenAI API format role
+
+=item * L<Langertha::Role::Transcription> - Transcription role (Voxtral)
+
+=item * L<https://docs.mistral.ai/api/endpoint/audio/transcriptions> - Mistral transcription API
 
 =item * L<Langertha::Engine::DeepSeek> - Another OpenAI-compatible engine
 

@@ -37,6 +37,11 @@ Revision history for Langertha
       a Responses API body with an error and no output. A blocked Gemini
       prompt ends a stream with its blockReason as finish_reason.
 
+    - Mistral transcribes audio with Voxtral (voxtral-mini-latest by
+      default): simple_transcription, simple_transcription_result and their
+      _f variants, with diarize, context_bias and timestamp_granularities
+      passed through.
+
     - A chat answer without a choice is no longer an empty Response: an
       OpenAI-compatible 200 body with an error object (as gateways such as
       OpenRouter send) or no choices croaks, naming the engine and the error,
