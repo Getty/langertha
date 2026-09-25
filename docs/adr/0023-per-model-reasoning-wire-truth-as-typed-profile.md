@@ -297,7 +297,11 @@ digits and lost two hand-kept assumptions.
   A letter suffix (`gpt-5.1-codex`, `gpt-5.5-pro`) still belongs to its family. Curating a
   two-digit generation later means adding its own row. The undotted `\Agpt-6` and `\Ao\d` rows
   carry the same `(?!\d)` guard, so `gpt-60` and `o10` are unknown ids while `gpt-6-astra`,
-  `gpt-6.1` and `o3-mini` keep their families.
+  `gpt-6.1` and `o3-mini` keep their families. k201 closes the gap after the dot: the `gpt-6` row
+  becomes `\Agpt-6(?!\d)(?!\.\d\d)`, so `gpt-6.10` / `gpt-6.100` are unknown ids, while
+  single-digit `gpt-6.N` deliberately keeps the full doc-sourced gpt-6 ladder (no `none`/`minimal`,
+  chat `max` dropped) instead of a gpt-5-style uncurated passthrough row, which would send what
+  the generation is documented to reject and would be shadowed by the gpt-6 row anyway.
 - **Chat carve-outs are generated per digit.** The hand-written mapping (`gpt-5.[24]-chat` →
   gpt-5.2, a generic `gpt-5.\d+-chat` row → gpt-5.3) is replaced by `gpt-5-chat` → `gpt-5` plus
   one `gpt-5.N-chat` → `gpt-5.N` carve-out for each N in 0..9, each cloned from the profile its own
