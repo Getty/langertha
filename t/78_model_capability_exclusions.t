@@ -268,4 +268,24 @@ for my $case (
     'Groq: the json_object-only request reached the transport' );
 }
 
+# ======================================================================
+# EMPTY chat_model (karr k223): the exclusion walker matches an empty chat_model
+# as '' exactly like model_capability_corrections does (ADR 0019 k209 Update),
+# so the Groq / Cerebras all-models qr// rule still holds for model => ''. Before
+# k223 the walker skipped an empty id and the request reached the provider,
+# which 400s the combination anyway.
+# ======================================================================
+for my $class (qw( Langertha::Engine::Groq Langertha::Engine::Cerebras )) {
+  my $engine = $class->new( api_key => 'apikey', model => '', _async_http => mock() );
+  is( $engine->chat_model, '', "$class: model => '' leaves chat_model empty" );
+  my ( $ok, $err ) = run( sub { $engine->chat_f(
+    messages        => ['weather?'],
+    tools           => [$TOOL],
+    response_format => $JSON_SCHEMA_RF,
+  ) });
+  ok( !$ok, "$class (model ''): tools + json_schema croaks, the qr// rule matches ''" );
+  is( $engine->_async_http->request_count, 0,
+    "$class (model ''): the request never reached the transport" );
+}
+
 done_testing;

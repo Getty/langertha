@@ -2,6 +2,10 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Groq and Cerebras with model => '' now croak on tools combined with a
+      response_format, as they do for every named model, instead of sending
+      the request the provider rejects.
+
     - MoonshotAnthropic on kimi-k3 sends a json_schema response_format
       natively as output_config.format, like first-party Anthropic, instead
       of a synthetic tool with a forced tool_choice; it can now be streamed.

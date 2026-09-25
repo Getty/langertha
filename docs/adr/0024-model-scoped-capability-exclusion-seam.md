@@ -197,3 +197,16 @@ below is live, so no earlier "keep it / doc-based reconciliation" reading stands
   seam mechanism, and ADR 0021's reaffirmed premise, are unchanged.
 
 karr #184 is closed by this decision.
+
+## Update (k223 — an empty `chat_model` is matched as `''`, as the corrections table does)
+
+`_check_capability_exclusions` used to return early when `chat_model` was undef or empty. Since
+ADR 0019's k209 Update, `_apply_model_capability_corrections` matches that case as `''` instead,
+so the two model-scoped tables disagreed: `Groq` / `Cerebras` with `model => ''` skipped their
+all-models `qr//` rule and sent `tools` + `response_format` to a provider that 400s it. The
+walker now reads `chat_model // ''` like the corrections table and still returns early only for
+a consumer without a `chat_model` method. Only a matcher that accepts the empty string fires on
+`''` (the engine-wide `qr//` rules do; a family regex or an exact id does not), so no
+model-specific rule starts firing for a missing model. The seam's contract is otherwise
+unchanged. `t/78_model_capability_exclusions.t` asserts the croak for `model => ''` on both
+engines.

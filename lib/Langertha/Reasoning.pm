@@ -170,6 +170,11 @@ has _profile => (
 # A thinking-toggle row is the wire truth of the endpoint that opted in
 # (thinking_toggle), not of the model id: on every other endpoint it is
 # invisible and the id resolves like any unlisted id (review I1).
+# The fallback is the provider default, for_model(''), not the next matching
+# non-toggle row. That is the same thing only while no non-toggle row matches
+# an id a toggle row matches (true today: MiniMax-M2/M3 and the kimi-k2.6 /
+# kimi-k2.7-code rows overlap no other row). A broader row covering those ids
+# would have to be re-resolved here, skipping has_thinking_on rows (karr k223).
 sub _build_profile {
   my ( $self ) = @_;
   my $profile = Langertha::Reasoning::Profile->for_model(

@@ -493,8 +493,11 @@ sub _check_capability_exclusions {
   return unless @rules;
   # chat_model is the model that actually carries tools / response_format on the
   # wire; guard for the rare consumer that has no model surface at all.
-  my $model = $self->can('chat_model') ? $self->chat_model : undef;
-  return unless defined $model && length $model;
+  # An empty or undef chat_model is matched as '', the same as
+  # model_capability_corrections (karr k223), so an all-models qr// rule
+  # (Groq, Cerebras) still holds for model => ''.
+  return unless $self->can('chat_model');
+  my $model = $self->chat_model // '';
   while ( @rules >= 2 ) {
     my ( $matcher, $rule ) = splice @rules, 0, 2;
     my $hit = ref $matcher eq 'Regexp' ? ( $model =~ $matcher )
