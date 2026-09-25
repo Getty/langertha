@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-25T23:31:39Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T23:31:39Z
+created: 2026-09-25T22:48:37Z
+id: 330
+priority: low
+started: 2026-09-25T22:53:25Z
+status: done
+tags:
+- tools
+- gemini
+- advisor
+title: Gemini tool declarations send MCP JSON Schema in parameters ($schema, additionalProperties)
+  instead of parametersJsonSchema
+updated: 2026-09-25T23:31:39Z
+---
+
+Tool.pm to_gemini puts input_schema into functionDeclarations[].parameters, which is Gemini's OpenAPI-subset Schema proto. MCP inputSchemas routinely carry $schema, additionalProperties, $ref/$defs, const (zod-to-json-schema output). Unknown proto fields are rejected with 400 ("Unknown name \"$schema\"..."). Gemini now accepts full JSON Schema via parametersJsonSchema; the engine already uses responseJsonSchema for structured output, and Tool->from_gemini already reads parametersJsonSchema inbound.
+
+Repro: Gemini->format_tools([{name:echo,inputSchema:{$schema:"http://json-schema.org/draft-07/schema#",type:object,additionalProperties:false,...}}]) -> parameters carries $schema and additionalProperties verbatim.
+
+Fix: emit parametersJsonSchema (advisor to confirm model coverage), or strip unsupported keywords for parameters. Request-building test in t/46_gemini_requests.t.
+
+2026-09-25 22:52 llm-advisor (2026-09-26, discovery docs + google-genai source, no live call): v1beta FunctionDeclaration props = parameters, parametersJsonSchema, response, responseJsonSchema, name, description, behavior; parametersJsonSchema 'Describes the parameters to the function in JSON Schema format ... This field is mutually exclusive with parameters' (example uses additionalProperties:false). v1 (GA) FunctionDeclaration has NO parametersJsonSchema (only parameters) - Langertha pins gemini_api_version 'v1beta', so OK; any future v1 switch must revisit. The Schema proto behind 'parameters' ('a select subset of an OpenAPI 3.0 schema object') allows ONLY: type, format, title, description, nullable, enum, maxItems, minItems, properties, required, minProperties, maxProperties, minLength, maxLength, pattern, example, anyOf, propertyOrdering, default, items, minimum, maximum. Everything else is an unknown proto field -> 400 'Invalid JSON payload ... Unknown name': $schema, additionalProperties, $ref, $defs/definitions, const, oneOf, allOf, not, exclusiveMinimum/Maximum, type arrays ['string','null'], patternProperties, uniqueItems, examples. google-genai itself now tells users to pass JSON Schema natively via parameters_json_schema (types.py _json_schema_warning). No per-model gating is documented; it is the same JSON-Schema engine as responseJsonSchema (which Gemini.pm already uses on all supported models; expanded $ref/anyOf support per blog.google 2025-11-05). RULING: switch to_gemini to emit parametersJsonSchema (never both - mutually exclusive), pass input_schema through unchanged; do NOT write a sanitizer. Optional belt-and-braces: drop top-level $schema only (harmless, not documented as accepted). Omit the key when input_schema is empty/absent (no-arg tools). Inbound from_gemini already reads both.
