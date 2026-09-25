@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T00:59:38Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T00:59:38Z
+created: 2026-09-24T19:40:38Z
+id: 191
+priority: medium
+started: 2026-09-25T00:10:57Z
+status: done
+tags:
+- manifest
+- provider-discovery
+title: 'Provider-Manifest /.well-known/langertha.json: Schema, Wertobjekte, Parser/Validator,
+  Builder'
+updated: 2026-09-25T00:59:38Z
+---
+
+Aus langertha-raider ADR 0007 (2026-09-24). Core besitzt Schema + Datenmodell des Provider-Manifests, genutzt von raider (Client), knarr (Auto-Export), skeid (gefilterter Export).
+v1 enthaelt NUR: schema_version, kind, provider_id, issuer, endpoints (id, dialect z.B. openai-chat/anthropic, base_url, auth_ref), auth (id, type z.B. api_key), models (id, endpoint_ref, capabilities), extensions (inert). Keine Shell-Befehle, Perl-Klassen, Secret-Pfade, System-Prompts, MCP/Packs/Skills (spaeter als inaktive Referenzen).
+Builder: aus Engine-/Modell-Konfiguration ein Manifest erzeugen (Engine-ID, URL, Modelle, Capabilities aus supports()). Roundtrip- und Negativtests (unbekannte Felder, Befehlsfelder abgelehnt). Keine Netzwerk-/Aliasverwaltung/Login-UI in Core. Beispiel-JSON: langertha-raider docs/RAIDER-REDESIGN-HANDOFF.md §11.1.
+
+Spec committed: docs/superpowers/specs/2026-09-25-provider-manifest-design.md (worktree k191). Implementing Langertha::Manifest + ::Endpoint/::Auth/::Model/::Builder next.
+
+Implemented on branch k191 (worktree .claude/worktrees/k191): 0b9bbea spec, 8fa4810 feat (Langertha::Manifest + ::Endpoint/::Auth/::Model/::Validation/::Builder, t/96_manifest*.t), a97bbe7 spec sync. prove -lr t/ green, perlcritic clean, dzil build ok. Decisions: unknown dialect/auth type accepted (is_known_*), capability names open; no env-var name in auth. Not moved; awaiting orchestrator.
+
+Fix round 1 done: 8441091 fix (I1-I3, M1-M11), e21789f docs (ADR 0029, CLAUDE.md index, spec sync). Raider doc-alignment ticket filed.
