@@ -128,14 +128,15 @@ L<Net::Async::HTTP> too; without that module it runs synchronously over LWP.
 =cut
 
 sub simple_embedding_result {
-  my ( $self, $text ) = @_;
-  my $request = $self->embedding($text);
+  my ( $self, $text, %extra ) = @_;
+  my $model = exists $extra{model} ? $extra{model} : $self->embedding_model;
+  my $request = %extra ? $self->embedding_request($text, %extra) : $self->embedding($text);
   my $t0 = [gettimeofday];
   my $response = $self->user_agent->request($request);
   my $elapsed = tv_interval($t0);
   my $value = $request->response_call->($response);
   return Langertha::CallResult->from_http_response( $self, $response,
-    value => $value, model => $self->embedding_model, total_seconds => $elapsed );
+    value => $value, model => $model, total_seconds => $elapsed );
 }
 
 =method simple_embedding_result
@@ -144,22 +145,28 @@ sub simple_embedding_result {
     my $vector = $result->value;
     say $result->usage->input_tokens if $result->has_usage;
 
+    my $large = $engine->simple_embedding_result($text, model => 'text-embedding-3-large');
+
 Like L</simple_embedding>, but returns a L<Langertha::CallResult>: the same
 vector (or ArrayRef of vectors for a batch) as C<value>, plus the provider's
 C<usage>, this response's C<rate_limit>, the answering C<model> and the
-measured C<total_seconds>. Croaks like L</simple_embedding>.
+measured C<total_seconds>. Croaks like L</simple_embedding>. Optional
+C<%extra> goes to C<embedding_request> (e.g. a C<model> override, which is
+then also the requested model of the result); L<Langertha::Embedder> uses it
+for its model override.
 
 =cut
 
 async sub simple_embedding_result_f {
-  my ( $self, $text ) = @_;
-  my $request = $self->embedding($text);
+  my ( $self, $text, %extra ) = @_;
+  my $model = exists $extra{model} ? $extra{model} : $self->embedding_model;
+  my $request = %extra ? $self->embedding_request($text, %extra) : $self->embedding($text);
   my $t0 = [gettimeofday];
   my $response = await $self->_async_do_request_f( request => $request );
   my $elapsed = tv_interval($t0);
   my $value = $request->response_call->($response);
   return Langertha::CallResult->from_http_response( $self, $response,
-    value => $value, model => $self->embedding_model, total_seconds => $elapsed );
+    value => $value, model => $model, total_seconds => $elapsed );
 }
 
 =method simple_embedding_result_f

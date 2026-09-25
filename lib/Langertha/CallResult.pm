@@ -161,6 +161,26 @@ parsing. C<model> is the requested model, used when the body names none.
 
 =cut
 
+sub with_value {
+  my ( $self, $value ) = @_;
+  return $self->new(
+    value => $value,
+    map { my $has = "has_$_"; $self->$has ? ( $_ => $self->$_ ) : () }
+      qw( usage rate_limit model total_seconds raw ),
+  );
+}
+
+=method with_value
+
+    my $replaced = $result->with_value($new_value);
+
+Returns a new C<Langertha::CallResult> with C<$new_value> as L</value> and
+every other attribute copied; C<$result> itself is unchanged. Used by
+L<Langertha::Embedder> and L<Langertha::ImageGen> when a plugin after-hook
+replaces the value.
+
+=cut
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

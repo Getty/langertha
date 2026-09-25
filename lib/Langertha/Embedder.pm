@@ -5,6 +5,7 @@ use Moose;
 use Future::AsyncAwait;
 use Carp qw( croak );
 use Log::Any qw( $log );
+use Scalar::Util qw( refaddr );
 
 with 'Langertha::Role::PluginHost';
 
@@ -76,14 +77,34 @@ async sub _run_plugin_before_embedding {
   return $text;
 }
 
+# $call_result (optional) is the Langertha::CallResult of the *_result path;
+# every hook gets the same one, while the vector is piped hook to hook.
 async sub _run_plugin_after_embedding {
-  my ( $self, $text, $vector ) = @_;
+  my ( $self, $text, $vector, $call_result ) = @_;
   for my $plugin (@{$self->_plugin_instances}) {
     if ($plugin->can('plugin_after_embedding')) {
-      $vector = await $plugin->plugin_after_embedding($text, $vector);
+      $vector = await $plugin->plugin_after_embedding($text, $vector,
+        defined $call_result ? ($call_result) : ());
     }
   }
   return $vector;
+}
+
+sub _assert_embedding_engine {
+  my ( $self ) = @_;
+  my $engine = $self->engine;
+  croak ref($engine) . " does not support embeddings"
+    unless $engine->does('Langertha::Role::Embedding');
+  return $engine;
+}
+
+# The engine's CallResult when the hooks returned its own vector, else a new
+# one carrying the hooks' vector (CallResult is immutable).
+sub _with_hooked_value {
+  my ( $call_result, $value ) = @_;
+  my $old = $call_result->value;
+  return $call_result if ref $value && ref $old && refaddr($value) == refaddr($old);
+  return $call_result->with_value($value);
 }
 
 sub simple_embedding {
@@ -149,6 +170,56 @@ async sub simple_embedding_f {
 Async variant of L</simple_embedding>: the same result and plugin hooks, with
 the hooks awaited and the request sent through the engine's async backend
 (see L<Langertha::Role::Embedding/simple_embedding_f>).
+
+=cut
+
+sub simple_embedding_result {
+  my ( $self, $text ) = @_;
+  $log->debugf("[Embedder] simple_embedding_result via %s, model=%s",
+    ref $self->engine, $self->has_model ? $self->model : 'default');
+  my $engine = $self->_assert_embedding_engine;
+  $text = $self->_run_plugin_before_embedding($text)->get;
+  my $result = $engine->simple_embedding_result($text,
+    $self->has_model ? ( model => $self->model ) : ());
+  my $vector = $self->_run_plugin_after_embedding($text, $result->value, $result)->get;
+  return _with_hooked_value($result, $vector);
+}
+
+=method simple_embedding_result
+
+    my $result = $embedder->simple_embedding_result($text);
+    my $vector = $result->value;
+    say $result->usage->input_tokens if $result->has_usage;
+
+Like L</simple_embedding>, with the same model override and plugin hooks,
+but returns the L<Langertha::CallResult> of
+L<Langertha::Role::Embedding/simple_embedding_result>: C<value> is the vector
+after the after-hooks, and C<usage>, C<rate_limit>, C<model> and
+C<total_seconds> are the call's. C<plugin_after_embedding> gets that
+C<CallResult> as an extra third argument (see L<Langertha::Plugin>). When a
+hook returns a different vector, the result is a new C<CallResult> with that
+value and the other attributes copied.
+
+=cut
+
+async sub simple_embedding_result_f {
+  my ( $self, $text ) = @_;
+  $log->debugf("[Embedder] simple_embedding_result_f via %s, model=%s",
+    ref $self->engine, $self->has_model ? $self->model : 'default');
+  my $engine = $self->_assert_embedding_engine;
+  $text = await $self->_run_plugin_before_embedding($text);
+  my $result = await $engine->simple_embedding_result_f($text,
+    $self->has_model ? ( model => $self->model ) : ());
+  my $vector = await $self->_run_plugin_after_embedding($text, $result->value, $result);
+  return _with_hooked_value($result, $vector);
+}
+
+=method simple_embedding_result_f
+
+    my $result = await $embedder->simple_embedding_result_f($text);
+
+Async variant of L</simple_embedding_result>: the same result and hooks, sent
+through the engine's async backend like L</simple_embedding_f>.
 
 =cut
 

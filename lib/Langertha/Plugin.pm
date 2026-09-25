@@ -88,6 +88,30 @@ Transform the tool result after execution.
 
 Transform the final L<Langertha::Raider::Result> before return.
 
+=item B<plugin_before_embedding>($text) -> $text
+
+Transform the input before an embedding request (L<Langertha::Embedder>).
+
+=item B<plugin_after_embedding>($text, $vector, $call_result?) -> $vector
+
+Inspect or transform the embedding. C<$call_result> is passed only when the
+call went through L<Langertha::Embedder/simple_embedding_result> (or its
+C<_f>): the L<Langertha::CallResult> of the request, with its C<usage>,
+C<rate_limit>, C<model> and C<total_seconds>. Every hook gets the same
+object, whose C<value> is the engine's vector before any hook ran; the
+return value of one hook is the C<$vector> of the next. A hook written for
+two arguments keeps working.
+
+=item B<plugin_before_image_gen>($prompt) -> $prompt
+
+Transform the prompt before an image generation request (L<Langertha::ImageGen>).
+
+=item B<plugin_after_image_gen>($prompt, $result, $call_result?) -> $result
+
+Inspect or transform the generated images. C<$call_result> is passed only
+when the call went through L<Langertha::ImageGen/simple_image_result> (or its
+C<_f>), with the same meaning as for C<plugin_after_embedding>.
+
 =back
 
 =cut

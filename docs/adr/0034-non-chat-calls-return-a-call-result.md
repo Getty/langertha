@@ -68,3 +68,30 @@ HashRef; its type is public too.
   model override and plugin after-hooks (which may replace the value) make it more than a
   passthrough. `Plugin::Langfuse` embedding / image generations (k304) can build on
   `CallResult` later.
+
+## Update (k320 — the wrappers get `*_result`, and the after-hooks see the `CallResult`)
+
+The last consequence above is resolved. `Langertha::Embedder` has
+`simple_embedding_result(_f)` and `Langertha::ImageGen` has `simple_image_result(_f)`. They
+run the same before-hooks and the same overrides as the bare methods, call the engine's
+`*_result(_f)` (so `Role::Embedding::simple_embedding_result(_f)` now takes an optional
+`%extra` like `simple_image_result`, which is how the Embedder's `model` override reaches the
+request and the result's requested model), then run the after-hooks on the value.
+
+**Hook contract.** `plugin_after_embedding` and `plugin_after_image_gen` get the call's
+`CallResult` as an **optional third argument**, only on the `*_result` path; the bare path
+still calls them with two. Every hook in the chain sees the same `CallResult` (its `value` is
+the engine's value before any hook), while the value itself is piped hook to hook as before.
+An argument instead of a plugin attribute, because the metadata belongs to one call: an
+attribute on a plugin shared by several hosts or overlapping `_f` calls would race, and a hook
+written for two arguments keeps working unchanged.
+
+**Immutability.** When the hooks return a different value, the wrapper returns
+`$call_result->with_value($new)`: a new `CallResult` with that value and every other
+attribute copied. When they return the engine's own value (same reference), the engine's
+`CallResult` is returned as is.
+
+`Plugin::Langfuse` uses the third argument: embedding and image generations called through
+`*_result` record the answering `model`, the token `usage` (with cost when `pricing` has a
+rule) and `total_seconds` (in the generation's `metadata`; Langfuse has no duration field
+besides start/end time). The bare path records what it did before.

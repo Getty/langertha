@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Langertha::Embedder and Langertha::ImageGen have simple_embedding_result
+      and simple_image_result (each with an _f variant): the wrapper's
+      overrides and plugin hooks around the engine's CallResult. The
+      after-hooks get the CallResult as an optional third argument, and
+      Plugin::Langfuse records model, usage (with cost) and total_seconds for
+      those embedding and image generations. The engine's
+      simple_embedding_result takes request extras such as model.
+
     - A finish_reason of error with no error object croaks ("response|stream
       ended with finish_reason error") instead of passing as a normal finish,
       and a Gemini stream chunk carrying an error object fails the stream

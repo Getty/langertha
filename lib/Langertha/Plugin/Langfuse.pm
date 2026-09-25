@@ -65,6 +65,15 @@ snapshot taken before the call: a L<Langertha::Content::Image> appears as its
 compact description, and inline image data (a C<data:> URL or a long bare
 base64 string) is replaced by its size, so traces never carry image bytes.
 
+Embeddings (L<Langertha::Embedder>) and image generations
+(L<Langertha::ImageGen>) become generations too. Called through
+C<simple_embedding_result> / C<simple_image_result> (or their C<_f>), they
+also carry the model that answered, the token usage (with cost when
+L</pricing> has a rule for that model) and the call's C<total_seconds> in the
+generation's C<metadata>, all from the L<Langertha::CallResult> the host
+passes to the after-hook. The bare C<simple_embedding> / C<simple_image>
+record only name, input and timestamps.
+
 =cut
 
 has public_key => (
@@ -396,6 +405,7 @@ sub create_generation {
       $opts{end_time}             ? ( endTime            => $opts{end_time} )           : (),
       $opts{parent_observation_id}? ( parentObservationId => $opts{parent_observation_id} ) : (),
       $opts{model_parameters}     ? ( modelParameters    => $opts{model_parameters} )   : (),
+      $opts{metadata}             ? ( metadata           => $opts{metadata} )           : (),
       defined $opts{completion_start_time}
         ? ( completionStartTime => $opts{completion_start_time} ) : (),
     },
@@ -662,26 +672,47 @@ sub _generation_details {
 
   $model //= $engine->chat_model if $engine && $engine->can('chat_model');
 
-  my $usage_hash;
-  if ($usage) {
-    $usage_hash = {
-      input  => $usage->input_tokens,
-      output => $usage->output_tokens,
-      total  => $usage->total_tokens,
-    };
-    if ( $self->has_pricing && $self->pricing->rule_for($model) ) {
-      my $cost = $self->pricing->cost_for( $usage, $model );
-      $usage_hash->{inputCost}  = $cost->input_usd + $cost->cache_read_usd + $cost->cache_write_usd;
-      $usage_hash->{outputCost} = $cost->output_usd;
-      $usage_hash->{totalCost}  = $cost->total_usd;
-    }
-  }
+  my $usage_hash = $usage ? $self->_usage_hash( $usage, $model ) : undef;
 
   return (
     defined $model   ? ( model  => $model )  : (),
     $usage_hash      ? ( usage  => $usage_hash ) : (),
     defined $output  ? ( output => $output ) : (),
     defined $completion_start ? ( completion_start_time => $completion_start ) : (),
+  );
+}
+
+# Langfuse usage (input/output/total, plus cost when a pricing rule matches)
+# of a Langertha::Usage.
+sub _usage_hash {
+  my ( $self, $usage, $model ) = @_;
+  my $usage_hash = {
+    input  => $usage->input_tokens,
+    output => $usage->output_tokens,
+    total  => $usage->total_tokens,
+  };
+  if ( $self->has_pricing && $self->pricing->rule_for($model) ) {
+    my $cost = $self->pricing->cost_for( $usage, $model );
+    $usage_hash->{inputCost}  = $cost->input_usd + $cost->cache_read_usd + $cost->cache_write_usd;
+    $usage_hash->{outputCost} = $cost->output_usd;
+    $usage_hash->{totalCost}  = $cost->total_usd;
+  }
+  return $usage_hash;
+}
+
+# model, usage (+ cost) and total_seconds (as metadata) of an embedding or
+# image generation, from the Langertha::CallResult the *_result path hands
+# the after-hook (k320). Nothing without one: the bare path has no metadata.
+sub _call_result_details {
+  my ( $self, $call_result ) = @_;
+  return () unless blessed($call_result) && $call_result->isa('Langertha::CallResult');
+  my $model = $call_result->has_model ? $call_result->model : undef;
+  return (
+    defined $model ? ( model => $model ) : (),
+    $call_result->has_usage && blessed( $call_result->usage )
+      ? ( usage => $self->_usage_hash( $call_result->usage, $model ) ) : (),
+    $call_result->has_total_seconds
+      ? ( metadata => { total_seconds => $call_result->total_seconds } ) : (),
   );
 }
 
@@ -813,7 +844,7 @@ async sub plugin_before_image_gen {
 }
 
 async sub plugin_after_image_gen {
-  my ( $self, $prompt, $result ) = @_;
+  my ( $self, $prompt, $result, $call_result ) = @_;
   return $result unless $self->enabled;
 
   my $end_time = _timestamp();
@@ -823,6 +854,7 @@ async sub plugin_after_image_gen {
     start_time => $self->_iter_start,
     end_time   => $end_time,
     input      => $prompt,
+    $self->_call_result_details($call_result),
   );
 
   $self->update_trace(
@@ -855,7 +887,7 @@ async sub plugin_before_embedding {
 }
 
 async sub plugin_after_embedding {
-  my ( $self, $text, $vector ) = @_;
+  my ( $self, $text, $vector, $call_result ) = @_;
   return $vector unless $self->enabled;
 
   my $end_time = _timestamp();
@@ -865,6 +897,7 @@ async sub plugin_after_embedding {
     start_time => $self->_iter_start,
     end_time   => $end_time,
     input      => $text,
+    $self->_call_result_details($call_result),
   );
 
   $self->update_trace(
