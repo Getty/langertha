@@ -173,3 +173,16 @@ A dropped 1 stays quiet, for the same noise reason as §Decision. This also cove
 Opus 4.7+ / 5-series clear (k138), whose drop was silent until now. `Role::ResponsesCompatible`'s
 gate is unchanged (no engine on that wire clears `temperature` per model today). Verified
 offline: `t/79_kimi_temperature_gate.t`.
+
+## Update (k220 — the Responses wire gate carps too; one message, naming the remedy)
+
+`Role::ResponsesCompatible::_temperature_kwargs` now resolves the temperature before the
+`supports('temperature')` check and carps the same way as the other two gates, so the three wire
+roles are at parity: a capability-cleared, caller-set temperature other than 1 carps on every
+request (no once-per-process suppression), 1 is dropped quietly. Still latent on shipped engines
+(no responses-wire engine clears `temperature` per model); it fires once a layer-3 row does. The
+message is now identical on all three roles and names the remedy:
+`dropping temperature=X -- model 'M' does not take a temperature (rejected or fixed
+server-side); unset temperature to silence this`. Verified offline:
+`t/79_kimi_temperature_gate.t` (test engines clear the flag with a layer-3 row). The carp still
+reports the frame `Carp` picks, not the caller's own frame; left as is.

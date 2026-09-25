@@ -89,4 +89,72 @@ for my $class (qw( Langertha::Engine::Moonshot Langertha::Engine::MoonshotAnthro
   ok( !$carped, 'claude-opus-4-6: no carp' );
 }
 
+# karr k220: the third wire role, Role::ResponsesCompatible, dropped a
+# capability-cleared temperature silently (its supports() check ran before the
+# carp). No engine on the responses wire clears temperature today, so the test
+# engines clear it with a layer-3 row (ADR 0019) -- the same shape a future
+# per-model clear on OpenAIResponses / XAI Responses / Perplexity would take.
+# The three gates must stay at parity: same carp, same frequency (every request),
+# 1 quiet. The message names the remedy ("unset temperature to silence this").
+{
+  package Test::K220::Responses;
+  use Moose;
+  extends 'Langertha::Engine::OpenAIResponses';
+  sub model_capability_corrections { ( 'cleared-model' => { temperature => 0 } ) }
+  __PACKAGE__->meta->make_immutable;
+
+  package Test::K220::Perplexity;
+  use Moose;
+  extends 'Langertha::Engine::Perplexity';
+  sub model_capability_corrections { ( qr/\A/ => { temperature => 0 } ) }
+  __PACKAGE__->meta->make_immutable;
+}
+
+for my $class (qw( Test::K220::Responses Test::K220::Perplexity )) {
+  my @builders = $class->new( api_key => 'k' )->supports('streaming')
+    ? qw( chat_request chat_stream_request ) : qw( chat_request );
+  my $model = $class =~ /Perplexity/ ? 'sonar' : 'cleared-model';
+  ok( !$class->new( api_key => 'k', model => $model )->supports('temperature'),
+    "$class: temperature cleared by the test row" );
+  for my $builder (@builders) {
+    for my $temp ( 0.7, 1 ) {
+      my ( $body, $carped ) = probe(
+        $class->new( api_key => 'k', model => $model, temperature => $temp ), $builder );
+      ok( !exists $body->{temperature}, "$class $builder: temperature=$temp not sent" );
+      is( $carped, $temp == 1 ? 0 : 1,
+        "$class $builder: temperature=$temp " . ( $temp == 1 ? 'dropped silently' : 'drop carps' ) );
+    }
+    my ( $body, $carped ) = probe(
+      $class->new( api_key => 'k', model => $model ), $builder, temperature => 0.7 );
+    ok( !exists $body->{temperature} && $carped, "$class $builder: per-request drop carps" );
+  }
+  # Same frequency as the other gates: once per request, not once per process.
+  my $engine = $class->new( api_key => 'k', model => $model, temperature => 0.7 );
+  my ( undef, $first )  = probe( $engine, 'chat_request' );
+  my ( undef, $second ) = probe( $engine, 'chat_request' );
+  ok( $first && $second, "$class: carps on every request" );
+}
+
+# Same message on all three wire roles, and it names the remedy (k220 polish).
+{
+  my @msgs;
+  for my $engine (
+    Langertha::Engine::Moonshot->new( api_key => 'k', model => 'kimi-k3', temperature => 0.7 ),
+    Langertha::Engine::MoonshotAnthropic->new( api_key => 'k', model => 'kimi-k3', temperature => 0.7 ),
+    Test::K220::Responses->new( api_key => 'k', model => 'cleared-model', temperature => 0.7 ),
+  ) {
+    my @warns;
+    local $SIG{__WARN__} = sub { push @warns, $_[0] };
+    $engine->chat_request( [ { role => 'user', content => 'hi' } ] );
+    my ($w) = grep { /dropping temperature/ } @warns;
+    ( my $text = $w // '' ) =~ s/\A\S+: //;    # strip the class name
+    $text =~ s/ at \S+ line \d+\.?\n?\z//;
+    $text =~ s/model '[^']*'/model 'M'/;
+    push @msgs, $text;
+  }
+  like( $msgs[0], qr/unset temperature to silence this/, 'carp names the remedy' );
+  is( $msgs[1], $msgs[0], 'Anthropic wire carps the same message as the OpenAI wire' );
+  is( $msgs[2], $msgs[0], 'Responses wire carps the same message as the OpenAI wire' );
+}
+
 done_testing;

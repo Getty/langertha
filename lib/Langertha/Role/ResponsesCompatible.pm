@@ -110,13 +110,25 @@ sub chat_operation_id { 'createResponse' }
 # OpenAIResponses via the 'responses' reasoning wire). Perplexity, the other
 # Responses consumer, never defines that predicate, so the can() guard leaves its
 # temperature untouched. temperature=1 passes through silently.
+#
+# A model that does not take temperature at all (supports('temperature') false)
+# never gets the field, not even 1; a caller-set non-default value is dropped
+# with the same carp as the OpenAI and Anthropic wire roles, 1 quietly (ADR 0025
+# k214 Update; parity since karr k220).
 sub _temperature_kwargs {
     my ( $self, $controls ) = @_;
-    return () unless $self->supports('temperature');
     my $temp = exists $controls->{temperature} ? $controls->{temperature}
              : $self->has_temperature          ? $self->temperature
              :                                    undef;
     return () unless defined $temp;
+    unless ( $self->supports('temperature') ) {
+        carp "".( ref $self ).": dropping temperature=$temp -- model '"
+          . ( $self->chat_model // '' )
+          . "' does not take a temperature (rejected or fixed server-side); "
+          . "unset temperature to silence this"
+          if $temp != 1;
+        return ();
+    }
     if ( $temp != 1
       && $self->can('_temperature_rejected_by_reasoning')
       && $self->_temperature_rejected_by_reasoning($controls) ) {

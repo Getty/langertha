@@ -78,10 +78,12 @@ Revision history for Langertha
     - Moonshot and MoonshotAnthropic no longer send temperature on any Kimi
       model (kimi-k3, kimi-k2.6, kimi-k2.7-code): Kimi fixes it server-side
       and rejects other values, and kimi-k2.6 without thinking even rejects
-      1. A dropped caller temperature other than 1 now carps, on these
-      engines and on Claude models that no longer take temperature (Opus 4.7
-      and later), where the drop used to be silent. Taken from Moonshot's
-      documentation, not verified against the live API.
+      1. A dropped caller temperature other than 1 now carps on every
+      request, on these engines, on Claude models that no longer take
+      temperature (Opus 4.7 and later) and on the Responses wire, where the
+      drop used to be silent; the warning says to unset temperature to
+      silence it. Taken from Moonshot's documentation, not verified against
+      the live API.
 
     - Streamed tool calls are no longer lost on Chat-Completions, Anthropic,
       Gemini and Ollama-native streams: each call arrives once, as the same

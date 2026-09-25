@@ -397,7 +397,8 @@ sub _temperature_kwargs {
   unless ( $self->supports('temperature') ) {
     carp "".( ref $self ).": dropping temperature=$temp -- model '"
       . ( $self->chat_model // '' )
-      . "' does not take a temperature (rejected or fixed server-side)"
+      . "' does not take a temperature (rejected or fixed server-side); "
+      . "unset temperature to silence this"
       if $temp != 1;
     return ();
   }
