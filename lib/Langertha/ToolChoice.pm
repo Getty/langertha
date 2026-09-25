@@ -111,6 +111,20 @@ sub to_perplexity {
   return 'required';
 }
 
+=method to_perplexity
+
+    my $wire = $choice->to_perplexity;   # 'none' | 'auto' | 'required'
+
+B<Legacy.> Serializes to the string forms of Perplexity's old Sonar
+C</chat/completions> endpoint: C<none>, C<auto>, and C<required> for both
+C<any> and a named tool (that wire could not force a named tool). Kept for
+callers of that endpoint; L<Langertha::Engine::Perplexity> no longer uses it.
+The Agent API (C</v1/agent>) that engine speaks has no C<tool_choice> field at
+all, so the engine never sends one (see L<Langertha::Role::ResponsesCompatible>).
+Not on the C<to($fmt)> dispatch.
+
+=cut
+
 sub to_gemini {
   my ($self) = @_;
   # Gemini uses toolConfig.functionCallingConfig:
@@ -168,7 +182,8 @@ sub TO_JSON { shift->to_hash }
 # have no wire-level tool_choice (Hermes forces via prompt injection), so to()
 # croaks for them. Perplexity is not a tool_wire_format value — its named-tool
 # request is rewritten to response_format by chat_f — so to_perplexity stays a
-# standalone helper, off the tag dispatch.
+# standalone helper, off the tag dispatch; it is legacy (Sonar /chat/completions
+# forms), the Agent API has no tool_choice (karr k233).
 my %TO_METHOD = (
   openai    => 'to_openai',
   anthropic => 'to_anthropic',

@@ -511,7 +511,7 @@ LLM, with C<synthetic> flag for forced-tool fallbacks
 
 =item * L<Langertha::ToolChoice> - Canonical tool-selection policy with
 per-provider serializers (C<to_openai>, C<to_anthropic>, C<to_gemini>,
-C<to_perplexity>)
+legacy C<to_perplexity>)
 
 =item * L<Langertha::Tool> - Canonical tool definition with cross-provider
 serializers (C<to_openai>, C<to_anthropic>, C<to_gemini>, C<to_mcp>,

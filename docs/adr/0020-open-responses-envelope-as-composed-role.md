@@ -250,3 +250,25 @@ k206 Phase 2, which will reuse this echo filter. Tests: `t/68_perplexity_functio
 (documented shapes; request building, `chat_f`, the echo filter, and `chat_with_tools_f` end to
 end over the mocked transport).
 
+
+## Update (k233 — an unsendable `none` withholds the tools; an unreadable choice drops where there is no field)
+
+Two edge cases of the k213 `tool_choice` rule, both in `_responses_tool_choice_kwarg` (shared by
+both body builders, which now run it *after* `_responses_tools_kwarg`):
+
+- **`tool_choice => 'none'` the engine cannot send withholds the request's tools.** Dropping
+  only the field (k213) left the tools on the wire with no restriction, so the model could call a
+  tool the caller ruled out. The caller's intent is honored instead by leaving `tools` out of the
+  body (and with it `parallel_tool_calls`), with a carp saying so. Every tool goes: function
+  tools, native built-in hashes and the engine's `server_tools` defaults alike — `none` rules out
+  any tool call, and ADR 0030 does not make server tools independent of `tool_choice`. A
+  Perplexity preset still runs its own `web_search`; that is the preset, not a request tool, and
+  out of the client's reach. Only Perplexity hits this today (OpenAIResponses sends `none`).
+- **A choice `ToolChoice->from_hash` cannot read** (a provider-native one such as
+  `{type: web_search_preview}`) still passes through verbatim where the engine supports any
+  `tool_choice_*` kind — the provider judges (ADR 0001 k227). On an engine with no `tool_choice`
+  field at all (all four flags cleared: Perplexity) it is dropped with a carp, since sending it is
+  a certain 400.
+
+`ToolChoice->to_perplexity` (the old Sonar `/chat/completions` string forms) stays public, now
+documented as legacy; the Agent API has no `tool_choice`. Tests: `t/68_perplexity_function_tools.t`.
