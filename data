@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-09-25T05:14:00Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T05:14:00Z
+created: 2026-09-25T05:05:41Z
+id: 230
+priority: low
+started: 2026-09-25T05:14:00Z
+status: done
+tags:
+- plugins
+- tests
+title: 't/46: pin that _plugin_instances=>[...] still injects and plugin_instances=>[...]
+  does not (k226 rest minor)'
+updated: 2026-09-25T05:14:00Z
+---
+
+k226 review rest-minor: t/46_public_plugin_hooks.t should pin the constructor contract: _plugin_instances => [...] continues to inject instances (sibling compatibility), the public ro plugin_instances => [...] is NOT an init_arg.
