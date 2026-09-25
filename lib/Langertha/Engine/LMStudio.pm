@@ -62,7 +62,9 @@ Implemented operations:
 
 =item * Chat: C<POST /api/v1/chat>
 
-=item * Streaming chat (SSE): C<stream => true>
+=item * Streaming chat (SSE): C<stream => true>; C<reasoning.delta> events land
+on L<Langertha::Stream::Chunk/thinking>, so a streamed call keeps the same
+thinking as L<Langertha::Response/thinking>
 
 =item * Model listing: C<GET /api/v1/models>
 
@@ -496,7 +498,8 @@ sub chat_stream_request {
 }
 
 sub parse_stream_chunk {
-  my ( $self, $data, $event ) = @_;
+  my ( $self, $data, $event, $state ) = @_;
+  $state //= {};
 
   require Langertha::Stream::Chunk;
 
@@ -505,6 +508,27 @@ sub parse_stream_chunk {
   if ($type eq 'error') {
     my $message = ref $data->{error} eq 'HASH' ? ($data->{error}{message} // 'Unknown LM Studio stream error') : 'Unknown LM Studio stream error';
     croak "LMStudio stream error: $message";
+  }
+  # reasoning.start / reasoning.delta / reasoning.end
+  # (lmstudio.ai/docs/developer/rest/streaming-events): each delta goes onto
+  # the chunk's thinking so aggregate_thinking rebuilds what chat_response
+  # lifts from output[type=reasoning] -- including its "\n" between separate
+  # reasoning blocks. -- karr k334
+  if ($type eq 'reasoning.start') {
+    $state->{lmstudio_reasoning_separator} = 1 if $state->{lmstudio_reasoning_seen};
+    return undef;
+  }
+  if ($type eq 'reasoning.delta') {
+    return undef unless defined $data->{content};
+    my $thinking = $data->{content};
+    $thinking = "\n" . $thinking if delete $state->{lmstudio_reasoning_separator};
+    $state->{lmstudio_reasoning_seen} = 1;
+    return Langertha::Stream::Chunk->new(
+      content  => '',
+      thinking => $thinking,
+      raw      => $data,
+      is_final => 0,
+    );
   }
   if ($type eq 'message.delta') {
     return Langertha::Stream::Chunk->new(

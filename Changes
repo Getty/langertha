@@ -2,6 +2,10 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - LM Studio native streaming keeps the model's reasoning: reasoning.delta
+      events fill the chunks' thinking, so aggregate_thinking returns the same
+      text a non-streamed call puts on Response.thinking.
+
     - Langertha::Embedder and Langertha::ImageGen have simple_embedding_result
       and simple_image_result (each with an _f variant): the wrapper's
       overrides and plugin hooks around the engine's CallResult. The

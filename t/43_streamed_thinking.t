@@ -13,6 +13,8 @@ use Langertha::Engine::OpenRouter;
 use Langertha::Engine::Anthropic;
 use Langertha::Engine::Gemini;
 use Langertha::Engine::Ollama;
+use Langertha::Engine::LMStudio;
+use HTTP::Response;
 
 # The streaming half of k129: each dialect stream parser must fill
 # Stream::Chunk->thinking from ITS verified delta spelling (langertha-llm-advisor
@@ -21,6 +23,7 @@ use Langertha::Engine::Ollama;
 # bodies -- no live API calls.
 
 my $TRUE = JSON->true;
+my $json_lms = JSON::MaybeXS->new( utf8 => 1 );
 
 # --------------------------------------------------------------------------
 # OpenAI-compatible: delta.reasoning_content (DeepSeek/SGLang/Moonshot/xAI)
@@ -267,6 +270,71 @@ NDJSON
   );
   is($ollama->aggregate_thinking(\@chunks), 'xy',
     'aggregate_thinking: concatenates only chunks that carry thinking, in order');
+}
+
+# --------------------------------------------------------------------------
+# LM Studio native /api/v1/chat: reasoning.start / reasoning.delta /
+# reasoning.end SSE events (lmstudio.ai/docs/developer/rest/streaming-events).
+# chat.end carries the aggregated result "equivalent to a non-streaming
+# response", so the streamed thinking must equal what chat_response lifts from
+# that same result: several reasoning blocks joined by "\n". -- karr k334
+# --------------------------------------------------------------------------
+{
+  my $lms = Langertha::Engine::LMStudio->new( url => 'http://h:1234', model => 'm' );
+
+  my $sse = <<'SSE';
+event: chat.start
+data: {"type":"chat.start","model_instance_id":"m"}
+
+event: reasoning.start
+data: {"type":"reasoning.start"}
+
+event: reasoning.delta
+data: {"type":"reasoning.delta","content":"Need to"}
+
+event: reasoning.delta
+data: {"type":"reasoning.delta","content":" add."}
+
+event: reasoning.end
+data: {"type":"reasoning.end"}
+
+event: reasoning.start
+data: {"type":"reasoning.start"}
+
+event: reasoning.delta
+data: {"type":"reasoning.delta","content":"Check."}
+
+event: reasoning.end
+data: {"type":"reasoning.end"}
+
+event: message.start
+data: {"type":"message.start"}
+
+event: message.delta
+data: {"type":"message.delta","content":"4"}
+
+event: message.end
+data: {"type":"message.end"}
+
+event: chat.end
+data: {"type":"chat.end","result":{"model_instance_id":"m","output":[{"type":"reasoning","content":"Need to add."},{"type":"reasoning","content":"Check."},{"type":"message","content":"4"}],"stats":{"input_tokens":3,"total_output_tokens":5},"response_id":"resp_1"}}
+
+SSE
+
+  my $chunks = $lms->process_stream_data($sse);
+  my @thinking = grep { $_->has_thinking } @$chunks;
+  is(scalar @thinking, 3, 'LMStudio: one thinking chunk per reasoning.delta');
+  is($thinking[0]->thinking, 'Need to', 'LMStudio: reasoning.delta content on ->thinking');
+  is($thinking[0]->content, '', 'LMStudio: a reasoning chunk carries no content');
+  is($lms->aggregate_thinking($chunks), "Need to add.\nCheck.",
+    'LMStudio: aggregate_thinking reassembles the deltas, blocks joined by newline');
+  is(join('', map { $_->content } @$chunks), '4', 'LMStudio: content aggregation unaffected');
+
+  my $end = $json_lms->decode( ( $sse =~ /^data: (\{"type":"chat\.end".*)$/m )[0] );
+  my $resp = $lms->chat_response( HTTP::Response->new( 200, 'OK',
+    [ 'Content-Type' => 'application/json' ], $json_lms->encode( $end->{result} ) ) );
+  is($lms->aggregate_thinking($chunks), $resp->thinking,
+    'LMStudio: streamed thinking equals chat_response thinking of the same result');
 }
 
 # An empty-string thinking is still "seen" (defined), so it is not undef.
