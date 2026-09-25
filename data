@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-25T20:57:47Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:57:47Z
+created: 2026-09-25T20:20:43Z
+id: 289
+priority: medium
+started: 2026-09-25T20:23:32Z
+status: done
+tags:
+- embedding
+- bug
+title: 'Batch embeddings: ArrayRef input is sent but only one vector comes back, and
+  data[].index is ignored'
+updated: 2026-09-25T20:57:47Z
+---
+
+OpenAICompatible::embedding_request (lib/Langertha/Role/OpenAICompatible.pm:244-251) passes $input through unchanged, so an ArrayRef goes out as a batch ({"input":["a","b"]}); Ollama native does the same (/api/embed accepts input arrays, Engine/Ollama.pm:196-202). But embedding_response returns $objects[0]->{embedding} (OpenAICompatible.pm:278-279) and Ollama returns $data->{embeddings}[0] (Ollama.pm:209): the caller pays for N embeddings and receives one, silently.
+
+Worse, the OpenAI shape carries data[].index; the code takes positional [0]. Repro (offline): embedding_response on {data:[{index:1,embedding:[2]},{index:0,embedding:[1]}]} returns [2], i.e. the vector for input 1.
+Related: encoding_format=>"base64" (pass-through works, verified body) returns the base64 string as-is while the POD promises an ArrayRef of floats.
+
+Fix options: (a) sort data by index and return [0] for scalar input, ArrayRef-of-vectors for ArrayRef input; or (b) a separate simple_embeddings / embeddings_response for batches. Either way pick by the input shape, never positional-only. Decode base64 (pack "f<*") or croak/document. Tests: out-of-order index fixture, batch round-trip, Ollama batch.
+
+2026-09-25 20:52 Implemented in 97435c8 (branch worktree-agent-a7e783ab8d778f9e7): batch by input shape, data[].index sort, base64 always decoded (no raw option).
