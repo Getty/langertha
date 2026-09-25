@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T07:56:58Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:56:58Z
+created: 2026-09-25T07:40:02Z
+id: 252
+priority: medium
+started: 2026-09-25T07:40:46Z
+status: done
+tags:
+- tools
+- wire
+- encoding
+title: 'ToolCall::to_openai encodes arguments to UTF-8 bytes: non-ASCII tool args
+  get double-encoded by callers that JSON-encode the whole body (Köln -> KÃ¶ln)'
+updated: 2026-09-25T07:56:58Z
+---
+
+From knarr k19 (confirmed): knarr's non-streaming OpenAI answer shows Köln as KÃ¶ln. Cause: core Langertha::ToolCall::to_openai serializes arguments with a byte-producing JSON encoder, then the caller encodes the whole payload again. Check every to_* serializer / function.arguments / input_json producer (to_openai, to_responses, hermes) for byte vs character output; the canonical contract should be character strings (the transport encodes once). Also check Role::JSON usage (utf8 flag) in request building so engine request bodies aren't double-encoded either. Tests with non-ASCII arguments across wires, incl. a round trip through generate_request's body.
+
+Merged 45f0383: character-string contract for nested JSON (encode_json_text), fixed ToolCall/ToolResult, hermes prompts, AKI chat_context, VLLMHook xargs, anthropic-shim lift, extract_hermes_from_text inbound. Sibling: skeid encode_json_safe same bug -> skeid ticket; knarr fine (raise Langertha floor at release).
