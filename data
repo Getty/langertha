@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-25T08:37:00Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T08:37:00Z
+created: 2026-09-25T08:30:48Z
+id: 261
+priority: medium
+started: 2026-09-25T08:37:00Z
+status: done
+tags:
+- release
+- changes
+title: 'Changes: missing bullet for empty finish_reason streaming fix (k253 review,
+  commit a931866)'
+updated: 2026-09-25T08:37:00Z
+---
+
+Commit a9318669 "fix: empty finish_reason is no stream finish on the OpenAI dialect (k253 review)" changes Role/OpenAICompatible.pm parse_stream_chunk: is_final and finish_reason are now set only on a non-empty finish_reason. This is a real, observable streaming-behavior change affecting every OpenAI-compatible-dialect engine (DeepSeek, Groq, XAI, Mistral, MiniMax, Moonshot, NousResearch, Cerebras, OpenRouter, Replicate, HuggingFace, AKIOpenAI, TSystems, Scaleway, Hetzner, OllamaOpenAI, vLLM, SGLang, LlamaCpp, LMStudioOpenAI) via chat_stream_realtime_f: a server that sends a mid-stream chunk with an empty-string finish_reason no longer ends the stream early / no longer reports a bogus finish_reason.
+
+It is documented in docs/adr/0001 (commit 870242c, "k253 Update, review round (no-call blocks, finish_reason, empty finish)") but has NO corresponding bullet anywhere in Changes under {{$NEXT}} (grep -n -i "empty.*finish_reason" Changes -> no hits). Release checklist requires every user-visible fix: commit to map to a Changes entry. Fix: add a short bullet (near the existing finish_reason paragraphs around Changes:202-215) describing the empty-finish_reason streaming fix, or fold it into the existing "Streamed tool calls are no longer lost..." paragraph if it belongs there.
+
+Found during release-checker audit for 0.503.
+
+2026-09-25 08:31 Independently verified by a second concurrent pre-release audit this run: git show a9318669 confirms the commit and its 'fix: empty finish_reason is no stream finish on the OpenAI dialect' subject; grep -in 'empty.*finish_reason' Changes returns no hits. Confirmed gap.
