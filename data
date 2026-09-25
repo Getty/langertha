@@ -1,0 +1,22 @@
+---
+claimed_at: 2026-09-25T07:49:15Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T07:49:15Z
+created: 2026-09-25T07:35:37Z
+id: 251
+priority: medium
+started: 2026-09-25T07:36:52Z
+status: done
+tags:
+- wire
+- capabilities
+- bug
+- llm
+- risk
+title: 'HermesTools capability rule ignores tool_wire_format: constructor override
+  to openai keeps hermes-only flags'
+updated: 2026-09-25T07:49:15Z
+---
+
+Found in the k238 design pass (llm-advisor, 2026-09-25), confirmed with an offline probe. NousResearch->new(model=>"anthropic/claude-sonnet-4.6", tool_wire_format=>"openai"): the tag is openai (tools go on the body natively), but engine_capabilities reports tools_native=0, tools_hermes=1, tool_choice_named=0, because the Role::HermesTools around engine_capabilities (HermesTools.pm ~196) deletes the native flags unconditionally. So chat_f needlessly rewrites a forced tool to json_schema+synthetic, and supports() lies. Fix: key the rule on $self->tool_wire_format (hermes: delete native flags; otherwise delete tools_hermes). Related hazard: Manifest::Builder clone_object copies an already-built tool_wire_format (probe: stays hermes after clone with a new chat_model); add a clearer and use it on the probe. Both are prerequisites (b)+(e) of the k238 recommendation.
