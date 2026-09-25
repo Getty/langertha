@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-09-25T06:52:31Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T06:52:31Z
+created: 2026-09-25T06:15:23Z
+id: 241
+priority: low
+started: 2026-09-25T06:31:36Z
+status: done
+tags:
+- tools
+- capabilities
+- wire
+title: 'parallel_tool_use capability vs wire: native engines over-claim, OpenAICompatible
+  ignores the flag'
+updated: 2026-09-25T06:52:31Z
+---
+
+Found in the k240 parity audit (streaming vs non-streaming parity itself holds on every dialect after k240).
+
+1. Over-claim: Gemini, Ollama (native) and AKI (native) report supports(parallel_tool_use) = 1 (Role::Tools composes Role::ParallelToolUse) but neither chat_request nor chat_stream_request places the control anywhere; the setting is silently dropped. Either map it where the wire has an equivalent or clear the flag in their around engine_capabilities (ADR 0002), after llm-advisor confirms the wires. Hermes engines: see k234.
+
+2. Under-gate: Role::OpenAICompatible::_openai_parallel_tool_calls_kwarg emits parallel_tool_calls whenever tools are present, without checking supports(parallel_tool_use). Scaleway and Hetzner clear that flag (Scaleway: field ignored and treated as true) yet still get parallel_tool_calls on the body. ResponsesCompatible already gates on supports(). Decide whether OpenAICompatible should gate (and carp on a dropped explicit control) the same way; one helper covers both builders, so the fix is one line plus tests.
+
+2026-09-25 06:28 llm-advisor 2026-09-25 (docs/source only, no live calls).
+FINDINGS: (1) Gemini: no parallel knob. v1beta discovery doc (generativelanguage.googleapis.com/$discovery/rest?version=v1beta, revision 20260924): ToolConfig = retrievalConfig|functionCallingConfig|includeServerSideToolInvocations; FunctionCallingConfig = mode (AUTO|ANY|NONE|VALIDATED) + allowedFunctionNames; no schema in the doc mentions 'parallel'. Parallel calls happen implicitly, no off switch. -> clear parallel_tool_use on Gemini (layer 2). (2) Ollama native: api/types.go ChatRequest (main @ 2026-09-24) = model,messages,stream,format,keep_alive,tools,options,think,truncate,shift,logprobs,top_logprobs; no parallel/tool_choice. -> clear on Ollama (layer 2). NEW: OllamaOpenAI over-claims too: openai/openai.go ChatCompletionRequest has no parallel_tool_calls field (Go decoder drops it silently, same mechanism as the prompt_cache_key clear from k200) -> add parallel_tool_use to OllamaOpenAI's existing delete list. AKI native: request params have no tools field at all (aki.io/docs/llm-chat/llm-request-parameters, see k234 note); covered by k234's HermesTools rule which deletes parallel_tool_use (k234 is on branch worktree-agent-a46133756ae808261, NOT on main as of 7f17d42) -> no separate AKI change if k234 lands; otherwise clear it on AKI. (3) Scaleway: Chat Completions API reference (scaleway.com/en/developers/api/generative-apis/chat-completions) documents parallel_tool_calls as accepted and ignored ('even if set false this parameter will be ignored and act as if set to true') -> no 400; sending it is harmless but a false is inert. Note docs-content using-chat-api.mdx (last commit 2026-09-24) does not list it among supported OR unsupported params. Hetzner: docs.hetzner.com/general/company-and-policy/experiments/inference/ (last change 2026-07-24) documents no request params beyond model/messages; tools themselves unconfirmed; behaviour of the field unknown (backend likely vLLM-like, which parses the field, unverified). MiniMax: third OpenAICompatible engine clearing the flag; field absent from its /v1/chat/completions schema (k209 verification 2026-09-01); no evidence of rejection. No model_capability_corrections touch parallel_tool_use anywhere.
+RECOMMENDATION: (a) layer-2 clear parallel_tool_use on Gemini, Ollama (native), OllamaOpenAI; AKI via k234 (or directly if k234 stalls). (b) YES gate _openai_parallel_tool_calls_kwarg on supports('parallel_tool_use') exactly like _responses_parallel_tool_calls_kwarg, keeping the explicit parallel_tool_calls kwarg as the escape hatch (early-return ordering already preserves it). Effect only on Scaleway/Hetzner/MiniMax/OllamaOpenAI: all either ignore or do not document the field, so nothing useful is lost; Hetzner is the only one where the field MIGHT be honored, and the raw kwarg still reaches it. (c) carp once when an explicitly requested parallel_tool_use (per-request control or has_parallel_tool_use) is dropped by the gate, mirroring ADR 0025 drop+carp; do the same in the Responses helper for symmetry (Perplexity). No carp when nothing was set. (d) Record as an ADR 0002 Update (flag honesty now gates emission on the OpenAI envelope). (e) Follow-up worth an audit ticket: flag-ON OpenAI-compatible engines whose docs I did not confirm list parallel_tool_calls (DeepSeek, Moonshot, TSystems, AKIOpenAI, HuggingFace, Replicate) -- not blocking.
