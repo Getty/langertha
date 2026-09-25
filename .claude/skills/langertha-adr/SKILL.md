@@ -97,6 +97,7 @@ the same change, or stops and reports.
 | Dialect inheritance vs capability roles, `*Compatible` envelopes, `-excludes` | 0006, 0013, 0015, 0016, 0020 |
 | Wire extras on the body / `Response` | 0004 |
 | Request-side controls (reasoning, cache, knobs), temperature gate | 0009, 0012, 0023, 0025 |
+| Gemini bound `cachedContent` vs request `systemInstruction` / `tools` / `toolConfig` | 0035 |
 | Normalizing a provider's wire spelling | 0018 |
 | Response observability: timing, `created`, rate-limit reset | 0011, 0017, 0022 |
 | Usage cache counts, `Pricing` cache rates, `Cost` | 0031 |
