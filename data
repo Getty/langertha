@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T22:28:44Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T22:28:44Z
+created: 2026-09-25T22:13:14Z
+id: 317
+priority: low
+started: 2026-09-25T22:14:10Z
+status: done
+tags:
+- bug
+- streaming
+- gemini
+title: 'Error gaps after k311: finish_reason error without error object; Gemini stream
+  top-level error'
+updated: 2026-09-25T22:28:44Z
+---
+
+From k311: (1) finish_reason "error" with no error object anywhere passes as a normal finish - croak "<class> response ended with finish_reason error" ? decide. (2) Gemini stream chunk with top-level error object is not handled (skipped) - croak like k301/k311 stream errors.
