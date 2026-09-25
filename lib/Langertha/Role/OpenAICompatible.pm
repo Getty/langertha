@@ -345,32 +345,22 @@ sub _temperature_kwargs {
 # OpenAI-style, string shorthands and a Langertha::ToolChoice object), in place,
 # for both request builders (the streaming one too, karr k235). The wire is
 # always OpenAI-shaped here (see chat_response), so pin to 'openai' rather than
-# $self->tool_wire_format (hermes engines / Perplexity).
+# $self->tool_wire_format (hermes engines / Perplexity). A kind the engine does
+# not support('tool_choice_*') is not sent (Role::Chat::_gate_tool_choice,
+# karr k239): Ollama's /v1 has no tool_choice field and ignores one.
 sub _openai_tool_choice_kwarg {
   my ( $self, $extra ) = @_;
-  return unless exists $extra->{tool_choice} && defined $extra->{tool_choice};
-  if ( my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} ) ) {
-    $extra->{tool_choice} = $tc->to('openai');
-  }
+  my $tc = $self->_gate_tool_choice($extra) or return;
+  $extra->{tool_choice} = $tc->to('openai');
   return;
 }
 
-# parallel_tool_use -> OpenAI's parallel_tool_calls (only when tools present),
-# in place, for both request builders (the streaming one too, karr k240). A
-# per-request control beats the engine attribute; an explicit
-# parallel_tool_calls kwarg wins over both.
+# parallel_tool_use -> OpenAI's parallel_tool_calls, gated on
+# supports('parallel_tool_use') (karr k241); see
+# Role::Chat::_parallel_tool_calls_kwarg.
 sub _openai_parallel_tool_calls_kwarg {
   my ( $self, $extra, $controls ) = @_;
-  return unless exists $extra->{tools} && !exists $extra->{parallel_tool_calls};
-  my $ptu;
-  if ( exists $controls->{parallel_tool_use} ) {
-    $ptu = $controls->{parallel_tool_use};
-  }
-  elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
-    $ptu = $self->parallel_tool_use;
-  }
-  $extra->{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
-  return;
+  return $self->_parallel_tool_calls_kwarg( $extra, $controls );
 }
 
 sub chat_request {

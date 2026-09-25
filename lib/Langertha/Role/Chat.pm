@@ -754,6 +754,16 @@ and the tool prompt.
 C<E<lt>tool_callE<gt>> blocks in the reply land on
 L<Langertha::Response/tool_calls> and are removed from C<content>.
 
+A C<tool_choice> goes on the wire only as the engine's C<tool_choice_*>
+capabilities allow. Where the wire has no field for its kind (Ollama native
+and its C</v1> endpoint, Perplexity, LM Studio native), C<auto> is dropped
+silently, C<none> withholds the request's tools instead (with a warning), and
+a forced choice is dropped with a warning, the model then decides; a forced
+named tool that the C<json_schema> rewrite below can take is rewritten
+instead. Likewise C<parallel_tool_use> reaches the wire only where the engine
+C<supports('parallel_tool_use')>; a value you set elsewhere is dropped with a
+warning on the OpenAI-compatible and Responses envelopes.
+
 The canonical per-request controls (karr #46) are normalized like
 C<messages>/C<tools> instead of being spread as raw target-wire kwargs:
 C<temperature>, C<max_tokens>, C<response_format>, C<seed>,
@@ -938,6 +948,77 @@ async sub chat_stream_realtime_f {
     ttft_seconds  => $ttft_seconds,
     total_seconds => $total_seconds,
   }, $thinking);
+}
+
+# Decides a caller's tool_choice against supports('tool_choice_*'), in place,
+# for every request builder whose wire field may be missing (karr k239, the
+# k233 Responses rule generalized; ADR 0002: field emission follows the
+# claimed capability). Returns the Langertha::ToolChoice to serialize when the
+# engine supports its kind; the builder calls ->to($fmt) itself, since only it
+# knows its envelope. Otherwise the field is deleted: undef or 'auto' (the
+# wire default) silently; 'none' withholds the request's tools too, so "call
+# no tool" holds without the field, with a carp; a forced choice (any /
+# named) with a carp, the model then decides. chat_f's ADR 0005 rewrite runs
+# first and has already taken a forced named tool it could reroute. A value
+# ToolChoice cannot read (a provider-native choice) stays as given where the
+# wire has a tool_choice field at all, and is dropped with a carp where not.
+sub _gate_tool_choice {
+  my ( $self, $extra ) = @_;
+  return unless exists $extra->{tool_choice};
+  my $has_field = grep { $self->supports("tool_choice_$_") } qw( auto any none named );
+  unless ( defined $extra->{tool_choice} ) {
+    delete $extra->{tool_choice} unless $has_field;
+    return;
+  }
+  my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} );
+  unless ($tc) {
+    return if $has_field;
+    delete $extra->{tool_choice};
+    carp "".( ref $self ).": dropping tool_choice -- this engine has no tool_choice "
+      . "field and the value is not one Langertha can read; the model decides whether to call a tool";
+    return;
+  }
+  my $cap = $tc->type eq 'tool' ? 'tool_choice_named' : 'tool_choice_' . $tc->type;
+  return $tc if $self->supports($cap);
+  delete $extra->{tool_choice};
+  if ( $tc->type eq 'none' ) {
+    delete $extra->{tools};
+    carp "".( ref $self ).": dropping tool_choice 'none' -- this engine does not "
+      . "support('tool_choice_none'); the request's tools are withheld instead";
+    return;
+  }
+  carp "".( ref $self ).": dropping tool_choice '"
+    . ( $tc->type eq 'tool' ? 'tool ' . ( $tc->name // '' ) : $tc->type )
+    . "' -- this engine does not support('$cap'); the model decides whether to call a tool"
+      unless $tc->type eq 'auto';
+  return;
+}
+
+# parallel_tool_use -> parallel_tool_calls, in place, for the Chat Completions
+# and Responses builders alike (streaming too, karr k240): only when tools are
+# present. A per-request control beats the engine attribute; an explicit
+# parallel_tool_calls kwarg is the caller's wire intent and wins over both.
+# Emitted only where the engine supports('parallel_tool_use') (karr k241, ADR
+# 0002); a value the caller set that the gate drops carps (ADR 0025
+# drop+carp), nothing set stays silent.
+sub _parallel_tool_calls_kwarg {
+  my ( $self, $extra, $controls ) = @_;
+  return unless exists $extra->{tools} && !exists $extra->{parallel_tool_calls};
+  my $ptu;
+  if ( exists $controls->{parallel_tool_use} ) {
+    $ptu = $controls->{parallel_tool_use};
+  }
+  elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
+    $ptu = $self->parallel_tool_use;
+  }
+  return unless defined $ptu;
+  unless ( $self->supports('parallel_tool_use') ) {
+    carp "".( ref $self ).": dropping parallel_tool_use -- this engine does not "
+      . "support('parallel_tool_use'); the provider decides how many tool calls a turn has";
+    return;
+  }
+  $extra->{parallel_tool_calls} = $ptu ? JSON->true : JSON->false;
+  return;
 }
 
 # The one path that puts a caller's tools list on the wire, for chat_f and
@@ -1127,7 +1208,9 @@ L<Langertha::Tool> objects are serialized, hashes already in the wire's shape
 (built-ins and extras included) pass through verbatim, other function-tool
 hashes (MCP C<inputSchema>, canonical C<input_schema>) are converted, and on
 Gemini all declarations are merged into one C<functionDeclarations> entry.
-C<tool_choice> and any engine-specific extras pass through. Tool calls the
+C<tool_choice> is decided against the C<tool_choice_*> capabilities as in
+L</chat_f> (without the C<json_schema> rewrite); any engine-specific extras
+pass through. Tool calls the
 model streams are collected with L</aggregate_tool_calls>. On a C<hermes>
 engine the tools ride the system prompt and C<tool_choice> is handled as in
 L</chat_f>; the C<E<lt>tool_callE<gt>> blocks the model writes stay in the

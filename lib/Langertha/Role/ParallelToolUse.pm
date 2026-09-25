@@ -43,6 +43,13 @@ in the C<tool_choice> block.
 
 =back
 
+The field is sent only when the request carries tools and the engine
+C<supports('parallel_tool_use')>. Engines whose wire has no such knob
+(Gemini, Ollama native and C</v1>, Perplexity, MiniMax, Scaleway, Hetzner)
+clear the capability; a value set there is not sent, and the
+OpenAI-compatible and Responses envelopes warn about the drop. An explicit
+C<parallel_tool_calls> request argument is passed through as given.
+
 For convenience the constructor also accepts the provider-native names as
 aliases and normalizes them:
 

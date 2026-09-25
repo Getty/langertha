@@ -105,7 +105,11 @@ subtest 'request: flat function tools, never tool_choice or parallel_tool_calls'
             "$builder: MCP tool formatted to the flat function shape" );
         ok( !exists $body->{tool_choice}, "$builder: tool_choice auto not sent" );
         ok( !exists $body->{parallel_tool_calls}, "$builder: parallel_tool_calls not sent" );
-        ok( !@warns, "$builder: dropping auto is silent (it is the default)" ) or diag @warns;
+        ok( !( grep { /tool_choice/ } @warns ), "$builder: dropping auto is silent (it is the default)" )
+            or diag @warns;
+        # A parallel_tool_use the caller set is dropped loudly (k241, ADR 0025 drop+carp).
+        ok( ( grep { /dropping parallel_tool_use/ } @warns ), "$builder: dropping a set parallel_tool_use carps" )
+            or diag @warns;
 
         @warns = ();
         $body = body_of( ppx()->$builder( [ { role => 'user', content => 'weather?' } ],

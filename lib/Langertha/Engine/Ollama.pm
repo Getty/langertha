@@ -215,6 +215,11 @@ sub chat_request {
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
 
+  # /api/chat has no tool_choice field: the tool_choice_* flags are cleared
+  # below, so the shared rule drops it (none withholds the tools, a forced
+  # choice carps; karr k239).
+  $self->_gate_tool_choice(\%extra);
+
   # Translate response_format -> Ollama's format parameter. Ollama
   # accepts either the literal string 'json' or a JSON-Schema HashRef.
   # A per-request response_format (chat_f) beats the engine attribute,
@@ -457,6 +462,9 @@ sub chat_stream_request {
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
 
+  # No tool_choice field, same rule as chat_request (karr k239).
+  $self->_gate_tool_choice(\%extra);
+
   # Translate response_format -> Ollama's format parameter, same wire as
   # chat_request. Ollama accepts either the literal string 'json' or a
   # JSON-Schema HashRef. A per-request response_format
@@ -554,6 +562,25 @@ sub parse_stream_chunk {
 
 # Tool calling support (MCP) is the tag-driven default in Langertha::Role::Tools.
 sub _build_tool_wire_format { 'ollama' }
+
+# Native /api/chat's ChatRequest (api/types.go, main 2026-09-24, v0.34.4) is
+# model, messages, stream, format, keep_alive, tools, options, think, truncate,
+# shift, logprobs, top_logprobs: no tool_choice and no parallel knob. The Go
+# server binds without DisallowUnknownFields, so either field is accepted,
+# IGNORED and answered 200 -- the caller would believe a tool was forced.
+# Clear every tool_choice flag and parallel_tool_use (karr k239, k241; ADR
+# 0002 layer 2); tools_native stays. With tool_choice_named gone, chat_f
+# reroutes a forced named tool through format=<schema> (ADR 0005), which the
+# grammar enforces. Mirrors OllamaOpenAI, the same server's /v1 face.
+around engine_capabilities => sub {
+  my ( $orig, $self, @rest ) = @_;
+  my $caps = $self->$orig(@rest);
+  delete @{$caps}{ qw(
+    tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
+    parallel_tool_use
+  ) };
+  return $caps;
+};
 
 __PACKAGE__->meta->make_immutable;
 

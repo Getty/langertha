@@ -77,6 +77,7 @@ use JSON::MaybeXS;
   ok !$c3->{thinking_budget},   'gemini-3 does NOT advertise thinking_budget';
   ok !$c3->{prompt_cache},      'gemini-3 has no request-side cache enable';
   ok !$c3->{prompt_cache_key},  'gemini-3 has no prompt_cache_key';
+  ok !$c3->{parallel_tool_use}, 'gemini-3 has no parallel_tool_use (no parallel knob in ToolConfig, k241)';
 
   # Gemini 2.5 model: thinking_budget on, reasoning_effort off
   my $e25 = Langertha::Engine::Gemini->new( api_key => 'x', model => 'gemini-2.5-pro' );
@@ -153,6 +154,9 @@ ok( Langertha::Engine::NousResearch->new( api_key => 'x' )->supports('response_f
     keep_alive => '5m',
   );
   ok $e->supports('keep_alive'), 'ollama advertises keep_alive (composes Role::KeepAlive)';
+  ok $e->supports('tools_native'), 'ollama keeps tools_native';
+  ok !$e->supports($_), "ollama has no $_ (no such field on /api/chat, k239/k241)"
+    for qw( tool_choice_auto tool_choice_any tool_choice_none tool_choice_named parallel_tool_use );
   my $body = JSON::MaybeXS->new->utf8(1)->decode( $e->chat('testprompt')->content );
   is $body->{keep_alive}, '5m', 'ollama puts keep_alive on the wire (flag matches reality)';
 }

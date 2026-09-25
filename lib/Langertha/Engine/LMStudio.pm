@@ -56,6 +56,10 @@ Implemented operations:
 
 =back
 
+The native chat endpoint takes no client tools: passing a non-empty C<tools>
+list croaks, use the L</openai> or L</anthropic> wrapper for tool calling. A
+C<tool_choice> is never sent (a forced one warns).
+
 Authentication is optional. If C<api_key> (or C<LANGERTHA_LMSTUDIO_API_KEY>)
 is set, requests include C<Authorization: Bearer ...>.
 
@@ -286,8 +290,30 @@ sub _normalize_system_prompt {
   return @system ? join("\n\n", @system) : undef;
 }
 
+# LM Studio's native /api/v1/chat takes neither tools nor tool_choice: its
+# endpoint table lists "Custom tools: NO" for /api/v1/chat (yes on
+# /v1/chat/completions, /v1/messages, /v1/responses; lmstudio.ai/docs/
+# developer/rest), and the tool_call items it returns are server-run
+# plugin/MCP calls. A tools list croaks, like a ServerTool off its wire, since
+# no tool call could ever come back; an empty one is simply not sent. A
+# tool_choice goes through the shared rule (karr k239): this engine claims no
+# tool_choice_*, so it is dropped, a forced one with a carp.
+sub _lmstudio_tool_kwargs {
+  my ( $self, $extra ) = @_;
+  if ( exists $extra->{tools} ) {
+    my $tools = delete $extra->{tools};
+    croak "".( ref $self ).": LM Studio's native /api/v1/chat takes no tools; use "
+      . "Langertha::Engine::LMStudioOpenAI or Langertha::Engine::LMStudioAnthropic "
+      . "(the ->openai / ->anthropic methods) for tool calling"
+        if ref $tools ne 'ARRAY' || @$tools;
+  }
+  $self->_gate_tool_choice($extra);
+  return;
+}
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
+  $self->_lmstudio_tool_kwargs(\%extra);
 
   # Canonical per-request controls (chat_f, karr #46) beat the engine
   # attributes on a per-key basis; the rest of %extra passes straight through.
@@ -341,6 +367,7 @@ sub stream_format { 'sse' }
 
 sub chat_stream_request {
   my ( $self, $messages, %extra ) = @_;
+  $self->_lmstudio_tool_kwargs(\%extra);
 
   # Canonical per-request controls (chat_f, karr #46) beat the engine
   # attributes on a per-key basis; the rest of %extra passes straight through.

@@ -205,62 +205,29 @@ sub _responses_tools_kwarg {
 # Responses-shaped (mirrors OpenAICompatible pinning 'openai'). A choice whose
 # kind the engine does not support (tool_choice_auto / _any / _none / _named)
 # is not sent: Perplexity's Agent API has no tool_choice field at all (karr
-# k213). Dropping 'auto' is silent -- it is the wire default -- any other drop
-# carps, since the model is then free to call or skip tools. An unsendable
-# 'none' also withholds every tool of the request -- function tools, native
-# built-ins and server-tool defaults alike, since 'none' rules out any tool
-# call -- so the caller's "call no tool" holds without the field (karr k233).
-# A value ToolChoice cannot read (a provider-native choice) passes through as
-# given where the wire has a tool_choice field, and is dropped with a carp
-# where it has none (k233).
+# k213). The decision is Role::Chat::_gate_tool_choice, this role's k233 rule
+# generalized to every envelope in k239: dropping 'auto' is silent, any other
+# drop carps; an unsendable 'none' also withholds every tool of the request --
+# function tools, native built-ins and server-tool defaults alike, since they
+# are all on the tools list by now -- so the caller's "call no tool" holds
+# without the field. A value ToolChoice cannot read (a provider-native choice)
+# passes through as given where the wire has a tool_choice field, and is
+# dropped with a carp where it has none.
 sub _responses_tool_choice_kwarg {
     my ( $self, $extra ) = @_;
-    return unless exists $extra->{tool_choice} && defined $extra->{tool_choice};
-    my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} );
-    unless ($tc) {
-        return if grep { $self->supports("tool_choice_$_") } qw( auto any none named );
-        delete $extra->{tool_choice};
-        carp "".( ref $self ).": dropping tool_choice -- this engine has no tool_choice "
-          . "field and the value is not one Langertha can read; the model decides whether to call a tool";
-        return;
-    }
-    my $cap = $tc->type eq 'tool' ? 'tool_choice_named' : 'tool_choice_' . $tc->type;
-    if ( $self->supports($cap) ) {
-        $extra->{tool_choice} = $tc->to('responses');
-        return;
-    }
-    delete $extra->{tool_choice};
-    if ( $tc->type eq 'none' ) {
-        delete $extra->{tools};
-        carp "".( ref $self ).": dropping tool_choice 'none' -- this engine does not "
-          . "support('tool_choice_none'); the request's tools are withheld instead";
-        return;
-    }
-    carp "".( ref $self ).": dropping tool_choice '"
-      . ( $tc->type eq 'tool' ? 'tool ' . ( $tc->name // '' ) : $tc->type )
-      . "' -- this engine does not support('$cap'); the model decides whether to call a tool"
-        unless $tc->type eq 'auto';
+    my $tc = $self->_gate_tool_choice($extra) or return;
+    $extra->{tool_choice} = $tc->to('responses');
     return;
 }
 
 # parallel_tool_use -> parallel_tool_calls, in place, for both request builders
 # (the streaming one too, karr k240): only when tools are present, and only
-# where the wire has the field (Perplexity's Agent API does not, k213). A
-# per-request control beats the engine attribute; an explicit
-# parallel_tool_calls kwarg wins over both.
+# where the wire has the field (Perplexity's Agent API does not, k213); a value
+# the caller set that this drops carps (k241). See
+# Role::Chat::_parallel_tool_calls_kwarg.
 sub _responses_parallel_tool_calls_kwarg {
     my ( $self, $extra, $controls ) = @_;
-    return unless exists $extra->{tools} && !exists $extra->{parallel_tool_calls}
-      && $self->supports('parallel_tool_use');
-    my $ptu;
-    if ( exists $controls->{parallel_tool_use} ) {
-        $ptu = $controls->{parallel_tool_use};
-    }
-    elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
-        $ptu = $self->parallel_tool_use;
-    }
-    $extra->{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
-    return;
+    return $self->_parallel_tool_calls_kwarg( $extra, $controls );
 }
 
 # The engine's server_tools defaults, as ServerTool objects, minus every one

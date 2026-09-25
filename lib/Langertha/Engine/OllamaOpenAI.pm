@@ -97,12 +97,15 @@ sub _build_supported_operations {[qw( createChatCompletion createEmbedding )]}
 # prompt_cache_key is not a field of Ollama's /v1 ChatCompletionRequest struct
 # (openai/openai.go; Go's decoder drops it) -- only the /v1/responses shim
 # echoes it back as null (checked 2026-09-25, karr #200). Clear it too.
+# parallel_tool_calls is not a field of that struct either (same file, main
+# 2026-09-24): clear parallel_tool_use (karr k241). The OpenAI envelope sends
+# neither tool_choice nor parallel_tool_calls without the flag (k239, k241).
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
   delete @{$caps}{ qw(
     tool_choice_auto tool_choice_any tool_choice_none tool_choice_named
-    prompt_cache_key
+    prompt_cache_key parallel_tool_use
   ) };
   return $caps;
 };

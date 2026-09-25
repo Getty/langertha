@@ -64,13 +64,21 @@ Revision history for Langertha
       json_schema. The echo of a tool turn keeps only the calls and the
       assistant's text, since the Agent input rejects search results and
       other built-in tool items. Taken from Perplexity's documentation, not
-      verified against the live API. On the Responses wire a tool_choice the
-      engine does not support is no longer sent (dropping anything but auto
-      carps); an unsendable tool_choice => 'none' leaves the request's tools
-      out instead, so the model cannot call a tool you ruled out, and a
-      tool_choice Langertha cannot read is dropped where the engine has no
-      tool_choice at all (OpenAIResponses still passes it through).
+      verified against the live API.
       ToolChoice->to_perplexity is marked legacy (the old Sonar forms).
+
+    - A tool_choice is sent only where the engine supports its kind
+      (supports('tool_choice_*')), on the OpenAI-compatible and Responses
+      engines and on Ollama and LM Studio native: auto is dropped quietly,
+      a forced choice with a warning, and an unsendable tool_choice =>
+      'none' leaves the request's tools out instead, so the model cannot
+      call a tool you ruled out. A tool_choice Langertha cannot read passes
+      through only where the engine has a tool_choice at all. Ollama native
+      no longer claims tool_choice_* (its /api/chat has none, like its /v1),
+      so chat_f turns a forced named tool into a format schema and a
+      synthetic tool call there. LM Studio native croaks on tools; use
+      LMStudioOpenAI or LMStudioAnthropic for tool calling. Hetzner still
+      sends the tool_choice you pass.
 
     - tool_choice accepts a Langertha::ToolChoice object (ToolChoice->none,
       ->any, ->specific($name), ...) wherever it accepts a string or hash:
@@ -79,10 +87,14 @@ Revision history for Langertha
       streaming request of the OpenAI-compatible engines now converts
       tool_choice to the OpenAI form too, as the non-streaming one does.
 
-    - parallel_tool_use (engine attribute or chat_f control) now reaches
-      the streaming request of the OpenAI-compatible and Responses engines
-      as parallel_tool_calls, exactly as it reaches the non-streaming one;
-      chat_stream_realtime_f no longer drops it.
+    - parallel_tool_use (engine attribute or chat_f control) reaches the
+      streaming request of the OpenAI-compatible and Responses engines as
+      parallel_tool_calls, exactly as it reaches the non-streaming one, and
+      only where the engine supports('parallel_tool_use'); a value you set
+      is dropped with a warning elsewhere, and an explicit
+      parallel_tool_calls argument always passes. Gemini, Ollama native and
+      OllamaOpenAI no longer claim parallel_tool_use: their wires have no
+      such knob.
 
     - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
       item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,

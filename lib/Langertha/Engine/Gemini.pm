@@ -38,9 +38,16 @@ sub _build_reasoning_wire_format { 'gemini' }
 # resources are an "on" feature for Gemini 2.5+ and Gemini 3. Older
 # generations (1.x, 2.0) don't accept the cachedContents REST endpoints,
 # so we drop the flag there.
+#
+# parallel_tool_use is cleared on every model (karr k241): the v1beta
+# ToolConfig is retrievalConfig | functionCallingConfig (mode +
+# allowedFunctionNames) | includeServerSideToolInvocations, with no parallel
+# knob (discovery doc revision 20260924). The model emits several
+# functionCall parts on its own; there is nothing to switch off.
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);
+  delete $caps->{parallel_tool_use};
   my $model = $self->can('chat_model') ? ( $self->chat_model // '' ) : '';
   if ( $model =~ /\Agemini-2\.5/ ) {
     $caps->{thinking_budget} = 1;
