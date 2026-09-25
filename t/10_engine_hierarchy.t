@@ -397,15 +397,16 @@ test_openai_cloud_engine(
   class => 'Langertha::Engine::XAI',
   name => 'XAI',
   url => 'https://api.x.ai/v1',
-  model => 'grok-4.6',
+  model => 'grok-4.7',
   env_var => 'LANGERTHA_XAI_API_KEY',
   has_tools => 1,
   has_response_format => 1,
 );
-# grok-4.3 became a cheaper mid-tier; grok-4.6 is the current flagship
-# (docs.x.ai/developers/models, verified 2026-09-14 — karr k152).
-is(Langertha::Engine::XAI->new(api_key => 'k')->default_model, 'grok-4.6',
-  'XAI default_model is grok-4.6 (current flagship, not the stale grok-4.3)');
+# grok-4.7 is the current flagship and the only chat model on docs.x.ai/docs/models
+# (last updated 2026-09-21; advisor-verified 2026-09-25, docs only — karr k205).
+# Same specs as grok-4.6 on chat/completions; the prior default was grok-4.6 (k152).
+is(Langertha::Engine::XAI->new(api_key => 'k')->default_model, 'grok-4.7',
+  'XAI default_model is grok-4.7 (current flagship, not the superseded grok-4.6)');
 
 # --- Perplexity (Agent API — Responses envelope, NOT OpenAI, NO tools) ---
 # Lean engine (k139): parent = Remote, composes Role::ResponsesCompatible (the

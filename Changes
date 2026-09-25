@@ -2,6 +2,10 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - XAI: the default model is now grok-4.7, xAI's current flagship (same
+      context, pricing and parameters as grok-4.6 on chat/completions). Pass
+      model => 'grok-4.6' to keep the previous default.
+
     - XAI: reasoning_effort reaches the wire only with a level grok accepts:
       low, medium, high or xhigh on grok-4.6 and later, low, medium or high on
       grok-4.5. none, minimal and max are dropped, since grok cannot turn

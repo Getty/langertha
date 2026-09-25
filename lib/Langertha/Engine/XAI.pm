@@ -14,7 +14,7 @@ with 'Langertha::Role::Tools';
 
     my $xai = Langertha::Engine::XAI->new(
         api_key       => $ENV{XAI_API_KEY},
-        model         => 'grok-4.6',
+        model         => 'grok-4.7',
         system_prompt => 'You are a helpful assistant',
     );
 
@@ -35,12 +35,13 @@ OpenAI-compatible API at C<https://api.x.ai/v1>. Composes
 L<Langertha::Role::OpenAICompatible> with xAI's endpoint and API key
 handling, plus L<Langertha::Role::Tools> for MCP tool calling.
 
-Grok 4.6 (C<grok-4.6>, the default) is xAI's current flagship general model,
-with a 500K-token context window and agentic tool calling. The earlier
-C<grok-4.5> (500K context) and C<grok-4.3> (1M context, now a cheaper mid-tier)
-remain selectable via C<model>, as does the coding-specialized
-C<grok-build-0.1>. Grok has no knowledge of current events beyond its training
-cut-off unless you enable xAI's server-side Web Search / X Search tools.
+Grok 4.7 (C<grok-4.7>, the default) is xAI's current flagship general model,
+with a 500K-token context window and agentic tool calling. C<model> takes any
+id the API serves, such as the previous default C<grok-4.6>; xAI's models page
+lists only C<grok-4.7> today, so check L<https://docs.x.ai/docs/models> before
+relying on an older id. Grok has no knowledge of current events beyond its
+training cut-off unless you enable xAI's server-side Web Search / X Search
+tools.
 
 xAI's audio (Voice API) and image/video (Imagine API) live on separate
 endpoints and are not exposed by this engine; it covers chat, streaming,
@@ -81,7 +82,7 @@ sub _build_api_key {
     || croak "".(ref $self)." requires LANGERTHA_XAI_API_KEY or api_key set";
 }
 
-sub default_model { 'grok-4.6' }
+sub default_model { 'grok-4.7' }
 
 __PACKAGE__->meta->make_immutable;
 
