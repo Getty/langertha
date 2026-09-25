@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T17:38:54Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T17:38:54Z
+created: 2026-09-25T17:28:57Z
+id: 272
+priority: low
+started: 2026-09-25T17:38:54Z
+status: done
+tags:
+- aki
+- vision
+- live
+title: 'AKIOpenAI: probe image input on gemma4-* and qwen3.8-27b'
+updated: 2026-09-25T17:38:54Z
+---
+
+Follow-up to k271: the probe budget (3 calls) covered only qwen3.6-chat-35b, which sees images. gemma4-26b / gemma4-chat-26b and qwen3.8-27b are vision models upstream but unverified on AKI serving stack. One image chat each (8x8 red PNG, max_tokens >= 2048: the chat variants still reason and 500 on a small budget); on a correct answer add rows to AKIOpenAI model_capability_corrections + t/78 + fixture in t/28.
+
+2026-09-25 17:38 Probe 2026-09-25, 2 live AKI calls (probe_chat.pl as in k271: 8x8 solid-red base64 PNG as image_url, 'What color is this image? One word.', max_tokens 2048): (1) gemma4-chat-26b -> 200, content 'Red', reasoning 'solid square of color ... bright red'. (2) qwen3.8-27b -> 200, content 'Red', reasoning 'uniform field of red'. No retry needed. Claimed qr/\Aqwen3\.8(?!\d)/ and qr/\Agemma4(?!\d)/ (gemma4-26b by family, not called). Fixtures t/data/akiopenai_{gemma4,qwen38}_image_response*. Commit c76d957 on worktree-agent-abae4db749918f1fa.
