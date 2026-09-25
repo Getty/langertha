@@ -194,6 +194,31 @@ This is an amendment in place, not a new ADR: the four-homes decision above is u
 is simply the case moving from home 1-by-scope to home 1-by-mechanism, which is the direction
 this ADR's Rationale said spellings travel — toward the widest correct home.
 
+## Update (karr k248 — `finish_reason` `stop` next to tool calls reports `tool_calls`, dialect tier)
+
+AKI.IO's OpenAI-compatible endpoint answers a non-streaming tool call with `finish_reason:
+"stop"` instead of `"tool_calls"`. Live on 2026-09-25 with gpt-oss-120b
+(`t/data/akiopenai_gptoss_tool_call_response.json`) and already in the k102 capture with
+llama3-chat-8b (`t/data/akiopenai_tool_call_response.json`); the streamed reply to the same
+gpt-oss request said `"tool_calls"` (`t/data/akiopenai_gptoss_tool_call_stream.sse`). The same
+behaviour is reported for gpt-oss on other vLLM-style servers. Only AKI.IO is verified.
+
+This is the finish *value* disagreeing with the reply, not a second spelling of a field. The fix
+still goes to **home 2**. `Role::OpenAICompatible` has a private `_openai_finish_reason`, used by
+`chat_response` and by `parse_stream_chunk` on the chunk that delivers the assembled calls.
+It reports `tool_calls` when the reply has tool calls and the wire says `stop`. Every other
+value passes through: `length` means truncation and must stay visible, and an absent finish is
+not invented. The wire value stays readable in `raw`, so no new `Response` attribute is added
+(ADR 0004 is not triggered). `Role::ResponsesCompatible` has applied the same rule since k171.
+The rule keeps finish reason and `Response.tool_calls` consistent (ADR 0003), so a proxy or loop
+that branches on `finish_reason` does not read a pending call as a finished answer.
+
+Why home 2 despite the "do not widen the shared dialect role for one provider" keep: the
+problem is not limited to one provider. It comes from the serving stack, has now been seen on two
+models, and is reported beyond AKI.IO. The rewrite fires only on a reply that contradicts itself,
+so a correct server is never changed and no spelling table grows. An engine-scoped `around` on
+`AKIOpenAI` would have to be copied onto vLLM, SGLang and every gateway that serves gpt-oss.
+
 ## Future work
 
 - **karr k130** — *realized* (see the Update above): the `cached_tokens` (and now
