@@ -147,6 +147,9 @@ sub process_stream_data {
     }
   }
 
+  # The body is complete: let the dialect report what it could not finish.
+  $self->_finish_stream_state(\%state) if $self->can('_finish_stream_state');
+
   return \@chunks;
 }
 

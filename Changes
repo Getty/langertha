@@ -73,6 +73,18 @@ Revision history for Langertha
       and later), where the drop used to be silent. Taken from Moonshot's
       documentation, not verified against the live API.
 
+    - Streamed tool calls are no longer lost on Chat-Completions, Anthropic,
+      Gemini and Ollama-native streams: each call arrives once, as the same
+      Langertha::ToolCall the non-streaming reply has, and
+      aggregate_tool_calls collects them from chat_stream_realtime_f's
+      chunks. A Chat-Completions stream that ends without a finish_reason
+      warns and drops its unfinished calls. Anthropic streams keep their own
+      finish_reason and usage when two run at once on one engine.
+      chat_stream_realtime_f now sends Langertha::Tool objects in tools in
+      the engine's wire shape, in the caller's order; tool hashes are sent as
+      given. The stream shapes come from the providers' documentation, not
+      from live captures.
+
     - The Open-Responses stream parser (Role::ResponsesCompatible) reads the
       terminal response.completed event with the same walker as the
       non-streaming reply: function calls arrive on the final chunk as
@@ -82,7 +94,6 @@ Revision history for Langertha
       A response.failed or error event fails the stream with the provider's
       message instead of ending it silently. Built from OpenAI's documented
       streaming events, not verified against a live stream.
-
     - Streamed tool calls are no longer lost. Every stream parser
       (Chat-Completions, Anthropic, Gemini, Ollama native, Open-Responses)
       delivers each call once, as the same Langertha::ToolCall the
@@ -93,6 +104,7 @@ Revision history for Langertha
       as thinking on its final chunk, and a response.failed or error event
       fails the stream with the provider's message. The stream shapes come
       from the providers' documentation, not from live captures.
+
 
 
     - MiniMaxAnthropic no longer sends output_config.effort, which MiniMax's

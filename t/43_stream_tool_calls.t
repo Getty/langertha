@@ -147,12 +147,71 @@ subtest 'OpenAI: stream state is per stream' => sub {
   is( scalar @{ $engine->aggregate_tool_calls( \@one ) }, 1, 'no fragment bleeds into the other stream' );
 
   # A stream cut off before finish_reason must not leak its fragments into the
-  # next stream on the same engine.
-  $engine->process_stream_data( sse( openai_stream_events( truncated => 1 ) ) );
+  # next stream on the same engine. Its unfinished call is not flushed -- an
+  # unterminated arguments string would decode to {} and run the tool with
+  # made-up arguments -- but dropping it must be loud: one carp per stream
+  # (review of k221, point 5).
+  my @warnings;
+  {
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    $engine->process_stream_data( sse( openai_stream_events( truncated => 1 ) ) );
+  }
+  is( scalar @warnings, 1, 'a truncated stream with an assembled call carps once' );
+  like( $warnings[0] // '', qr/without a finish_reason.*1 unfinished tool call.*\badd\b/,
+    'naming the dropped call' );
   my $next = $engine->process_stream_data( sse(
     { choices => [ { index => 0, delta => { content => 'hi' } } ] },
     { choices => [ { index => 0, delta => {}, finish_reason => 'stop' } ] } ) );
   ok( !( grep { $_->has_tool_calls } @$next ), 'a truncated stream leaves nothing behind' );
+
+  # The same through the engine-wide fallback a direct caller gets when it
+  # passes no state (review M1): the final flush ends the stream, so a stale
+  # call cannot surface on the next stream's finish_reason chunk.
+  @warnings = ();
+  {
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    my $cut = sse( openai_stream_events( truncated => 1 ) );
+    $engine->_process_stream_buffer( \$cut, 'sse', 1 );
+  }
+  is( scalar @warnings, 1, 'fallback state: the truncated stream carps once at its final flush' );
+  my $text = sse(
+    { choices => [ { index => 0, delta => { content => 'hi' } } ] },
+    { choices => [ { index => 0, delta => {}, finish_reason => 'stop' } ] } );
+  my $after = $engine->_process_stream_buffer( \$text, 'sse', 1 );
+  ok( !( grep { $_->has_tool_calls } @$after ), 'fallback state: no stale call on the next stream' );
+};
+
+subtest 'OpenAI: fragments without index' => sub {
+  my $engine = Langertha::Engine::OpenAI->new( api_key => 'k', model => 'gpt-4o-mini' );
+  my $c = sub { +{ choices => [ { index => 0, @_ } ] } };
+
+  # Some OpenAI-compatible servers stream whole calls and omit `index` (review
+  # I3; which ones is not verified). Keyed by position, the second call merged
+  # into the first: one call, arguments "{..}{..}" decoded to {}. A fragment
+  # without index is keyed by its id when it has one.
+  my $body = sse(
+    $c->( delta => { tool_calls => [ { id => 'call_a', type => 'function',
+      function => { name => 'f', arguments => '{"x":1}' } } ] } ),
+    $c->( delta => { tool_calls => [ { id => 'call_b', type => 'function',
+      function => { name => 'g', arguments => '{"y":2}' } } ] } ),
+    $c->( delta => {}, finish_reason => 'tool_calls' ) );
+  is_deeply( hashes( $engine->aggregate_tool_calls( $engine->process_stream_data($body) ) ), [
+    { name => 'f', arguments => { x => 1 }, id => 'call_a', synthetic => 0 },
+    { name => 'g', arguments => { y => 2 }, id => 'call_b', synthetic => 0 },
+  ], 'two index-less whole calls stay two calls, in stream order' );
+
+  # An empty-string finish_reason on an intermediate chunk is no finish: it
+  # must not flush the call before its arguments arrived (review M2).
+  $body = sse(
+    $c->( delta => { tool_calls => [ { index => 0, id => 'call_a', type => 'function',
+      function => { name => 'f', arguments => '' } } ] }, finish_reason => '' ),
+    $c->( delta => { tool_calls => [ { index => 0, function => { arguments => '{"x":1}' } } ] }, finish_reason => '' ),
+    $c->( delta => {}, finish_reason => 'tool_calls' ) );
+  my $chunks = $engine->process_stream_data($body);
+  is_deeply( hashes( $engine->aggregate_tool_calls($chunks) ),
+    [ { name => 'f', arguments => { x => 1 }, id => 'call_a', synthetic => 0 } ],
+    'an empty finish_reason does not flush early' );
+  ok( $chunks->[-1]->has_tool_calls, 'the call rides the real finish_reason chunk' );
 };
 
 # ---------------------------------------------------------------------------
@@ -212,6 +271,40 @@ subtest 'Anthropic: a tool_use with no input deltas keeps its start input' => su
     'empty arguments, id kept' );
 };
 
+subtest 'Anthropic: terminal metadata is per stream' => sub {
+  # k167 replays message_delta's finish_reason + usage onto the is_final
+  # message_stop chunk. That carry was engine-wide, so a second stream's
+  # message_start between the first stream's message_delta and message_stop
+  # wiped the first stream's finish_reason and usage, and a second
+  # message_delta handed the first stream the other's (review of k221, I2).
+  # Two concurrent chat_stream_realtime_f on one engine do exactly this.
+  my $engine = Langertha::Engine::Anthropic->new( api_key => 'k', model => 'claude-opus-4-8' );
+  my $feed = sub {
+    my ( $state, @events ) = @_;
+    my $buffer = sse_ev(@events);
+    return @{ $engine->_process_stream_buffer( \$buffer, 'sse', 0, $state ) };
+  };
+  my ( %one, %two );
+  $feed->( \%one, { type => 'message_start', message => { id => 'A' } },
+    { type => 'message_delta', delta => { stop_reason => 'end_turn' }, usage => { output_tokens => 11 } } );
+  $feed->( \%two, { type => 'message_start', message => { id => 'B' } },
+    { type => 'message_delta', delta => { stop_reason => 'tool_use' }, usage => { output_tokens => 99 } } );
+  my ($final_one) = $feed->( \%one, { type => 'message_stop' } );
+  my ($final_two) = $feed->( \%two, { type => 'message_stop' } );
+  is( $final_one->finish_reason, 'end_turn', 'stream A keeps its own finish_reason' );
+  is( $final_one->usage->{output_tokens}, 11, 'and its own usage' );
+  is( $final_two->finish_reason, 'tool_use', 'stream B keeps its own finish_reason' );
+  is( $final_two->usage->{output_tokens}, 99, 'and its own usage' );
+
+  # A direct caller that passes no state still gets the replay (engine-wide
+  # fallback), as t/43_streaming_parser.t relies on.
+  my $direct = Langertha::Engine::Anthropic->new( api_key => 'k', model => 'claude-opus-4-8' );
+  $direct->parse_stream_chunk( { type => 'message_start', message => { id => 'C' } } );
+  $direct->parse_stream_chunk( { type => 'message_delta', delta => { stop_reason => 'max_tokens' } } );
+  is( $direct->parse_stream_chunk( { type => 'message_stop' } )->finish_reason, 'max_tokens',
+    'fallback state: replay still works for a direct caller' );
+};
+
 # ---------------------------------------------------------------------------
 # Gemini: functionCall parts arrive whole, on the chunk that carries them.
 # ---------------------------------------------------------------------------
@@ -255,6 +348,25 @@ subtest 'Ollama native: message.tool_calls, parity with the capture' => sub {
   is( scalar @$tcs, 1, 'delivered exactly once' );
   ok( $chunks->[0]->has_tool_calls && !$chunks->[1]->has_tool_calls, 'on the chunk that carried it' );
   is( $chunks->[1]->finish_reason, 'stop', 'done_reason unchanged' );
+};
+
+subtest 'tools: the caller\'s order is kept' => sub {
+  # Order is caller intent, and on Anthropic a cache_control breakpoint caches
+  # the prefix of the tool list, so serializing Tool objects must not move them
+  # ahead of the hashes (review of k221, M3). Gemini's function declarations
+  # live in one functionDeclarations entry, placed where the first object was.
+  my $obj  = Langertha::Tool->new( name => 'obj', input_schema => { type => 'object', properties => {} } );
+  my $obj2 = Langertha::Tool->new( name => 'obj2', input_schema => { type => 'object', properties => {} } );
+  my $hash = { type => 'function', function => { name => 'hash', parameters => { type => 'object', properties => {} } } };
+  my $oa = Langertha::Engine::OpenAI->new( api_key => 'k', model => 'gpt-4o-mini' );
+  is_deeply( $oa->_stream_wire_tools( [ $hash, $obj, $hash, $obj2 ] ),
+    [ $hash, $obj->to('openai'), $hash, $obj2->to('openai') ], 'openai: every tool in place' );
+
+  my $gemini = Langertha::Engine::Gemini->new( api_key => 'k', model => 'gemini-3-flash-preview' );
+  my $search = { google_search => {} };
+  is_deeply( $gemini->_stream_wire_tools( [ $search, $obj, $obj2 ] ),
+    [ $search, @{ Langertha::Tool->format_list( 'gemini', [ $obj, $obj2 ] ) } ],
+    'gemini: objects grouped into one functionDeclarations entry at the first object' );
 };
 
 # ---------------------------------------------------------------------------
@@ -333,13 +445,14 @@ SKIP: {
       my $an = Test::RecordingAnthropic->new( api_key => 'k', model => 'llama3-chat-8b',
         url => $base, $args->() );
       ( $content, $chunks ) = $an->chat_stream_realtime_f(
-        messages => ['add 7 and 15'], tools => [ $tool, $server_tool, $cached_tool ] )->get;
+        messages => ['add 7 and 15'], tools => [ $server_tool, $tool, $cached_tool ] )->get;
       is_deeply( hashes( $an->aggregate_tool_calls($chunks) ),
         reply_calls( $an, 't/data/akianthropic_tool_call_response.json' ), 'Anthropic: streamed call matches the reply' );
       is( $content, 'Adding.', 'Anthropic: text still streams' );
       is_deeply( $an->sent->{tools},
-        [ @{ Langertha::Tool->format_list( 'anthropic', [$tool] ) }, $server_tool, $cached_tool ],
-        'Anthropic: a canonical Tool is serialized; wire-shaped hashes (a built-in, cache_control) pass through untouched' );
+        [ $server_tool, @{ Langertha::Tool->format_list( 'anthropic', [$tool] ) }, $cached_tool ],
+        'Anthropic: a canonical Tool is serialized in place; wire-shaped hashes (a built-in, '
+        . 'cache_control) pass through untouched and the caller\'s order is kept' );
     };
   }
 }

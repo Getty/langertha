@@ -877,6 +877,9 @@ async sub chat_stream_realtime_f {
       $chunk_callback->($chunk) if $chunk_callback;
     }
   }
+  # The stream ended: let the dialect report what it could not finish (a
+  # tool call that never saw its finish_reason, karr k221).
+  $self->_finish_stream_state(\%stream_state) if $self->can('_finish_stream_state');
 
   my $content      = join('', map { $_->content } @all_chunks);
   my $thinking     = $self->aggregate_thinking(\@all_chunks);
@@ -896,18 +899,28 @@ async sub chat_stream_realtime_f {
 # would drop wire extras such as OpenAI's function.strict or Anthropic's
 # cache_control) and would croak on provider built-ins. The hermes wire (tools
 # ride the prompt) and an engine without Role::Tools get the list unchanged.
+# Every tool keeps its place: order is caller intent, and an Anthropic
+# cache_control breakpoint caches the prefix of the list. Gemini wraps all
+# function declarations in one functionDeclarations entry, which goes where
+# the first object was.
 sub _stream_wire_tools {
   my ( $self, $tools ) = @_;
   return $tools unless $self->can('tool_wire_format');
   my $fmt = $self->tool_wire_format;
   return $tools if $fmt eq 'hermes';
-  my ( @objects, @hashes );
-  for my $tool (@$tools) {
-    if ( blessed($tool) && $tool->isa('Langertha::Tool') ) { push @objects, $tool }
-    else                                                    { push @hashes, $tool }
-  }
+  my $is_tool = sub { blessed( $_[0] ) && $_[0]->isa('Langertha::Tool') };
+  my @objects = grep { $is_tool->($_) } @$tools;
   return $tools unless @objects;
-  return [ @{ Langertha::Tool->format_list( $fmt, \@objects ) }, @hashes ];
+  if ( $fmt eq 'gemini' ) {
+    my ( @out, $placed );
+    for my $tool (@$tools) {
+      if ( !$is_tool->($tool) ) { push @out, $tool; next }
+      next if $placed++;
+      push @out, @{ Langertha::Tool->format_list( $fmt, \@objects ) };
+    }
+    return \@out;
+  }
+  return [ map { $is_tool->($_) ? $_->to($fmt) : $_ } @$tools ];
 }
 
 sub aggregate_tool_calls {
@@ -1118,6 +1131,13 @@ sub _process_stream_buffer {
       push @chunks, $chunk if $chunk;
     }
   }
+
+  # A final flush without a caller-owned state ends the stream on the
+  # engine-wide fallback: close it here, so nothing left unfinished there can
+  # reach the next stream. A caller that passes its own state (as
+  # chat_stream_realtime_f does) closes it itself.
+  $self->_finish_stream_state
+    if $final && !$state && $self->can('_finish_stream_state');
 
   return \@chunks;
 }

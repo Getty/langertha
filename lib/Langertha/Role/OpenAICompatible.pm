@@ -551,16 +551,26 @@ sub parse_stream_chunk {
   # chunk that carries finish_reason -- read by the same
   # ToolCall->extract('openai', ...) chat_response uses, so a streamed and a
   # non-streamed reply of one response yield the same calls. The calls leave the
-  # state as they are delivered, so none arrives twice. -- karr k221
+  # state as they are delivered, so none arrives twice. A fragment without
+  # `index` (servers that stream whole calls) is keyed by its id, and only by
+  # its position when it has neither; an empty-string finish_reason is no
+  # finish and flushes nothing. A stream that ends without a finish_reason is
+  # reported by _finish_stream_state. -- karr k221
   $state //= $self->_stream_parse_state;
   my $pending = $state->{openai_tool_calls} //= {};
+  my $order   = $state->{openai_tool_order} //= [];
   my $delta_calls = ref $choice->{delta} eq 'HASH' ? $choice->{delta}{tool_calls} : undef;
   if ( ref $delta_calls eq 'ARRAY' ) {
     for my $pos ( 0 .. $#$delta_calls ) {
       my $fragment = $delta_calls->[$pos];
       next unless ref $fragment eq 'HASH';
-      my $call = $pending->{ $fragment->{index} // $pos }
-        //= { type => 'function', function => { arguments => '' } };
+      my $key = defined $fragment->{index}     ? "index:$fragment->{index}"
+              : length( $fragment->{id} // '' ) ? "id:$fragment->{id}"
+              :                                   "pos:$pos";
+      my $call = $pending->{$key} //= do {
+        push @$order, $key;
+        { type => 'function', function => { arguments => '' } };
+      };
       $call->{id} = $fragment->{id} if !length( $call->{id} // '' ) && length( $fragment->{id} // '' );
       my $fn = ref $fragment->{function} eq 'HASH' ? $fragment->{function} : {};
       $call->{function}{name} = $fn->{name}
@@ -570,9 +580,10 @@ sub parse_stream_chunk {
     }
   }
   my @tool_calls;
-  if ( defined $finish_reason && %$pending ) {
-    my @calls = map { $pending->{$_} } sort { $a <=> $b } keys %$pending;
+  if ( length( $finish_reason // '' ) && @$order ) {
+    my @calls = map { $pending->{$_} } @$order;
     %$pending = ();
+    @$order   = ();
     @tool_calls = Langertha::ToolCall->extract( 'openai',
       { choices => [ { message => { tool_calls => \@calls } } ] } );
   }
@@ -619,13 +630,51 @@ C<usage.prompt_tokens_details.cached_tokens> when present), and C<thinking>
 (the streamed C<delta.reasoning_content> / bare C<delta.reasoning>, guarded
 C<!ref>). Returns C<undef> only when the payload carries no C<choices>.
 
-C<delta.tool_calls> fragments are assembled per C<index> in C<\%state> (one
-HashRef per stream; the stream paths pass it, a direct caller may omit it and
-share the engine's fallback), and the finished calls land as
-L<Langertha::ToolCall> objects on the chunk that carries C<finish_reason>, read
-by the same L<Langertha::ToolCall/extract> as L</chat_response>. Collect them
-with L<Langertha::Role::Chat/aggregate_tool_calls>. C<finish_reason> is passed
-through as the provider sent it, as on the non-streaming path.
+C<delta.tool_calls> fragments are assembled per C<index> (a fragment without
+C<index> by its C<id>, and by its position only when it has neither) in
+C<\%state>, and the finished calls land as L<Langertha::ToolCall> objects, in
+stream order, on the chunk that carries a non-empty C<finish_reason>, read by the
+same L<Langertha::ToolCall/extract> as L</chat_response>. Collect them with
+L<Langertha::Role::Chat/aggregate_tool_calls>. C<finish_reason> is passed
+through as the provider sent it, as on the non-streaming path. A stream that
+ends without one drops its pending calls with a C<carp> (see
+L</_finish_stream_state>).
+
+C<\%state> is one HashRef per stream. The stream paths pass it;
+C<$event> is only set by L<Langertha::Role::Streaming/process_stream_data>, the
+C<chat_stream_realtime_f> path passes C<undef>. A direct caller may omit
+C<\%state> and share the engine's fallback, which is closed when a
+C<_process_stream_buffer> flush with C<$final> set ends the stream; a caller
+feeding events to C<parse_stream_chunk> one by one should pass its own state.
+
+=cut
+
+sub _finish_stream_state {
+  my ( $self, $state ) = @_;
+  $state //= $self->_stream_parse_state;
+  my $order = $state->{openai_tool_order} or return;
+  return unless @$order;
+  my $pending = $state->{openai_tool_calls} // {};
+  my @names = map { $pending->{$_}{function}{name} // '?' } @$order;
+  %$pending = ();
+  @$order   = ();
+  carp "".( ref $self )." stream ended without a finish_reason; dropping "
+    . scalar(@names) . " unfinished tool call(s): " . join( ', ', @names );
+  return;
+}
+
+=method _finish_stream_state
+
+    $engine->_finish_stream_state(\%state);
+
+Internal: called once when a stream ends (by
+L<Langertha::Role::Streaming/process_stream_data> and
+L<Langertha::Role::Chat/chat_stream_realtime_f>, and by a final
+C<_process_stream_buffer> flush that was given no state). Tool calls still
+pending because no chunk carried a C<finish_reason> -- a truncated stream -- are
+dropped with one C<carp> naming them, not flushed: their C<arguments> may be
+cut off, and a partial JSON string would decode to C<{}>. Clearing them also
+keeps them out of the next stream that shares the same state.
 
 =cut
 
