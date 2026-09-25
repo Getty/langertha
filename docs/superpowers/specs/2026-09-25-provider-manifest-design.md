@@ -4,7 +4,7 @@
 - Date: 2026-09-25
 - karr: k191 (this) · consumers: langertha-knarr k14 (auto export), langertha-skeid k29 (filtered export), langertha-raider (client)
 - Origin: langertha-raider ADR 0007 "The provider manifest is declarative and lean in v1", handoff §11.1
-- ADRs touched: relates **0002** (capability vocabulary), **0001** (tool_wire_format names), **0006** (engine inheritance encodes the wire dialect). New ADR: assigned by the orchestrator.
+- ADRs touched: relates **0002** (capability vocabulary), **0001** (tool_wire_format names), **0006** (engine inheritance encodes the wire dialect). Recorded as **ADR 0029** (fix round 1 of the review).
 
 ## 1. Problem & scope
 
@@ -105,7 +105,7 @@ All Moose, immutable (`ro`), `make_immutable`, `# ABSTRACT:` + inline POD.
 | `Langertha::Manifest::Endpoint` | `id`, `dialect`, `base_url`, `auth_ref` | `from_hash`, `to_hash`, `is_known_dialect`, class method `known_dialects` |
 | `Langertha::Manifest::Auth` | `id`, `type` | `from_hash`, `to_hash`, `is_known_type`, class method `known_types` |
 | `Langertha::Manifest::Model` | `id`, `endpoint_ref`, `capabilities` (HashRef of 1/0) | `from_hash`, `to_hash`, `supports($cap)` |
-| `Langertha::Manifest::Validation` | — (a Moose role composed by the four classes above; internal, deliberately outside `Langertha::Role::`, not a capability) | `check_manifest_fields`, `is_forbidden_manifest_field`, `check_manifest_id` / `_token` / `_url`, `manifest_bool`, `rethrow_manifest_error` |
+| `Langertha::Manifest::Validation` | — (a Moose role composed by the four classes above; internal, deliberately outside `Langertha::Role::`, not a capability) | all private: `_check_fields`, `_is_forbidden_field`, `_check_id` / `_check_token` / `_check_url`, `_string`, `_bool`, `_is_integer`, `_json_clone`, `_display`, `_error`, `_rethrow` |
 | `Langertha::Manifest::Builder` | `provider_id`, `issuer`, accumulated entries | `add_engine($engine, %opt)`, `add_endpoint`, `add_auth`, `add_model`, `extensions`, `manifest`; class sugar `from_engine($engine, %opt)` |
 
 JSON goes through `JSON::MaybeXS` configured like the house instance
@@ -146,16 +146,26 @@ a path: `Langertha::Manifest: endpoints[0]: unknown field 'foo'`.
    (`unknown field 'X'`), at the top level and inside every entry.
 6. **Values.**
    - ids / `provider_id` / `dialect` / auth `type` / capability names match their patterns.
-   - `issuer` and `base_url` are `http` or `https` URLs with a host, **no userinfo**
-     (`user:pass@`), **no query**, **no fragment** — the two places a secret could hide
-     in a URL (`?key=…`).
-   - capability values are booleans (JSON `true`/`false`; from Perl also `1`/`0`,
-     `\1`/`\0`); strings are rejected.
+   - `issuer` and `base_url` are printable-ASCII `http` or `https` URLs with a host,
+     **no userinfo** (`user:pass@`), **no query**, **no fragment** — the usual places a
+     secret hides in a URL (`?key=…`). Best effort: a secret embedded in the path
+     (`/key/SECRET/v1`, `;key=SECRET`) cannot be told from a real path.
+   - model ids carry no control, format (bidi override U+202E), surrogate, private-use,
+     unassigned or line/paragraph-separator characters; field names echoed in errors
+     are escaped (`\x{1b}`) and truncated — a client prints both.
+   - string fields reject objects/arrays; a JSON number in a string field is
+     stringified (`"id": 42` serializes back as `"42"`).
+   - `schema_version` is a JSON **integer** — the string `"1"` and the float `1.0` are
+     rejected (checked on the decoded value's numeric slot, before anything numifies it).
+   - capability values are booleans (JSON `true`/`false`; from Perl also the numbers
+     `1`/`0`, `\1`/`\0`); strings, including the JSON string `"1"`, are rejected.
    - endpoint ids unique, auth ids unique, `(model id, endpoint_ref)` unique.
    - every `auth_ref` names an auth entry; every `endpoint_ref` names an endpoint.
    - at least one endpoint.
-7. **`extensions` is inert.** It must be an object; its content is neither validated
-   nor interpreted, and `to_hash` returns it as given. Core never acts on it.
+7. **`extensions` is inert.** It must be an object of plain JSON data (no blessed
+   objects other than JSON booleans, no code refs); beyond that its content is neither
+   validated nor interpreted, and it serializes as given. It is deep-copied on
+   construction and every read returns a fresh copy, so the manifest stays immutable.
 8. **Vocabulary is not validity.** A pattern-valid but unknown `dialect` or auth `type`
    is *accepted*; `is_known_dialect` / `is_known_type` tell a client whether it has an
    adapter. Rationale: ADR 0007's four states — what the provider claims vs. what the
@@ -174,11 +184,16 @@ named after the `tool_wire_format` tag wherever the two coincide:
 | `openai-chat` | `Engine::OpenAIBase` (OpenAI, DeepSeek, Groq, vLLM, SGLang, LlamaCpp, NousResearch, …) | `openai` (or `hermes`) |
 | `responses` | `Engine::OpenAIResponses` (`/v1/responses`) | `responses` |
 | `perplexity-agent` | `Engine::Perplexity` (Open-Responses envelope on `/v1/agent`) | — (no tools) |
-| `anthropic` | `Engine::AnthropicBase` (Anthropic and the `/anthropic` shims) | `anthropic` |
+| `anthropic` | `Engine::Anthropic` (first-party Messages API: native `output_config.format`) | `anthropic` |
+| `anthropic-compat` | the `/anthropic` shims (AKIAnthropic, MiniMaxAnthropic, MoonshotAnthropic, LMStudioAnthropic: structured output as synthetic tool + forced choice) | `anthropic` |
 | `gemini` | `Engine::Gemini` | `gemini` |
 | `ollama` | `Engine::Ollama` (native `/api/chat`) | `ollama` |
 | `aki` | `Engine::AKI` (native `/api/call/{model}`) | `openai` |
 | `lmstudio` | `Engine::LMStudio` (native) | `openai` |
+
+`anthropic` vs `anthropic-compat`: the dialect names the wire variant a client adapter
+must speak, not only the envelope. The Builder decides it from the engine's own
+predicate `_native_structured_output` (`Role::AnthropicCompatible`), not from a name list.
 
 `openai-chat` rather than `openai`: the dialect names an *envelope*, and OpenAI ships
 two (`/chat/completions` and `/responses`); the suffix keeps them apart. `hermes` is a
@@ -204,12 +219,33 @@ whose endpoints are their own protocol routes, not engines.
 | endpoint `dialect` | ordered `isa` table of §5, most specific first (`dialect_for_engine`); `%opt{dialect}` overrides (third-party engines); croak if none |
 | endpoint `base_url` | `$engine->url` (`%opt{base_url}` overrides — Knarr publishes its public URL, not an internal one) |
 | auth | class-level `api_key_required` / `api_key_env` (`Engine::Remote`): *required* → `api_key` entry (id `%opt{auth_id}` // `api`); *optional* → only if the engine has a key configured (definedness is checked, the value is never read into the manifest); *none* → no auth. `%opt{auth}` = `api_key` / `none` overrides. |
-| models | `%opt{models}` (ArrayRef of ids), default `[ $engine->chat_model ]` |
-| model `capabilities` | `engine_capabilities` evaluated **for that model id**: the engine is cloned with `chat_model => $id` (Moose `clone_object`, in memory only) so layer 3 (`model_capability_corrections`, ADR 0019) and model-aware `around engine_capabilities` (Gemini) apply per model. Emitted verbatim: every key the registry returns, value `true`. |
+| models | `%opt{models}` (ArrayRef of ids). Otherwise the engine's model, read on an in-memory clone; a placeholder id (`default`, empty) is skipped; a model-less engine croaks asking for `models`. With `models` given, the engine's own `chat_model` is never read — model-less engines (OpenRouter, OllamaOpenAI) work. |
+| model `capabilities` | `engine_capabilities` evaluated **for that model id**: the engine is cloned with `chat_model => $id` (Moose `clone_object`, in memory only) so layer 3 (`model_capability_corrections`, ADR 0019) and model-aware `around engine_capabilities` (Gemini) apply per model. Then filtered to `Builder->model_capabilities` (below). The caller's engine is never read for lazy slots and never modified. |
 
 Capability names are exactly what `engine_capabilities` returns — the `%ROLE_TO_CAPS`
 vocabulary plus the engines' own documented corrections. The Builder introduces no
 names and no synonyms.
+
+**Model-scoped allowlist** (`@MODEL_CAPABILITIES` in the Builder, exposed as
+`model_capabilities`): a model entry claims only what describes a chat call to that
+model at that endpoint — `chat`, `streaming`, `tools_native`, `tools_hermes`,
+`tool_choice_{auto,any,none,named}`, `parallel_tool_use`,
+`response_format_json_{object,schema}`, `reasoning_effort`, `thinking_budget`,
+`temperature`, `seed`, `system_prompt`, `response_size`, `context_size`, `prompt_cache`,
+`prompt_cache_key`. Never published on a model: `embedding`, `transcription`,
+`image_generation` (other operations), `runtime_metrics`, `prefix_caching`,
+`keep_alive`, `cached_content` (client-side / server-management). A guard test fails
+on any capability an engine reports that is in neither list. The filter applies only
+to what the Builder emits; a parsed manifest accepts any name.
+
+**Known v1 limitations:** engine-class facts outside the flag vocabulary are not
+expressed — the Groq/Cerebras refusal of `tools` + `response_format` in one request
+(ADR 0024) and OpenAI's temperature gate under active reasoning (ADR 0025).
+
+**Atomicity:** `add_engine` builds and checks every entry first (duplicate endpoint
+id, duplicate `(model, endpoint)` pair, auth type conflict) and only then commits;
+a croak leaves the builder unchanged. `add_model` / `add_auth` check duplicates at
+add time.
 
 **Secrets:** the Builder never reads `api_key`'s value into any structure; a test
 constructs engines with a sentinel key and asserts the sentinel appears nowhere in
@@ -221,9 +257,11 @@ so a key smuggled into a URL cannot be published either.
 - `t/96_manifest.t` — roundtrip (hash → object → hash, JSON → object → JSON → object),
   extensions passed through untouched, lookups, boolean handling.
 - `t/96_manifest_rejections.t` — one negative test per rule in §4.
-- `t/96_manifest_builder.t` — offline engines OpenAI, Anthropic, vLLM (with `url`),
-  Ollama: dialect, base_url, auth, per-model capabilities vs `supports`, no secret
-  leakage, multi-endpoint build, Whisper croaks.
+- `t/96_manifest_builder.t` — offline engines OpenAI, Groq, OpenAIResponses, Anthropic
+  and the four shims, vLLM (with `url`, with/without model and key), Ollama,
+  OllamaOpenAI/OpenRouter without a model, Gemini: dialect, base_url, auth, per-model
+  allowlisted capabilities, no secret leakage, the caller's engine untouched,
+  atomicity, multi-endpoint build, Whisper croaks, capability classification guard.
 
 ## 8. Not decided here
 
