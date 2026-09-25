@@ -1039,11 +1039,14 @@ per-request controls (karr #46) — C<temperature>, C<max_tokens>,
 C<response_format>, C<seed>, C<parallel_tool_use>, C<reasoning_effort>,
 C<thinking_budget>, C<prompt_cache>, C<prompt_cache_ttl>, C<prompt_cache_key> —
 are extracted and handed to L</chat_stream_request> under C<controls>, exactly
-as in L</chat_f>. C<tools> may hold L<Langertha::Tool> objects, which are
-serialized for the engine's C<tool_wire_format>; tool hashes are taken as
-already in the engine's wire shape and pass through untouched, as do
-C<tool_choice> and any engine-specific extras. Tool calls the model streams are
-collected with L</aggregate_tool_calls>.
+as in L</chat_f>. C<tools> is shaped for the engine's C<tool_wire_format> item
+by item, exactly as in L</chat_f> (L<Langertha::Tool/request_list>):
+L<Langertha::Tool> objects are serialized, hashes already in the wire's shape
+(built-ins and extras included) pass through verbatim, other function-tool
+hashes (MCP C<inputSchema>, canonical C<input_schema>) are converted, and on
+Gemini all declarations are merged into one C<functionDeclarations> entry.
+C<tool_choice> and any engine-specific extras pass through. Tool calls the
+model streams are collected with L</aggregate_tool_calls>.
 
 Returns a L<Future> that resolves to C<($content, \@chunks, \%timing,
 $thinking)> where C<$content> is the full concatenated text, C<\@chunks> the

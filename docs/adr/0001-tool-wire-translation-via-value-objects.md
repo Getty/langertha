@@ -242,4 +242,9 @@ entries; some Gemini versions reportedly reject that (unverified). All declarati
 one entry, placed where the first declaration came from, in caller order; a later raw entry
 gives up its declarations and keeps its other fields (dropped only when nothing is left).
 Merging loses nothing and is what the caller meant, so it is normalization, not gatekeeping. A
-single raw entry is unchanged.
+single raw entry is unchanged. The REST API reads both `functionDeclarations` and
+`function_declarations` (ADR 0018), so a raw entry in either spelling joins the merge; the merged
+entry is written `functionDeclarations` (k227 review M1). Likewise the inbound door
+`Tool->from_hash` / `from_gemini` reads a declaration's schema from `parameters`,
+`parametersJsonSchema` or `parameters_json_schema`, so converting one to another wire keeps it
+(k227 review M2).
