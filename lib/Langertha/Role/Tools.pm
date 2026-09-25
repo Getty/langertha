@@ -461,6 +461,18 @@ sub _result_call_name {
   return $tc->{name} // '';
 }
 
+# The MCP call_tool result's payload as ToolResult constructor args: content
+# plus structuredContent, which every format falls back to when content is
+# empty (karr k326, k336).
+sub _result_payload {
+  my ( $result ) = @_;
+  return (
+    content => ( $result->{content} // [] ),
+    ( defined $result->{structuredContent}
+      ? ( structured_content => $result->{structuredContent} ) : () ),
+  );
+}
+
 sub format_tool_results {
   my ( $self, $data, $results ) = @_;
   my $fmt = $self->tool_wire_format;
@@ -469,10 +481,8 @@ sub format_tool_results {
     my @blocks = map {
       Langertha::ToolResult->new(
         id       => _result_call_id( $_->{tool_call} ),
-        content  => ( $_->{result}{content} // [] ),
+        _result_payload( $_->{result} ),
         is_error => ( $_->{result}{isError} ? 1 : 0 ),
-        ( defined $_->{result}{structuredContent}
-          ? ( structured_content => $_->{result}{structuredContent} ) : () ),
       )->to('anthropic')
     } @$results;
     return (
@@ -486,7 +496,7 @@ sub format_tool_results {
       Langertha::ToolResult->new(
         name    => _result_call_name( $_->{tool_call} ),
         id      => _result_call_id( $_->{tool_call} ),
-        content => ( $_->{result}{content} // [] ),
+        _result_payload( $_->{result} ),
       )->to('gemini')
     } @$results;
     my $candidate = $data->{candidates}[0];
@@ -513,7 +523,7 @@ sub format_tool_results {
         Langertha::ToolResult->new(
           name    => _result_call_name( $_->{tool_call} ),
           id      => _result_call_id( $_->{tool_call} ),
-          content => ( $_->{result}{content} // [] ),
+          _result_payload( $_->{result} ),
         )->to('ollama')
       } @$results,
     );
@@ -550,7 +560,7 @@ sub format_tool_results {
       map {
         Langertha::ToolResult->new(
           id      => _result_call_id( $_->{tool_call} ),
-          content => ( $_->{result}{content} // [] ),
+          _result_payload( $_->{result} ),
         )->to('responses')
       } @$results,
     );
@@ -565,7 +575,7 @@ sub format_tool_results {
         { role    => 'tool',
           content => Langertha::ToolResult->new(
             name    => _result_call_name( $_->{tool_call} ),
-            content => ( $_->{result}{content} // [] ),
+            _result_payload( $_->{result} ),
           )->to( 'hermes', response_tag => $res_tag ) }
       } @$results,
     );
@@ -594,7 +604,7 @@ sub format_tool_results {
     map {
       Langertha::ToolResult->new(
         id      => _result_call_id( $_->{tool_call} ),
-        content => ( $_->{result}{content} // [] ),
+        _result_payload( $_->{result} ),
       )->to('openai')
     } @$results,
   );

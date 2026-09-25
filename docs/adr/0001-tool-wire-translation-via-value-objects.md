@@ -361,3 +361,31 @@ The dependency this creates: `parametersJsonSchema` exists on the v1beta `Functi
 only; v1 (GA) has `parameters` alone. `Engine::Gemini` pins `gemini_api_version` to `v1beta`, so
 the wire is consistent today. A subclass or future change that serves `v1` must revisit
 `to_gemini` (fall back to `parameters`, and then face the keyword allowlist) in the same change.
+
+## Update (k326, k336 — MCP result content is mapped per wire through one normalizer)
+
+A tool's MCP `call_tool` result used to reach the wire as-is: Anthropic embedded the content
+array (a 400 on the first image or annotated text block), and OpenAI, OpenAI Responses and
+Ollama JSON-encoded it, which put an image's base64 data into the prompt as tokens. None of
+those wires takes MCP content blocks: Anthropic's `tool_result` takes text / image / document /
+search_result blocks and rejects unknown fields; the OpenAI chat tool message, the Responses
+`function_call_output` and the Ollama tool message take a string; Gemini's
+`functionResponse.response` takes a JSON object.
+
+`ToolResult` now reads the content array once into neutral items (text, text document, base64
+blob, Anthropic-native block, placeholder) and each `to_<fmt>` renders them. Anthropic maps
+them onto its blocks, following anthropic-sdk-python `lib/tools/mcp.py`. Every other wire gets
+one string: text joined with `"\n"`, a text resource as its text, a `text/*` blob decoded as
+UTF-8, a `resource_link` as `[resource_link] name <uri>`, and any blob the wire cannot carry as
+a placeholder naming type, MIME type, URI and decoded size — never the payload. Unlike the SDK,
+nothing dies inside the tool loop: an unsupported block degrades to a placeholder. When the
+content is empty, every wire sends the JSON-encoded `structuredContent` (as the SDK does);
+Gemini, whose response is an object anyway, sends the `structuredContent` object whenever there
+is one and `{ result => <string> }` otherwise. `Role::Tools::format_tool_results` passes
+`structuredContent` into every format.
+
+Deliberately not done: re-attaching tool-result images as a follow-up user message with
+`image_url` parts on the string wires. It would let a vision model see a screenshot tool's
+output, but it adds a message the model did not ask for into the tool-loop envelope, and the
+Responses and Gemini 3 wires offer native image outputs (`input_image` parts,
+`functionResponse.parts`) that would be the better target. A possible later feature.

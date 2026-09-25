@@ -67,13 +67,13 @@ my $tr_args = sub {
 for my $fmt (qw( openai ollama )) {
   my $s = Langertha::ToolResult->new( $tr_args->() )->to($fmt)->{content};
   ok( index( $s, $city ) >= 0, "ToolResult->to('$fmt') content carries characters" );
-  is( $chars_json->decode($s)->[0]{text}, $text, "ToolResult->to('$fmt') content round-trips" );
+  is( $s, $text, "ToolResult->to('$fmt') content round-trips" );
 }
 
 {
   my $s = Langertha::ToolResult->new( $tr_args->() )->to('responses')->{output};
   ok( index( $s, $city ) >= 0, "ToolResult->to('responses') output carries characters" );
-  is( $chars_json->decode($s)->[0]{text}, $text, "ToolResult->to('responses') output round-trips" );
+  is( $s, $text, "ToolResult->to('responses') output round-trips" );
 }
 
 {
@@ -105,7 +105,7 @@ for my $fmt (qw( openai ollama )) {
   my ($tool)      = grep { $_->{role} eq 'tool' } @{ $body->{messages} };
   is_deeply( $chars_json->decode( $assistant->{tool_calls}[0]{function}{arguments} ), $args,
     'OpenAI body: echoed tool_call arguments decode to the original characters' );
-  is( $chars_json->decode( $tool->{content} )->[0]{text}, $text,
+  is( $tool->{content}, $text,
     'OpenAI body: tool result content decodes to the original characters' );
 }
 
@@ -118,7 +118,7 @@ for my $fmt (qw( openai ollama )) {
       result => { content => [ { type => 'text', text => $text } ] } } ] ) );
   my $body = body_of( $e->chat_request( \@items ) );
   my ($out) = grep { ( $_->{type} // '' ) eq 'function_call_output' } @{ $body->{input} };
-  is( $chars_json->decode( $out->{output} )->[0]{text}, $text,
+  is( $out->{output}, $text,
     'Responses body: function_call_output decodes to the original characters' );
   my ($fc) = grep { ( $_->{type} // '' ) eq 'function_call' } @{ $body->{input} };
   is_deeply( $chars_json->decode( $fc->{arguments} ), $args,
@@ -162,7 +162,7 @@ for my $fmt (qw( openai ollama )) {
       result => { content => [ { type => 'text', text => $text } ] } } ] ) );
   my $body = body_of( $e->chat_request( \@msgs ) );
   my ($tool) = grep { $_->{role} eq 'tool' } @{ $body->{messages} };
-  is( $chars_json->decode( $tool->{content} )->[0]{text}, $text,
+  is( $tool->{content}, $text,
     'Ollama body: tool result content decodes to the original characters' );
 }
 

@@ -256,7 +256,7 @@ subtest 'echo filter: format_tool_results on Perplexity' => sub {
         { type => 'message', role => 'assistant', content => 'Let me check.' },
         $fc_item,
         { type => 'function_call_output', call_id => 'call_abc',
-          output => $json->encode( [ { type => 'text', text => 'Sunny, 21C' } ] ) },
+          output => 'Sunny, 21C' },
     ], 'search/fetch results dropped, message flattened to text, function_call kept verbatim (thought_signature too)' );
 
     # mcp_* items and an empty preamble are dropped; a legacy nested call is hoisted then kept.
@@ -276,7 +276,7 @@ subtest 'echo filter: format_tool_results on Perplexity' => sub {
     is_deeply( \@verbatim, [
         @{ $turn1->{output} },
         { type => 'function_call_output', call_id => 'call_abc',
-          output => $json->encode( [ { type => 'text', text => 'Sunny, 21C' } ] ) },
+          output => 'Sunny, 21C' },
     ], 'OpenAIResponses echoes all four output items verbatim, in order, plus the result' );
 };
 

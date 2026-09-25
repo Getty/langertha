@@ -382,11 +382,11 @@ subtest 'chat_with_tools_f: capture #2 -> echo capture, end to end' => sub {
   is_deeply( [ @input[ 0 .. 2 ] ], [ @{ $want_2->{input} }[ 0 .. 2 ] ],
     'turn 2 echoes the user message, the web_search_call item and the function_call item unchanged' );
   is( $input[3]{type}, 'function_call_output', 'then the function result' );
-  # ToolResult->to('responses') sends the MCP content array as JSON text; the
-  # capture sent the bare JSON string. Both are strings to OpenAI (ADR 0030).
+  # ToolResult->to('responses') sends the tool's text as the output string,
+  # the same bare JSON string the capture sent (k336, ADR 0030).
   is( $input[3]{output},
-    '[{"text":"{\\"city\\":\\"Greenville, South Carolina\\",\\"temp_c\\":18,\\"conditions\\":\\"cloudy\\"}","type":"text"}]',
-    'its output is the MCP content array, JSON-encoded' );
+    '{"city":"Greenville, South Carolina","temp_c":18,"conditions":"cloudy"}',
+    'its output is the tool text, as a plain string' );
   is( $input[3]{call_id}, 'call_kcSDMmpaoCvPu0AvsvjiwYA0', 'for the function call id' );
   is( scalar @input, 4, 'and nothing else' );
   is_deeply( $sent[1]{tools}, $want_1->{tools}, 'the same tools on the follow-up turn' );

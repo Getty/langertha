@@ -69,7 +69,7 @@ subtest 'Ollama format_tool_results emits tool_name and tool_call_id' => sub {
   is_deeply( [ map { $_->{tool_call_id} } @tools[ 0, 1 ] ], [qw( call_a call_b )],
     'tool_call_id from the call id' );
   ok( !exists $tools[2]{tool_call_id}, 'no tool_call_id when the call had none' );
-  is_deeply( [ map { JSON::MaybeXS->new->decode( $_->{content} )->[0]{text} } @tools ],
+  is_deeply( [ map { $_->{content} } @tools ],
     [qw( r1 r2 r3 )], 'results in call order' );
 };
 

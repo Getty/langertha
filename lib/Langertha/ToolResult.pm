@@ -4,6 +4,8 @@ our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;
+use MIME::Base64 ();
+use Encode ();
 
 =head1 SYNOPSIS
 
@@ -28,18 +30,24 @@ assembled by L<Langertha::Role::Tools>, not here: a ToolResult knows only its
 own block shape.
 
 The C<content> is the MCP-style content array (C<[ { type => 'text', text =>
-... } ]>). Formats that need an opaque string (OpenAI, Ollama, OpenAI Responses)
-JSON-encode it; formats that want plain text (Gemini, Hermes) flatten the text
-parts.
+... } ]>). OpenAI, OpenAI Responses, Ollama and Hermes send it as one string:
+text parts joined with C<"\n">, an embedded text resource as its text, a
+C<text/*> blob decoded as UTF-8, a C<resource_link> as
+C<[resource_link] name E<lt>uriE<gt>>, and an image, audio or binary blob as a
+placeholder such as C<[image] image/png (12345 bytes)> -- never the base64
+payload. Gemini sends that string as C<< { result => ... } >>, or the
+L</structured_content> object itself when there is one.
 
 Anthropic takes structured blocks, so each MCP block is mapped onto one: text
 keeps only C<text> (and C<cache_control>); an image, or an embedded resource
 whose blob is an image, becomes a base64 C<image> (JPEG, PNG, GIF, WebP); a PDF
-blob becomes a base64 C<document>; a C<text/*> resource, or one without a MIME
-type, becomes a text C<document>. Anthropic-native C<image> / C<document> blocks
-(with a C<source>) and C<search_result> pass through. Everything else --
-C<resource_link>, audio, other MIME types -- becomes a text placeholder naming
-type, MIME type and URI, never the payload. Empty content goes out as the
+blob becomes a base64 C<document>; a text resource (whatever its MIME type) or a
+C<text/*> blob becomes a text C<document>. Anthropic-native C<image> /
+C<document> blocks (with a C<source>) and C<search_result> pass through.
+Everything else -- C<resource_link>, audio, other MIME types -- becomes the same
+text placeholder, naming type, MIME type, URI and size.
+
+On every string wire and on Anthropic, empty content goes out as the
 JSON-encoded L</structured_content>, or as C<''>.
 
 Not every block is a chat message: the OpenAI Responses block is an C<input>
@@ -108,8 +116,9 @@ has structured_content => (
 
 =attr structured_content
 
-The MCP C<structuredContent> of the tool's output, if any. Anthropic sends it,
-JSON-encoded, as the result string when C<content> is empty.
+The MCP C<structuredContent> of the tool's output, if any. Sent JSON-encoded as
+the result string when C<content> is empty; Gemini sends the object as its
+C<functionResponse.response> whenever it is present.
 
 =cut
 
@@ -119,20 +128,107 @@ JSON-encoded, as the result string when C<content> is empty.
 # encoded twice ("Köln" -> "KÃ¶ln"). Same key order as Role::JSON. -- karr k252
 my $JSON = JSON::MaybeXS->new( utf8 => 0, canonical => 1 );
 
-# Flatten the MCP content array down to a plain text string.
-sub _text {
+# --- MCP content normalizer, shared by every format (karr k326, k336) ---
+#
+# One pass over the MCP content array yields neutral items; each format renders
+# them. Kinds:
+#   text      a text block (keeps cache_control, for Anthropic)
+#   document  text from an embedded resource (whatever its MIME type), or a
+#             text/* blob decoded as UTF-8
+#   blob      a base64 payload (image, audio, binary resource) with its MIME
+#   native    an Anthropic-native block a caller built for that wire
+#   note      a ready text placeholder (resource_link, non-hash blocks)
+# A blob the wire cannot carry becomes a placeholder naming type, MIME, URI and
+# decoded size -- never the base64 payload.
+
+sub _b64_size {
+  my ($data) = @_;
+  return undef unless defined $data && !ref $data;
+  ( my $b64 = $data ) =~ s/\s+//g;
+  my $pad = () = $b64 =~ /=/g;
+  return int( length($b64) * 3 / 4 ) - $pad;
+}
+
+sub _placeholder {
+  my ( $type, $mime, $uri, $data ) = @_;
+  my $size = _b64_size($data);
+  return join( ' ', "[$type]", grep { defined && length } $mime,
+    ( defined $uri ? "<$uri>" : () ), ( defined $size ? "($size bytes)" : () ) );
+}
+
+sub _mcp_resource {
+  my ($res) = @_;
+  $res = {} unless ref $res eq 'HASH';
+  my $mime = $res->{mimeType};
+  return { kind => 'document', text => $res->{text} } if defined $res->{text};
+  if ( defined $res->{blob} && defined $mime && $mime =~ m{\Atext/} ) {
+    my $bytes = MIME::Base64::decode_base64( $res->{blob} );
+    return { kind => 'document',
+      text => Encode::decode( 'UTF-8', $bytes, Encode::FB_DEFAULT() ) };
+  }
+  return { kind => 'blob', type => 'resource', mime => $mime, uri => $res->{uri},
+    data => $res->{blob} };
+}
+
+sub _mcp_item {
+  my ($block) = @_;
+  return { kind => 'note', text => _placeholder('unsupported') } unless ref $block eq 'HASH';
+  my $type = $block->{type} // '';
+  if ( $type eq 'text' ) {
+    return { kind => 'text', text => ( $block->{text} // '' ),
+      ( exists $block->{cache_control} ? ( cache_control => $block->{cache_control} ) : () ) };
+  }
+  return { kind => 'native', block => $block }
+    if ( ( $type eq 'image' || $type eq 'document' ) && ref $block->{source} eq 'HASH' )
+    || $type eq 'search_result';
+  return _mcp_resource( $block->{resource} ) if $type eq 'resource';
+  if ( $type eq 'resource_link' ) {
+    return { kind => 'note', text => join( ' ', '[resource_link]',
+      grep { defined && length } $block->{name},
+      ( defined $block->{uri} ? "<$block->{uri}>" : () ) ) };
+  }
+  return { kind => 'blob', type => ( length $type ? $type : 'unsupported' ),
+    mime => $block->{mimeType}, uri => $block->{uri}, data => $block->{data} };
+}
+
+sub _mcp_items {
   my ($self) = @_;
-  return join( '', map { $_->{text} // '' } @{ $self->content } );
+  return map { _mcp_item($_) } @{ $self->content };
+}
+
+# One item as text for the string wires.
+sub _string_item {
+  my ($item) = @_;
+  my $kind = $item->{kind};
+  return _placeholder( @{$item}{qw( type mime uri data )} ) if $kind eq 'blob';
+  return $item->{text} unless $kind eq 'native';
+  # An Anthropic-native block on a string wire: a text document gives its
+  # text, anything else a placeholder.
+  my $native = $item->{block};
+  my $src    = ref $native->{source} eq 'HASH' ? $native->{source} : {};
+  return $src->{data} if ( $src->{type} // '' ) eq 'text' && defined $src->{data};
+  return _placeholder( $native->{type}, $src->{media_type}, $src->{url} );
+}
+
+# The whole result as one string: parts joined with "\n"; empty content falls
+# back to the JSON-encoded structured_content, else ''.
+sub _string_content {
+  my ($self) = @_;
+  my @parts = map { _string_item($_) } $self->_mcp_items;
+  return join( "\n", @parts ) if @parts;
+  return $JSON->encode( $self->structured_content ) if $self->has_structured_content;
+  return '';
 }
 
 # --- Serializers to per-provider result blocks ---
 
 sub to_openai {
   my ($self) = @_;
+  # The chat tool message takes a string (or text parts only) -- karr k336.
   return {
     role         => 'tool',
     tool_call_id => $self->id,
-    content      => $JSON->encode( $self->content ),
+    content      => $self->_string_content,
   };
 }
 
@@ -144,7 +240,7 @@ sub to_ollama {
     role      => 'tool',
     tool_name => $self->name,
     ( length( $self->id ) ? ( tool_call_id => $self->id ) : () ),
-    content   => $JSON->encode( $self->content ),
+    content   => $self->_string_content,
   };
 }
 
@@ -155,83 +251,47 @@ sub to_responses {
   return {
     type    => 'function_call_output',
     call_id => $self->id,
-    output  => $JSON->encode( $self->content ),
+    output  => $self->_string_content,
   };
 }
 
-# --- MCP content -> Anthropic tool_result content (karr k326) ---
+# --- Anthropic tool_result content (karr k326) ---
 #
 # Anthropic's tool_result takes text | image | document | search_result blocks
 # and rejects unknown fields, so MCP blocks are mapped, not embedded. The mapping
 # follows anthropic-sdk-python lib/tools/mcp.py, except that nothing dies inside
 # the tool loop: what Anthropic cannot carry (audio, resource_link, unsupported
-# MIME types) becomes a text placeholder naming type, MIME and URI -- never the
-# base64 payload.
+# MIME types) becomes a text placeholder.
 
 my %ANTHROPIC_IMAGE_MIME = map { $_ => 1 } qw( image/jpeg image/png image/gif image/webp );
 
-sub _anthropic_placeholder {
-  my ( $type, $mime, $uri ) = @_;
-  my @parts = ( "[$type]", grep { defined && length } $mime, ( defined $uri ? "<$uri>" : () ) );
-  return { type => 'text', text => join( ' ', @parts ) };
-}
-
-sub _anthropic_image {
-  my ( $mime, $data ) = @_;
-  return { type => 'image', source => { type => 'base64', media_type => $mime, data => $data } };
-}
-
-sub _anthropic_resource {
-  my ($res) = @_;
-  $res = {} unless ref $res eq 'HASH';
-  my $mime = $res->{mimeType};
-  if ( defined $res->{text} ) {
-    return { type => 'document',
-      source => { type => 'text', media_type => 'text/plain', data => $res->{text} } }
-      if !defined $mime || $mime =~ m{\Atext/};
-  }
-  elsif ( defined $res->{blob} && defined $mime ) {
-    return _anthropic_image( $mime, $res->{blob} ) if $ANTHROPIC_IMAGE_MIME{$mime};
-    return { type => 'document',
-      source => { type => 'base64', media_type => 'application/pdf', data => $res->{blob} } }
-      if $mime eq 'application/pdf';
-  }
-  return _anthropic_placeholder( 'resource', $mime, $res->{uri} );
-}
-
 sub _anthropic_block {
-  my ($block) = @_;
-  return _anthropic_placeholder('unsupported') unless ref $block eq 'HASH';
-  my $type = $block->{type} // '';
-  if ( $type eq 'text' ) {
-    return {
-      type => 'text',
-      text => ( $block->{text} // '' ),
-      ( exists $block->{cache_control} ? ( cache_control => $block->{cache_control} ) : () ),
-    };
+  my ($item) = @_;
+  my $kind = $item->{kind};
+  return $item->{block} if $kind eq 'native';
+  if ( $kind eq 'text' ) {
+    return { type => 'text', text => $item->{text},
+      ( exists $item->{cache_control} ? ( cache_control => $item->{cache_control} ) : () ) };
   }
-  # Already an Anthropic block (a caller built it for this wire): keep it.
-  return $block
-    if ( ( $type eq 'image' || $type eq 'document' ) && ref $block->{source} eq 'HASH' )
-    || $type eq 'search_result';
-  if ( $type eq 'image' ) {
-    my $mime = $block->{mimeType} // '';
-    return _anthropic_image( $mime, $block->{data} ) if $ANTHROPIC_IMAGE_MIME{$mime};
-    return _anthropic_placeholder( 'image', $mime, $block->{uri} );
+  return { type => 'text', text => $item->{text} } if $kind eq 'note';
+  if ( $kind eq 'document' ) {
+    return { type => 'document',
+      source => { type => 'text', media_type => 'text/plain', data => $item->{text} } };
   }
-  return _anthropic_resource( $block->{resource} ) if $type eq 'resource';
-  if ( $type eq 'resource_link' ) {
-    my @parts = ( '[resource_link]', grep { defined && length } $block->{name},
-      ( defined $block->{uri} ? "<$block->{uri}>" : () ) );
-    return { type => 'text', text => join( ' ', @parts ) };
+  my ( $type, $mime, $data ) = ( $item->{type}, $item->{mime} // '', $item->{data} );
+  if ( defined $data && ( $type eq 'image' || $type eq 'resource' ) ) {
+    return { type => 'image', source => { type => 'base64', media_type => $mime, data => $data } }
+      if $ANTHROPIC_IMAGE_MIME{$mime};
+    return { type => 'document',
+      source => { type => 'base64', media_type => 'application/pdf', data => $data } }
+      if $type eq 'resource' && $mime eq 'application/pdf';
   }
-  return _anthropic_placeholder( ( length $type ? $type : 'unsupported' ),
-    $block->{mimeType}, $block->{uri} );
+  return { type => 'text', text => _placeholder( @{$item}{qw( type mime uri data )} ) };
 }
 
 sub _anthropic_content {
   my ($self) = @_;
-  my @blocks = map { _anthropic_block($_) } @{ $self->content };
+  my @blocks = map { _anthropic_block($_) } $self->_mcp_items;
   return \@blocks if @blocks;
   return $JSON->encode( $self->structured_content ) if $self->has_structured_content;
   return '';
@@ -249,13 +309,17 @@ sub to_anthropic {
 
 sub to_gemini {
   my ($self) = @_;
+  # functionResponse.response is a JSON object: the MCP structuredContent when
+  # the tool gave one, else the result string under `result` (karr k336).
+  my $structured = $self->structured_content;
   return {
     functionResponse => {
       name     => $self->name,
       # Gemini 3 requires the functionCall's id back; 2.5 may send none, and
       # an invented one would match nothing (karr k328).
       ( length( $self->id ) ? ( id => $self->id ) : () ),
-      response => { result => $self->_text },
+      response => ( ref $structured eq 'HASH'
+        ? $structured : { result => $self->_string_content } ),
     },
   };
 }
@@ -264,7 +328,7 @@ sub to_hermes {
   my ( $self, %opts ) = @_;
   my $tag = $opts{response_tag} // 'tool_response';
   return "<${tag}>\n"
-    . $JSON->encode( { name => $self->name, content => $self->_text } )
+    . $JSON->encode( { name => $self->name, content => $self->_string_content } )
     . "\n</${tag}>";
 }
 

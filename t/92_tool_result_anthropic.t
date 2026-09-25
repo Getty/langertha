@@ -74,6 +74,18 @@ subtest 'embedded resources' => sub {
     content_of( { type => 'resource', resource => { uri => 'mem://x', text => 'plain' } } ),
     [ { type => 'document', source => { type => 'text', media_type => 'text/plain', data => 'plain' } } ],
     'resource without MIME becomes a text document' );
+  # k336: text is text whatever its MIME type -- a JSON resource or a base64
+  # text/* blob reaches the model as a text document, not a placeholder.
+  is_deeply(
+    content_of( { type => 'resource',
+      resource => { uri => 'mem://j', mimeType => 'application/json', text => '{"a":1}' } } ),
+    [ { type => 'document', source => { type => 'text', media_type => 'text/plain', data => '{"a":1}' } } ],
+    'text resource with a non-text MIME becomes a text document' );
+  is_deeply(
+    content_of( { type => 'resource',
+      resource => { uri => 'file:///k.txt', mimeType => 'text/plain', blob => 'S8O2bG4=' } } ),
+    [ { type => 'document', source => { type => 'text', media_type => 'text/plain', data => "K\x{f6}ln" } } ],
+    'text/* blob decodes as UTF-8 into a text document' );
   my $zip = content_of( { type => 'resource',
     resource => { uri => 'file:///a.zip', mimeType => 'application/zip', blob => 'UEsDBA==' } } );
   is( $zip->[0]{type}, 'text', 'unsupported blob becomes text' );

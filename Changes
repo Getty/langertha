@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Tool results on OpenAI, OpenAI Responses, Ollama, Gemini and Hermes are
+      a plain string instead of the JSON-encoded MCP content: text joined by
+      newlines, images, audio and binaries as a placeholder such as
+      "[image] image/png (12345 bytes)" (no base64 in the prompt), resource
+      links as "[resource_link] name <uri>". Empty content sends the
+      structuredContent as JSON; Gemini sends structuredContent as its
+      response object. On Anthropic, text resources of any MIME type and
+      text/* blobs become text documents.
+
     - Gemini tool declarations send the input schema unchanged as
       parametersJsonSchema instead of parameters, so MCP schemas with
       additionalProperties, $ref or const no longer get a 400. A top-level
