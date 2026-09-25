@@ -243,6 +243,26 @@ sub _responses_tool_choice_kwarg {
     return;
 }
 
+# parallel_tool_use -> parallel_tool_calls, in place, for both request builders
+# (the streaming one too, karr k240): only when tools are present, and only
+# where the wire has the field (Perplexity's Agent API does not, k213). A
+# per-request control beats the engine attribute; an explicit
+# parallel_tool_calls kwarg wins over both.
+sub _responses_parallel_tool_calls_kwarg {
+    my ( $self, $extra, $controls ) = @_;
+    return unless exists $extra->{tools} && !exists $extra->{parallel_tool_calls}
+      && $self->supports('parallel_tool_use');
+    my $ptu;
+    if ( exists $controls->{parallel_tool_use} ) {
+        $ptu = $controls->{parallel_tool_use};
+    }
+    elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
+        $ptu = $self->parallel_tool_use;
+    }
+    $extra->{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
+    return;
+}
+
 # The engine's server_tools defaults, as ServerTool objects, minus every one
 # the request already carries (k206 review I1/M6). Unlike a request's own
 # tools (values open, the provider judges), a default must be a server tool:
@@ -304,20 +324,7 @@ sub chat_request {
 
     $self->_responses_tools_kwarg(\%extra);
     $self->_responses_tool_choice_kwarg(\%extra);
-
-    # parallel_tool_use -> parallel_tool_calls (only when tools present, and
-    # only where the wire has the field: Perplexity's Agent API does not, k213).
-    if ( exists $extra{tools} && !exists $extra{parallel_tool_calls}
-      && $self->supports('parallel_tool_use') ) {
-        my $ptu;
-        if ( exists $controls->{parallel_tool_use} ) {
-            $ptu = $controls->{parallel_tool_use};
-        }
-        elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
-            $ptu = $self->parallel_tool_use;
-        }
-        $extra{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
-    }
+    $self->_responses_parallel_tool_calls_kwarg(\%extra, $controls);
 
     # Build input array: strip system messages (they go to instructions).
     my @input;
@@ -732,6 +739,7 @@ sub chat_stream_request {
 
     $self->_responses_tools_kwarg(\%extra);
     $self->_responses_tool_choice_kwarg(\%extra);
+    $self->_responses_parallel_tool_calls_kwarg(\%extra, $controls);
 
     my @input;
     for my $msg (@$messages) {

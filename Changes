@@ -69,6 +69,11 @@ Revision history for Langertha
       streaming request of the OpenAI-compatible engines now converts
       tool_choice to the OpenAI form too, as the non-streaming one does.
 
+    - parallel_tool_use (engine attribute or chat_f control) now reaches
+      the streaming request of the OpenAI-compatible and Responses engines
+      as parallel_tool_calls, exactly as it reaches the non-streaming one;
+      chat_stream_realtime_f no longer drops it.
+
     - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
       item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,
       computer_call, local_shell_call, apply_patch_call and a client-side

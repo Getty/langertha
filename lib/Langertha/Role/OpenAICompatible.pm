@@ -355,6 +355,24 @@ sub _openai_tool_choice_kwarg {
   return;
 }
 
+# parallel_tool_use -> OpenAI's parallel_tool_calls (only when tools present),
+# in place, for both request builders (the streaming one too, karr k240). A
+# per-request control beats the engine attribute; an explicit
+# parallel_tool_calls kwarg wins over both.
+sub _openai_parallel_tool_calls_kwarg {
+  my ( $self, $extra, $controls ) = @_;
+  return unless exists $extra->{tools} && !exists $extra->{parallel_tool_calls};
+  my $ptu;
+  if ( exists $controls->{parallel_tool_use} ) {
+    $ptu = $controls->{parallel_tool_use};
+  }
+  elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
+    $ptu = $self->parallel_tool_use;
+  }
+  $extra->{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
+  return;
+}
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
@@ -363,19 +381,7 @@ sub chat_request {
   my $controls = delete $extra{controls} // {};
 
   $self->_openai_tool_choice_kwarg(\%extra);
-
-  # parallel_tool_use -> OpenAI's parallel_tool_calls (only when tools present).
-  # A per-request control beats the engine attribute.
-  if ( exists $extra{tools} && !exists $extra{parallel_tool_calls} ) {
-    my $ptu;
-    if ( exists $controls->{parallel_tool_use} ) {
-      $ptu = $controls->{parallel_tool_use};
-    }
-    elsif ( $self->can('has_parallel_tool_use') && $self->has_parallel_tool_use ) {
-      $ptu = $self->parallel_tool_use;
-    }
-    $extra{parallel_tool_calls} = $ptu ? JSON->true : JSON->false if defined $ptu;
-  }
+  $self->_openai_parallel_tool_calls_kwarg(\%extra, $controls);
 
   return $self->generate_request( $self->chat_operation_id, sub { $self->chat_response(shift) },
     defined $self->chat_model ? ( model => $self->chat_model ) : (),
@@ -513,8 +519,10 @@ sub chat_stream_request {
   # Same canonical-control consumption as chat_request (karr #46).
   my $controls = delete $extra{controls} // {};
 
-  # Same tool_choice normalization as chat_request (karr k235).
+  # Same tool_choice normalization and parallel_tool_calls placement as
+  # chat_request (karr k235, k240).
   $self->_openai_tool_choice_kwarg(\%extra);
+  $self->_openai_parallel_tool_calls_kwarg(\%extra, $controls);
 
   return $self->generate_request( $self->chat_operation_id, sub {},
     defined $self->chat_model ? ( model => $self->chat_model ) : (),
