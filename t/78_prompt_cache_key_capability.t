@@ -75,6 +75,19 @@ subtest 'wire agrees with the capability' => sub {
   }
 };
 
+# The gate covers prompt_cache_key only. cache_wire_format is a public,
+# constructor-settable attribute: an OpenAI-family engine told to speak the
+# Anthropic cache dialect (an OpenAI-compatible proxy in front of Claude) must
+# keep sending cache_control even though the family clears the prompt_cache
+# flag (k200 review I1).
+subtest 'cache_wire_format override still sends cache_control' => sub {
+  for my $name (@HONORED) {
+    my $body = body_of( engine( $name, cache_wire_format => 'anthropic', prompt_cache => 1 ) );
+    is_deeply $body->{cache_control}, { type => 'ephemeral' },
+      "$name with cache_wire_format => 'anthropic' sends cache_control";
+  }
+};
+
 subtest 'manifest does not publish it for the corrected engines' => sub {
   for my $name (@NOT_HONORED) {
     my $m = Langertha::Manifest::Builder->from_engine( engine($name), models => ['m'] );
