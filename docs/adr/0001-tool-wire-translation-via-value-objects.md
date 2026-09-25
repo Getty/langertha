@@ -308,3 +308,9 @@ tests pin (`t/43_hermes_stream_tool_calls.t`). ThinkTag's own streaming handling
 the aggregated content at the end, not incremental, so there was no splitter to reuse. Engines
 off the `hermes` wire, a hermes turn without tools and `tool_choice => 'none'` are unchanged; AKI
 native still has no streaming.
+
+Known and accepted after the k253 review: the stream merges native chunk `tool_calls` with the
+lifted hermes calls, while `chat_f` skips the lift when the reply already carries native calls —
+theoretical on the `hermes` wire, left as is. The splitter rescans its held buffer from the start
+on each chunk while inside a call block (quadratic for very large arguments in tiny chunks);
+negligible at realistic sizes, remembering the scan offset is the fix if it ever shows.
