@@ -62,6 +62,13 @@ Revision history for Langertha
       tool_choice at all (OpenAIResponses still passes it through).
       ToolChoice->to_perplexity is marked legacy (the old Sonar forms).
 
+    - tool_choice accepts a Langertha::ToolChoice object (ToolChoice->none,
+      ->any, ->specific($name), ...) wherever it accepts a string or hash:
+      it goes out in each wire's own form, drives the forced-tool rewrite of
+      chat_f, and a ToolChoice->none on Perplexity withholds the tools. The
+      streaming request of the OpenAI-compatible engines now converts
+      tool_choice to the OpenAI form too, as the non-streaming one does.
+
     - The Responses wire (OpenAIResponses, Perplexity) now croaks on a reply
       item the client must answer and Langertha cannot: mcp_approval_request, custom_tool_call,
       computer_call, local_shell_call, apply_patch_call and a client-side

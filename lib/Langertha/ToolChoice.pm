@@ -3,6 +3,7 @@ package Langertha::ToolChoice;
 our $VERSION = '0.503';
 use Moose;
 use Carp qw( croak );
+use Scalar::Util qw( blessed );
 use Moose::Util::TypeConstraints qw( enum );
 
 # Canonical types: 'auto' (let model decide), 'any' (must call any tool),
@@ -36,6 +37,9 @@ sub specific {
 sub from_hash {
   my ($class, $val) = @_;
   return undef unless defined $val;
+  # A ToolChoice is already canonical input (karr k235): hand it back, so every
+  # request builder serializes it with ->to($fmt) instead of leaking TO_JSON.
+  return $val if blessed($val) && $val->isa(__PACKAGE__);
 
   if ( !ref($val) ) {
     return $class->any  if $val eq 'required' || $val eq 'any';

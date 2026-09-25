@@ -341,6 +341,20 @@ sub _temperature_kwargs {
   return ( temperature => $temp );
 }
 
+# Normalize tool_choice to OpenAI native format (accepts Anthropic-style,
+# OpenAI-style, string shorthands and a Langertha::ToolChoice object), in place,
+# for both request builders (the streaming one too, karr k235). The wire is
+# always OpenAI-shaped here (see chat_response), so pin to 'openai' rather than
+# $self->tool_wire_format (hermes engines / Perplexity).
+sub _openai_tool_choice_kwarg {
+  my ( $self, $extra ) = @_;
+  return unless exists $extra->{tool_choice} && defined $extra->{tool_choice};
+  if ( my $tc = Langertha::ToolChoice->from_hash( $extra->{tool_choice} ) ) {
+    $extra->{tool_choice} = $tc->to('openai');
+  }
+  return;
+}
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
@@ -348,15 +362,7 @@ sub chat_request {
   # attributes on a per-key basis; the rest of %extra passes straight through.
   my $controls = delete $extra{controls} // {};
 
-  # Normalize tool_choice to OpenAI native format (accepts Anthropic-style,
-  # OpenAI-style, and string shorthands).
-  if ( exists $extra{tool_choice} && defined $extra{tool_choice} ) {
-    if ( my $tc = Langertha::ToolChoice->from_hash( $extra{tool_choice} ) ) {
-      # Wire is always OpenAI-shaped here (see chat_response), so pin to
-      # 'openai' rather than $self->tool_wire_format (hermes engines / Perplexity).
-      $extra{tool_choice} = $tc->to('openai');
-    }
-  }
+  $self->_openai_tool_choice_kwarg(\%extra);
 
   # parallel_tool_use -> OpenAI's parallel_tool_calls (only when tools present).
   # A per-request control beats the engine attribute.
@@ -506,6 +512,9 @@ sub chat_stream_request {
 
   # Same canonical-control consumption as chat_request (karr #46).
   my $controls = delete $extra{controls} // {};
+
+  # Same tool_choice normalization as chat_request (karr k235).
+  $self->_openai_tool_choice_kwarg(\%extra);
 
   return $self->generate_request( $self->chat_operation_id, sub {},
     defined $self->chat_model ? ( model => $self->chat_model ) : (),

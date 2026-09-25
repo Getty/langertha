@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use strict;
 use warnings;
 use Carp ();
+use Scalar::Util qw( blessed );
 use Langertha::Tool;
 use Langertha::ToolChoice;
 
@@ -59,14 +60,16 @@ sub normalize_tool_choice {
 
 sub to_openai_tool_choice {
   my ($class, $canonical_tool_choice) = @_;
-  return undef unless ref($canonical_tool_choice) eq 'HASH';
+  return undef unless ref($canonical_tool_choice) eq 'HASH'
+    || ( blessed($canonical_tool_choice) && $canonical_tool_choice->isa('Langertha::ToolChoice') );
   my $tc = Langertha::ToolChoice->from_hash($canonical_tool_choice);
   return $tc ? $tc->to_openai : undef;
 }
 
 sub to_anthropic_tool_choice {
   my ($class, $canonical_tool_choice) = @_;
-  return undef unless ref($canonical_tool_choice) eq 'HASH';
+  return undef unless ref($canonical_tool_choice) eq 'HASH'
+    || ( blessed($canonical_tool_choice) && $canonical_tool_choice->isa('Langertha::ToolChoice') );
   my $tc = Langertha::ToolChoice->from_hash($canonical_tool_choice);
   return $tc ? $tc->to_anthropic : undef;
 }

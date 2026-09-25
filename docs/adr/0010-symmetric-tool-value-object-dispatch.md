@@ -107,3 +107,21 @@ future refactor. Two independent reasons:
   why Perplexity's named-tool request is a `response_format` rewrite, not a `tool_wire_format`
   value, which is why `to_perplexity` stays off the `to($fmt)` dispatch. `CONTEXT.md` fixes the
   vocabulary (the `ToolChoice` entry now describes the unified `to($fmt)` dispatch).
+
+## Update (k235 — a `ToolChoice` object is canonical tool_choice input)
+
+`ToolChoice->from_hash` returns an already-blessed `Langertha::ToolChoice` as-is. Before, it
+returned `undef` for one, so every request builder took the object for an unreadable,
+provider-native choice: it reached the wire through `TO_JSON` in the canonical
+`{type => ...}` shape (wrong on the OpenAI and Responses wires, which take `'none'` /
+`'required'` strings), and on Perplexity a `ToolChoice->none` carped and still sent the tools,
+bypassing the ADR 0020 k233 none-withhold. Every tool_choice entry point — `chat_f`'s ADR 0005
+rewrite and its exclusion signal, the `OpenAICompatible` / `AnthropicCompatible` /
+`ResponsesCompatible` / Gemini request builders, the `Input::Tools` facade — funnels through
+`from_hash`, so one identity branch there makes the object serialize by `to($fmt)` on every
+wire; no builder learns about objects on its own. `TO_JSON` stays the canonical `to_hash`
+for logging (Langfuse), never a wire form. The same audit found that
+`OpenAICompatible::chat_stream_request` did not normalize tool_choice at all (a hash or object
+went out verbatim); both builders now share `_openai_tool_choice_kwarg`. Native engines with no
+wire-level tool_choice serializer (Ollama native, AKI native, LMStudio native) still pass any
+tool_choice through untouched — pre-existing, tracked as karr k239.
