@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-25T19:45:14Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T19:45:14Z
+created: 2026-09-25T19:39:27Z
+id: 285
+priority: low
+started: 2026-09-25T19:40:28Z
+status: done
+tags:
+- release
+- changes
+title: 'Changes: image_input probe bullet omits k270-review hardening (tolerant id
+  matching, partial-404 probe, eval isolation)'
+updated: 2026-09-25T19:45:14Z
+---
+
+Pre-release audit (langertha-release-checker) after a171067. Commit 971e750 "fix: k270 review, probe hardening and tolerant id matching" (no karr suffix in the subject, but its body covers ModelProbe/Capabilities work) landed three user-visible robustness changes to probe_model_capabilities_f that the consolidated image_input bullet in Changes (top of {{$NEXT}}) does not mention:
+
+1. ModelProbe->lookup_ids: tolerant id matching - an Ollama id probed as "llama3:latest" now also answers for "llama3" (implicit :latest), and an OpenRouter ":variant" suffix matches its base id.
+2. Role/Capabilities.pm: a partial Ollama /api/show 404 for one model in a models=>"all" sweep now skips just that model and keeps the rest, instead of failing the whole probe.
+3. local $@ around the chat_model eval in supports() so a caller´s own $@ survives a supports() call.
+
+The Changes bullet says only "probe_model_capabilities_f ... reads image_input per model from the providers own metadata" - accurate but silent on the tolerant-matching and partial-failure behavior a caller can actually observe (e.g. probing by tagged id vs base id, or one bad model id no longer poisoning an "all" sweep).
+
+Fix: add one clause to the existing image_input bullet (or a short follow-on sentence) naming tolerant id matching (Ollama :latest, OpenRouter :variant) and partial-failure tolerance on models=>"all". langertha-pod-writer lane. Non-blocking.
