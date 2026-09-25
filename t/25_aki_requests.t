@@ -19,6 +19,28 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 is(Langertha::Engine::AKI->new(api_key => 'testkey')->default_model,
   'minimax_m3', 'AKI native default_model is minimax_m3 (M3), not the EOL llama3_8b_chat');
 
+# --- tool_wire_format is pinned to hermes (karr k254) ---
+# The native /api/call body has no tools field; tools only reach the model via
+# the Hermes system prompt. Another tag would make the engine claim
+# tools_native (the HermesTools rule keys on the resolved tag, k251) while the
+# tools silently vanish from the request, so a non-hermes tag is a
+# misconfiguration that must fail at construction and point to AKIOpenAI.
+is(Langertha::Engine::AKI->new(api_key => 'testkey')->tool_wire_format,
+  'hermes', 'AKI native defaults to the hermes tool wire');
+{
+  my $aki = Langertha::Engine::AKI->new(api_key => 'testkey', tool_wire_format => 'hermes');
+  is($aki->tool_wire_format, 'hermes', 'an explicit hermes tag is accepted');
+  ok($aki->supports('tools_hermes') && !$aki->supports('tools_native'),
+    'an explicit hermes tag keeps the hermes capability flags');
+}
+for my $fmt (qw( openai anthropic )) {
+  my $err;
+  eval { Langertha::Engine::AKI->new(api_key => 'testkey', tool_wire_format => $fmt); 1 }
+    or $err = $@;
+  like($err // '', qr/tool_wire_format '\Q$fmt\E'.*hermes.*AKIOpenAI/s,
+    "tool_wire_format => '$fmt' croaks at construction, naming hermes and AKIOpenAI");
+}
+
 # --- Chat request format ---
 
 my $aki = Langertha::Engine::AKI->new(

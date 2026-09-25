@@ -18,6 +18,19 @@ with map { 'Langertha::Role::'.$_ } qw(
 
 sub _build_tool_wire_format { 'hermes' }
 
+# The native /api/call body has no tools field, so Hermes (tools in the system
+# prompt) is the only tool wire it can carry. Another tag would claim
+# tools_native (HermesTools keys on the resolved tag, k251) and then drop the
+# tools from the request -- fail loud instead. -- karr k254
+sub BUILD {
+  my ( $self ) = @_;
+  my $fmt = $self->tool_wire_format;
+  croak "".(ref $self)." cannot use tool_wire_format '$fmt': the native API only"
+    ." speaks 'hermes'; use Langertha::Engine::AKIOpenAI (\$aki->openai) for native tools"
+    unless $fmt eq 'hermes';
+  return;
+}
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::AKI;
@@ -57,6 +70,10 @@ tools ride the system prompt (Hermes format), which cannot force a tool, so a
 C<tool_choice> other than C<auto> or C<none> is dropped with a warning. To
 force a tool or get structured output, use L<Langertha::Engine::AKIOpenAI>
 (C<< $aki->openai >>).
+
+C<tool_wire_format> is fixed to C<hermes>: the constructor croaks on any other
+value, since the native body has no field to carry native tools. Use
+L<Langertha::Engine::AKIOpenAI> for OpenAI-format tools.
 
 Get your API key at L<https://aki.io/> and set C<LANGERTHA_AKI_API_KEY>.
 
