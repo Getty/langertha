@@ -155,8 +155,10 @@ a path: `Langertha::Manifest: endpoints[0]: unknown field 'foo'`.
      are escaped (`\x{1b}`) and truncated — a client prints both.
    - string fields reject objects/arrays; a JSON number in a string field is
      stringified (`"id": 42` serializes back as `"42"`).
-   - `schema_version` is a JSON **integer** — the string `"1"` and the float `1.0` are
-     rejected (checked on the decoded value's numeric slot, before anything numifies it).
+   - `schema_version` is a JSON **number with a whole value** (`1`, `1.0`, `1e0` alike —
+     the same verdict on JSON::PP and Cpanel::JSON::XS); the string `"1"` and a numified
+     Perl string such as `"1abc"` are rejected (numeric slot required, and a cached string
+     must be a plain JSON number).
    - capability values are booleans (JSON `true`/`false`; from Perl also the numbers
      `1`/`0`, `\1`/`\0`); strings, including the JSON string `"1"`, are rejected.
    - endpoint ids unique, auth ids unique, `(model id, endpoint_ref)` unique.
@@ -231,10 +233,10 @@ names and no synonyms.
 model at that endpoint — `chat`, `streaming`, `tools_native`, `tools_hermes`,
 `tool_choice_{auto,any,none,named}`, `parallel_tool_use`,
 `response_format_json_{object,schema}`, `reasoning_effort`, `thinking_budget`,
-`temperature`, `seed`, `system_prompt`, `response_size`, `context_size`, `prompt_cache`,
+`temperature`, `seed`, `system_prompt`, `response_size`, `prompt_cache`,
 `prompt_cache_key`. Never published on a model: `embedding`, `transcription`,
 `image_generation` (other operations), `runtime_metrics`, `prefix_caching`,
-`keep_alive`, `cached_content` (client-side / server-management). A guard test fails
+`keep_alive`, `cached_content`, `context_size` (client-side / server-management; `context_size` is Ollama's server-side `num_ctx`). A placeholder-only engine (model `default`) warns once that its endpoint is published without models. A guard test fails
 on any capability an engine reports that is in neither list. The filter applies only
 to what the Builder emits; a parsed manifest accepts any name.
 

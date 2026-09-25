@@ -26,8 +26,9 @@ Design spec: `docs/superpowers/specs/2026-09-25-provider-manifest-design.md`.
 
 ## Decision
 
-1. **Scope and classes.** Schema version 1 contains exactly `schema_version` (the JSON integer
-   `1`), `kind` (`langertha-provider`), `provider_id`, `issuer` and `endpoints`
+1. **Scope and classes.** Schema version 1 contains exactly `schema_version` (a JSON number
+   whose value is the whole number `1` — `1`, `1.0` and `1e0` alike, with the same verdict
+   on every JSON backend; the string `"1"` is rejected), `kind` (`langertha-provider`), `provider_id`, `issuer` and `endpoints`
    (`id`, `dialect`, `base_url`, optional `auth_ref`). It also contains `auth` (`id`, `type`),
    `models` (`id`, `endpoint_ref`, `capabilities`) and an inert `extensions`.
    - The classes are `Langertha::Manifest` with `::Endpoint`, `::Auth` and `::Model`. The
@@ -82,13 +83,13 @@ Design spec: `docs/superpowers/specs/2026-09-25-provider-manifest-design.md`.
    - the tool flags: `tools_native`, `tools_hermes`, `tool_choice_*` and `parallel_tool_use`;
    - `response_format_json_{object,schema}`;
    - `reasoning_effort` and `thinking_budget`;
-   - `temperature`, `seed`, `system_prompt`, `response_size` and `context_size`;
+   - `temperature`, `seed`, `system_prompt` and `response_size`;
    - `prompt_cache` and `prompt_cache_key`.
 
    Flags that describe other operations of the engine (`embedding`, `transcription`,
    `image_generation`) are never published on a model. Neither are client-side or
    server-management features (`runtime_metrics`, `prefix_caching`, `keep_alive`,
-   `cached_content`).
+   `cached_content`, and `context_size`, which is Ollama's server-side `num_ctx` allocation).
 
    How the list is built and kept honest:
    - The allowlist is one list in the Builder (`@MODEL_CAPABILITIES`, exposed as
@@ -143,6 +144,6 @@ Design spec: `docs/superpowers/specs/2026-09-25-provider-manifest-design.md`.
 ## Future work
 
 - Align the example in the raider handoff §11.1 and raider ADR 0007 (`tool_calling` →
-  `tools_native`, plus `anthropic-compat`). There is a karr ticket tagged `raider`.
+  `tools_native`, plus `anthropic-compat`). Tracked as karr k198 (tagged `raider`).
 - Fetch limits, origin rules and RFC 8615 registration belong to Raider and to publication,
   not to core.
