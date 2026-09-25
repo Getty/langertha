@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T20:55:19Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T20:55:19Z
+created: 2026-09-25T20:20:23Z
+id: 288
+priority: medium
+started: 2026-09-25T20:23:25Z
+status: done
+tags:
+- transcription
+- bug
+title: 'transcription_response assumes JSON: response_format text/srt/vtt croaks with
+  a raw JSON decode error'
+updated: 2026-09-25T20:55:19Z
+---
+
+OpenAICompatible::transcription_response (lib/Langertha/Role/OpenAICompatible.pm:506-510) runs parse_response (json->decode) and returns ->{text}. OpenAI/Groq/faster-whisper accept response_format=text|srt|vtt (plain-text bodies) — passable via %extra, and the POD advertises %extra pass-through.
+
+Repro (offline): $whisper->transcription_response(HTTP::Response->new(200,"OK",["Content-Type"=>"text/plain"],"hello world\n")) -> croak "malformed JSON string ... at Role/HTTP.pm line 141" (no engine name, no hint).
+Also: response_format=verbose_json returns segments/words/duration/language but only ->{text} survives (callers asking for timestamps lose them silently).
+
+Fix: branch on the response Content-Type (application/json -> decode; text/* -> return decoded_content); for verbose_json consider returning the text and keeping the full payload reachable (the chat Response pattern), or document that transcription_response returns text only and callers wanting segments must parse the raw response. Add response-parsing tests with captures.
