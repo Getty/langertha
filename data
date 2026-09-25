@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-25T00:24:36Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T00:24:36Z
+created: 2026-09-19T19:34:14Z
+id: 186
+priority: low
+started: 2026-09-25T00:10:38Z
+status: done
+tags:
+- openai
+- reasoning
+- temperature
+- followup
+- k185
+title: OpenAI Reasoning-Klassifikation in Profile konsolidieren + dotted-chat-Lookahead-Gap
+  (Rest aus k185)
+updated: 2026-09-25T00:24:36Z
+---
+
+Rest aus k185 (dort bewusst minimal gehalten; Kern-Regression + Live-Verify sind gefixt & gemerged in 7980072).
+
+(1) KONSOLIDIERUNG: Engine::OpenAI::_temperature_rejected_by_reasoning (OpenAI.pm:~130) klassifiziert "ist ein Reasoning-Modell" noch per eigenem Regex \A(?:o\d|gpt-5(?!-chat)|gpt-6), dupliziert also Modell-Familien-Wissen neben Langertha::Reasoning::Profile. Ziel laut k185-Titel: diese Klassifikation in den Profile-Seam ziehen (z.B. ein read-only is_reasoning / reasoned-Praedikat am Profile), damit die Engine ihr Regex loswird. HINDERNIS (Grund fuer die Zurueckstellung): die Profile-Registry trennt Nicht-Reasoning-Member NICHT sauber -- gpt-5-chat matcht das Legacy-gpt-5-Profil (qr/\Agpt-5(?![.\d])/), und gpt-4o faellt auf den control=effort-DEFAULT. Ein Profile-is_reasoning-Signal braucht also neues explizites Marking mit eigenem Risiko (Nicht-Reasoning-Modelle wie gpt-4o/gpt-5-chat duerfen NICHT als reasoning klassifiziert werden, sonst false-drop der temperature). Design mit Reasoning-Subsystem abstimmen; ADR 0023/0025 beruehren.
+
+(2) LATENTER LOOKAHEAD-GAP: das Regex (?!-chat) prueft nur literal "-chat" DIREKT nach "gpt-5". Dotted chat-IDs (gpt-5.1-chat-latest, gpt-5.2-chat-latest, ...) haben ".N-chat" -> Lookahead greift nicht -> wuerden faelschlich als Reasoning klassifiziert und verloeren ihre temperature. AKTUELL LATENT: alle *-chat-latest sind auf Gettys Account deprecated/404 (k185 live 2026-09-19). Wird akut, wenn ein dotted chat-Modell (wieder-)eingefuehrt wird. Anmerkung: fuer die default_reasoning_off=1-Linien (5.1/5.2/5.4) maskiert das Signal den Gap bereits (temp bliebe erhalten = korrekt); akut nur fuer dotted-chat auf reasoning-on-Linien (5.5/5.6-chat, falls je existent). Bei Umsetzung von (1) via Profile-Klassifikation verschwindet der Gap natuerlich -> (1) und (2) zusammen angehen.
+
+Kein Live-Call noetig (Verhalten offline testbar; Wire-Matrix aus k185 ist autoritativ).
+
+2026-09-25 00:20 k186 implemented on branch k186 (worktree .claude/worktrees/k186): 164038f test (classification table, dotted-chat TODO/red), f6e5f1f fix (Profile is_reasoning_model; o-series + gpt-5.N passthrough reasoning entries; gpt-4 + gpt-5(.N)-chat non-reasoning carve-outs cloned from family so serialization is byte-identical; DEFAULT non-reasoning; engine regex removed), ac3e10f docs (ADR 0023/0025 Update k186, Changes). prove -lr t/ green (4263 tests; live t/80-89 skipped w/o keys), perlcritic clean, dzil build ok. Not merged, ticket not moved.
