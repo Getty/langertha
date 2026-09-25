@@ -259,3 +259,21 @@ every model. The clear is now a `model_capability_corrections` row on the K2.x l
 k207 update), the first layer-3 entry for this flag. The gate needs no change, because it reads
 `supports()`, which already applies layer 3. Layer-2 clears remain on `MiniMax` and on `Gemini`
 for `gemini-2.5-*`.
+
+## Update (k209 — MiniMaxAnthropic strips `output_config.effort` at the engine)
+
+MiniMax's `/anthropic` `CreateMessageReq` has a `thinking` object (default disabled on M3) but no
+`output_config`, yet `MiniMaxAnthropic` inherited the `anthropic` serializer and sent
+`output_config.effort`. It now wraps `reasoning_kwargs_for` with an `around` that removes
+`effort` from `output_config` (and the key when nothing else is left) and keeps
+`thinking:{type:adaptive}`, which is how an effort turns thinking on there. This is the
+"wire divergence within a shared format" case the method's POD already allows (DeepSeek is the
+other). It is deliberately not a `Reasoning::Profile` row, as the advisor first suggested: the
+missing field belongs to MiniMax's endpoint for every model, not to a model id (a `MiniMax-*`
+row would also reach other engines that serve that id), and the Profile has no way to say "drop
+the effort, keep the thinking block". The capability flag stays on, because the endpoint takes a
+reasoning control, and `MiniMax`'s layer-2 clear on the OpenAI face is unchanged. The binary
+`thinking` toggle of MiniMax-M3 on `chat/completions` (`none` to `thinking:{type:disabled}`) is
+still unreachable; it needs a reasoning wire mapping and stays open on karr k209. Source:
+MiniMax `openapi-chat-anthropic.json`, advisor-verified 2026-09-25 — documentation only, not
+live-verified.

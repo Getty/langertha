@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - MiniMaxAnthropic no longer sends output_config.effort, which MiniMax's
+      Anthropic-compatible schema does not have. A reasoning_effort still
+      sends thinking {type: adaptive}, which turns thinking on. Taken from
+      MiniMax's documentation, not verified against the live API.
+
     - Moonshot: kimi-k3 now sends reasoning_effort (low, high or max; other
       levels are dropped and the server default max applies) instead of
       dropping every effort. The K2.x models still send none. MoonshotAnthropic

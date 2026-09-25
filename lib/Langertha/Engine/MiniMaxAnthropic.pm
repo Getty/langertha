@@ -37,6 +37,11 @@ the Anthropic wire format specifically.
 
 See L<Langertha::Engine::MiniMax> for the available models list.
 
+MiniMax's Anthropic-compatible request schema has no C<output_config>, so a
+C<reasoning_effort> is not sent as C<output_config.effort>; it still sends
+C<thinking> C<< { type =E<gt> 'adaptive' } >>, which turns thinking on (the
+endpoint's default for C<MiniMax-M3> is thinking off).
+
 Get your API key at L<https://platform.minimax.io/> and set
 C<LANGERTHA_MINIMAX_API_KEY> in your environment.
 
@@ -72,6 +77,24 @@ sub _build_static_models {[
   { id => 'MiniMax-M2.1-highspeed' },
   { id => 'MiniMax-M2' },
 ]}
+
+# MiniMax's /anthropic CreateMessageReq has a `thinking` object (default
+# disabled on M3) but no `output_config` (openapi-chat-anthropic.json, advisor
+# 2026-09-25, docs only; karr k209). That holds for every model on this
+# endpoint, so the effort is stripped here rather than in a per-model
+# Reasoning::Profile row; thinking:{type:adaptive} stays, since it is how an
+# effort turns thinking on (ADR 0009 k209 update).
+around reasoning_kwargs_for => sub {
+  my ( $orig, $self, @args ) = @_;
+  my %kwargs = $self->$orig(@args);
+  if ( ref $kwargs{output_config} eq 'HASH' ) {
+    my %output_config = %{ $kwargs{output_config} };
+    delete $output_config{effort};
+    if (%output_config) { $kwargs{output_config} = \%output_config }
+    else                { delete $kwargs{output_config} }
+  }
+  return %kwargs;
+};
 
 __PACKAGE__->meta->make_immutable;
 
