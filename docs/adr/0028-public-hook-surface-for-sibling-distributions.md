@@ -84,3 +84,17 @@ could not express that.
 - karr #195: the raider-side migration.
 - karr #197: Gemini's usage rename duplicating `from_hash`,
   Gemini's missing `cached_tokens`, and AKI native counts in `from_raw`.
+
+## Update (k197 — `from_raw` reads AKI native counts; Gemini cache count reaches `cached_tokens`)
+
+`from_raw` now also recognizes AKI.IO's native top-level `prompt_length` / `num_generated_tokens` /
+`num_cached_tokens` (the same keys `Engine::AKI` reads). They are the provider's own spelling of
+the canonical counts, so they belong at the universal door (ADR 0018 tier 1), not only in the
+engine. The Ollama top-level probe now follows `Engine::Ollama`: a zero count is "not reported",
+so a body whose counts are all zero gives `undef`, not `Usage(0)`.
+
+`from_hash` maps Gemini's `cachedContentTokenCount` (and the engine's renamed
+`cached_content_token_count`) to `cached_tokens`, read after the OpenAI and Anthropic spellings.
+`Engine::Gemini` keeps its snake_case rename of `usageMetadata`: `Usage`'s `%{}` overload serves
+that hash verbatim, so `$response->usage->{prompt_tokens}` and `{cached_content_token_count}` are
+public back-compat keys. The consequence above that listed these gaps is resolved.
