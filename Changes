@@ -41,6 +41,13 @@ Revision history for Langertha
       parts into one string (newline-separated) instead of sending the array,
       which /api/chat rejects; OpenAI-style image_url parts go to images.
 
+    - Gemini cachedContents: create sends tools in the generateContent
+      shape ([{functionDeclarations}]), a returned cache reads its top-level
+      expireTime/ttl so is_expired works, and a chat request with a bound
+      cached_content leaves out systemInstruction, tools and toolConfig
+      (Gemini rejects them next to a cache; they come from the cache) with
+      one carp.
+
     - Langertha::Embedder and Langertha::ImageGen have simple_embedding_result
       and simple_image_result (each with an _f variant): the wrapper's
       overrides and plugin hooks around the engine's CallResult. The

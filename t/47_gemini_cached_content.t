@@ -85,6 +85,9 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 }
 
 # --- from_hash upgrades a server response ---
+# The resource's `expiration` is a proto oneof; its JSON form is flat, so the
+# server answers with a top-level expireTime (ttl is input only) --
+# ai.google.dev/api/caching, CachedContent JSON representation (karr k327).
 
 {
   my $hash = {
@@ -93,7 +96,7 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
     displayName   => 'reviewer',
     createTime    => '2026-08-11T10:00:00Z',
     updateTime    => '2026-08-11T10:00:00Z',
-    expiration    => { expireTime => '2099-01-01T00:00:00Z' },
+    expireTime    => '2099-01-01T00:00:00Z',
     usageMetadata => { totalTokenCount => 4096 },
     systemInstruction => { parts => [ { text => 'be brief' } ] },
   };
@@ -117,7 +120,7 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
   my $past = Langertha::CachedContent->from_hash({
     name          => 'cachedContents/past',
     model         => 'models/gemini-2.5-pro',
-    expiration    => { expireTime => '2020-01-01T00:00:00Z' },
+    expireTime    => '2020-01-01T00:00:00Z',
   });
   ok($past->is_expired, 'past expireTime is_expired');
 
@@ -145,14 +148,15 @@ my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
     model      => 'models/gemini-2.5-pro',
     createTime => $rfc->(-30),
     updateTime => $rfc->(-30),
-    expiration => { ttl => '120s' },
+    ttl        => '120s',
   });
   my $age = $cc->age_seconds;
   ok(defined $age && $age >= 25 && $age <= 40,
     "age_seconds in 25..40 (got $age)");
   ok(!$cc->is_expired, 'young cache with 120s ttl is not expired');
 
-  # Older cache with the same ttl -> expired.
+  # Older cache with the same ttl -> expired. Written in the older
+  # `expiration` wrapper spelling, which from_hash still reads (ADR 0018).
   my $old = Langertha::CachedContent->from_hash({
     name       => 'cachedContents/old',
     model      => 'models/gemini-2.5-pro',

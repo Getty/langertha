@@ -26,7 +26,7 @@ use Carp qw( croak );
         displayName   => 'reviewer-context',
         createTime    => '2026-08-11T10:00:00Z',
         updateTime    => '2026-08-11T10:00:00Z',
-        expiration    => { expireTime => '2026-08-11T10:05:00Z' },
+        expireTime    => '2026-08-11T10:05:00Z',
         usageMetadata => { totalTokenCount => 4096 },
     });
     $cc2->is_expired;   # bool (vs. cached expireTime + clock)
@@ -131,8 +131,9 @@ has tools => (
 =attr tools
 
 Optional ArrayRef of tool definitions in the canonical L<Langertha::Tool>
-form (or any shape L<Langertha::Tool::from_list> accepts). Serialized to
-Gemini C<functionDeclarations> on create.
+form (or any shape L<Langertha::Tool::from_list> accepts). Serialized on
+create as the Gemini C<tools> list, C<< [ { functionDeclarations => [...] } ] >>,
+the shape a C<generateContent> request uses.
 
 =cut
 
@@ -252,14 +253,9 @@ sub to_create_body {
 
   if ( $self->tools && @{ $self->tools } ) {
     require Langertha::Tool;
-    my $decls = Langertha::Tool->format_list( 'gemini', $self->tools );
-    # format_list wraps with [{ functionDeclarations => [...] }] for gemini; peel.
-    if ( ref $decls->[0] eq 'HASH' && ref $decls->[0]{functionDeclarations} eq 'ARRAY' ) {
-      $body{tools} = $decls->[0]{functionDeclarations};
-    }
-    else {
-      $body{tools} = $decls;
-    }
+    # tools is Tool[] here as on generateContent: each Tool wraps its
+    # functionDeclarations, so the gemini tools payload goes out as is (k327).
+    $body{tools} = Langertha::Tool->format_list( 'gemini', $self->tools );
   }
 
   if ( @{ $self->contents } ) {
@@ -317,12 +313,13 @@ sub from_hash {
   return undef unless ref($hash) eq 'HASH';
   return undef unless length( $hash->{name} // '' );
 
-  my $exp = $hash->{expiration};
-  my ( $ttl, $expire_time );
-  if ( ref($exp) eq 'HASH' ) {
-    $ttl         = $exp->{ttl};
-    $expire_time = $exp->{expireTime};
-  }
+  # expiration is a proto oneof, flat in JSON: the server answers with a
+  # top-level expireTime (ttl is input only). An `expiration` wrapper is read
+  # as an alternate spelling (ADR 0018). A server time wins over a ttl, which
+  # would otherwise trip the BUILD oneof gate (k327).
+  my $exp = ref( $hash->{expiration} ) eq 'HASH' ? $hash->{expiration} : {};
+  my $expire_time = $hash->{expireTime} // $exp->{expireTime};
+  my $ttl = defined $expire_time ? undef : $hash->{ttl} // $exp->{ttl};
 
   my $um = $hash->{usageMetadata};
   my $tokens = ref($um) eq 'HASH' ? $um->{totalTokenCount} : undef;
@@ -355,7 +352,9 @@ sub from_hash {
 
 Builds a value object from a C<cachedContent> response hash (GET / POST /
 LIST). Returns C<undef> if C<$hash> is not a hashref or carries no
-C<name>. Accepts an existing L<Langertha::CachedContent> as a pass-through.
+C<name>. The expiry is read from the top-level C<expireTime> (or C<ttl>) the
+server sends; an C<expiration> wrapper holding either is read as well. When
+both an C<expireTime> and a C<ttl> are present, C<expireTime> is kept. Accepts an existing L<Langertha::CachedContent> as a pass-through.
 
 =cut
 

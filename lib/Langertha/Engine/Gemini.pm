@@ -187,6 +187,15 @@ set, every chat request (C<chat>, C<chat_stream>, C<simple_chat_f>, …)
 injects C<cachedContent =E<gt> '{name}'> into the generateContent body
 so the model serves the request against the cached context.
 
+A request that names a cache takes its system instruction, tools and tool
+configuration from the cache: Gemini rejects a C<generateContent> request that
+sets C<systemInstruction>, C<tools> or C<toolConfig> next to C<cachedContent>
+(HTTP 400). While a cache is bound those three are therefore not sent, even
+when the engine's C<system_prompt>, a system message, C<tools> or
+C<tool_choice> would set them, and the engine carps once. Put them into the
+cache when creating it (L<Langertha::CachedContent/system_instruction>,
+L<Langertha::CachedContent/tools>).
+
 Lifecycle (create / get / list / update / delete) is on the role —
 L<Langertha::Role::CachedContent/create_cached_content_f> and friends.
 Bind a freshly created resource with C<< $engine->cached_content($cc) >>.
@@ -274,6 +283,41 @@ one method.
 
 =cut
 
+# The REST contract names the field `cachedContent` and takes the resource
+# name as a plain string (https://ai.google.dev/api/generate-content). A
+# request naming a cache may not also set systemInstruction, tools or
+# toolConfig: the server answers 400 "CachedContent can not be used with
+# GenerateContent request setting system_instruction, tools or tool_config.
+# Proposed fix: move those values to CachedContent from GenerateContent
+# request." They come from the cache, so they are left out here, with one
+# carp per engine (k327). Both JSON spellings of each field are dropped.
+sub _cached_content_reference {
+  my ( $self, $body, $extra ) = @_;
+  return unless $self->can('cached_content') && defined $self->cached_content;
+  my $cc = $self->cached_content;
+  croak "Langertha::Engine::Gemini: cached_content must be a Langertha::CachedContent with a 'name'"
+    unless ref($cc) && eval { $cc->isa('Langertha::CachedContent') && $cc->has_name };
+  $body->{cachedContent} = $cc->name;
+  my @dropped;
+  for my $field (
+    [ systemInstruction => 'system_instruction' ],
+    [ tools             => 'tools' ],
+    [ toolConfig        => 'tool_config' ],
+  ) {
+    my $sent = 0;
+    for my $key ( @$field ) {
+      $sent = 1 if defined delete $body->{$key};
+      $sent = 1 if defined delete $extra->{$key};
+    }
+    push @dropped, $field->[0] if $sent;
+  }
+  $self->_langertha_carp( "".( ref $self ).": not sending " . join( ', ', @dropped )
+    . " -- cached_content " . $cc->name . " is bound, and a request naming a cache takes"
+    . " systemInstruction, tools and toolConfig from the cache", 'cached_content_overrides' )
+    if @dropped;
+  return;
+}
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
@@ -335,15 +379,8 @@ sub chat_request {
   }
 
   # Reference an explicit cachedContent resource by name when one was bound
-  # via $engine->cached_content (karr #22). The REST contract names the field
-  # `cachedContent` and accepts the resource name as a plain string —
-  # https://ai.google.dev/api/generate-content (cachedContent field).
-  if ( $self->can('cached_content') && defined $self->cached_content ) {
-    my $cc = $self->cached_content;
-    croak "Langertha::Engine::Gemini: cached_content must be a Langertha::CachedContent with a 'name'"
-      unless ref($cc) && eval { $cc->isa('Langertha::CachedContent') && $cc->has_name };
-    $request_body{cachedContent} = $cc->name;
-  }
+  # via $engine->cached_content (karr #22, k327).
+  $self->_cached_content_reference( \%request_body, \%extra );
 
   # Add generation config
   my %generation_config;
@@ -684,13 +721,8 @@ sub chat_stream_request {
   }
 
   # Reference an explicit cachedContent resource by name when one was bound
-  # via $engine->cached_content (karr #22). Same wire as chat_request.
-  if ( $self->can('cached_content') && defined $self->cached_content ) {
-    my $cc = $self->cached_content;
-    croak "Langertha::Engine::Gemini: cached_content must be a Langertha::CachedContent with a 'name'"
-      unless ref($cc) && eval { $cc->isa('Langertha::CachedContent') && $cc->has_name };
-    $request_body{cachedContent} = $cc->name;
-  }
+  # via $engine->cached_content (karr #22, k327). Same wire as chat_request.
+  $self->_cached_content_reference( \%request_body, \%extra );
 
   my %generation_config;
   if ( exists $controls->{max_tokens} ) {
