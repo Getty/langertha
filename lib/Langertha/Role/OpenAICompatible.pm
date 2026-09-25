@@ -273,12 +273,9 @@ sub embedding_response {
   # `data` array; croak with a readable message instead of a raw deref crash on
   # @{undef} ("Can't use an undefined value as an ARRAY reference"). Embeddings
   # must return a vector, so there is no graceful-empty fallback here. -- karr k171
-  unless ( ref $data->{data} eq 'ARRAY' ) {
-    my $err = ref $data eq 'HASH' && $data->{error}
-      ? ( ref $data->{error} eq 'HASH' ? $data->{error}{message} : $data->{error} )
-      : undef;
+  unless ( ref $data eq 'HASH' && ref $data->{data} eq 'ARRAY' ) {
     croak "".(ref $self)." embedding response missing 'data' array"
-      . ( defined $err ? " (error: $err)" : "" );
+      . $self->_payload_error_suffix($data);
   }
   my @objects = @{$data->{data}};
   # data[].index is the input position and the wire does not promise the array
@@ -287,6 +284,12 @@ sub embedding_response {
     @objects = sort { $a->{index} <=> $b->{index} } @objects;
   }
   my @vectors = map { $self->_embedding_vector($_) } @objects;
+  # An empty data array or an entry without a vector is not a result: undef
+  # would be stored as if it were one (Raider's session search did) (k290).
+  if ( !@vectors || grep { ref $_ ne 'ARRAY' || !@{$_} } @vectors ) {
+    croak "".(ref $self)." embedding response contained no vector"
+      . $self->_payload_error_suffix($data);
+  }
   if ( ref $input eq 'ARRAY' ) {
     croak "".(ref $self)." embedding response returned ".scalar(@vectors)
       ." vectors for ".scalar(@{$input})." inputs"
@@ -307,6 +310,15 @@ sub _embedding_vector {
   return $embedding;
 }
 
+# " (error: <message>)" when a 200 body carries a provider error, else ''.
+sub _payload_error_suffix {
+  my ( $self, $data ) = @_;
+  my $err = ref $data eq 'HASH' && $data->{error}
+    ? ( ref $data->{error} eq 'HASH' ? $data->{error}{message} : $data->{error} )
+    : undef;
+  return defined $err ? " (error: $err)" : '';
+}
+
 =method embedding_response
 
     my $vector  = $engine->embedding_response($http_response);
@@ -318,7 +330,9 @@ For a string input (or none) it returns the vector of the first input
 (C<data[].index> 0) as an ArrayRef of floats. For an ArrayRef input it
 returns an ArrayRef with one vector per input, in input order (sorted by
 C<data[].index>), and croaks when the number of vectors does not match the
-number of inputs.
+number of inputs. A response without a vector (no C<data> array, an empty
+one, or an entry without an C<embedding>) croaks too, naming the engine and
+any C<error> in the body; it never returns C<undef>.
 
 A response requested with C<< encoding_format => 'base64' >> is decoded
 (little-endian float32), so the result is floats either way; there is no
@@ -825,6 +839,11 @@ Returns an HTTP request object.
 sub image_response {
   my ( $self, $response ) = @_;
   my $data = $self->parse_response($response);
+  # An image call that yields no image is an error, not an empty result (k290).
+  unless ( ref $data eq 'HASH' && ref $data->{data} eq 'ARRAY' && @{$data->{data}} ) {
+    croak "".(ref $self)." image response contained no image"
+      . $self->_payload_error_suffix($data);
+  }
   return $data->{data};
 }
 
@@ -834,7 +853,8 @@ sub image_response {
 
 Parses an OpenAI-format image generation response. Returns an ArrayRef
 of image objects, each with C<url> or C<b64_json> and optionally
-C<revised_prompt>.
+C<revised_prompt>. Croaks, naming the engine and any C<error> in the
+body, when the response carries no image.
 
 =cut
 

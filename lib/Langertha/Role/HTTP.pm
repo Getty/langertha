@@ -202,7 +202,18 @@ sub parse_response {
   }
   $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   $log->tracef("[%s] Response: %s", ref $self, $response->decoded_content);
-  return $self->json->decode($response->content);
+  # A 200 that is not JSON (a proxy's HTML page, a truncated body) names the
+  # engine and shows the body, like the non-2xx path above (k290).
+  my $data;
+  {
+    local $@;
+    unless ( eval { $data = $self->json->decode($response->content); 1 } ) {
+      my $body = $self->_error_response_body($response);
+      croak "".(ref $self)." response is not valid JSON"
+        .( length $body ? ": ".$body : " (empty body)" );
+    }
+  }
+  return $data;
 }
 
 =method parse_response
@@ -215,7 +226,9 @@ provider's response body (whitespace-collapsed and truncated to
 C<$error_body_max_length> characters) so the real cause — e.g. a provider
 JSON error object — is visible in the croak message. If the engine supports
 rate limiting, extracts rate limit headers via C<_update_rate_limit> before
-decoding the body.
+decoding the body. A successful response whose body is not JSON croaks with
+C<< <engine class> response is not valid JSON: <body> >> (the body shortened
+the same way).
 
 =cut
 

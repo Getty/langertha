@@ -207,9 +207,18 @@ sub embedding_response {
   my $data = $self->parse_response($response);
   # /api/embed returns one vector per input, by position. An ArrayRef input is
   # a batch and gets them all; a string input keeps getting one vector (k289).
-  my $embeddings = $data->{embeddings};
+  my $embeddings = ref $data eq 'HASH' ? $data->{embeddings} : undef;
+  # No vector is not a result: older Ollama answers some load errors with a
+  # 200 {"error":...}, and undef would be stored as a vector (k290).
+  unless ( ref $embeddings eq 'ARRAY' && @{$embeddings}
+    && !grep { ref $_ ne 'ARRAY' || !@{$_} } @{$embeddings} ) {
+    my $err = ref $data eq 'HASH' ? $data->{error} : undef;
+    $err = $err->{message} if ref $err eq 'HASH';
+    croak "".(ref $self)." embedding response contained no vector"
+      .( defined $err ? " (error: $err)" : '' );
+  }
   if ( ref $input eq 'ARRAY' ) {
-    my $count = ref $embeddings eq 'ARRAY' ? scalar @{$embeddings} : 0;
+    my $count = scalar @{$embeddings};
     croak "".(ref $self)." embedding response returned $count vectors for "
       .scalar(@{$input})." inputs"
       unless $count == @{$input};

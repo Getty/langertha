@@ -10,6 +10,13 @@ Revision history for Langertha
       floats, so the result is an ArrayRef of floats either way. A batch
       answered with the wrong number of vectors croaks, naming the engine.
 
+    - An embedding response without a vector (empty data, an entry
+      without an embedding, an Ollama body without embeddings) and an image
+      response without an image now croak, naming the engine and the
+      payload's error, instead of returning undef. A successful response
+      whose body is not JSON croaks with "<engine> response is not valid
+      JSON: <body>" instead of the bare decoder message.
+
     - New capability image_input (Langertha::Role::ImageInput):
       $engine->supports('image_input') says whether the configured model
       sees an image part. It is claimed for OpenAI, first-party Anthropic,

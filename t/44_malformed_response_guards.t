@@ -91,4 +91,71 @@ my $vllm = Langertha::Engine::vLLM->new( url => 'http://x' );
   like($@, qr/missing 'data' array/, 'embedding: non-array data croaks cleanly');
 }
 
+# --- no vector / no image in a 200 (karr k290) --------------------------------
+# An embedding call exists to return a vector. A 200 with an empty data array,
+# an entry without an embedding, or an Ollama body without embeddings (older
+# Ollama answers some load errors with 200 {"error":...}) used to return undef
+# silently; Raider then stored undef vectors and its search degraded without a
+# word. The same holds for an image call that yields no image. Each croaks,
+# naming the engine and surfacing the payload's error when there is one.
+use Langertha::Engine::OpenAI;
+use Langertha::Engine::Ollama;
+
+{
+  my $vec = eval { $vllm->embedding_response(mock_http({ object => 'list', data => [] })) };
+  ok(!defined $vec, 'embedding: empty data returns no value');
+  like($@, qr/\ALangertha::Engine::vLLM embedding response contained no vector/,
+    'embedding: empty data croaks, naming the engine');
+
+  $vec = eval { $vllm->embedding_response(mock_http({ data => [ { index => 0 } ] })) };
+  like($@, qr/\ALangertha::Engine::vLLM embedding response contained no vector/,
+    'embedding: an entry without an embedding croaks');
+}
+
+my $ollama = Langertha::Engine::Ollama->new( url => 'http://test.invalid:11434' );
+{
+  my $vec = eval { $ollama->embedding_response(mock_http({ error => 'model not found' })) };
+  ok(!defined $vec, 'Ollama embedding: error body returns no value');
+  like($@, qr/\ALangertha::Engine::Ollama embedding response contained no vector \(error: model not found\)/,
+    'Ollama embedding: croaks with the engine and the payload error');
+
+  eval { $ollama->embedding_response(mock_http({ model => 'm', embeddings => [] })) };
+  like($@, qr/\ALangertha::Engine::Ollama embedding response contained no vector/,
+    'Ollama embedding: empty embeddings croaks');
+
+  eval { $ollama->embedding_response(mock_http({ embeddings => [ 'oops' ] })) };
+  like($@, qr/\ALangertha::Engine::Ollama embedding response contained no vector/,
+    'Ollama embedding: a non-array entry croaks');
+}
+
+my $openai = Langertha::Engine::OpenAI->new( api_key => 'k' );
+{
+  my $images = $openai->image_response(mock_http({ data => [ { url => 'https://x/1.png' } ] }));
+  is_deeply($images, [ { url => 'https://x/1.png' } ], 'image: well-formed data still returned');
+
+  $images = eval { $openai->image_response(mock_http({ created => 1, data => [] })) };
+  ok(!defined $images, 'image: empty data returns no value');
+  like($@, qr/\ALangertha::Engine::OpenAI image response contained no image/,
+    'image: empty data croaks, naming the engine');
+
+  eval { $openai->image_response(mock_http({ error => { message => 'content policy' } })) };
+  like($@, qr/\ALangertha::Engine::OpenAI image response contained no image \(error: content policy\)/,
+    'image: missing data croaks with the payload error');
+}
+
+# --- malformed JSON on a 200 names the engine (karr k290) ---------------------
+# The decoder's own "malformed JSON string ... at Role/HTTP.pm line N" named no
+# engine and no body, unlike the non-2xx path. Every response kind goes through
+# parse_response, so the engine-named croak covers them all.
+{
+  my $http = HTTP::Response->new(200, 'OK');
+  $http->header('Content-Type' => 'text/html');
+  $http->content("<html>gateway\n  error</html>");
+  my $vec = eval { $openai->embedding_response($http) };
+  ok(!defined $vec, 'malformed JSON: no value');
+  like($@, qr/\ALangertha::Engine::OpenAI response is not valid JSON: <html>gateway error<\/html>/,
+    'malformed JSON: croak names the engine and shows the collapsed body');
+  unlike($@, qr/malformed JSON string/, 'malformed JSON: not the raw decoder message');
+}
+
 done_testing;
