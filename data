@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-25T06:12:32Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T06:12:32Z
+created: 2026-09-25T05:41:26Z
+id: 235
+priority: low
+started: 2026-09-25T06:12:32Z
+status: done
+tags:
+- tools
+- wire
+title: 'ToolChoice->from_hash returns undef for a blessed Langertha::ToolChoice: tool_choice
+  object input loses its intent'
+updated: 2026-09-25T06:12:32Z
+---
+
+k233 review M1: passing tool_choice => Langertha::ToolChoice->none on Perplexity carps 'not one Langertha can read' and sends tools (k233 none-withhold bypassed). On OpenAIResponses the object reaches the wire via TO_JSON as {type:none}, not the Responses string form (pre-existing, other engines too). Fix: from_hash returns $val when blessed && isa(ToolChoice); check every tool_choice entry point accepts objects; test on responses + openai + anthropic wires.
+
+2026-09-25 05:52 Fixed on branch k235-toolchoice-object-input (d9aa9d1): from_hash identity for ToolChoice objects; OpenAICompatible streaming builder now normalizes tool_choice; Input::Tools helpers accept objects; t/76_tool_choice_object_input.t; ADR 0010 Update. Follow-ups k239 (native engines pass tool_choice verbatim), k240 (OpenAI stream drops parallel_tool_use).
