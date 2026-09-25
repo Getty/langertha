@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-25T03:00:19Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:00:19Z
+created: 2026-09-25T01:59:25Z
+id: 211
+priority: low
+started: 2026-09-25T01:59:43Z
+status: done
+tags:
+- responses
+- reasoning
+- bug
+title: 'ResponsesCompatible: Reasoning-Item ohne summary bekommt summary=>[{}] in
+  raw'
+updated: 2026-09-25T03:00:19Z
+---
+
+Aus der k206-Spec: ein Reasoning-Output-Item ohne summary wird mit summary => [{}] in raw geschrieben. xAIs encrypted-only Reasoning (grok-4.7 auf /v1/responses) traefe das bei jeder Antwort; OpenAI o-Serie ohne Summary ebenso. Fix: fehlendes summary nicht synthetisieren; Test mit Capture ohne summary (vorhandene responses_api_*-Captures pruefen). ADR 0020.
+
+2026-09-25 02:17 Fixed in b29057f: summary ref-checked before deref; test replays responses_api_toolcall_toplevel.json (summary => []) plus a derived no-summary variant. ADR 0020 does not describe the summary path, so it has no Update.
+
+Ready for review: b29057f
