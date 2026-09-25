@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-25T03:41:12Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T03:41:12Z
+created: 2026-09-25T03:18:19Z
+id: 223
+priority: low
+started: 2026-09-25T03:23:05Z
+status: done
+tags:
+- capabilities
+title: model_capability_exclusions-Walker ueberspringt leeres chat_model (Corrections
+  nicht mehr)
+updated: 2026-09-25T03:41:12Z
+---
+
+Aus wire-bundle2-Re-Review (N1): Role/Chat.pm:496-497 "return unless defined \$model && length \$model" -> Groq/Cerebras mit model=>"" umgehen ihren engine-weiten qr// tools+response_format-Croak und laufen in einen Provider-400. Seit k209-M8 matchen Corrections leeres/undef chat_model als "" - die beiden Schichten sind jetzt inkonsistent. Fix: gleich behandeln (// "") + Test; ADR 0024 Update. Zusatz (N2, optional): Reasoning.pm _build_profile faellt fuer versteckte Toggle-Rows auf for_model("") statt auf die naechste nicht-Toggle-Row zurueck - heute folgenlos (keine andere Row matcht), Invariante kommentieren oder neu aufloesen ohne has_thinking_on-Rows.
+
+2026-09-25 03:30 Done on k219-223 aec51bc: walker uses chat_model // '' (early return only without a chat_model method); red-first test t/78 (Groq+Cerebras model '' croak, 0 requests); ADR 0024 k223 Update. N2: comment only in Reasoning::_build_profile; invariant checked offline (no non-toggle row matches MiniMax-M2/M3, kimi-k2.6, kimi-k2.7-code(-highspeed)); golden t/47 unchanged.
