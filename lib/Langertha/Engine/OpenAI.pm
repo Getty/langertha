@@ -189,17 +189,22 @@ has whisper => (
 
 sub _build_whisper {
   my ($self) = @_;
+  # Same settings as $self->simple_transcription would use. -- karr k293
   return Langertha::Engine::TranscriptionBase->new(
     api_key             => $self->api_key,
     url                 => $self->url,
-    transcription_model => 'whisper-1',
+    transcription_model => $self->transcription_model,
+    user_agent_agent    => $self->user_agent_agent,
+    $self->has_user_agent_timeout ? ( user_agent_timeout => $self->user_agent_timeout ) : (),
   );
 }
 
 =attr whisper
 
 Lazy-built L<Langertha::Engine::TranscriptionBase> instance bound to
-this engine's C<api_key> and C<url>, defaulting to model C<whisper-1>.
+this engine's C<api_key>, C<url>, C<transcription_model> (C<whisper-1>
+unless set), C<user_agent_agent> and C<user_agent_timeout>, so it
+transcribes exactly as C<< $openai->simple_transcription >> does.
 Useful when you have an OpenAI engine handy and want a focused
 transcription handle without re-stating credentials:
 

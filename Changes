@@ -72,6 +72,10 @@ Revision history for Langertha
       so verbose_json segments, words, language and duration stay
       reachable; simple_transcription still returns the text.
 
+    - $openai->whisper carries the parent's transcription_model (whisper-1
+      only when unset), user_agent_agent and user_agent_timeout, so it
+      transcribes as $openai->simple_transcription does.
+
     - Langertha::Chat without a system_prompt of its own sends the
       engine's system_prompt, as the engine itself would. A wrapper
       system_prompt still replaces the engine's; NousResearch's

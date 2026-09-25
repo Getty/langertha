@@ -134,4 +134,28 @@ my $multipart = sub {
   like($@, qr/audio content must be bytes/, '... with a clear message');
 }
 
+# karr k293: $openai->whisper is sold as "the same engine, focused on
+# transcription" -- it must not silently fall back to LWP's 180s timeout, the
+# TranscriptionBase User-Agent or whisper-1 when the parent says otherwise.
+{
+  require Langertha::Engine::OpenAI;
+  my $openai = Langertha::Engine::OpenAI->new(
+    api_key             => 'k',
+    user_agent_timeout  => 7,
+    user_agent_agent    => 'my-app/1.0',
+    transcription_model => 'gpt-4o-transcribe',
+  );
+  my $w = $openai->whisper;
+  is($w->transcription_model, 'gpt-4o-transcribe', 'whisper: parent transcription_model');
+  is($w->user_agent_timeout, 7, 'whisper: parent user_agent_timeout');
+  is($w->user_agent->timeout, 7, 'whisper: LWP gets that timeout');
+  is($w->user_agent->agent, 'my-app/1.0', 'whisper: parent User-Agent');
+  is($w->url, $openai->url, 'whisper: parent url');
+  is($w->api_key, 'k', 'whisper: parent api_key');
+
+  my $plain = Langertha::Engine::OpenAI->new( api_key => 'k' )->whisper;
+  is($plain->transcription_model, 'whisper-1', 'whisper: whisper-1 when the parent sets no model');
+  ok(!$plain->has_user_agent_timeout, 'whisper: no timeout when the parent sets none');
+}
+
 done_testing;
