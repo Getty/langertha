@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-25T19:45:06Z
+claimed_by: claude
+class: standard
+completed: 2026-09-25T19:45:06Z
+created: 2026-09-25T19:39:09Z
+id: 284
+priority: low
+started: 2026-09-25T19:40:21Z
+status: done
+tags:
+- docs
+- pod
+title: lib/Langertha.pm Data Objects catalogue missing Pricing, Cost, Usage, Manifest,
+  Manifest::Builder
+updated: 2026-09-25T19:45:06Z
+---
+
+Pre-release audit (langertha-release-checker) after a171067. lib/Langertha.pm "=head2 Data Objects" catalogue (the perldoc front door) has no entry for Langertha::Pricing, Langertha::Cost, Langertha::Usage, Langertha::Manifest or Langertha::Manifest::Builder - confirmed by grepping lib/Langertha.pm for those names: no hits.
+
+These classes predate a171067 (created 2026-09-25 ~02:56-06:19, a171067 is 10:36 same day) so this is not a regression introduced since the last audit, and t/79_pod_catalogue.t does not guard the Data Objects section (only Engine Modules and Roles), so it stays green. But k263 (eb7e305, in-window, a skeid #28 prerequisite per karr #263) added the headline cache-pricing feature to exactly these undocumented classes (Pricing.cached_input_per_million / cache_write_per_million, Cost.cache_read_usd / cache_write_usd, Usage.input_includes_cache / uncached_input_tokens) with zero entry point in perldoc Langertha.
+
+Fix: add entries for Langertha::Pricing, Langertha::Cost, Langertha::Usage, Langertha::Manifest, Langertha::Manifest::Builder to the Data Objects catalogue in lib/Langertha.pm (langertha-pod-writer lane). Non-blocking for this release but should not go another cycle undocumented.
