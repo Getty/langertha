@@ -47,7 +47,8 @@ my @table = (
     { type => 'file_search', vector_store_ids => ['vs'] },
     { type => 'code_interpreter', container => { type => 'auto' } },
     { type => 'image_generation' },
-    { type => 'mcp', server_label => 's', server_url => 'https://x' },
+    # require_approval => 'never': OpenAIResponses refuses anything else (k206)
+    { type => 'mcp', server_label => 's', server_url => 'https://x', require_approval => 'never' },
     { type => 'x_search' },
     { type => 'collections_search' },
     { type => 'tool_search' },
@@ -141,6 +142,13 @@ for my $row (@table) {
     for my $order ( [ $hash, $mcp ], [ $mcp, $hash ] ) {
       croaks_like( sub { Langertha::Tool->from_list($order) }, $err_re, 'from_list croaks on a mixed list' );
       for my $fmt (qw( openai anthropic gemini responses )) {
+        # k206: a server tool of the wire being formatted is a
+        # Langertha::ServerTool and keeps its place, verbatim.
+        if ( $fmt eq 'responses' && $on_responses eq 'server' ) {
+          is_deeply( Langertha::Tool->format_list( $fmt, $order ),
+            [ map { $_ == $mcp ? $want_fn : $hash } @$order ], 'format_list(responses) keeps it (k206)' );
+          next;
+        }
         croaks_like( sub { Langertha::Tool->format_list( $fmt, $order ) }, $err_re,
           "format_list($fmt) croaks" );
       }

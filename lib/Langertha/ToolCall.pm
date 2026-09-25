@@ -197,9 +197,14 @@ sub locate {
     return [ grep { exists $_->{functionCall} } @$parts ];
   }
   if ( $fmt eq 'responses' ) {
+    # Server-side call items (web_search_call, mcp_call, ...) are never located:
+    # the provider already ran them (ADR 0003 Update k206). A client-actionable
+    # item Langertha cannot map croaks instead of being skipped (ADR 0030).
+    require Langertha::Tool;
     my @calls;
     for my $item ( @{ $data->{output} // [] } ) {
       next unless ref($item) eq 'HASH';
+      Langertha::Tool->_croak_on_client_item($item);
       my $type = $item->{type} // '';
       if ( $type eq 'function_call' ) {
         push @calls, $item;

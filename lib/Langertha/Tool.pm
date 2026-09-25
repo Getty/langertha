@@ -89,6 +89,9 @@ sub from_gemini {
 sub from_hash {
   my ($class, $hash) = @_;
   return $hash if ref($hash) && eval { $hash->isa(__PACKAGE__) };
+  croak "Langertha::Tool: a Langertha::ServerTool is not a function tool; "
+    . "format_list and the engine's tools list take it, Langertha::Tool does not"
+    if ref($hash) && eval { $hash->isa('Langertha::ServerTool') };
   return undef unless ref($hash) eq 'HASH';
   $class->_croak_unless_function_tool($hash);
   return $class->from_openai($hash)    if ( $hash->{type} // '' ) eq 'function';
@@ -108,8 +111,12 @@ sub _croak_unless_function_tool {
   my ( $category, $wire, $label ) = $class->classify($hash);
   return if $category eq 'function';
   my $tail = '(refusing to drop it or send it as a function tool)';
-  croak "Langertha::Tool: '$label' is a server-side tool ($wire), and "
-    . "server-side tools are not supported yet $tail"
+  croak "Langertha::Tool: '$label' is a server-side tool ($wire), not a function "
+    . "tool $tail; "
+    . ( $wire eq 'responses'
+      ? "pass it in the tools list of an engine that supports('server_tools'), "
+        . "or wrap it in Langertha::ServerTool"
+      : "Langertha::ServerTool does not support the $wire wire yet" )
     if $category eq 'server';
   croak "Langertha::Tool: '$label' is a client-executed built-in tool ($wire), "
     . "not a server tool, and Langertha cannot run it $tail"
@@ -138,6 +145,33 @@ my @GEMINI_SERVER_KEY = qw(
   enterprise_web_search enterpriseWebSearch file_search fileSearch retrieval
 );
 my @GEMINI_CLIENT_KEY = qw( computer_use computerUse );
+
+# The inbound mirror of %RESPONSES_CLIENT_TYPE: Responses output[] items the
+# CLIENT must answer and Langertha does not map into Response.tool_calls
+# (llm-advisor must-change 1 on k206, OpenAI create-response reference). A
+# known one croaks rather than being skipped -- skipped, a tool loop ends as if
+# the model were done and a chat_f caller never learns it is waiting. A
+# tool_search_call is client-actionable only with execution => 'client'.
+# Unknown item types stay skipped (values open); ADR 0030.
+my %RESPONSES_CLIENT_ITEM = (
+  custom_tool_call     => 'a custom tool call',
+  computer_call        => 'a computer-use action',
+  local_shell_call     => 'a local shell command',
+  apply_patch_call     => 'a patch to apply',
+  mcp_approval_request => "an MCP approval request; send the mcp tool with require_approval => 'never'",
+  tool_search_call     => 'a client-side tool search',
+);
+
+sub _croak_on_client_item {
+  my ( $class, $item ) = @_;
+  return unless ref $item eq 'HASH';
+  my $type = $item->{type} // '';
+  my $what = $RESPONSES_CLIENT_ITEM{$type} or return;
+  return if $type eq 'tool_search_call' && ( $item->{execution} // '' ) ne 'client';
+  croak "Langertha: the reply contains a '$type' output item ($what) that the "
+    . "client must answer, and Langertha cannot; refusing to end the turn as if the "
+    . "model were done";
+}
 
 # ($category, $wire) for a recognised built-in, else ().
 sub _builtin_kind {
@@ -198,8 +232,9 @@ client tool).
 
 A known provider built-in that the provider runs, for example
 C<web_search> (Responses), C<web_search_20250305> (Anthropic) or
-C<< { google_search => {} } >> (Gemini). Langertha does not support
-server-side tools yet.
+C<< { google_search => {} } >> (Gemini). Server-side tools of the
+C<responses> wire are carried by L<Langertha::ServerTool>; those of the
+Anthropic and Gemini wires are not supported yet.
 
 =item C<client_builtin>
 
@@ -414,14 +449,24 @@ sub to {
 # Class method: turn a list of any-shape (usually MCP) tool hashrefs into the
 # full wire `tools` payload for the given format. Handles collection-level
 # shaping (Gemini wraps its declarations) that a per-tool serializer cannot.
+#
+# A server-side tool (a Langertha::ServerTool, or a hash ServerTool->from_hash
+# recognises for $fmt) keeps its place in the list and goes out as its native
+# hash; ServerTool->to croaks when its wire is not $fmt (k206, ADR 0030).
+# Everything else goes through from_list, so a server tool of another wire, a
+# client-executed built-in or an unknown type still croaks at the Tool door.
 sub format_list {
   my ($class, $fmt, $tools) = @_;
   $fmt //= '';
-  my @objs = @{ $class->from_list($tools) };
+  require Langertha::ServerTool;
+  my @items = map {
+    my $st = Langertha::ServerTool->from_hash( $fmt, $_ );
+    $st ? $st : @{ $class->from_list([$_]) };
+  } ( ref($tools) eq 'ARRAY' ? @$tools : () );
   if ( $fmt eq 'gemini' ) {
-    return [ { functionDeclarations => [ map { $_->to_gemini } @objs ] } ];
+    return [ { functionDeclarations => [ map { $_->to('gemini') } @items ] } ];
   }
-  return [ map { $_->to($fmt) } @objs ];
+  return [ map { $_->to($fmt) } @items ];
 }
 
 __PACKAGE__->meta->make_immutable;
