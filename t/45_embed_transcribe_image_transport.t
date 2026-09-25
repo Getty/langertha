@@ -105,13 +105,13 @@ subtest 'simple_embedding_f: same vectors on every backend' => sub {
 
 subtest 'simple_transcription_f: multipart audio arrives intact on every backend' => sub {
   parity( run_all( "$base/ok/v1", 'simple_transcription', \$AUDIO, filename => 'speech.wav', language => 'de' ),
-    'speech.wav intact whisper-1 de', 'bytes' );
+    'speech.wav intact gpt-transcribe de', 'bytes' );
   my $path = Path::Tiny->tempfile( SUFFIX => '.mp3' );
   $path->spew_raw($AUDIO);
   parity( run_all( "$base/ok/v1", 'simple_transcription', "$path", language => 'en' ),
-    $path->basename . ' intact whisper-1 en', 'file path' );
+    $path->basename . ' intact gpt-transcribe en', 'file path' );
   parity( run_all( "$base/ok/v1", 'simple_transcription_result', \$AUDIO, filename => 'a.wav', language => 'en' ),
-    { text => 'a.wav intact whisper-1 en' }, 'result HashRef' );
+    { text => 'a.wav intact gpt-transcribe en' }, 'result HashRef' );
 };
 
 subtest 'simple_image_f: same image objects on every backend' => sub {
