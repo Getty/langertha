@@ -7,8 +7,9 @@ karr init [--name NAME] [--statuses s1,s2,s3] [--claude-skill] [--new-board]
 ```
 
 Creates the board refs in the current Git repository (`--dir PATH` starts the
-repository search elsewhere). `--claude-skill` installs this skill as
-`.claude/skills/kanban-issues-karr-cli/` in the repository root.
+repository search elsewhere). `--claude-skill` installs the karr skills as
+`.claude/skills/kanban-issues-karr-coordination/` and
+`.claude/skills/kanban-issues-karr-ticket/` in the repository root.
 
 Before writing, init asks the remote whether a board already exists there:
 `git clone` does not fetch `refs/karr/*`, so a fresh clone looks like a
@@ -27,14 +28,18 @@ karr skill install --global               # under $HOME instead
 karr skill install --force                # overwrite an existing install
 karr skill check                          # exit 1 when an install differs from the bundled files
 karr skill update                         # refresh outdated installs in place
-karr skill show                           # print the bundled SKILL.md
+karr skill show [NAME]                    # print the bundled SKILL.md files (or NAME's only)
 ```
 
-Installs `SKILL.md` and `references/*.md` under `.claude/skills/`,
+Two skills ship: `kanban-issues-karr-coordination` (this one) and
+`kanban-issues-karr-ticket` (working one handed card); each command handles
+both. Installs each one's `SKILL.md` and `references/*.md` under `.claude/skills/`,
 `.agents/skills/` or `.cursor/skills/` (`--global`: `~/.claude/skills`,
 `~/.codex/skills`, `~/.cursor/skills`). The target is the current directory —
 `skill` takes no `--dir`; `cd` there. Files are written in place, so a
-hardlinked skill shared across projects (manage-skills) stays linked.
+hardlinked skill shared across projects (manage-skills) stays linked. A
+leftover `kanban-issues-karr-cli/` — the single skill the two replace — is
+removed by `install` and `update` and reported `stale` by `check` (exit 1).
 
 ## completion
 
