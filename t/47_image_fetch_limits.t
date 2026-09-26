@@ -11,6 +11,10 @@ use MIME::Base64 qw( encode_base64 );
 use HTTP::Response;
 use LWP::UserAgent;
 use Test::LocalHTTPDaemon;
+use IO::Compress::Gzip qw( gzip );
+use IO::Compress::Deflate qw( deflate );
+use IO::Compress::RawDeflate qw( rawdeflate );
+use IO::Compress::Bzip2 qw( bzip2 );
 use Langertha::Content::Image;
 use Langertha::Request::SyncHTTP;
 use Langertha::Engine::Gemini;
@@ -25,10 +29,35 @@ use Langertha::Engine::Gemini;
 # and the optional inline_image_url_filter vets the image URL and every
 # redirect hop before it is requested. Content::Image->deny_private_hosts is
 # the ready-made filter. The error texts are the same on every backend.
+#
+# karr k342: the cap measured the bytes on the wire, but the body was stored
+# through decoded_content, which inflates a Content-Encoding without a bound:
+# a 48 KB gzip body stored 50 MB (a 20 MiB one inflates to about 20 GB). The
+# cap now holds for the decoded size too, on every backend, with the same
+# size error: the body is inflated in blocks and refused once it passes.
 
 my $CAP = 1000;
 my $PNG = "\x89PNG" . ( 'k' x 496 );   # 500 bytes
 my $B64 = encode_base64( $PNG, '' );
+
+# Content-Encoding bodies: bombs whose wire size is under $CAP but decode to
+# 500 times it, and small images that must still be stored decoded.
+my $zeros = "\0" x ( 500 * $CAP );
+sub squeeze { my ( $how, $in ) = @_; my $out;
+  { gzip => \&gzip, deflate => \&deflate, raw => \&rawdeflate, bzip2 => \&bzip2 }->{$how}->( \$in => \$out );
+  return $out }
+my %encoded = (
+  '/bomb-gzip.png'       => [ gzip      => squeeze( gzip  => $zeros ) ],
+  '/bomb-x-gzip.png'     => [ 'x-gzip'  => squeeze( gzip  => $zeros ) ],
+  '/bomb-deflate.png'    => [ deflate   => squeeze( deflate => $zeros ) ],
+  '/bomb-rawdeflate.png' => [ deflate   => squeeze( raw   => $zeros ) ],
+  '/bomb-bzip2.png'      => [ bzip2     => squeeze( bzip2 => $zeros ) ],
+  '/gzip-small.png'      => [ gzip      => squeeze( gzip  => $PNG ) ],
+  '/gzip-exact.png'      => [ gzip      => squeeze( gzip  => 'x' x $CAP ) ],
+  '/layered-small.png'   => [ 'deflate, gzip' => squeeze( gzip => squeeze( deflate => $PNG ) ) ],
+  '/br.png'              => [ br        => 'not really brotli' ],
+);
+length( $_->[1] ) < $CAP or die "fixture over the wire cap" for values %encoded;
 
 my $hits = File::Temp->new;   # one line per request the daemon served
 sub hit_paths {
@@ -42,6 +71,9 @@ my $server = Test::LocalHTTPDaemon->start( sub {
   if ( open my $log, '>>', $hits->filename ) { print {$log} "$path\n"; close $log }
   my $png = [ 'Content-Type' => 'image/png' ];
   return HTTP::Response->new( 200, 'OK', $png, $PNG ) if $path eq '/small.png';
+  if ( my $enc = $encoded{$path} ) {
+    return HTTP::Response->new( 200, 'OK', [ @$png, 'Content-Encoding' => $enc->[0] ], $enc->[1] );
+  }
   return HTTP::Response->new( 200, 'OK', $png, 'x' x $CAP ) if $path eq '/exact.png';
   return HTTP::Response->new( 200, 'OK', $png, 'x' x ( 2 * $CAP ) ) if $path eq '/big.png';
   if ( $path eq '/big-chunked.png' ) {   # no Content-Length: only the body count stops it
@@ -126,6 +158,34 @@ for my $name (@backends) {
   ( $b64, $err ) = fetch( $name, '/big.png', max_bytes => 0 );
   is $b64, encode_base64( 'x' x ( 2 * $CAP ), '' ), "$name: max_bytes => 0 removes the cap";
 }
+# --- Download cap: the decoded size (k342) ---
+for my $name (@backends) {
+  for my $path (qw( /bomb-gzip.png /bomb-x-gzip.png /bomb-deflate.png /bomb-rawdeflate.png /bomb-bzip2.png )) {
+    my ( $b64, $err, $img ) = fetch( $name, $path, max_bytes => $CAP );
+    ok !defined $b64, "$name: $path decoding past the cap fails";
+    # Net::Async::HTTP inflates deflate itself and reads only the zlib form:
+    # on raw deflate its own decoder fails the fetch first.
+    if ( $name eq 'Net::Async::HTTP' && $path eq '/bomb-rawdeflate.png' ) {
+      ok length $err, '... with its decode error';
+    }
+    else {
+      is $err, too_big( $path, $CAP ), '... with the size error';
+    }
+    ok !$img->has_base64, '... nothing stored';
+  }
+  my ( $b64, $err ) = fetch( $name, '/gzip-small.png', max_bytes => $CAP );
+  is $b64, $B64, "$name: a gzip body under the cap is stored decoded";
+  ( $b64, $err ) = fetch( $name, '/gzip-exact.png', max_bytes => $CAP );
+  is $b64, encode_base64( 'x' x $CAP, '' ), "$name: a gzip body decoding to exactly the cap is stored";
+  ( $b64, $err ) = fetch( $name, '/layered-small.png', max_bytes => $CAP );
+  is $b64, $B64, "$name: layered encodings are undone in reverse order";
+  ( $b64, $err ) = fetch( $name, '/bomb-gzip.png', max_bytes => 0 );
+  is $b64, encode_base64( $zeros, '' ), "$name: max_bytes => 0 decodes without a cap";
+  ( $b64, $err ) = fetch( $name, '/br.png', max_bytes => $CAP );
+  is $err, "ensure_base64: failed to fetch $base/br.png: cannot decode Content-Encoding 'br' "
+    . "within inline_image_max_bytes", "$name: an encoding that cannot be bounded is refused";
+}
+
 is Langertha::Content::Image::DEFAULT_MAX_BYTES(), 20_971_520, 'default cap is 20 MiB';
 
 # --- URL filter ---

@@ -1,4 +1,6 @@
 
+requires 'Compress::Raw::Bzip2';
+requires 'Compress::Raw::Zlib';
 requires 'File::ShareDir::ProjectDistDir';
 requires 'Future';
 requires 'Future::AsyncAwait', '>= 0.66';

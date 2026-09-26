@@ -32,6 +32,11 @@ Revision history for Langertha
       not run it and response_tool_calls does not return it, as chat_f and
       streaming already treated it.
 
+    - Security: inline_image_max_bytes also caps the decoded size of an image
+      sent with a gzip, deflate or bzip2 Content-Encoding, on every backend;
+      a compressed body that inflates past the cap fails the call, and other
+      encodings are refused while a cap is set.
+
     - Gemini tool declarations send the input schema unchanged as
       parametersJsonSchema instead of parameters, so MCP schemas with
       additionalProperties, $ref or const no longer get a 400. A top-level

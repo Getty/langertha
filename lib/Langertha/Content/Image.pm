@@ -411,7 +411,7 @@ sub _inline_fetched {
     }
   }
 
-  $self->base64(encode_base64($response->decoded_content(charset => 'none'), ''));
+  $self->base64( encode_base64( $self->_decoded_body( $response, $max ), '' ) );
   unless ($self->has_media_type) {
     my $ct = $response->header('Content-Type') // '';
     $ct =~ s/;.*$//;
@@ -419,6 +419,90 @@ sub _inline_fetched {
     $self->media_type($ct) if length $ct;
   }
   return $self->base64;
+}
+
+# The body with its Content-Encoding undone (karr k342). The cap above counts
+# the bytes on the wire; a compressed body is inflated here in blocks and
+# refused as soon as its decoded size passes the cap, so a small gzip body
+# cannot expand to gigabytes in memory. No backend is trusted to have decoded
+# it: Net::Async::HTTP decodes (and counts) only the encodings it knows and
+# leaves the rest here. Without a cap, HTTP::Message decodes as before.
+my %INFLATE = (
+  identity  => undef,
+  gzip      => 'gzip',  'x-gzip'    => 'gzip',
+  deflate   => 'zlib',  'x-deflate' => 'zlib',
+  bzip2     => 'bzip2', 'x-bzip2'   => 'bzip2',
+);
+
+sub _decoded_body {
+  my ( $self, $response, $max ) = @_;
+  return $response->decoded_content( charset => 'none' ) unless $max;
+  my $body = $response->content;
+  my @encodings = grep { length } map { s/\A\s+|\s+\z//gr }
+    split /,/, lc( $response->header('Content-Encoding') // '' );
+  for my $encoding ( reverse @encodings ) {   # listed in the order applied
+    croak "ensure_base64: failed to fetch ".$self->url
+      . ": cannot decode Content-Encoding '$encoding' within inline_image_max_bytes"
+      unless exists $INFLATE{$encoding};
+    my $kind = $INFLATE{$encoding} or next;
+    $body = $kind eq 'bzip2'
+      ? $self->_bunzip_capped( $body, $max, $encoding )
+      : $self->_inflate_capped( $body, $max, $encoding, $kind );
+  }
+  return $body;
+}
+
+# zlib inflate in output blocks of at most 64 KiB. deflate is the zlib
+# format, with raw deflate as the fallback that HTTP::Message allows too.
+sub _inflate_capped {
+  my ( $self, $in, $max, $encoding, $kind ) = @_;
+  require Compress::Raw::Zlib;
+  my @bits = $kind eq 'gzip' ? ( Compress::Raw::Zlib::WANT_GZIP() )
+    : ( Compress::Raw::Zlib::MAX_WBITS(), -Compress::Raw::Zlib::MAX_WBITS() );
+  for my $bits (@bits) {
+    my $input = $in;
+    my ( $inflater, $status ) = Compress::Raw::Zlib::Inflate->new(
+      -WindowBits => $bits, -Bufsize => 65_536, -LimitOutput => 1,
+      -ConsumeInput => 1, -AppendOutput => 1 );
+    $self->_undecodable($encoding) unless $status == Compress::Raw::Zlib::Z_OK();
+    my $out = '';
+    while (1) {
+      my @before = ( length $input, length $out );
+      $status = $inflater->inflate( $input, $out );
+      $self->_croak_too_big($max) if length $out > $max;
+      return $out if $status == Compress::Raw::Zlib::Z_STREAM_END();
+      last unless $status == Compress::Raw::Zlib::Z_OK()
+        || $status == Compress::Raw::Zlib::Z_BUF_ERROR();
+      # No progress: the stream ends before its end marker.
+      $self->_undecodable($encoding)
+        if length $input == $before[0] && length $out == $before[1];
+    }
+    $self->_undecodable($encoding) unless $status == Compress::Raw::Zlib::Z_DATA_ERROR();
+  }
+  return $self->_undecodable($encoding);
+}
+
+sub _bunzip_capped {
+  my ( $self, $input, $max, $encoding ) = @_;
+  require Compress::Raw::Bzip2;
+  # appendOutput, consumeInput, small, verbosity, limitOutput
+  my ( $bunzip, $status ) = Compress::Raw::Bunzip2->new( 1, 1, 0, 0, 1 );
+  $self->_undecodable($encoding) unless $status == Compress::Raw::Bzip2::BZ_OK();
+  my $out = '';
+  while (1) {
+    my @before = ( length $input, length $out );
+    $status = $bunzip->bzinflate( $input, $out );
+    $self->_croak_too_big($max) if length $out > $max;
+    return $out if $status == Compress::Raw::Bzip2::BZ_STREAM_END();
+    $self->_undecodable($encoding) unless $status == Compress::Raw::Bzip2::BZ_OK();
+    $self->_undecodable($encoding)
+      if length $input == $before[0] && length $out == $before[1];
+  }
+}
+
+sub _undecodable {
+  my ( $self, $encoding ) = @_;
+  croak "ensure_base64: failed to fetch ".$self->url.": cannot decode Content-Encoding '$encoding'";
 }
 
 # max_bytes (undef: the default cap, 0: none) and url_filter out of the
@@ -526,8 +610,11 @@ anyway is not stored.
 
 C<max_bytes> caps the download, C<20971520> (20 MiB) by default; C<0> means no
 cap. A C<Content-Length> over the cap stops the fetch before the body, and a
-body that grows past it stops reading there. Nothing is stored, and the call
-croaks:
+body that grows past it stops reading there. The cap holds for the decoded
+size too: a body sent with a C<Content-Encoding> (C<gzip>, C<deflate>,
+C<bzip2>) is inflated in blocks and refused once it passes the cap, and one in
+any other encoding is refused as undecodable while a cap is set. Nothing is
+stored, and the call croaks:
 
     Langertha::Content::Image image at https://... exceeds inline_image_max_bytes (20971520)
 
