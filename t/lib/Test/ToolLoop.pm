@@ -55,6 +55,7 @@ sub strip_location {
 #   engine  => sub { Engine->new( @_ ) },  # @_ carries the transport
 #   bodies  => [ $wire_body, ... ],        # one per turn
 #   servers => [ $mcp, ... ],
+#   plugins => [ ... ],                    # optional, Langertha::Chat loops only
 # )
 # Returns { ok => $text } or { died => $error }, plus warnings => [...] and
 # requests => [ decoded request bodies ].
@@ -63,8 +64,13 @@ sub run_loop {
   my @http = map { http_for($_) } @{ $args{bodies} };
   my @warnings;
   local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+  my @plugins = $args{plugins} ? ( plugins => $args{plugins} ) : ();
   my ( $transport, $result );
   my $ok = eval {
+    # The engine's own loop fires no plugin hooks; a plugin test there would
+    # pass for the wrong reason.
+    die "Test::ToolLoop: plugins apply to the Langertha::Chat loops only\n"
+      if @plugins && $loop eq 'chat_with_tools_f';
     if ( $loop eq 'chat_with_tools_f' ) {
       $transport = Test::MockAsyncHTTP->new( responses => \@http );
       $result = $args{engine}->( _async_http => $transport, mcp_servers => $args{servers} )
@@ -73,12 +79,12 @@ sub run_loop {
     elsif ( $loop eq 'simple_chat_with_tools_f' ) {
       $transport = Test::MockAsyncHTTP->new( responses => \@http );
       $result = Langertha::Chat->new( engine => $args{engine}->( _async_http => $transport ),
-        mcp_servers => $args{servers} )->simple_chat_with_tools_f('hi')->get;
+        mcp_servers => $args{servers}, @plugins )->simple_chat_with_tools_f('hi')->get;
     }
     elsif ( $loop eq 'simple_chat_with_tools' ) {
       $transport = Test::ToolLoop::UA->new(@http);
       $result = Langertha::Chat->new( engine => $args{engine}->( user_agent => $transport ),
-        mcp_servers => $args{servers} )->simple_chat_with_tools('hi');
+        mcp_servers => $args{servers}, @plugins )->simple_chat_with_tools('hi');
     }
     else { die "unknown loop $loop" }
     1;

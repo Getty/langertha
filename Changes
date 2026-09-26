@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - In Langertha::Chat's tool loops, the body plugin_after_llm_response
+      returns is what the turn is read from: the calls run, the final text
+      and the echoed assistant turn all follow the plugin's edits, so a call
+      a plugin removes is neither run nor answered.
+
     - The MCP tool loops no longer run a tool with empty arguments when the
       model sent arguments that are not valid JSON: the call is answered with
       an error result "arguments are not valid JSON: REASON" and the loop

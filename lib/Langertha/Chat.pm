@@ -314,18 +314,24 @@ sub _tool_loop_iteration {
   die $self->_failed_message( $engine, $response, 'tool chat request' )
     unless $response->is_success;
 
-  # The reply is read by the parser chat_f uses (karr k321, k322): an
-  # error-in-body 200 croaks as it does there, and the final text is chat_f's.
-  # The calls to run are Response.tool_calls (ADR 0003). The hook and the
-  # assistant echo (format_tool_results) still get the RAW decoded wire body
-  # -- ->raw, the provider's own block list, never the flattened Response
-  # (karr #81).
-  my $reply = $engine->_tool_loop_response($response);
+  my $reply = $self->_tool_loop_reply_f( $engine, $response, $iteration )->get;
 
-  # Plugin hook: after LLM response
-  my $data = $self->_run_plugin_after_llm_response($reply->raw, $iteration)->get;
+  return ($conversation, $reply->raw, $reply);
+}
 
-  return ($conversation, $data, $reply);
+# One tool-loop turn's reply. plugin_after_llm_response gets the RAW decoded
+# wire body -- the provider's own block list, never the flattened Response
+# (karr #81) -- and the body the hooks return is read by the parser chat_f
+# uses (karr k321, k322): an error-in-body 200 croaks as it does there, the
+# final text is chat_f's, the calls to run are Response.tool_calls (ADR 0003).
+# The assistant echo is built from ->raw of that same reply, so a hook that
+# drops a call, changes its arguments or rewrites the text is honoured by all
+# three, and every echoed call gets exactly one result -- karr k347.
+async sub _tool_loop_reply_f {
+  my ( $self, $engine, $response, $iteration ) = @_;
+  my $data = $engine->parse_response($response);
+  $data = await $self->_run_plugin_after_llm_response($data, $iteration);
+  return $engine->tool_loop_response($data);
 }
 
 sub simple_chat_with_tools {
@@ -346,7 +352,7 @@ sub simple_chat_with_tools {
     );
 
     # Calls cut off by the token limit are dropped, as in chat_with_tools_f (k324).
-    ( my $calls, $data ) = $engine->_tool_loop_calls( $reply, $data );
+    ( my $calls, $data ) = $engine->tool_loop_calls( $reply, $reply->raw );
     my @tool_calls = @$calls;
     return $reply->content unless @tool_calls;
 
@@ -421,7 +427,10 @@ Each reply is read by the engine's C<chat_response>, as in
 L<Langertha::Role::Chat/chat_f>: a response whose body reports an error fails
 with the same text, the final text is the reply's C<content>, and the calls
 run are its L<Langertha::Response/tool_calls>. C<plugin_after_llm_response>
-still receives the raw decoded wire body. A failed request dies with
+receives the raw decoded wire body before it is read, and the body it returns
+is what the turn is read from: the calls run, the final text and the
+assistant turn echoed back to the provider all follow its edits, so a call a
+plugin removes is neither run nor echoed. A failed request dies with
 C<tool chat request failed>, in the sync and the async loop alike. A call
 whose arguments were cut off by the token limit is not run, a call whose
 arguments otherwise do not decode is answered with an error result, a call to an
@@ -452,11 +461,11 @@ async sub simple_chat_with_tools_f {
       die $self->_failed_message( $engine, $response, 'tool chat request' );
     }
 
-    # As the sync loop: chat_f's parser, the raw body to the hook (k321, k322).
-    my $reply = $engine->_tool_loop_response($response);
-    my $data = await $self->_run_plugin_after_llm_response($reply->raw, $iteration);
+    # As the sync loop: the raw body to the hook, chat_f's parser on what it
+    # returns, calls, text and echo from that one reply (k321, k322, k347).
+    my $reply = await $self->_tool_loop_reply_f( $engine, $response, $iteration );
 
-    ( my $calls, $data ) = $engine->_tool_loop_calls( $reply, $data );
+    my ( $calls, $data ) = $engine->tool_loop_calls( $reply, $reply->raw );
     my @tool_calls = @$calls;
     return $reply->content unless @tool_calls;
 

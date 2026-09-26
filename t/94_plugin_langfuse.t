@@ -24,27 +24,21 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
   package MockChatRequest;
   sub new { bless { response_call => $_[1], wire_body => $_[2] }, $_[0] }
   sub response_call { $_[0]->{response_call} }
-  # The raw wire body a real engine decodes out of the HTTP response, handed
-  # back by MockUserAgent so the mock parse_response (identity) yields what a
-  # real parse_response would rather than a flattened Response (karr #81).
-  sub wire_body { $_[0]->{wire_body} }
-}
-
-{
-  # What MockUserAgent answers for a request carrying a wire body: a
-  # successful HTTP response whose decoded body is that wire body.
-  package MockHTTPResponse;
-  sub new { bless { wire_body => $_[1] }, $_[0] }
-  sub is_success { 1 }
+  # The raw wire body the mock provider answers with. MockUserAgent sends it
+  # back as a real JSON HTTP::Response, so the tool loops decode, hand to the
+  # plugins and parse it as they do a real reply (karr #81, k347).
   sub wire_body { $_[0]->{wire_body} }
 }
 
 {
   package MockUserAgent;
+  use HTTP::Response;
+  use JSON::MaybeXS ();
   sub new { bless {}, $_[0] }
   sub request {
     my ($self, $request) = @_;
-    return MockHTTPResponse->new($request->wire_body)
+    return HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'application/json' ],
+      JSON::MaybeXS->new( utf8 => 1 )->encode( $request->wire_body ) )
       if ref $request && $request->can('wire_body') && $request->wire_body;
     return 'fake_response';
   }
@@ -427,13 +421,12 @@ subtest 'Chat with Langfuse + tools creates spans for tool calls' => sub {
       );
     }
     sub response_text_content { $_[1]->{final_text} // '' }
-    sub parse_response { $_[1] }
-    # The tool loops read each reply through the engine's chat_response, as
-    # chat_f does (karr k321, k322); this mock's "wire" is final_text plus a
-    # tool_calls list of { name, input }.
-    sub _tool_loop_response {
+    sub json { JSON::MaybeXS->new(utf8 => 1) }
+    sub parse_response { $_[0]->json->decode($_[1]->content) }
+    # This mock's wire: final_text plus a tool_calls list of { name, input }.
+    sub chat_response {
       my ($self, $http_response) = @_;
-      my $data = $http_response->wire_body;
+      my $data = $self->parse_response($http_response);
       return Langertha::Response->new(
         content    => $data->{final_text} // '',
         raw        => $data,
@@ -441,16 +434,17 @@ subtest 'Chat with Langfuse + tools creates spans for tool calls' => sub {
           @{ $data->{tool_calls} // [] } ],
       );
     }
+    sub tool_wire_format { 'mock' }
 
-    # The tool list and name -> server map, from the real loop helper (k332).
-    sub _tool_loop_tools { Langertha::Role::Tools::_tool_loop_tools(@_) }
+    # The loop helpers are the real ones from Role::Tools, not copies, so the
+    # Chat loops are tested with what they really run (k347).
+    sub tool_loop_response      { Langertha::Role::Tools::tool_loop_response(@_) }
+    sub _tool_loop_block_reason { Langertha::Role::Tools::_tool_loop_block_reason(@_) }
+    sub _chat_response_from_data { Langertha::Role::Tools::_chat_response_from_data(@_) }
+    sub _hermes_lift            { Langertha::Role::Tools::_hermes_lift(@_) }
+    sub tool_loop_calls         { Langertha::Role::Tools::tool_loop_calls(@_) }
+    sub _tool_loop_tools        { Langertha::Role::Tools::_tool_loop_tools(@_) }
     sub _langertha_carp { Carp::carp($_[1]) }
-
-    # The calls a turn runs (karr k324 drops truncated ones); this mock has none.
-    sub _tool_loop_calls {
-      my ($self, $reply, $data) = @_;
-      return ([ @{ $reply->tool_calls // [] } ], $data);
-    }
 
     sub think_tag_filter { 0 }
 
