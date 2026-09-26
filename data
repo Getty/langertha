@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-09-26T00:05:36Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:05:36Z
+created: 2026-09-25T23:26:16Z
+id: 339
+priority: low
+started: 2026-09-25T23:32:43Z
+status: done
+tags:
+- tools
+- gemini
+title: 'Tool loop: Gemini blocked prompt ends chat_with_tools_f with empty string,
+  reason lost'
+updated: 2026-09-26T00:05:36Z
+---
+
+From k321: chat_with_tools_f returns only a string; a Gemini promptFeedback.blockReason (k301: finish_reason=SAFETY, content "") ends the loop with "" and the reason is lost. Options: croak "<class> prompt blocked: SAFETY" in the loop only; or return Response from a new chat_with_tools_response_f. Decide + implement.
