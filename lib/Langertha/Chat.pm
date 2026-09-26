@@ -361,14 +361,8 @@ sub simple_chat_with_tools {
     for my $tc (@tool_calls) {
       my ( $name, $input ) = ( $tc->name, $tc->arguments );
 
-      # A name no server offers is answered with an error result, before any
-      # plugin sees it, so the batch runs to the end and the model can
-      # correct itself (k332). A plugin that renames to one is answered alike.
-      unless ( $tool_server_map->{$name} ) {
-        push @results, { tool_call => $tc,
-          result => Langertha::Role::Tools::_unknown_tool_result($name) };
-        next;
-      }
+      # Arguments that do not decode are answered with an error result
+      # before any plugin sees the call (k345).
       if ( my $bad = Langertha::Role::Tools::_undecodable_arguments_result($tc) ) {
         push @results, { tool_call => $tc, result => $bad };
         next;
@@ -386,6 +380,10 @@ sub simple_chat_with_tools {
       }
       ( $name, $input ) = @plugin_tc;
 
+      # The plugins see every call and may rename one onto a real tool; a
+      # name no server offers after them is answered with an error result,
+      # so the batch runs to the end and the model can correct itself
+      # (k332, k348).
       my $mcp = $tool_server_map->{$name};
       unless ($mcp) {
         push @results, { tool_call => $tc,
@@ -434,10 +432,11 @@ plugin removes is neither run nor echoed. A failed request dies with
 C<tool chat request failed>, in the sync and the async loop alike. A call
 whose arguments were cut off by the token limit is not run, a call whose
 arguments otherwise do not decode is answered with an error result, a call to an
-unknown tool is answered with an error result (also when a
-C<plugin_before_tool_call> renames it to one), and a tool name two servers
+unknown tool is answered with an error result, and a tool name two servers
 offer runs on the first, and a blocked prompt dies with C<prompt blocked>, as
-in L<Langertha::Role::Tools/chat_with_tools_f>.
+in L<Langertha::Role::Tools/chat_with_tools_f>. Whether a tool is unknown is
+decided on the name C<plugin_before_tool_call> returns: every call reaches the
+plugins, and one may map a hallucinated name onto a real tool.
 
 =cut
 
@@ -473,14 +472,8 @@ async sub simple_chat_with_tools_f {
     for my $tc (@tool_calls) {
       my ( $name, $input ) = ( $tc->name, $tc->arguments );
 
-      # A name no server offers is answered with an error result, before any
-      # plugin sees it, so the batch runs to the end and the model can
-      # correct itself (k332). A plugin that renames to one is answered alike.
-      unless ( $tool_server_map->{$name} ) {
-        push @results, { tool_call => $tc,
-          result => Langertha::Role::Tools::_unknown_tool_result($name) };
-        next;
-      }
+      # Arguments that do not decode are answered with an error result
+      # before any plugin sees the call (k345).
       if ( my $bad = Langertha::Role::Tools::_undecodable_arguments_result($tc) ) {
         push @results, { tool_call => $tc, result => $bad };
         next;
@@ -495,6 +488,10 @@ async sub simple_chat_with_tools_f {
       }
       ( $name, $input ) = @plugin_tc;
 
+      # The plugins see every call and may rename one onto a real tool; a
+      # name no server offers after them is answered with an error result,
+      # so the batch runs to the end and the model can correct itself
+      # (k332, k348).
       my $mcp = $tool_server_map->{$name};
       unless ($mcp) {
         push @results, { tool_call => $tc,

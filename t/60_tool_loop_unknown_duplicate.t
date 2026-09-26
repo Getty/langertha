@@ -103,4 +103,49 @@ subtest 'a name two servers offer goes on the wire once and runs on the first' =
   }
 };
 
+# karr k348: the unknown-name check runs on the name plugin_before_tool_call
+# returns. A plugin that maps a hallucinated name onto a real tool (an alias)
+# gets it run, and guard/observability plugins see unknown-name calls too.
+# Role::Tools::chat_with_tools_f fires no plugin hooks; only the Chat loops.
+{
+  package Test::Plugin::Alias;
+  use Moose;
+  use Future::AsyncAwait;
+  extends 'Langertha::Plugin';
+  has seen => ( is => 'ro', default => sub { [] } );
+  async sub plugin_before_tool_call {
+    my ( $self, $name, $input ) = @_;
+    push @{ $self->seen }, $name;
+    return if $name eq 'forbidden';
+    return ( 'echo', $input ) if $name eq 'web_search';
+    return ( 'still_unknown', $input ) if $name eq 'bogus';
+    return ( $name, $input );
+  }
+  __PACKAGE__->meta->make_immutable;
+}
+
+subtest 'plugin_before_tool_call sees unknown names and may rename them onto a real tool' => sub {
+  my $batch = { id => 'c1', choices => [ { index => 0, finish_reason => 'tool_calls',
+    message => { role => 'assistant', content => undef, tool_calls => [
+      map { { id => $_->[0], type => 'function', function => { name => $_->[1], arguments => '{}' } } }
+        [ c1 => 'web_search' ], [ c2 => 'bogus' ], [ c3 => 'forbidden' ],
+    ] } } ] };
+  for my $loop ( grep { $_ ne 'chat_with_tools_f' } loop_names() ) {
+    my @calls;
+    my $plugin = Test::Plugin::Alias->new( host => Langertha::Chat->new( engine => $engine{openai}->() ) );
+    my $out = run_loop( $loop, engine => $engine{openai}, bodies => [ $batch, $openai_done ],
+      servers => [ server( \@calls, 'echo' ) ], plugins => [$plugin] );
+    is( $out->{ok}, 'done', "$loop finishes" ) or diag( $out->{died} // '' );
+    is_deeply( $plugin->seen, [qw( web_search bogus forbidden )], "$loop: the plugin sees every unknown name" );
+    is_deeply( \@calls, ['echo'], "$loop runs the aliased call on the real tool" );
+    my @results = grep { ( $_->{role} // '' ) eq 'tool' } @{ $out->{requests}[1]{messages} };
+    is_deeply( [ map { $_->{tool_call_id} } @results ], [qw( c1 c2 c3 )], "$loop answers every call" );
+    is( $results[0]{content}, 'ran echo', "$loop: the aliased call gets the tool's result" );
+    like( $results[1]{content}, qr/unknown tool still_unknown/,
+      "$loop: a rename onto no real tool is unknown under the new name" );
+    like( $results[2]{content}, qr/Tool call 'forbidden' was skipped by plugin/,
+      "$loop: a skipped unknown call keeps the skip result" );
+  }
+};
+
 done_testing;

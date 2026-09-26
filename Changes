@@ -2,6 +2,10 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - In Langertha::Chat's tool loops, plugin_before_tool_call sees every
+      call, including one to an unknown tool, and may rename it onto a real
+      tool; "unknown tool NAME" answers the name the plugins return.
+
     - In Langertha::Chat's tool loops, the body plugin_after_llm_response
       returns is what the turn is read from: the calls run, the final text
       and the echoed assistant turn all follow the plugin's edits, so a call
