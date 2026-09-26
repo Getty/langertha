@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-26T00:42:43Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:42:43Z
+created: 2026-09-26T00:09:47Z
+id: 348
+priority: medium
+started: 2026-09-26T00:10:46Z
+status: done
+tags:
+- tools
+- review
+- plugins
+title: Unknown-tool pre-check runs before plugin_before_tool_call and blocks a plugin
+  rename (k332 regression)
+updated: 2026-09-26T00:42:43Z
+---
+
+lib/Langertha/Chat.pm:361-365 and 465-469 answer "unknown tool NAME" before the plugin pipeline runs. Before k332 the plugin ran first and only the post-plugin lookup failed, so a plugin_before_tool_call that maps a hallucinated/aliased name onto a real tool (search -> echo) worked; it also means before_tool hooks (Langfuse, guards) never see unknown-name calls.
+
+Repro (offline, OpenAI engine, plugin renaming search->echo): HEAD ran=[], result "unknown tool search"; 0935c25^ ran=[a], result ok. Script: scratchpad plugin_repro.pl (reviewer session).
+
+Fix: drop the pre-check; the post-plugin check at Chat.pm:379-384 / 480-485 already answers an unknown name with _unknown_tool_result and keeps the batch going. Add an alias-plugin case to t/60_tool_loop_unknown_duplicate.t for both Chat loops.
