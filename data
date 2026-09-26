@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-26T00:42:34Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:42:34Z
+created: 2026-09-26T00:09:29Z
+id: 347
+priority: high
+started: 2026-09-26T00:10:37Z
+status: done
+tags:
+- tools
+- review
+- plugins
+title: Tool loops ignore plugin_after_llm_response edits; a removed call still runs
+  and gets an orphan result (k321/k322 regression)
+updated: 2026-09-26T00:42:34Z
+---
+
+Langertha::Chat simple_chat_with_tools(_f) (lib/Langertha/Chat.pm:323-351, 451-456) now take the calls to run and the final text from $reply = _tool_loop_response($http) (the parsed Response), but the echo from the $data returned by plugin_after_llm_response. Plugin.pm documents the hook as "Inspect or transform the parsed LLM response".
+
+Repro (offline, OpenAI engine, Test::MockAsyncHTTP): a plugin that deletes call c2 from choices[0].message.tool_calls. HEAD: ran=[a b], echo_ids=[c1], result_ids=[c1 c2] -> the next request carries a tool message for a call the assistant echo never announced (OpenAI 400). Pre-wave (0935c25^): ran=[a], echo=[c1], results=[c1]. A plugin that rewrites the final message content: HEAD returns the original text, pre-wave the rewritten one. Script: scratchpad plugin_repro.pl (reviewer session).
+
+Fix: after the hook, rebuild the reply from the returned $data when it differs (e.g. calls = ToolCall->extract($fmt,$data) / hermes lift, text via the same path), or document the hook as observe-only and stop feeding its return to the echo -- but then echo and calls must come from one source. Add a test through all three loops (Test::ToolLoop) with a call-removing and a text-rewriting plugin. Note: t/93_chat.t / t/94_plugin_langfuse.t mock engines reimplement _tool_loop_response/_tool_loop_calls/_tool_loop_tools, so they cannot catch this.
