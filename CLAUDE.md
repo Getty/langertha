@@ -77,7 +77,7 @@ refactors:
 - **0025** — `temperature` emission is gated on resolved reasoning effort for OpenAI reasoning models (drop+carp; `temperature=1` passes)
 - **0026** — Raider/Raid extracted to sibling dist `langertha-raider`; core keeps generic primitives (`RunContext`, `Role::Runnable`) and the seams
 - **0027** — sync LWP fallback for the async `_f` transport (`Request::SyncHTTP`, backend selection in `Role::AsyncHTTP`); IO::Async/Net::Async::HTTP are `recommends`
-- **0028** — public hook surface for sibling dists: `async_request_f`, `async_loop` (`Maybe[loop]`), `langfuse_timestamp`, `Usage->from_raw`
+- **0028** — public hook surface for sibling dists: `async_request_f`, `async_loop` (`Maybe[loop]`), `langfuse_timestamp`, `Usage->from_raw`; `tool_loop_response` / `tool_loop_calls` (k341)
 - **0029** — provider manifest v1 (`Langertha::Manifest`): strict structure, open values, no secrets, dialect vocabulary incl. `anthropic-compat`, model-scoped capability allowlist
 - **0030** — server-side tools are a wire-pinned value object (`Langertha::ServerTool`, croaks off its wire) + `Role::ServerTools`/`server_tools` flag; provider-executed calls go to `Response.server_tool_calls`, never `tool_calls`; citations merged, deduped by url without `utm_*`
 - **0031** — `Usage.input_tokens` keeps the wire's meaning; `input_includes_cache` records whether cache reads/writes are in it, and `Pricing` (optional cache rates) prices each token once
