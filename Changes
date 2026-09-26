@@ -32,6 +32,11 @@ Revision history for Langertha
       not run it and response_tool_calls does not return it, as chat_f and
       streaming already treated it.
 
+    - Security: deny_private_hosts also refuses IPv6 addresses that carry a
+      private IPv4 address (NAT64 64:ff9b::/96 and 64:ff9b:1::/48, 6to4
+      2002::/16, SIIT ::ffff:0:0:0/96) and the IPv4 ranges 192.0.0.0/24 and
+      198.18.0.0/15.
+
     - Security: inline_image_max_bytes also caps the decoded size of an image
       sent with a gzip, deflate or bzip2 Content-Encoding, on every backend;
       a compressed body that inflates past the cap fails the call, and other

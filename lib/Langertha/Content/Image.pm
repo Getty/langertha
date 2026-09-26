@@ -711,12 +711,19 @@ it resolves to is one of:
 =item * IPv4 C<0.0.0.0/8> (this host), C<127.0.0.0/8> (loopback), C<10.0.0.0/8>,
 C<172.16.0.0/12>, C<192.168.0.0/16> (RFC 1918), C<100.64.0.0/10> (carrier-grade
 NAT), C<169.254.0.0/16> (link-local, including the cloud metadata address
-C<169.254.169.254>), C<224.0.0.0/3> (multicast, reserved, broadcast)
+C<169.254.169.254>), C<192.0.0.0/24> (IETF protocol assignments, including the
+NAT64 discovery addresses), C<198.18.0.0/15> (benchmarking), C<224.0.0.0/3>
+(multicast, C<240.0.0.0/4> reserved, C<255.255.255.255> broadcast)
 
 =item * IPv6 C<::/96> (unspecified, loopback C<::1>, IPv4-compatible),
 C<fe80::/10> (link-local), C<fec0::/10> (site-local), C<fc00::/7> (unique local,
-including the AWS metadata address C<fd00:ec2::254>), C<ff00::/8> (multicast), and
-an IPv4-mapped C<::ffff:a.b.c.d> whose IPv4 address is in the list above
+including the AWS metadata address C<fd00:ec2::254>), C<ff00::/8> (multicast)
+
+=item * an IPv6 address that carries an IPv4 address in the list above:
+IPv4-mapped C<::ffff:a.b.c.d>, SIIT C<::ffff:0:a.b.c.d>, NAT64 C<64:ff9b::a.b.c.d>
+and C<64:ff9b:1::a.b.c.d>, and 6to4 C<2002:AABB:CCDD::/48>. Any other address in
+the local-use NAT64 prefix C<64:ff9b:1::/48> is refused, since it does not say
+where its IPv4 address sits.
 
 =back
 
@@ -760,8 +767,21 @@ sub _is_private_address {
   }
   my $v6 = inet_pton( AF_INET6, $ip );
   return 1 unless defined $v6;
-  return _is_private_v4( substr $v6, 12 ) if substr( $v6, 0, 12 ) eq ( "\0" x 10 ) . "\xff\xff";
-  return 1 if substr( $v6, 0, 12 ) eq "\0" x 12;
+  my $head = substr $v6, 0, 12;
+  return _is_private_v4( substr $v6, 12 ) if $head eq ( "\0" x 10 ) . "\xff\xff";
+  return 1 if $head eq "\0" x 12;
+  # IPv4 addresses a gateway translates to (karr k343): SIIT ::ffff:0:0:0/96,
+  # NAT64 64:ff9b::/96 and the local-use 64:ff9b:1::/48 (RFC 8215), and 6to4
+  # 2002::/16. A local NAT64 address outside the /96 layout does not say where
+  # its IPv4 address sits, so it is refused outright.
+  return _is_private_v4( substr $v6, 12 )
+    if $head eq ( "\0" x 8 ) . "\xff\xff\0\0"
+    || $head eq "\0\x64\xff\x9b" . ( "\0" x 8 );
+  if ( substr( $v6, 0, 6 ) eq "\0\x64\xff\x9b\0\x01" ) {
+    return 1 unless substr( $v6, 6, 6 ) eq "\0" x 6;
+    return _is_private_v4( substr $v6, 12 );
+  }
+  return _is_private_v4( substr $v6, 2, 4 ) if substr( $v6, 0, 2 ) eq "\x20\x02";
   my ( $first, $second ) = unpack 'C2', $v6;
   return 1 if ( $first & 0xfe ) == 0xfc;                          # fc00::/7
   return 1 if $first == 0xfe && ( $second & 0x80 ) == 0x80;       # fe80::/10, fec0::/10
@@ -776,6 +796,8 @@ sub _is_private_v4 {
   return 1 if $first == 169 && $second == 254;
   return 1 if $first == 172 && ( $second & 0xf0 ) == 16;
   return 1 if $first == 192 && $second == 168;
+  return 1 if $first == 192 && $second == 0 && unpack( 'x2 C', $packed ) == 0;   # 192.0.0.0/24
+  return 1 if $first == 198 && ( $second & 0xfe ) == 18;                          # 198.18.0.0/15
   return 1 if $first == 100 && ( $second & 0xc0 ) == 64;
   return 1 if $first >= 224;
   return 0;
