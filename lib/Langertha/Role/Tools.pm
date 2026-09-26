@@ -649,6 +649,10 @@ loops pass) or the raw structure L</response_tool_calls> located.
 sub _tool_loop_response {
   my ( $self, $http_response ) = @_;
   my $response = $self->chat_response($http_response);
+  # A blocked prompt is an answer to chat_f (k301) but ends a tool loop, whose
+  # result is only text: '' would hide why -- karr k339.
+  my $blocked = $self->_tool_loop_block_reason($response);
+  croak "" . ( ref $self ) . " prompt blocked: $blocked" if defined $blocked;
   if ( $self->tool_wire_format eq 'hermes'
        && !( $response->has_tool_calls && @{ $response->tool_calls } ) ) {
     my ( $clean, $calls ) = $self->_hermes_split_text( $response->content );
@@ -656,6 +660,11 @@ sub _tool_loop_response {
   }
   return $response;
 }
+
+# Why the provider refused the prompt itself, when a reply says so (Gemini's
+# promptFeedback.blockReason); undef otherwise. Engines whose wire reports a
+# blocked prompt override it -- karr k339.
+sub _tool_loop_block_reason { return }
 
 # The finish reasons that mean "the reply hit its token limit", as each wire
 # spells it: OpenAI-compatible and Ollama 'length', Anthropic 'max_tokens',
@@ -836,7 +845,9 @@ exceeded. Returns a L<Future> that resolves to the final text response.
 Each reply is read by the engine's C<chat_response>, the parser
 L<Langertha::Role::Chat/chat_f> uses: a response whose body reports an error
 fails with the text C<chat_f> croaks, the calls run are the reply's
-L<Langertha::Response/tool_calls>, and the final text is its C<content>.
+L<Langertha::Response/tool_calls>, and the final text is its C<content>. A
+prompt the provider refuses outright (Gemini's C<promptFeedback.blockReason>)
+dies with C<prompt blocked: REASON>, where C<chat_f> returns the Response.
 
 A reply that hit its token limit (C<finish_reason> C<length>, C<max_tokens>,
 C<MAX_TOKENS> or C<incomplete>) never runs a call whose arguments do not

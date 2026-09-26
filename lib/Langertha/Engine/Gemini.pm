@@ -646,6 +646,16 @@ sub _gemini_block_reason {
   return defined $reason && !ref $reason && length $reason ? $reason : undef;
 }
 
+# The tool loops croak on a blocked prompt (Role::Tools, karr k339): the
+# candidate-less answer chat_response reports as finish_reason.
+sub _tool_loop_block_reason {
+  my ( $self, $response ) = @_;
+  my $data = $response->raw;
+  return undef unless ref $data eq 'HASH';
+  return undef if ref $data->{candidates} eq 'ARRAY' && @{ $data->{candidates} };
+  return $self->_gemini_block_reason($data);
+}
+
 =method chat_response
 
     my $response = $engine->chat_response($http_response);

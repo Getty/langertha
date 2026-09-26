@@ -422,7 +422,8 @@ C<tool chat request failed>, in the sync and the async loop alike. A call
 whose arguments were cut off by the token limit is not run, a call to an
 unknown tool is answered with an error result (also when a
 C<plugin_before_tool_call> renames it to one), and a tool name two servers
-offer runs on the first, as in L<Langertha::Role::Tools/chat_with_tools_f>.
+offer runs on the first, and a blocked prompt dies with C<prompt blocked>, as
+in L<Langertha::Role::Tools/chat_with_tools_f>.
 
 =cut
 

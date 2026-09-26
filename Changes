@@ -11,6 +11,11 @@ Revision history for Langertha
       response object. On Anthropic, text resources of any MIME type and
       text/* blobs become text documents.
 
+    - A Gemini prompt blocked inside an MCP tool loop dies with
+      "Langertha::Engine::Gemini prompt blocked: SAFETY" (the blockReason)
+      instead of ending the loop with an empty answer. chat_f still returns
+      the Response with the blockReason as finish_reason.
+
     - The MCP tool loops answer a call to a tool no server offers with an
       error result "unknown tool NAME" and run the rest of the batch, instead
       of dying after part of it ran. A tool name two MCP servers offer is
