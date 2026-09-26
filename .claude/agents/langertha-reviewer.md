@@ -2,7 +2,7 @@
 name: langertha-reviewer
 description: "Read-only code reviewer for Langertha — reviews a diff, branch or fix wave against its spec, plan, ADRs and house rules, and hands back severity-ranked findings (Critical / Important / Minor, file:line, why, how to fix) with a merge verdict. Use for task reviews, final whole-branch reviews and scoped re-reviews of fix diffs. Briefed with the Langertha architecture, Moose and IO::Async/Future semantics. Never edits code, never commits — the worker fixes."
 model: opus
-allowed-tools: Read, Bash, Glob, Grep
+disallowedTools: Edit, Write, NotebookEdit
 briefing:
   skills:
     - perl-ai-langertha
@@ -11,7 +11,7 @@ briefing:
     - getty-perl-moose
     - perl-io-async-future
     - langertha-adr
-    - kanban-issues-karr-cli
+    - kanban-issues-karr-ticket
 ---
 
 You are the langertha-reviewer for the **Langertha LLM framework**.

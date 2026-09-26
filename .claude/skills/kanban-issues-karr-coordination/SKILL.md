@@ -1,6 +1,6 @@
 ---
-name: kanban-issues-karr-cli
-description: Use when picking up, claiming, handing off or creating agent tickets with the karr CLI, or when reading a repo's karr board.
+name: kanban-issues-karr-coordination
+description: Use when reading a karr board, picking or claiming cards, creating cards, handing cards to subagents, filing on another repository's board, or configuring and syncing karr. For working one card you were handed: kanban-issues-karr-ticket.
 ---
 
 # karr — Kanban Assignment & Responsibility Registry
@@ -38,25 +38,32 @@ karr show --me                           # the card you last touched (re-orient)
 `list` hides the final column (`done`) and the archive unless asked for by
 name (`--status done`, `--archived`).
 
-## Work a card
+## Hand out and close cards
+
+The coordinating agent picks and claims; whoever does the work gets the card id
+and works it with skill `kanban-issues-karr-ticket` — load both when you work a
+card yourself.
 
 ```bash
 karr pick --status todo --move in-progress       # most urgent free card, claimed as $KARR_CLAIM
 karr move 12 in-progress                         # or take a specific one
 karr move 12 in-progress --claim NAME            # explicit claim, wins over KARR_CLAIM
-karr edit 12 -a "Cause is in Foo.pm, fix pending" -t   # timestamped note while working
-karr edit 12 --block "needs the API change first"      # stuck: say why, keep the claim …
-karr edit 12 --block "needs k7 first" --release        # … or let it go for someone else
-karr edit 12 --unblock
-karr handoff 12 --note "Implemented, needs QA" -t      # to the review column, claim refreshed
-karr edit 12 --release && karr move 12 done            # or close it directly
+karr list --status review                        # what workers handed back
+karr edit 12 --release && karr move 12 done      # close it once the work is committed
 ```
 
 Columns with `require_claim` (`in-progress`, `review` on a default board)
 refuse a move without a claim. A claim expires after `claim_timeout` (default
 1h) and the card is free again; `pick` skips blocked cards and live claims.
-Put what you learned on the card (`-a`) before handing it off — the card is
-the shared memory, your session is not.
+
+Life cycle with subagents: you claim and hand the id out → the worker notes on
+the card and hands it to `review` → whoever commits the work moves it to
+`done`, naming the commit. A subagent in the same directory gets the same
+`agent-name`, so your claim is its claim.
+
+**Serialize board mutations when fanning out.** Every mutating command pulls and
+pushes `refs/karr/*`; N of them landing at once is a resource event. Hand out
+cards one after another, and batch your own moves sequentially.
 
 ## Create a card
 

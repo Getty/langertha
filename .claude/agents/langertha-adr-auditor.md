@@ -2,13 +2,12 @@
 name: langertha-adr-auditor
 description: "Audit Langertha for architecturally-significant decisions that lack an ADR, and (in write mode) record them in the house docs/adr/ format. Backfill structure-first — walk the engine/role/value-object mesh, confirm the WHY from git history, CONTEXT.md, the code itself, and the karr board. The tool wire-translation lane is the densest decision area; reconcile drift between the stated decision and the wire reality as you go."
 model: opus
-allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
     - langertha-adr
     - perl-ai-langertha
     - langertha-internals
-    - kanban-issues-karr-cli
+    - kanban-issues-karr-ticket
 ---
 
 You are the langertha-adr-auditor for the Langertha LLM framework.

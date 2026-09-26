@@ -25,14 +25,14 @@ and lane are in the house rules. Agents in this repo:
 | Review a diff / branch / fix wave (read-only, severity-ranked findings + verdict) | `langertha-reviewer` |
 | Write / extend tests (regression, TDD red phase, fixtures, transport tests) | `langertha-test-writer` |
 | User-facing POD, `lib/Langertha.pm` catalogues, `Changes` entries | `langertha-pod-writer` |
-| Pre-release audit (prereqs, Changes, build, sibling pins) — reports, never releases | `langertha-release-checker` |
+| Commits, `Changes`, card → done, pre-release audit | `langertha-release-manager` |
 | Backfill & record architecture decisions in `docs/adr/` | `langertha-adr-auditor` |
 | Validate / red-team a plan against LLM-provider reality; market & provider Sonderheiten | `langertha-llm-advisor` |
 
 The natural chain: orchestrator plans → `langertha-llm-advisor` validates it against provider
 reality → `langertha-worker` (or the `langertha-async-worker` / `langertha-wire-worker`
 specialist) implements → `langertha-reviewer` reviews → `langertha-adr-auditor` records the
-decision → `langertha-release-checker` audits before a release.
+decision → `langertha-release-manager` audits before a release.
 
 The agents carry their skills via `briefing.skills` (see `.claude/agents/`); the main agent
 delegates rather than loading them. Skill sources live under `.claude/skills/`.
@@ -315,4 +315,4 @@ langertha-raider is installed.
 | Commit / push cadence, rebase vs merge, branch hygiene | `getty-git-usage` |
 | ADR format + backfill method | `langertha-adr` |
 | GitHub public issues (`gh`) guardrails | `langertha-github-issues` |
-| karr board commands | `kanban-issues-karr-cli` |
+| karr board commands | `kanban-issues-karr-coordination` |

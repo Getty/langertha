@@ -2,13 +2,11 @@
 name: langertha-pod-writer
 description: "Write and maintain Langertha's user-facing documentation — inline POD in lib/**/*.pm in the @Author::GETTY PodWeaver format (# ABSTRACT, =attr, =method, =seealso, SYNOPSIS/DESCRIPTION), the lib/Langertha.pm engine/role catalogues, and Changes entries. Documents behavior as it is; never changes code. Use after a feature lands, for new engines/roles, or when docs drifted from the code."
 model: opus
-allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 briefing:
   skills:
-    - getty-perl-release-author-getty
     - perl-ai-langertha
-    - getty-git-commit-style
-    - kanban-issues-karr-cli
+    - kanban-issues-karr-ticket
+    - getty-perl-pod
 ---
 
 You are the langertha-pod-writer for the **Langertha LLM framework**.

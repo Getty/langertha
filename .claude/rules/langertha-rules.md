@@ -34,7 +34,7 @@ This rule depends on whether the Agent/Task tool is available to you.
 - **You can spawn subagents** (orchestrating main agent): Do NOT touch behavior-relevant
   Langertha code yourself — delegate to `langertha-worker` or the specialist whose lane it is
   (table in `CLAUDE.md`). Your lane: coordinate, inspect,
-  plan, review diffs, run tests, manage git, write/curate ADRs and non-behavioral docs. When
+  plan, review diffs, run tests, write/curate ADRs and non-behavioral docs. When
   in doubt, delegate. Why: the `langertha-*` agents get their skills force-loaded via
   `briefing.skills` (perl-ai-langertha, getty-perl-moose, …); the bare main agent gets no briefing
   and would touch the engine/role internals with too little context.
@@ -46,10 +46,13 @@ wire-translation seam (`tool_wire_format` + the Tool/ToolCall/ToolResult/ToolCho
 objects), the capability registry, the Raider loop, streaming, async, MCP integration, error
 handling, tests, performance. Pure prose docs, ADRs, and `Changes` notes are not.
 
+**Only `langertha-release-manager` commits.** A worker leaves a commit-ready tree and hands its card
+to `review`; you then dispatch `langertha-release-manager` to cut the commit and close the card.
+
 ## Coordination — karr board (always in scope)
 
 Ticket coordination is the orchestrating agent's job, so `karr` is always in scope — don't
-invoke the `kanban-issues-karr-cli` skill first, just use it. Git-native kanban; board state lives in
+invoke the `kanban-issues-karr-coordination` skill first, just use it. Git-native kanban; board state lives in
 `refs/karr/*` in this repo (Langertha is a single distribution — one board, no cross-repo
 handoff). Day-to-day:
 
@@ -60,7 +63,7 @@ handoff). Day-to-day:
 - mutating commands auto-sync; `karr sync --pull|--push` for explicit exchange
 
 Use karr to record decisions worth solidifying, drift to reconcile, and follow-up work that
-should not block the current change. Full command surface: skill `kanban-issues-karr-cli`.
+should not block the current change. Full command surface: skill `kanban-issues-karr-coordination`.
 
 ## Public issues (GitHub) — never act without instruction
 
