@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-09-26T00:08:43Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:08:43Z
+created: 2026-09-25T23:50:25Z
+id: 342
+priority: high
+started: 2026-09-25T23:51:12Z
+status: done
+tags:
+- security
+- images
+title: inline_image_max_bytes bypassed by Content-Encoding gzip on LWP paths (decompression
+  bomb)
+updated: 2026-09-26T00:08:43Z
+---
+
+Found in the k337 security review. Content/Image.pm:_inline_fetched (line ~414) stores $response->decoded_content(charset=>"none"), which gunzips a Content-Encoding: gzip body with no bound. The cap (max_size, Content-Length check, length(content_ref)) only measures the raw wire bytes. Reproduced offline (LocalHTTPDaemon, 48547-byte gzip of 50 MB zeros, max_bytes=100000): sync ensure_base64 stores 50000000 decoded bytes; ensure_base64_f over the SyncHTTP shim stores 50000000; Net::Async::HTTP refuses (it decodes while streaming, so the count sees decoded bytes) -> also a sync/async divergence. Any injected client path is exposed the same way. A 20 MiB gzip body inflates to ~20 GB in memory (and then base64). Fix: decode incrementally with a bounded inflate (or check length of the decoded body against max_bytes before encode_base64 and refuse), same error text as _croak_too_big; add a gzip case per backend to t/47_image_fetch_limits.t. Repro: scratchpad gzbomb.pl pattern.
