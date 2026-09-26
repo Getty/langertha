@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-26T00:30:00Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:30:00Z
+created: 2026-09-26T00:09:56Z
+id: 349
+priority: medium
+started: 2026-09-26T00:10:55Z
+status: done
+tags:
+- tools
+- review
+- responses
+title: 'Responses wire: a truncated function_call croaks with a raw JSON error; arguments_undecodable
+  never set on that path (k324 gap)'
+updated: 2026-09-26T00:30:00Z
+---
+
+k324 says every wire constructor sets ToolCall.arguments_undecodable, but Role::ResponsesCompatible::_parse_function_call (lib/Langertha/Role/ResponsesCompatible.pm:712) builds ToolCall->new itself via decode_json_text, which dies on a cut-off string; from_responses (which sets the flag) is only used by _echo_without_undecodable_calls. Also the walker derives finish_reason only from a message item, so a max_output_tokens reply with only a function_call item reports tool_calls, not incomplete, and _tool_loop_calls would not drop anyway.
+
+Repro (offline): OpenAIResponses, body {status:incomplete, incomplete_details:{reason:max_output_tokens}, output:[{type:function_call, call_id:call_1, name:echo, arguments:"{\"m\":\"hel", status:incomplete}]}: chat_response and all three tool loops die with "unexpected end of string while parsing JSON string, at character offset 9" instead of "tool call arguments truncated ...; raise response_size". Also affects Perplexity (same role) and chat_f. Script: scratchpad responses_trunc.pl.
+
+Fix: _parse_function_call -> Langertha::ToolCall->from_responses (flag + no croak); map top-level status incomplete / incomplete_details.reason max_output_tokens to finish_reason incomplete (check live wire with langertha-llm-advisor). Add a responses case to t/60_tool_loop_truncated_args.t.
