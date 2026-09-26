@@ -13,6 +13,13 @@ Revision history for Langertha
       on max_output_tokens reports finish_reason "length", so the MCP tool
       loops treat it as truncated like the other engines.
 
+    - New public tool_loop_response and tool_loop_calls on the tool-calling
+      role: read a tool-loop reply (HTTP::Response or decoded body) and pick
+      the calls to run exactly as the core MCP loops do, for sibling dists
+      such as langertha-raider. response_tool_calls returns the same calls:
+      a call without a name is left out, and a Hermes engine returns calls
+      the server parsed natively.
+
     - Anthropic and the /anthropic shims croak "response carried an error:
       MESSAGE" on a 200 body that is an error envelope or carries an error
       object without content, instead of answering ''. response_text_content

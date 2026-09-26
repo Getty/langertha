@@ -360,6 +360,26 @@ this engine's L</tool_wire_format> via L<Langertha::Tool/format_list>.
 sub response_tool_calls {
   my ( $self, $data ) = @_;
   my $fmt = $self->tool_wire_format;
+  # The calls tool_loop_response would run, as raw structures -- karr k341.
+  # Hermes: the calls of chat_response's reply (native ones, else the lift),
+  # as { name, arguments }; a body it rejects falls back to the text split.
+  if ( $fmt eq 'hermes' ) {
+    my $reply = $self->_reply_from_data($data) or return $self->_raw_tool_calls($data);
+    $reply = $self->_hermes_lift($reply);
+    return [ map { { name => $_->name, arguments => $_->arguments } }
+      @{ $reply->has_tool_calls ? $reply->tool_calls : [] } ];
+  }
+  # Others: a located structure that parses to no ToolCall is no call.
+  return [ grep { defined Langertha::ToolCall->from_fmt( $fmt, $_ ) }
+    @{ Langertha::ToolCall->locate( $fmt, $data ) } ];
+}
+
+# The raw calls read straight off a decoded body, without chat_response:
+# response_tool_calls' hermes fallback, and what an engine's own
+# chat_response uses (AKI native), which must not recurse into it.
+sub _raw_tool_calls {
+  my ( $self, $data ) = @_;
+  my $fmt = $self->tool_wire_format;
   if ( $fmt eq 'hermes' ) {
     my $content = $self->hermes_extract_content($data);
     # A call inside the thinking is not a call: split the think-filtered text,
@@ -376,10 +396,15 @@ sub response_tool_calls {
 
     my $tool_calls = $engine->response_tool_calls($raw_data);
 
-Returns the ArrayRef of raw tool-call structures located in C<$raw_data> for
-this engine's format (via L<Langertha::ToolCall/locate>). For C<hermes>, parses
-the C<E<lt>tool_callE<gt>> XML tags out of the model's text; with
-C<think_tag_filter> on, a call inside the thinking is not returned. May be empty.
+Returns the ArrayRef of raw tool-call structures in C<$raw_data>: the calls
+L</tool_loop_response> puts on L<Langertha::Response/tool_calls> for the same
+body, in the same order, as this engine's format spells them. Located via
+L<Langertha::ToolCall/locate>; a structure that parses to no call (no name) is
+left out. For C<hermes>, each call is C<< { name, arguments } >>: the
+C<E<lt>tool_callE<gt>> XML tags parsed out of the model's text (with
+C<think_tag_filter> on, a call inside the thinking is not returned), or the
+native calls the engine's parser found. May be empty. Calls cut off by the
+token limit are still returned; L</tool_loop_calls> drops them.
 
 =cut
 
@@ -703,19 +728,55 @@ loops pass) or the raw structure L</response_tool_calls> located.
 # as chat_f lifts them, unless the engine's chat_response already did (AKI
 # native). ->raw stays the wire body the assistant echo is built from.
 # Shared by chat_with_tools_f and both Langertha::Chat tool loops.
-sub _tool_loop_response {
-  my ( $self, $http_response ) = @_;
-  my $response = $self->chat_response($http_response);
+# Public since k341 (ADR 0028): langertha-raider's loop reads its replies here
+# instead of the raw body. Takes the HTTP::Response or the decoded body.
+sub tool_loop_response {
+  my ( $self, $reply ) = @_;
+  my $response = blessed $reply && $reply->isa('HTTP::Response')
+    ? $self->chat_response($reply)
+    : $self->_chat_response_from_data($reply);
   # A blocked prompt is an answer to chat_f (k301) but ends a tool loop, whose
   # result is only text: '' would hide why -- karr k339.
   my $blocked = $self->_tool_loop_block_reason($response);
   croak "" . ( ref $self ) . " prompt blocked: $blocked" if defined $blocked;
-  if ( $self->tool_wire_format eq 'hermes'
-       && !( $response->has_tool_calls && @{ $response->tool_calls } ) ) {
-    my ( $clean, $calls ) = $self->_hermes_split_text( $response->content );
-    $response = $response->clone_with( content => $clean, tool_calls => $calls ) if @$calls;
-  }
-  return $response;
+  return $self->_hermes_lift($response);
+}
+
+sub _tool_loop_response { shift->tool_loop_response(@_) }
+
+=method tool_loop_response
+
+    my $reply = $engine->tool_loop_response($http_response);
+    my $reply = $engine->tool_loop_response($data);   # decoded body
+
+Reads one tool-loop turn's reply the way L</chat_with_tools_f> and the
+L<Langertha::Chat> tool loops do, and returns the L<Langertha::Response>. Takes
+the L<HTTP::Response> of the turn or the body C<parse_response> decoded from
+it (the engine's L<Langertha::Engine::Remote/rate_limit> is only updated from
+an C<HTTP::Response>). Meant for sibling distributions that run their own tool
+loop, such as langertha-raider, so they read replies as core does.
+
+The reply is parsed by the engine's C<chat_response>, the parser
+L<Langertha::Role::Chat/chat_f> uses: an error in a 200 body croaks with
+C<chat_f>'s text, and the C<content> is C<chat_f>'s final text. The calls to
+run are L<Langertha::Response/tool_calls>; on C<hermes> engines the
+C<E<lt>tool_callE<gt>> blocks of the text are lifted there and stripped from
+C<content>, unless the engine's parser already did. A prompt the provider
+refused outright (Gemini's C<promptFeedback.blockReason>) croaks with
+C<< <engine class> prompt blocked: REASON >>. C<raw> is the wire body the
+assistant echo (L</format_tool_results>) is built from. To leave out calls cut
+off by the token limit, pass the reply to L</tool_loop_calls>.
+
+=cut
+
+# The hermes calls ride in the text: lifted as chat_f lifts them, unless the
+# engine's chat_response already did (AKI native).
+sub _hermes_lift {
+  my ( $self, $response ) = @_;
+  return $response unless $self->tool_wire_format eq 'hermes'
+    && !( $response->has_tool_calls && @{ $response->tool_calls } );
+  my ( $clean, $calls ) = $self->_hermes_split_text( $response->content );
+  return @$calls ? $response->clone_with( content => $clean, tool_calls => $calls ) : $response;
 }
 
 # Why the provider refused the prompt itself, when a reply says so (Gemini's
@@ -735,8 +796,9 @@ my %TOKEN_LIMIT_FINISH = map { $_ => 1 } qw( length max_tokens MAX_TOKENS incomp
 # unfinished call. With no call left the loop croaks; otherwise the complete
 # calls run, a carp names the dropped ones, and the echo leaves them out, so
 # the next turn has no call without a result -- karr k324.
-sub _tool_loop_calls {
+sub tool_loop_calls {
   my ( $self, $reply, $data ) = @_;
+  $data //= $reply->raw;
   my @calls  = $reply->has_tool_calls ? @{ $reply->tool_calls } : ();
   my $reason = $reply->finish_reason;
   return ( \@calls, $data )
@@ -752,6 +814,29 @@ sub _tool_loop_calls {
   return ( [ grep { !$_->arguments_undecodable } @calls ],
     $self->_echo_without_undecodable_calls($data) );
 }
+
+sub _tool_loop_calls { shift->tool_loop_calls(@_) }
+
+=method tool_loop_calls
+
+    my ( $calls, $data ) = $engine->tool_loop_calls( $reply, $data );
+
+The calls one tool-loop turn runs, and the wire body to build its assistant
+echo (L</format_tool_results>) from, for a C<$reply> from
+L</tool_loop_response>. C<$data> defaults to C<< $reply->raw >>. Public since
+k341 for sibling distributions that run their own tool loop, such as
+langertha-raider.
+
+C<$calls> is an ArrayRef of L<Langertha::ToolCall>. When the reply hit its
+token limit (C<finish_reason> C<length>, C<max_tokens>, C<MAX_TOKENS> or
+C<incomplete>), a call whose arguments do not decode
+(L<Langertha::ToolCall/arguments_undecodable>) is dropped: with no call left
+this croaks C<tool call arguments truncated (finish_reason REASON); raise
+response_size>, otherwise one warning names the dropped calls and the returned
+C<$data> is a copy without them, so the next turn has no call without a
+result. Otherwise the reply's calls and C<$data> come back unchanged.
+
+=cut
 
 # A copy of the wire body without the raw calls whose arguments do not
 # decode; everything else is shared. Hermes calls ride in the text, and an

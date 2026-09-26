@@ -310,7 +310,7 @@ sub chat_response {
   # Response.tool_calls (ADR 0003) via the tag-aware role helpers rather than
   # leaving them buried in content; strip the tags from content when a call is
   # present. -- karr k123
-  my $tool_calls = $self->response_tool_calls($data);
+  my $tool_calls = $self->_raw_tool_calls($data);
 
   # Native usage: the AKI wire names its token counts differently from the
   # OpenAI/Anthropic shapes, so normalize to the keys Langertha::Usage->from_hash

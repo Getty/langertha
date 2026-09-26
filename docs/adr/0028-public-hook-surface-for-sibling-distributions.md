@@ -138,3 +138,40 @@ As with the engine hooks, the private names stay as aliases and the sibling migr
 repository. The contract is pinned in `t/46_public_plugin_hooks.t`. Core's own hosts (`Chat`,
 `Embedder`, `ImageGen`) still call the private names internally; that is behavior-neutral and can
 move in a later change.
+
+## Update (k341 — the tool-loop reply reader)
+
+Since k321 the three core tool loops read each reply through the engine's `chat_response`, the
+parser `chat_f` uses, via the private `Role::Tools::_tool_loop_response`: an error in a 200 body
+croaks with `chat_f`'s text, the final text is `chat_f`'s content, and the calls to run are
+`Response.tool_calls` (hermes calls lifted out of the text). k339 added the blocked-prompt croak,
+and k324 the private `_tool_loop_calls`, which drops calls whose arguments were cut off by the
+token limit and returns the echo body without them. langertha-raider runs its own loop and still
+read the raw body (`parse_response`, `response_tool_calls`, `response_text_content`), so it had
+none of this.
+
+`Role::Tools` gains two public names, the minimal set that gives a sibling loop the core loops'
+semantics:
+
+1. **`tool_loop_response($reply)`** — takes the turn's `HTTP::Response` or the body
+   `parse_response` decoded from it, and returns the `Langertha::Response` the core loops use.
+   The blocked-prompt check (`_tool_loop_block_reason`) is part of it and needs no hook of its
+   own. The decoded-body form leaves the engine's `rate_limit` alone; only an `HTTP::Response`
+   updates it.
+2. **`tool_loop_calls($reply, $data)`** — the calls one turn runs and the body its assistant echo
+   is built from, with k324's truncation handling. `$data` defaults to `$reply->raw`.
+
+`_tool_loop_response` and `_tool_loop_calls` stay as private aliases that delegate to the public
+names, so an engine overriding the public method is honoured on both. Core's `Langertha::Chat`
+loops still call the private names; that is behavior-neutral.
+
+The raw readers are brought in line with the same parser. `response_text_content` returns the
+`content` `chat_response` builds from the body (k338), and `response_tool_calls` returns, as raw
+structures, exactly the calls `tool_loop_response` puts on `tool_calls`: a located structure that
+parses to no `ToolCall` is left out, and on a hermes engine the native calls the parser found are
+returned as `{ name, arguments }`. Neither reader croaks; a body `chat_response` rejects falls back
+to the per-format read. Engines whose own `chat_response` needs the per-format read (AKI native)
+call the private `_raw_text_content` / `_raw_tool_calls`, so the readers cannot recurse.
+
+The contract is pinned in `t/46_public_tool_loop_hooks.t` and `t/60_response_text_content.t`.
+The raider-side migration is ticket 85 on the langertha-raider karr board.
