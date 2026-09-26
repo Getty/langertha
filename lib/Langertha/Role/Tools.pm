@@ -402,6 +402,25 @@ structure, via L<Langertha::ToolCall/from_fmt>.
 
 sub response_text_content {
   my ( $self, $data ) = @_;
+  # The text chat_f and the tool loops answer (Gemini thought parts out,
+  # content-chunk lists joined, think tags filtered), read by the engine's
+  # chat_response. A body chat_response rejects falls back to the plain
+  # per-format read below: plugins call this reader, it never croaks -- karr k338.
+  if ( my $reply = $self->_reply_from_data($data) ) {
+    my $text = $reply->content // '';
+    $text = ( $self->_hermes_split_text($text) )[0]
+      if $self->tool_wire_format eq 'hermes';
+    return $text;
+  }
+  return $self->_raw_text_content($data);
+}
+
+# The per-format text read straight off a decoded body, without
+# chat_response: response_text_content's fallback, and what an engine's own
+# chat_response uses (AKI native), which must not recurse into it.
+sub _raw_text_content {
+  my ( $self, $data ) = @_;
+  return '' unless ref $data eq 'HASH';
   my $fmt = $self->tool_wire_format;
   if ( $fmt eq 'openai' ) {
     my $choice = $data->{choices}[0] or return '';
@@ -442,10 +461,48 @@ sub response_text_content {
 
     my $text = $engine->response_text_content($raw_data);
 
-Extracts the assistant's final text content from a raw response, per
-L</tool_wire_format>. For C<hermes>, strips C<E<lt>tool_callE<gt>> tags.
+Returns the assistant's final text from a decoded response body (what
+C<parse_response> returns): the C<content> of the L<Langertha::Response> the
+engine's C<chat_response> builds from it, the text L<Langertha::Role::Chat/chat_f>
+and the tool loops answer. Gemini thought parts and Anthropic thinking blocks
+stay out, a content-chunk list (Mistral) becomes its text, C<E<lt>thinkE<gt>>
+tags are filtered when C<think_tag_filter> is on, and for C<hermes> the
+C<E<lt>tool_callE<gt>> tags are stripped.
+
+A body C<chat_response> rejects (an error in the body, a shape it cannot read)
+does not croak here: the text is read per L</tool_wire_format> straight off the
+body, or C<''>. The engine's L<Langertha::Engine::Remote/rate_limit> is left
+as it was.
 
 =cut
+
+# The Response the engine's chat_response builds from a decoded body, as if
+# the body had arrived in a 200. The engine's rate limit describes the last
+# real response, so it is kept as it was -- karr k338.
+sub _chat_response_from_data {
+  my ( $self, $data ) = @_;
+  require HTTP::Response;
+  my $http = HTTP::Response->new( 200, 'OK',
+    [ 'Content-Type' => 'application/json' ], $self->json->encode($data) );
+  return $self->chat_response($http) unless $self->can('_last_rate_limit');
+  my ( $had, $rate_limit ) = ( $self->_has_last_rate_limit, $self->_last_rate_limit );
+  my $reply;
+  my $ok  = eval { $reply = $self->chat_response($http); 1 };
+  my $err = $@;
+  if ($had) { $self->_last_rate_limit($rate_limit) } else { $self->_clear_last_rate_limit }
+  die $err unless $ok;
+  return $reply;
+}
+
+# _chat_response_from_data for the readers: undef instead of a croak, when
+# the body is no HASH or the engine cannot parse it.
+sub _reply_from_data {
+  my ( $self, $data ) = @_;
+  return undef unless ref $data eq 'HASH' && $self->can('chat_response');
+  local $@;
+  my $reply = eval { $self->_chat_response_from_data($data) };
+  return blessed $reply ? $reply : undef;
+}
 
 # A result's tool_call is a Langertha::ToolCall (the tool loops read
 # Response.tool_calls, ADR 0003) or the raw wire structure response_tool_calls

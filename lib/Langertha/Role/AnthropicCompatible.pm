@@ -524,6 +524,17 @@ C<parallel_tool_use> into the C<tool_choice> block as C<disable_parallel_tool_us
 sub chat_response {
   my ( $self, $response, $rf_routed ) = @_;
   my $data = $self->parse_response($response);
+  # An error envelope ({"type":"error","error":{...}}) or an `error` object
+  # without content, delivered with a 200, is no answer: it parsed to content
+  # '' like a model that said nothing. Croak like the k301 OpenAI-compatible
+  # parser -- karr k338.
+  if ( ref $data eq 'HASH'
+       && ( ( $data->{type} // '' ) eq 'error'
+         || ( defined $data->{error}
+           && !( ref $data->{content} eq 'ARRAY' && @{ $data->{content} } ) ) ) ) {
+    croak "".( ref $self )." response carried an error: "
+      .( $self->_body_error_text( $data->{error} ) // 'no error message' );
+  }
   # A malformed/error payload that still parses as a 200 JSON body (a shim
   # error shape) can lack the `content` array; default it to empty so callers
   # get graceful empty content rather than a raw deref crash on @{undef}. The
@@ -564,6 +575,11 @@ Parses an Anthropic-format message response into a L<Langertha::Response>
 object. When C<$rf_routed> (a synthetic tool name, or truthy for the
 attribute path) and tool calls are present, lifts the first tool_use
 arguments back into C<content> as JSON.
+
+A 200 body that is an error envelope (C<{"type":"error","error":{...}}>), or
+carries an C<error> object and no content, croaks with
+C<< <engine class> response carried an error: MESSAGE >>, as the
+OpenAI-compatible parser does.
 
 =cut
 

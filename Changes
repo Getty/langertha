@@ -13,6 +13,12 @@ Revision history for Langertha
       on max_output_tokens reports finish_reason "length", so the MCP tool
       loops treat it as truncated like the other engines.
 
+    - Anthropic and the /anthropic shims croak "response carried an error:
+      MESSAGE" on a 200 body that is an error envelope or carries an error
+      object without content, instead of answering ''. response_text_content
+      returns the text chat_f answers (no Gemini thought parts, Mistral chunk
+      lists as text) and still never croaks.
+
     - Tool results on OpenAI, OpenAI Responses, Ollama, Gemini and Hermes are
       a plain string instead of the JSON-encoded MCP content: text joined by
       newlines, images, audio and binaries as a placeholder such as

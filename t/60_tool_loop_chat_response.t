@@ -146,6 +146,9 @@ my @error_cases = (
     { id => 'resp_1', object => 'response', status => 'failed', output => [],
       error => { message => 'server_error', code => 'server_error' } },
     qr/response carried an error: server_error/ ],
+  [ anthropic => 'error envelope in a 200 (k338)',
+    { type => 'error', error => { type => 'overloaded_error', message => 'Overloaded' } },
+    qr/response carried an error: Overloaded/ ],
 );
 
 for my $case (@error_cases) {

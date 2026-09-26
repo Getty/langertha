@@ -340,7 +340,7 @@ sub chat_response {
   undef $timing unless %$timing;
 
   return Langertha::Response->new(
-    content       => ( @$tool_calls ? $self->response_text_content($data) : ( $data->{text} // '' ) ),
+    content       => ( @$tool_calls ? $self->_raw_text_content($data) : ( $data->{text} // '' ) ),
     raw           => $data,
     $data->{job_id}     ? ( id    => $data->{job_id} )     : (),
     $data->{model_name} ? ( model => $data->{model_name} ) : (),

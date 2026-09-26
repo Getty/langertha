@@ -39,7 +39,20 @@ my $anthropic = Langertha::Engine::Anthropic->new(
   is("$resp", 'hello', 'Anthropic: well-formed content still parsed');
 }
 
-# A content-less 200 (error shape) must not crash -- graceful empty content.
+# A content-less 200 must not crash on @{undef} -- graceful empty content.
+{
+  my $resp = eval {
+    $anthropic->chat_response(mock_http({
+      id => 'msg_2', type => 'message', role => 'assistant', stop_reason => 'end_turn',
+    }));
+  };
+  ok(!$@, 'Anthropic: content-less 200 does not crash on @{undef}') or diag($@);
+  ok($resp, 'Anthropic: content-less 200 returns a Response');
+  is("$resp", '', 'Anthropic: content-less 200 yields empty content');
+}
+
+# The error shape is no answer: since k338 it croaks with the error, as the
+# OpenAI-compatible parser does (k301), rather than yielding empty content.
 {
   my $resp = eval {
     $anthropic->chat_response(mock_http({
@@ -47,9 +60,8 @@ my $anthropic = Langertha::Engine::Anthropic->new(
       error => { type => 'invalid_request_error', message => 'bad' },
     }));
   };
-  ok(!$@, 'Anthropic: content-less 200 does not crash on @{undef}') or diag($@);
-  ok($resp, 'Anthropic: content-less 200 returns a Response');
-  is("$resp", '', 'Anthropic: content-less 200 yields empty content');
+  ok(!defined $resp, 'Anthropic: error-shaped 200 returns no Response');
+  like($@, qr/response carried an error: bad/, 'Anthropic: it croaks with the error, not a deref crash');
 }
 
 # --- OpenAICompatible::embedding_response data-deref guard (k171) -------------
