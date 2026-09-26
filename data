@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-26T00:05:20Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:05:20Z
+created: 2026-09-25T22:47:55Z
+id: 324
+priority: medium
+started: 2026-09-25T23:32:28Z
+status: done
+tags:
+- tools
+- toolcall
+title: 'Truncated tool-call arguments run the tool with {}: non-streaming loop executes
+  finish_reason=length calls'
+updated: 2026-09-26T00:05:20Z
+---
+
+ToolCall.pm:60-70 _decode_args maps undecodable argument JSON to {} silently; Role/Tools.pm:645-664 then executes the call. A reply cut off by max_tokens (finish_reason length / stop_reason max_tokens) with a partial arguments string runs the (possibly side-effecting) tool with empty input. The stream path already refuses this (OpenAICompatible _finish_stream_state drops unfinished calls exactly because "a partial JSON string would decode to {}"), so streamed and non-streamed disagree.
+
+Repro: choices[0] {finish_reason:"length", message.tool_calls:[{id:"call_1",function:{name:"echo",arguments:"{\"m\":\"hello wor"}}]} -> MCP call_tool("echo", {}) is invoked, loop continues.
+
+Fix options: (a) in the loop, answer a call whose raw arguments string does not decode with an error ToolResult ("arguments were not valid JSON, re-issue the call") instead of executing it; (b) croak in the loop on a length/max_tokens finish that carries tool calls. (a) needs ToolCall to record decode failure (e.g. an arguments_error / raw_arguments attribute) rather than collapse to {}.
