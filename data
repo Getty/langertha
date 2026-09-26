@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-26T00:00:14Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:00:14Z
+created: 2026-09-25T22:53:34Z
+id: 336
+priority: low
+started: 2026-09-25T23:32:51Z
+status: done
+tags:
+- tools
+- openai
+title: 'OpenAI tool results: image/binary MCP content JSON-dumped into the prompt'
+updated: 2026-09-26T00:00:14Z
+---
+
+From k326 advisor: OpenAI chat tool message accepts string or text parts only; ToolResult->to(openai) JSON-encodes MCP content incl. base64 image data into the prompt (token blow-up). Map like k326: text parts joined, images/binaries -> placeholder text (type, mime, uri, size), optionally attach images as a follow-up user message with image_url parts (decide).
+
+Scope extension (from k326 open points): Anthropic mapping also: text resource with non-text MIME (application/json etc.) -> send its text as a text document/text block instead of placeholder; base64 blob with text/* MIME -> decode to text document. And OpenAI/Responses/Ollama results ignore structuredContent -> use it when content empty.
