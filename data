@@ -1,0 +1,20 @@
+---
+claimed_at: 2026-09-26T00:35:24Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:35:24Z
+created: 2026-09-25T23:26:41Z
+id: 341
+priority: medium
+started: 2026-09-26T00:06:14Z
+status: done
+tags:
+- api
+- adr-0028
+- raider
+title: Public hook for the tool-loop reply reader (_tool_loop_response) for sibling
+  dists
+updated: 2026-09-26T00:35:24Z
+---
+
+k321 added Role::Tools::_tool_loop_response (chat_response + hermes lift). langertha-raider #85 needs it to stop reading raw bodies. Expose as public tool_loop_response($data) (or response_from_raw) with POD, keep the private alias, add ADR 0028 Update. Pair with k338 (response_text_content delegating to chat_response).
