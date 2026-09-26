@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-26T00:05:10Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T00:05:10Z
+created: 2026-09-25T22:47:48Z
+id: 323
+priority: medium
+started: 2026-09-25T23:32:21Z
+status: done
+tags:
+- tools
+- hermes
+- thinktag
+title: Hermes tool loop executes <tool_call> blocks inside <think>; chat_f and the
+  stream lift ignore them
+updated: 2026-09-26T00:05:10Z
+---
+
+Role/Tools.pm:359-368 response_tool_calls (hermes) splits the RAW hermes_extract_content text, thinking included. chat_f (Role/Chat.pm ~l.951) lifts from Response->content, which chat_response already think-filtered, and _hermes_stream_split (Tools.pm:264ff, k302) deliberately treats a call inside <think> as no call. So chat_with_tools_f (and Chat simple_chat_with_tools[_f]) runs tools the model only considered in its reasoning.
+
+Repro: NousResearch (think_tag_filter=1), content "<think>I could call <tool_call>{\"name\":\"echo\",\"arguments\":{\"m\":\"x\"}}</tool_call> but no need.</think>The answer is 4." -> loop executes echo once; chat_f with the same tools gives content "The answer is 4.", tool_calls 0.
+
+Fix: when think_tag_filter is on, strip thinking (filter_think_content, orphan </think> rule of k302) before _hermes_split_text in response_tool_calls; keep the raw content for the assistant echo in format_tool_results. Test in t/43_hermes_stream_tool_calls.t sibling / t/6x.
