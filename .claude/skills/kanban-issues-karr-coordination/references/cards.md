@@ -58,7 +58,7 @@ karr edit 12 --add-tag urgent --remove-tag later
 karr edit 12 --body "New description"
 karr edit 12 -a "Appended note"               # append to the body
 karr edit 12 -a "Appended note" -t            # ... prefixed with the UTC timestamp
-karr edit 12 --claim NAME                     # claim (defaults to $KARR_CLAIM)
+karr edit 12 --claim NAME                     # claim ($KARR_CLAIM only on a require_claim card)
 karr edit 12 --release                        # release the claim
 karr edit 12 --block "Waiting on API"         # mark blocked, with the reason
 karr edit 12 --unblock

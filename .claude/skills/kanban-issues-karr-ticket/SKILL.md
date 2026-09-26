@@ -41,6 +41,10 @@ karr handoff 12 --note "Done: <what changed, how verified>" -t   # to review
   you the card decides what becomes of it.
 - **Stuck?** `--block` with the reason, then stop and report. Do not wait in a
   loop.
+- **Only waiting for another project's release?** Not a block. Once the work
+  runs against that project's current tree, pin the dependency (`cpanfile`,
+  `package.json`, …) to the version in that tree — its next release — and hand
+  the card on. The pin already says the rest.
 - **Finished?** `handoff` with a note that says what changed and how it was
   verified. The card is in `review` — that is where your part ends.
 

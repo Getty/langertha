@@ -6,8 +6,10 @@ Claims are matched by name: `--claim` stamps it, `handoff` and `pick` check
 it, `list --claimed-by` and `log --agent` select on it. Every command taking
 `--claim` (`create`, `move`, `edit`, `pick`, `handoff`, `delete`, `archive`)
 and `list --claimed-by` defaults to `KARR_CLAIM`; an explicit `--claim NAME`
-wins over it. `create` is narrower: it takes `KARR_CLAIM` only when `--status`
-names a `require_claim` column, so a card filed for others stays unclaimed.
+wins over it. `create`, `move` and `edit` are narrower: they take `KARR_CLAIM`
+only when the card ends up in a `require_claim` column, so a card filed,
+promoted to `todo` or annotated for others stays unclaimed. `edit --release`
+never claims.
 karr writes the name nowhere — it is per process, so concurrent agents never
 see each other's.
 

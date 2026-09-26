@@ -19,7 +19,9 @@ export KARR_CLAIM=$(karr agent-name)     # the checkout's directory name, e.g. "
 
 Claims are matched by name: `--claim` stamps it, `handoff` checks it,
 `list --claimed-by` selects on it. Every command that takes `--claim` defaults
-to `KARR_CLAIM`, so export it once per session and leave `--claim` off. An
+to `KARR_CLAIM`, so export it once per session and leave `--claim` off. `create`,
+`move` and `edit` use it only when the card ends up in a `require_claim` column:
+filing a card, promoting it to `todo` or adding a note leaves it free. An
 explicit `--claim NAME` still wins. Agents in separate worktrees already differ
 by name; several agents in the **same** directory take
 `karr agent-name --unique` (`karr-8fa`).
@@ -73,6 +75,11 @@ karr create "Start now" --status in-progress     # claimed as $KARR_CLAIM at cre
 karr create "Ship it" --depends-on 2,3           # board-local dependency; ids must exist
 karr create "New card" --json                    # the card as JSON: pipe the id onward
 ```
+
+Waiting for another project's release is not a card, and no reason to keep
+one open or blocked: the dependency pin (`cpanfile`, `package.json`, …) set to
+the version in that project's tree — its next release — already says it. Close
+the card once the work is committed.
 
 Bugs found on the way become cards, not silent fixes. A new card is unclaimed
 unless `--status` puts it into a `require_claim` column (you are starting it)
