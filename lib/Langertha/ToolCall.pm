@@ -71,9 +71,26 @@ has arguments_undecodable => (
 
 Boolean. True when the provider sent arguments that do not decode to a JSON
 object (typically a JSON string cut off when the reply hit its token limit);
-L</arguments> is then C<{}>. The MCP tool loops do not run such a call when
-the reply ended on its token limit. Missing or empty arguments are not
+L</arguments> is then C<{}>. The MCP tool loops do not run such a call: when
+the reply ended on its token limit they drop it, otherwise they answer it with
+an error result naming L</arguments_error>. Missing or empty arguments are not
 undecodable.
+
+=cut
+
+# Why the arguments did not decode: the JSON parser's message, or "not a JSON
+# object". Set exactly when arguments_undecodable is (karr k345).
+has arguments_error => (
+  is        => 'ro',
+  isa       => 'Str',
+  predicate => 'has_arguments_error',
+);
+
+=attr arguments_error
+
+The reason the arguments did not decode, set whenever
+L</arguments_undecodable> is true: the JSON parser's message (without its
+source location) or C<not a JSON object>.
 
 =cut
 
@@ -86,12 +103,19 @@ sub _args_kwargs {
   my ($args) = @_;
   return ( arguments => {} ) unless defined $args;
   return ( arguments => $args ) if ref($args) eq 'HASH';
-  return ( arguments => {}, arguments_undecodable => 1 ) if ref $args;
+  return _undecodable('not a JSON object') if ref $args;
   return ( arguments => {} ) unless length $args;
   my $decoded = eval { decode_json( encode_utf8($args) ) };
-  return ref($decoded) eq 'HASH'
-    ? ( arguments => $decoded )
-    : ( arguments => {}, arguments_undecodable => 1 );
+  return ( arguments => $decoded ) if ref($decoded) eq 'HASH';
+  my $error = $@;
+  return _undecodable('not a JSON object') unless $error;
+  $error =~ s/ at \S+ line \d+\.?\n?\z//;
+  return _undecodable($error);
+}
+
+sub _undecodable {
+  my ($error) = @_;
+  return ( arguments => {}, arguments_undecodable => 1, arguments_error => $error );
 }
 
 # --- Constructors from wire-format hashes ---

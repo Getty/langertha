@@ -757,6 +757,20 @@ sub _unknown_tool_result {
   };
 }
 
+# The result a tool loop answers a call whose arguments do not decode, or
+# undef for a call whose arguments did. A call cut off by the token limit was
+# already dropped by _tool_loop_calls; any other one would run the tool on {},
+# so the model gets an error it can retry instead -- karr k345.
+sub _undecodable_arguments_result {
+  my ( $tc ) = @_;
+  return undef unless $tc->arguments_undecodable;
+  return {
+    content => [ { type => 'text',
+      text => "arguments are not valid JSON: " . ( $tc->arguments_error // 'not a JSON object' ) } ],
+    isError => JSON->true,
+  };
+}
+
 async sub chat_with_tools_f {
   my ( $self, @messages ) = @_;
 
@@ -811,6 +825,10 @@ async sub chat_with_tools_f {
         push @results, { tool_call => $tc, result => _unknown_tool_result($name) };
         next;
       }
+      if ( my $bad = _undecodable_arguments_result($tc) ) {
+        push @results, { tool_call => $tc, result => $bad };
+        next;
+      }
 
       $log->debugf("[%s] Calling tool: %s", ref $self, $name);
 
@@ -860,6 +878,11 @@ A call to a tool no server offers does not stop the loop: it is answered with
 an error result C<unknown tool NAME>, and the other calls of the turn still
 run. A tool name offered by two servers is sent once and runs on the first
 server in L</mcp_servers>, with a warning naming both.
+
+A call whose arguments do not decode on a reply that did not hit its token
+limit is not run either: it is answered with an error result C<arguments are
+not valid JSON: REASON> (L<Langertha::ToolCall/arguments_error>), and the
+loop continues so the model can retry.
 
 =cut
 

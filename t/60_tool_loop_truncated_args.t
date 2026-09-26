@@ -175,4 +175,58 @@ subtest 'openai: a length finish with complete arguments still runs' => sub {
   }
 };
 
+# karr k345: arguments that do not decode on a reply that was NOT cut off are
+# no truncation to drop -- but running the tool on {} is still wrong. The
+# loops answer the call with an error result naming the parse error and go on,
+# so the model sees why and can retry.
+subtest 'ToolCall records why the arguments did not decode' => sub {
+  my $bad = Langertha::ToolCall->from_openai(
+    { id => 'a', function => { name => 'echo', arguments => '{"m":' } } );
+  like( $bad->arguments_error, qr/\A\S.*\S\z/s, 'the parser message' );
+  unlike( $bad->arguments_error, qr/ line \d+/, 'without a source location' );
+  is( Langertha::ToolCall->from_openai(
+    { id => 'a', function => { name => 'echo', arguments => '[1]' } } )->arguments_error,
+    'not a JSON object', 'a JSON array' );
+  ok( !Langertha::ToolCall->from_openai(
+    { id => 'a', function => { name => 'echo', arguments => '{"m":"x"}' } } )->has_arguments_error,
+    'none for arguments that decode' );
+};
+
+my $anthropic_done = { id => 'msg_2', type => 'message', role => 'assistant', model => 'claude-x',
+  stop_reason => 'end_turn', content => [ { type => 'text', text => 'done' } ] };
+
+my @garbage = (
+  [ openai => openai_turn( tool_calls => [ call_1 => '{"m":' ], [ call_2 => '{"m":"fine"}' ] ), $openai_done,
+    sub { my ($messages) = @_;
+      my %by_id = map { $_->{tool_call_id} => $_->{content} } grep { ( $_->{role} // '' ) eq 'tool' } @$messages;
+      return ( $by_id{call_1}, undef, $by_id{call_2} ) } ],
+  [ anthropic => { id => 'msg_1', type => 'message', role => 'assistant', model => 'claude-x',
+      stop_reason => 'tool_use', content => [
+        { type => 'tool_use', id => 'toolu_1', name => 'echo', input => '{"m":' },
+        { type => 'tool_use', id => 'toolu_2', name => 'echo', input => { m => 'fine' } } ] },
+    $anthropic_done,
+    sub { my ($messages) = @_;
+      my ($user) = grep { ( $_->{role} // '' ) eq 'user' && ref $_->{content} eq 'ARRAY' } @$messages;
+      my %by_id = map { $_->{tool_use_id} => $_ } grep { ( $_->{type} // '' ) eq 'tool_result' } @{ $user->{content} };
+      my $text = sub { my $c = $_[0]{content}; ref $c ? join( '', map { $_->{text} // '' } @$c ) : $c };
+      return ( $text->( $by_id{toolu_1} ), $by_id{toolu_1}{is_error}, $text->( $by_id{toolu_2} ) ) } ],
+);
+
+for my $case (@garbage) {
+  my ( $dialect, $turn, $done, $results ) = @$case;
+  subtest "$dialect: undecodable arguments on a finished reply get an error result" => sub {
+    for my $loop ( loop_names() ) {
+      my @calls;
+      my $out = run_loop( $loop, engine => $engine{$dialect},
+        bodies => [ $turn, $done ], servers => [ echo_server( \@calls ) ] );
+      is( $out->{ok}, 'done', "$loop continues to the final answer" ) or diag( $out->{died} // '' );
+      is_deeply( \@calls, [ { m => 'fine' } ], "$loop ran only the call that decoded" );
+      my ( $error, $is_error, $fine ) = $results->( $out->{requests}[1]{messages} );
+      like( $error, qr/\Aarguments are not valid JSON: \S/, "$loop answers the bad call with the parse error" );
+      ok( $is_error, "$loop marks it an error" ) if $dialect eq 'anthropic';
+      is( $fine, 'ok', "$loop answers the good call with its result" );
+    }
+  };
+}
+
 done_testing;

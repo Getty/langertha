@@ -363,6 +363,10 @@ sub simple_chat_with_tools {
           result => Langertha::Role::Tools::_unknown_tool_result($name) };
         next;
       }
+      if ( my $bad = Langertha::Role::Tools::_undecodable_arguments_result($tc) ) {
+        push @results, { tool_call => $tc, result => $bad };
+        next;
+      }
 
       $log->debugf("[Chat] Calling tool: %s", $name);
 
@@ -419,7 +423,8 @@ with the same text, the final text is the reply's C<content>, and the calls
 run are its L<Langertha::Response/tool_calls>. C<plugin_after_llm_response>
 still receives the raw decoded wire body. A failed request dies with
 C<tool chat request failed>, in the sync and the async loop alike. A call
-whose arguments were cut off by the token limit is not run, a call to an
+whose arguments were cut off by the token limit is not run, a call whose
+arguments otherwise do not decode is answered with an error result, a call to an
 unknown tool is answered with an error result (also when a
 C<plugin_before_tool_call> renames it to one), and a tool name two servers
 offer runs on the first, and a blocked prompt dies with C<prompt blocked>, as
@@ -465,6 +470,10 @@ async sub simple_chat_with_tools_f {
       unless ( $tool_server_map->{$name} ) {
         push @results, { tool_call => $tc,
           result => Langertha::Role::Tools::_unknown_tool_result($name) };
+        next;
+      }
+      if ( my $bad = Langertha::Role::Tools::_undecodable_arguments_result($tc) ) {
+        push @results, { tool_call => $tc, result => $bad };
         next;
       }
 

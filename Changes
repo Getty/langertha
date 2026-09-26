@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - The MCP tool loops no longer run a tool with empty arguments when the
+      model sent arguments that are not valid JSON: the call is answered with
+      an error result "arguments are not valid JSON: REASON" and the loop
+      goes on, so the model can retry. New ToolCall->arguments_error.
+
     - OpenAI Responses and Perplexity: a function call whose arguments were
       cut off no longer dies with a raw JSON parse error; the call carries
       arguments_undecodable, and a reply of only function calls that stopped
