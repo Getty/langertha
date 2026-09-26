@@ -554,6 +554,13 @@ Langertha cannot (C<mcp_approval_request>, C<computer_call>,
 C<custom_tool_call>, C<local_shell_call>, C<apply_patch_call>, a client
 C<tool_search_call>) croaks.
 
+C<finish_reason> is C<tool_calls> when the reply carries function calls,
+C<stop> for a completed message, and the message status (C<incomplete>) for a
+truncated one. A reply of only function calls whose envelope reports C<status>
+C<incomplete> with C<incomplete_details.reason> C<max_output_tokens> has
+C<finish_reason> C<length>. A function call's C<arguments> that do not decode
+leave it with C<{}> and L<Langertha::ToolCall/arguments_undecodable> set.
+
 A C<refusal> content part of a message becomes L<Langertha::Response/refusal>
 (on a stream, the final chunk's C<refusal>).
 
@@ -626,6 +633,16 @@ sub _responses_walk_output {
     # alongside it must win, so resolve it here rather than let output[] ordering
     # decide (a message preamble may precede or follow the call). A genuinely
     # non-completed message status (e.g. truncation) is left intact. -- k171
+    #
+    # A reply that hit max_output_tokens before any message item says so only
+    # on the envelope: status incomplete, incomplete_details.reason
+    # max_output_tokens (max_tokens in the reference's response.incomplete
+    # example; both are read). With nothing but function calls in output[]
+    # that is finish_reason 'length', so the tool loops treat a call whose
+    # arguments were cut off as truncated -- karr k349, k345.
+    if ( @tc_data && !defined $finish_reason && _cut_by_token_limit($data) ) {
+        $finish_reason = 'length';
+    }
     if ( @tc_data && ( !defined $finish_reason || $finish_reason eq 'stop' ) ) {
         $finish_reason = 'tool_calls';
     }
@@ -637,10 +654,19 @@ sub _responses_walk_output {
         defined $thinking      ? ( thinking      => $thinking )      : (),
         defined $refusal       ? ( refusal       => $refusal )       : (),
         defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
-        @tc_data ? ( tool_calls => [ map { $self->_parse_function_call($_) } @tc_data ] ) : (),
+        @tc_data ? ( tool_calls => [ grep { defined } map { $self->_parse_function_call($_) } @tc_data ] ) : (),
         @server_calls ? ( server_tool_calls => \@server_calls ) : (),
         @citations ? ( citations => \@citations ) : (),
     );
+}
+
+# True when a Responses envelope reports it stopped on its output token limit.
+sub _cut_by_token_limit {
+    my ($data) = @_;
+    return 0 unless ref $data eq 'HASH' && ( $data->{status} // '' ) eq 'incomplete';
+    my $details = $data->{incomplete_details};
+    my $reason  = ref $details eq 'HASH' ? ( $details->{reason} // '' ) : '';
+    return $reason eq 'max_output_tokens' || $reason eq 'max_tokens';
 }
 
 # The url_citation annotations of one output_text block, normalized to
@@ -709,15 +735,13 @@ list is returned unchanged. Returns C<undef> when there is nothing.
 
 =cut
 
+# One function_call block through the value-object door: arguments that do not
+# decode (a string cut off by max_output_tokens) become {} with
+# arguments_undecodable set, where decoding them here died with a raw JSON
+# error -- karr k349, the k324 flag. A block without a name is no call.
 sub _parse_function_call {
     my ( $self, $block ) = @_;
-    my $args = $block->{arguments} // '{}';
-    $args = $self->decode_json_text($args) if $args && !ref $args;
-    return Langertha::ToolCall->new(
-        name      => ( $block->{name} // '' ),
-        arguments => ( ref($args) eq 'HASH' ? $args : {} ),
-        id        => ( $block->{call_id} // '' ),
-    );
+    return Langertha::ToolCall->from_responses($block);
 }
 
 # --- Streaming (typed SSE) -----------------------------------------------
@@ -910,7 +934,8 @@ the reply's function calls land on it as L<Langertha::Stream::Chunk/tool_calls>
 summary lands on its C<thinking>, and its C<finish_reason> is the one
 L</chat_response> reports for the same response: C<tool_calls> when the reply
 carries function calls, C<stop> for a completed message, the message status
-(C<incomplete>) for a truncated one. The incremental function-call events are not assembled, so a call
+(C<incomplete>) for a truncated one, and C<length> for a reply of only
+function calls that stopped on C<max_output_tokens>. The incremental function-call events are not assembled, so a call
 is delivered exactly once. A C<response.failed> or C<error> event croaks with
 the provider's error code and message, which fails the stream.
 

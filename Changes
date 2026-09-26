@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - OpenAI Responses and Perplexity: a function call whose arguments were
+      cut off no longer dies with a raw JSON parse error; the call carries
+      arguments_undecodable, and a reply of only function calls that stopped
+      on max_output_tokens reports finish_reason "length", so the MCP tool
+      loops treat it as truncated like the other engines.
+
     - Tool results on OpenAI, OpenAI Responses, Ollama, Gemini and Hermes are
       a plain string instead of the JSON-encoded MCP content: text joined by
       newlines, images, audio and binaries as a placeholder such as
