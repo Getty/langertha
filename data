@@ -1,0 +1,32 @@
+---
+claimed_at: 2026-09-25T03:41:39Z
+claimed_by: claude
+class: standard
+completed: 2026-09-26T22:32:39Z
+created: 2026-09-25T02:21:30Z
+id: 216
+priority: medium
+started: 2026-09-25T03:23:58Z
+status: done
+tags:
+- tools
+- sibling
+- skeid
+title: 'Tool: public non-croaking tool classifier for sibling callers (skeid Anthropic
+  gateway hits k210 croak as HTTP 500)'
+updated: 2026-09-26T22:32:39Z
+---
+
+Found in the k210 review (branch k210-211). langertha-skeid lib/Langertha/Skeid/Protocol/Anthropic.pm:136 calls Langertha::Tool->from_list($body->{tools}) on client-sent Anthropic tools inside request_to_openai, which Proxy.pm:320 (_handle_anthropic_messages) calls with no eval. Since k210, a client that sends an Anthropic built-in (web_search_20250305, bash_20250124, text_editor_*, computer_*, mcp_toolset, ...) makes from_list croak, and Mojolicious answers 500 text/html (reproduced with Mojolicious::Lite, production mode). No Anthropic-shaped error JSON, no usage event, and it looks like a gateway fault. Before k210 the built-in was silently turned into a function tool, so the fail-loud direction is right; the status code and shape are wrong. Proposal: core exposes a public non-croaking classifier, e.g. Langertha::Tool->classify($hash) returning function | server:<wire> | unsupported:<type>, or at least is_function_tool($hash) plus a public server_tool_wire (ResponsesCompatible already calls the private _server_tool_wire across packages). skeid then answers 400 invalid_request_error naming the tool, or strips it with a warning header by policy. The skeid-side change belongs on the skeid board once the core API lands.
+
+2026-09-25 02:39 Core side landed on branch k210-211 (bc1e8ee): Langertha::Tool->classify($hash, $fmt) is public and never croaks. Scalar: function | server | client_builtin | foreign (only with $fmt: a built-in of another wire) | unknown (unrecognised type, no type and no name, or not a hash). List context: ($category, $wire, $label) where wire is responses/anthropic/gemini for built-ins and label is the type, Gemini key, or the keys of a nameless hash. from_hash/from_list/format_list croak on every category but function, from the same classifier. Skeid mapping: before Tool->from_list in Protocol/Anthropic.pm request_to_openai, run classify($_, 'anthropic') over body->{tools}; any non-function -> 400 {type:error, error:{type:invalid_request_error, message:'tool <label> (<category>) is not supported by this gateway'}} (or strip by policy). No skeid change made from core.
+
+2026-09-25 02:40 Correction: the core commit is f512c87 (not bc1e8ee).
+
+2026-09-25 02:57 Tool->classify is in core (f512c87, refined in a413307): this ticket now covers only the skeid-side 400 invalid_request_error mapping.
+
+2026-09-25 03:27 Skeid side done on langertha-skeid branch k216 (worktree .claude/worktrees/k216), commit 6751909, not pushed. Protocol/Anthropic.pm request_to_openai runs Tool->classify($t,'anthropic') per client tool and dies naming type+category for non-function; Proxy.pm _handle_anthropic_messages evals the translation and renders 400 {type:error,error:{type:invalid_request_error,message}} before routing/metering. OpenAI chat and Ollama faces pass tools through untranslated (no from_list/from_hash), skeid has no Responses face, so no same-class bug there. t/37-anthropic-builtin-tools.t red (500 text/html) then green; full suite 747 tests pass against core main. OPEN: skeid cpanfile still requires Langertha 0.503, which lacks classify; must be bumped to the core release shipping it, else every tools request gets a misleading 400.
+
+skeid k216 (6751909) reviewt (Ready: Yes) und lokal per ff in skeid main gemerged (nicht gepusht). Offen/Blocker vor jedem skeid-Release: cpanfile-Pin 'Langertha 0.503' ist zweideutig (0.503 vor/nach classify) -> nach Core-Release auf die Version pinnen, die classify enthaelt. Review-Minors (nicht blockierend): mcp_toolset-Testfall in t/37, debug-Log des gefangenen $@ in Proxy.pm:325-335, Kommentar zur JSON-400-Inkonsistenz (-> #224).
+
+2026-09-26 22:32 Abgeschlossen: Kern-API (Tool->classify, f512c87/a413307) und Skeid-Seite (6751909, in skeid main) sind fertig. Übrig war nur das Warten auf den Langertha-0.503-Release; das drückt der cpanfile-Pin 'Langertha 0.503' in Skeid bereits aus. Warten auf einen Release ist kein Ticket (Maintainer-Entscheid).
