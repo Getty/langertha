@@ -79,6 +79,25 @@ the agent drains; they are touched only on direct instruction, and every write i
 first because it publishes under the maintainer's name. Full `gh` usage + guardrails: skill
 `langertha-github-issues`.
 
+## Live tests & real spend — never arm by accident
+
+The env-gated live tests (`t/8x`) spend the maintainer's real money at every keyed provider.
+`prove` / `dzil test` themselves are fine anytime — the danger is arming them by accident:
+
+- **Never source `.env` (or set any `TEST_LANGERTHA_*`) in the same shell command as `prove`,
+  `dzil test`, or anything recursive over `t/`.** One such command exports every key into the
+  run and fires the *whole* live suite against *every* keyed provider — real spend, no approval.
+  (Not hypothetical: a single `set -a && . ./.env && … && prove -lr t/` once did exactly that
+  across ~16 providers, image generation included.)
+- Key or fixture checks that need `.env` run in their **own** command — a subshell that ends
+  before any `prove`. Before a suite run, assert the environment is clean:
+  `[ "$(env | grep -c TEST_LANGERTHA)" = 0 ]`, or isolate it:
+  `env -i PATH="$PATH" HOME="$HOME" prove -lr t/`.
+- **Never print the process environment** (`env`, `printenv`, a fall-through `env -u …`): it
+  carries the provider keys. Count, never list: `env | grep -c TEST_LANGERTHA`.
+- Live calls otherwise need explicit approval (AKI.IO is the standing exception). When you
+  dispatch a worker or subagent, pass this hard rule on — it inherits your keys, not your care.
+
 ## Release — never without permission
 
 `dzil build` / `dzil test` are fine anytime. `dzil release` and any CPAN upload are STRICTLY

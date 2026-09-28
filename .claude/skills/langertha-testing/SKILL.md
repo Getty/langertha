@@ -70,3 +70,11 @@ documentation-derived and has no live test.
 `prove -lv t/NN_name.t` for one file, then `prove -lr t/` or `dzil test` for the suite —
 `prove -l t/` is not recursive and skips any subdirectory. Report skipped live tests as
 skipped, never as passed.
+
+**Never arm the live suite by accident.** The `t/8x` files gate on `TEST_LANGERTHA_*` in the
+environment, so any command that sources `.env` (or sets a `TEST_LANGERTHA_*`) *and* then runs
+`prove` / `dzil test` fires the whole live suite against every keyed provider — real spend, no
+approval. Keep key/fixture checks that need `.env` in their own command; before a suite run
+assert a clean environment with `[ "$(env | grep -c TEST_LANGERTHA)" = 0 ]`, or isolate the run
+as `env -i PATH="$PATH" HOME="$HOME" prove -lr t/`. Never print the process environment
+(`env` / `printenv`) — it carries the keys; count, don't list.
