@@ -1,0 +1,21 @@
+---
+claimed_at: 2026-09-29T04:04:11Z
+claimed_by: claude
+class: standard
+completed: 2026-09-29T04:04:03Z
+created: 2026-09-25T22:13:23Z
+id: 318
+priority: low
+started: 2026-09-29T03:59:06Z
+status: done
+tags:
+- docs
+- release
+title: 'Changes: consolidate same-topic bullets before release (k300+k312, k301+k311,
+  k308+k313 etc.)'
+updated: 2026-09-29T04:04:11Z
+---
+
+Workers add one bullet per ticket at top of {{$NEXT}}; several topics now have two bullets. Before the next release have langertha-pod-writer merge them into one bullet per user-visible change.
+
+consolidated the NEXT-release section from 148 to 139 bullets, 9 same-topic groups merged, verified against the commit diff that no user-visible change dropped; landed as b421da8
