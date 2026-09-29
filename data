@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-09-29T03:58:59Z
+claimed_by: claude
+class: standard
+completed: 2026-09-29T03:58:51Z
+created: 2026-09-29T01:04:10Z
+id: 351
+priority: low
+started: 2026-09-29T03:39:11Z
+status: done
+tags:
+- tools
+- hermes
+- streaming
+- follow-up
+title: Streaming hermes tool calls drop arguments_undecodable flag
+updated: 2026-09-29T03:58:59Z
+---
+
+Follow-up from k350 review. After k350, _hermes_split_text (Role/Tools.pm) puts arguments_undecodable/arguments_error on the reduced hash, but _hermes_stream_calls (Role/Tools.pm:252-260) rebuilds the ToolCall reading only name/arguments and silently drops the flag. No regression today: the streaming path does not run the MCP error-ToolResult loop and the streamed final chunk is observably identical to pre-k350 (arguments {}, no flag). If streamed-hermes bad-args consistency is wanted, carry the flag the same way _hermes_split_text now does. Offline, fixture-testable.
+
+2026-09-29 03:53 Fixed: _hermes_stream_calls (Role/Tools.pm) now carries arguments_undecodable/arguments_error onto the rebuilt streamed ToolCall, mirroring the Response BUILDARGS upgrade (k350) and _hermes_split_text. Single point of loss was there; aggregate_tool_calls (Role/Chat.pm:1530) just collects the ToolCall objects and never dropped the flag, so no aggregation change needed.
+
+Behavior determination (file:line evidence): the flag's only consumers (tool_loop_calls Role/Tools.pm:815/823, _undecodable_arguments_result :917, _echo_without_undecodable_calls :860) all live in the non-streaming MCP loop chat_with_tools_f (:951 _async_do_request_f, non-streaming). The streaming path (chat_stream_realtime_f Role/Chat.pm:1223) runs NO tool loop; it delivers chunks to a callback and aggregates via aggregate_tool_calls. So NOTHING in streaming acts on the flag -- it rides purely for parity: aggregate_tool_calls' POD promises the streamed calls equal the non-streaming reply's for the same body. Test asserts exactly that (flag present on the aggregated ToolCall + arguments_error equals chat_f's), not a fabricated error-result flow.
+
+2026-09-29 03:53 Done, commit-ready (uncommitted). Files: lib/Langertha/Role/Tools.pm (_hermes_stream_calls carries the k345/k350 undecodable flag through the streamed lift) + t/43_hermes_stream_tool_calls.t (new subtest, TDD red->green: streamed closed bad-args block now carries arguments_undecodable on aggregate_tool_calls, parity with chat_f). Verified: prove -lr t/ = 215 files / 10433 tests PASS (+28 from new subtest); red->green confirmed (before fix: streamed undecodable=0, chat_f undecodable=1); perlcritic --profile .perlcriticrc lib/Langertha/Role/Tools.pm OK; t/8x live tests all skipped (no keys); env | grep -c TEST_LANGERTHA = 0 throughout. No ADR amendment needed -- strengthens parity under ADR 0003 / k345 / k350, no new decision. Streaming consumes nothing off the flag: present-for-consistency only.
+
+landed on main as b193623; review passed, no findings; flag present-for-consistency on streamed tool_calls, parity with chat_f
