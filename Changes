@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Hermes tool calls whose arguments are not a JSON object now reach the
+      error-result path instead of silently running on {}. An
+      OpenAI-Responses or Perplexity reply cut off at max_output_tokens with
+      an empty output now reports finish_reason "length".
+
     - In Langertha::Chat's tool loops, plugin_before_tool_call sees every
       call, including one to an unknown tool, and may rename it onto a real
       tool; "unknown tool NAME" answers the name the plugins return.

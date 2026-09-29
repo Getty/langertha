@@ -25,6 +25,7 @@ use Langertha::Engine::Anthropic;
 use Langertha::Engine::Gemini;
 use Langertha::Engine::OpenAIResponses;
 use Langertha::Engine::Perplexity;
+use Langertha::Engine::NousResearch;
 
 my %engine = (
   openai    => sub { Langertha::Engine::OpenAI->new( api_key => 'k', model => 'gpt-x', @_ ) },
@@ -129,6 +130,30 @@ subtest 'responses: a max_output_tokens cut reads as length with the flag set' =
   is( $chunk->finish_reason, 'length', 'the terminal stream event reads the same' );
 };
 
+# karr k350: reasoning can eat the whole output budget, leaving output => []
+# -- no message and not even a function_call to carry a status. The envelope
+# still says status incomplete / max_output_tokens, so finish_reason is
+# 'length', the same value the truncated-function-call case above reports
+# (k349); the walker derived none because its length mapping was gated on there
+# being tool-call items. Affects Perplexity too (same role) and chat_f.
+my $responses_empty = { id => 'resp_2', object => 'response', status => 'incomplete', model => 'gpt-x',
+  incomplete_details => { reason => 'max_output_tokens' }, output => [] };
+
+subtest 'responses: a max_output_tokens cut with an empty output reads as length' => sub {
+  for my $dialect (qw( responses perplexity )) {
+    my $r = eval { $engine{$dialect}->()->chat_response( Test::ToolLoop::http_for($responses_empty) ) };
+    ok( defined $r, "$dialect: chat_response does not die on empty output" ) or diag($@);
+    next unless $r;
+    is( $r->finish_reason, 'length', "$dialect: finish_reason length" );
+    is( $r->content, '', "$dialect: no content" );
+    ok( !$r->has_tool_calls, "$dialect: no tool calls" );
+  }
+  # A completed empty reply is not a token-limit cut: no finish_reason invented.
+  my %done = ( %$responses_empty, status => 'completed', incomplete_details => undef );
+  ok( !defined $engine{responses}->()->chat_response( Test::ToolLoop::http_for( \%done ) )->finish_reason,
+    'a completed empty reply invents no finish_reason' );
+};
+
 for my $dialect (qw( responses perplexity )) {
   subtest "$dialect: the only call was cut off (max_output_tokens)" => sub {
     for my $loop ( loop_names() ) {
@@ -228,5 +253,33 @@ for my $case (@garbage) {
     }
   };
 }
+
+# karr k350: on a hermes engine the <tool_call> arguments are lifted by
+# extract_hermes_from_text, which dropped a non-object / undecodable arguments
+# to {} WITHOUT the k345 flag -- so the error result never reached hermes
+# engines and the loop ran the tool on {}. The flag now rides through
+# _hermes_split_text and the Response tool_calls upgrade, so the loop answers a
+# bad hermes call the same error result it answers an openai one.
+subtest 'hermes: undecodable arguments on a finished reply get an error result' => sub {
+  my $nous = sub { Langertha::Engine::NousResearch->new( api_key => 'k', model => 'Hermes-4-70B', @_ ) };
+  my $turn = { id => 'c1', choices => [ { index => 0, finish_reason => 'stop',
+    message => { role => 'assistant', content =>
+        qq(<tool_call>\n{"name":"echo","arguments":[1,2]}\n</tool_call>\n)
+      . qq(<tool_call>\n{"name":"echo","arguments":{"m":"fine"}}\n</tool_call>) } } ] };
+  my $done = { id => 'c2', choices => [ { index => 0, finish_reason => 'stop',
+    message => { role => 'assistant', content => 'done' } } ] };
+  for my $loop ( loop_names() ) {
+    my @calls;
+    my $out = run_loop( $loop, engine => $nous,
+      bodies => [ $turn, $done ], servers => [ echo_server( \@calls ) ] );
+    is( $out->{ok}, 'done', "$loop continues to the final answer" ) or diag( $out->{died} // '' );
+    is_deeply( \@calls, [ { m => 'fine' } ], "$loop ran only the call that decoded" );
+    my @tool_msgs = grep { ( $_->{role} // '' ) eq 'tool' } @{ $out->{requests}[1]{messages} };
+    my @errors = grep { $_->{content} =~ /arguments are not valid JSON: not a JSON object/ } @tool_msgs;
+    is( scalar @errors, 1, "$loop answered the bad call with the parse error" );
+    my @good = grep { $_->{content} =~ /"content":"ok"/ } @tool_msgs;
+    is( scalar @good, 1, "$loop answered the good call with its result" );
+  }
+};
 
 done_testing;

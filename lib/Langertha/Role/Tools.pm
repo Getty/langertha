@@ -194,7 +194,16 @@ sub _hermes_split_text {
   my ( $self, $text ) = @_;
   my ( $content, $calls ) = Langertha::ToolCall->extract_hermes_from_text(
     $text, tag => $self->hermes_call_tag );
-  return ( $content, [ map { { name => $_->name, arguments => $_->arguments } } @$calls ] );
+  # Carry the k345 undecodable flag through the reduced hash so it survives the
+  # Response tool_calls upgrade and the tool loop answers a bad hermes call an
+  # error result rather than running the tool on {} -- karr k350.
+  return ( $content, [ map {
+    { name => $_->name, arguments => $_->arguments,
+      ( $_->arguments_undecodable
+        ? ( arguments_undecodable => 1,
+            ( $_->has_arguments_error ? ( arguments_error => $_->arguments_error ) : () ) )
+        : () ) }
+  } @$calls ] );
 }
 
 # The streamed counterpart of chat_f's reply lift (karr k253, ADR 0001): text

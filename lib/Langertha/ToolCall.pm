@@ -371,9 +371,14 @@ sub extract_hermes_from_text {
     my $obj = eval { $TEXT_JSON->decode($json) };
     ( ref($obj) eq 'HASH' && defined $obj->{name} && length $obj->{name} )
       ? do {
+          # Route arguments through the same decoder the wire constructors use
+          # (from_openai & co.): a non-object or a value that does not decode to
+          # an object becomes {} with arguments_undecodable / arguments_error
+          # set, so the tool loop answers the model an error result it can retry
+          # rather than running the tool on {} -- karr k350 (the k345 mechanism).
           push @calls, $class->new(
-            name      => $obj->{name},
-            arguments => ( ref( $obj->{arguments} ) eq 'HASH' ? $obj->{arguments} : {} ),
+            name => $obj->{name},
+            _args_kwargs( $obj->{arguments} ),
           );
           '';
         }
@@ -394,7 +399,9 @@ blocks out of model text. Returns the trimmed text without the lifted blocks
 and an ArrayRef of C<Langertha::ToolCall>. C<tag> names the call tag (default
 C<tool_call>); engines pass their C<hermes_call_tag>. A block that carries no
 call (invalid JSON, a non-object, an object without a C<name>) stays in the
-text where it was. A non-object C<arguments> becomes C<{}>.
+text where it was. C<arguments> that are not a JSON object (or a string that
+does not decode to one) become C<{}> with L</arguments_undecodable> and
+L</arguments_error> set, exactly as the wire constructors flag them.
 
 =cut
 

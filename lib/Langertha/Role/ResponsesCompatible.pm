@@ -556,10 +556,12 @@ C<tool_search_call>) croaks.
 
 C<finish_reason> is C<tool_calls> when the reply carries function calls,
 C<stop> for a completed message, and the message status (C<incomplete>) for a
-truncated one. A reply of only function calls whose envelope reports C<status>
-C<incomplete> with C<incomplete_details.reason> C<max_output_tokens> has
-C<finish_reason> C<length>. A function call's C<arguments> that do not decode
-leave it with C<{}> and L<Langertha::ToolCall/arguments_undecodable> set.
+truncated one. A reply with no message item whose envelope reports C<status>
+C<incomplete> with C<incomplete_details.reason> C<max_output_tokens> (or
+C<max_tokens>) has C<finish_reason> C<length> -- whether it holds only function
+calls or an empty C<output> because reasoning consumed the whole budget. A
+function call's C<arguments> that do not decode leave it with C<{}> and
+L<Langertha::ToolCall/arguments_undecodable> set.
 
 A C<refusal> content part of a message becomes L<Langertha::Response/refusal>
 (on a stream, the final chunk's C<refusal>).
@@ -637,10 +639,13 @@ sub _responses_walk_output {
     # A reply that hit max_output_tokens before any message item says so only
     # on the envelope: status incomplete, incomplete_details.reason
     # max_output_tokens (max_tokens in the reference's response.incomplete
-    # example; both are read). With nothing but function calls in output[]
-    # that is finish_reason 'length', so the tool loops treat a call whose
-    # arguments were cut off as truncated -- karr k349, k345.
-    if ( @tc_data && !defined $finish_reason && _cut_by_token_limit($data) ) {
+    # example; both are read). With no message item to carry a status --
+    # nothing but function calls in output[], or an empty output[] because
+    # reasoning consumed the whole budget -- that is finish_reason 'length'. The
+    # tool loops then treat a call whose arguments were cut off as truncated,
+    # and chat_f reports the token-limit cut on a reply with no content -- karr
+    # k349, k350, k345. A truncated *message* keeps its own status (set above).
+    if ( !defined $finish_reason && _cut_by_token_limit($data) ) {
         $finish_reason = 'length';
     }
     if ( @tc_data && ( !defined $finish_reason || $finish_reason eq 'stop' ) ) {

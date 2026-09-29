@@ -461,6 +461,13 @@ around BUILDARGS => sub {
               arguments => ( ref( $_->{arguments} ) eq 'HASH' ? $_->{arguments} : {} ),
               id        => ( $_->{id} // '' ),
               synthetic => ( $_->{synthetic} ? 1 : 0 ),
+              # Carry the k345 undecodable flag through the legacy-hash upgrade
+              # (the hermes lift reduces a ToolCall to this shape) so the tool
+              # loop still answers a bad call an error result -- karr k350.
+              ( $_->{arguments_undecodable}
+                ? ( arguments_undecodable => 1,
+                    ( defined $_->{arguments_error} ? ( arguments_error => $_->{arguments_error} ) : () ) )
+                : () ),
             );
       } @{ $params->{tool_calls} }
     ];
