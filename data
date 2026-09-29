@@ -1,0 +1,35 @@
+---
+claimed_at: 2026-09-29T22:43:08Z
+claimed_by: worker
+class: standard
+completed: 2026-09-29T22:43:08Z
+created: 2026-09-25T05:17:25Z
+id: 232
+priority: medium
+started: 2026-09-29T20:47:39Z
+status: done
+tags:
+- perplexity
+- tools
+- live
+- release-gate
+title: 'Perplexity Agent API function tools: live capture of function_call turn +
+  echo turn (k213 follow-up)'
+updated: 2026-09-29T22:43:08Z
+---
+
+k213 shapes (request tools, echoed function_call input items incl. id/status, flattened assistant message with string content, function_call output item) are documentation-derived only. Capture 2 live calls: a function_call turn and its echo turn (with a preset). NEEDS maintainer approval for live Perplexity calls. Gate the next release on it.
+
+Add to capture set (from k233): does the Agent API accept earlier function_call/function_call_output input items when the request carries no tools (tool_choice none withheld tools)?
+
+2026-09-26 22:34 Maintainer-Freigabe für Live-Calls gegen Perplexity erteilt (2026-09-27).
+
+2026-09-29 20:50 Live capture done: 6 calls, all HTTP 200 (preset fast -> openai/gpt-6-luna). (1) function_call turn: top-level function_call {id fc_<uuid>, call_id, arguments JSON string, status completed}, no thought_signature, no search. (2) echo with id/status on the function_call + function_call_output: accepted. (3) same echo input WITHOUT tools (k233 question): accepted; the preset then ran web_search. (4) streamed function_call turn: output_item.added/.done carry the whole call (no arguments deltas), response.completed carries it in output[]. (5) search prompt + function tool: preset searched and answered in text WITHOUT calling the function (one sample). (6) filtered mixed echo (search_results dropped, assistant preamble flattened to string content): accepted.
+
+2026-09-29 20:53 Also found (not in scope, for the dispatcher): (a) Perplexity sends unsuffixed x-ratelimit-limit / -remaining / -reset (epoch seconds) / -used headers (limit 1, per-second-looking bucket); Engine::Remote::_parse_rate_limit_headers only builds a RateLimit on retry-after, so Perplexity's rate_limit stays undef on success -> candidate ticket (core board). (b) ADR 0020 k213 Update still says 'docs only ... no live capture yet' -> adr-auditor should add a k232 note (echo shapes live-verified; no-tools echo accepted, answering the k233 question). (c) Preset fast now resolves to openai/gpt-6-luna (was gpt-5.6-luna mid-Sept); POD/comment updated, t/68_perplexity_agent.t fixtures still say 5.6 (verbatim, fine).
+
+2026-09-29 21:13 Done. 6 live Perplexity calls (preset fast, max_output_tokens 300), all HTTP 200, about USD 0.003 total. 17 verbatim capture files in t/data/perplexity_agent_{function_call,function_call_echo,function_call_echo_notools,function_call_stream,search_function_call,mixed_echo}.* (.request.json = the body Langertha built; no key, no auth header). t/68_perplexity_function_tools.t gets 6 capture-replay subtests: the exact request bodies, how the reply is read (call_id, args, finish_reason, citations), chat_with_tools_f end to end, the stream (one call, not three). No code change needed: the wire matched the k213 implementation. POD/comments in Engine::Perplexity now say live-verified, and fast resolves to gpt-6-luna. The unreleased k213 Changes bullet was reworded (not documentation-only any more). Verified: prove -l t/68 passes; a mutation that drops id/status in the echo fails 4 capture subtests; prove -lr t/ passes (216 files, 10450 tests; the 14 live t/8x files skipped, no keys in env); dzil build OK. Release manager: the new t/data files are untracked, so git add them (Git::GatherDir only ships tracked files).
+
+2026-09-29 22:22 Review fixes done. 1: Perplexity POD lists the call turn, its echo and the streamed turn as live-verified. The mixed turn is now marked as constructed: live only confirms that its filtered echo is accepted with HTTP 200, and the rejection of unfiltered items is attributed to the docs. 2: Changes k213 bullet attributes the rejection to the docs and lists the filtered echo of a constructed mixed turn as live-verified. 3: t/68 mixed-echo type-list and preamble assertions now check the body Langertha built, not the fixture. 4: replays now carry the captured headers via the new capture_http helper, with no rate-limit assertion because that is ticket 356. Fixtures unchanged, no live calls. Verified with a clean env: prove t/68 passes; prove -lr t/ passes with 216 files and 10450 tests, the 14 live t/8x files skipped; perlcritic reports 0 violations; dzil build OK. The new t/data captures are still untracked and must be staged for the commit.
+
+Committed cbebef7, merged to main locally
