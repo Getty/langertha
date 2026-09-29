@@ -7,6 +7,8 @@ use warnings;
 use Test2::Bundle::More;
 use JSON::MaybeXS;
 use Future;
+use HTTP::Response;
+use Path::Tiny qw( path );
 
 use lib 't/lib';
 use Test::MockAsyncHTTP;
@@ -35,10 +37,20 @@ use Langertha::Engine::OpenAIResponses;
 #     ResponsesCompatible hook _responses_echo_item filters them on Perplexity;
 #     OpenAIResponses keeps the verbatim echo.
 #
-# No Perplexity function-call capture exists (a live one needs the maintainer's
-# OK). Every payload below is built from the documented shapes: the OpenAPI for
-# POST /v1/agent and docs.perplexity.ai/docs/agent-api/tools/custom-functions,
-# fetched 2026-09-25 by the llm-advisor (see karr k213). Not live-verified.
+# The hand-written payloads in the first half are built from the documented
+# shapes (the OpenAPI for POST /v1/agent and
+# docs.perplexity.ai/docs/agent-api/tools/custom-functions, fetched 2026-09-25,
+# karr k213). They keep covering what the live model did not produce on its own:
+# fetch_url_results / mcp_* items, a thought_signature, a nested call.
+#
+# The second half replays verbatim live captures (karr k232, 2026-09-29, preset
+# fast -> openai/gpt-6-luna, t/data/perplexity_agent_*): the function_call turn,
+# its echo turn, the same echo with no tools (the k233 question), the streamed
+# function_call turn, a search turn with a function tool offered, and the echo
+# of a mixed preset turn. Each .request.json is the body Langertha built and
+# Perplexity answered with HTTP 200, so the request tests assert Langertha still
+# builds exactly that body: the echo shapes are live-verified, not just
+# documented.
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
@@ -318,6 +330,199 @@ subtest 'chat_with_tools_f end to end (mocked HTTP)' => sub {
     is( $r2->{input}[1]{content}, 'Let me check.', 'assistant preamble echoed as text' );
     is( $r2->{input}[2]{thought_signature}, 'sig-xyz', 'thought_signature kept on the echoed call' );
     is( $r2->{input}[3]{call_id}, $r2->{input}[2]{call_id}, 'output answers the call by call_id' );
+};
+
+# --- Live captures (karr k232) --------------------------------------------
+
+my $data_dir = path(__FILE__)->parent->child('data');
+sub capture_bytes { $data_dir->child( $_[0] )->slurp_raw }
+sub capture       { $json->decode( capture_bytes("$_[0].json") ) }
+sub capture_req   { $json->decode( capture_bytes("$_[0].request.json") ) }
+sub http_ok { HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'application/json' ], $_[0] ) }
+# A captured reply as it arrived: its recorded status, headers and body bytes.
+sub capture_http {
+    my ($name) = @_;
+    my $headers = $json->decode( capture_bytes("$name.headers.json") );
+    return HTTP::Response->new( 200, 'OK', [ %$headers ], capture_bytes("$name.json") );
+}
+
+# The tool the captures offered, in the MCP shape the tool loop formats, and
+# the result the capture script answered the call with.
+my $cap_tool = {
+    name        => 'get_weather',
+    description => 'Get the current weather for a city.',
+    inputSchema => { type => 'object',
+        properties => { city => { type => 'string', description => 'City name' } },
+        required => ['city'] },
+};
+my $cap_result = '{"city":"Berlin","temp_c":21,"conditions":"sunny"}';
+my $cap_prompt = capture_req('perplexity_agent_function_call')->{input}[0]{content};
+
+sub cap_ppx { ppx( response_size => 300, @_ ) }
+
+sub reply_text { join '', map { $_->{text} } map { @{ $_->{content} } } grep { $_->{type} eq 'message' } @{ $_[0]{output} } }
+
+# The conversation the tool loop builds for the second turn: the prompt, then
+# the echo of $turn with one result per call.
+sub echo_conversation {
+    my ( $engine, $turn, $prompt ) = @_;
+    my $reply = $engine->chat_response( http_ok( $json->encode($turn) ) );
+    my @results = map { { tool_call => $_,
+        result => { content => [ { type => 'text', text => $cap_result } ] } } } @{ $reply->tool_calls };
+    my $conv = $engine->chat_messages( $prompt // $cap_prompt );
+    push @$conv, $engine->format_tool_results( $turn, \@results );
+    return $conv;
+}
+
+subtest 'capture: the function_call turn (k232)' => sub {
+    my $engine = cap_ppx();
+    my $req = $engine->build_tool_chat_request( $engine->chat_messages($cap_prompt),
+        $engine->format_tools([$cap_tool]) );
+    is_deeply( body_of($req), capture_req('perplexity_agent_function_call'),
+        'Langertha builds the body Perplexity answered with a function_call' );
+
+    my $resp = $engine->chat_response( capture_http('perplexity_agent_function_call') );
+    my $tc = $resp->tool_call('get_weather');
+    ok( $tc && !$tc->synthetic, 'the top-level function_call item is a native ToolCall' );
+    is( $tc && $tc->id, 'call_jYNSwNK1Hq1n90240LgqMsP0', 'its id is the call_id, not the fc_ item id' );
+    is_deeply( $tc && $tc->arguments, { city => 'Berlin' }, 'the JSON-string arguments decode' );
+    is( $resp->finish_reason, 'tool_calls', 'finish_reason tool_calls' );
+    is( $resp->content, '', 'a call-only turn carries no text' );
+    is( $resp->model, 'openai/gpt-6-luna', 'the model the preset ran' );
+    ok( !$resp->has_citations, 'no search ran, no citations invented' );
+};
+
+{
+    package K232::MCP;
+    sub new { bless { calls => [] }, shift }
+    sub list_tools { Future->done( [$cap_tool] ) }
+    sub call_tool {
+        my ( $self, $name, $input ) = @_;
+        push @{ $self->{calls} }, [ $name, $input ];
+        return Future->done( { content => [ { type => 'text', text => $cap_result } ] } );
+    }
+}
+
+subtest 'capture: chat_with_tools_f sends the captured turn and echo bodies (k232)' => sub {
+    my $mcp  = K232::MCP->new;
+    my $mock = Test::MockAsyncHTTP->new( responses => [
+        capture_http('perplexity_agent_function_call'),
+        capture_http('perplexity_agent_function_call_echo'),
+    ] );
+    my $text = cap_ppx( _async_http => $mock, mcp_servers => [$mcp] )->chat_with_tools_f($cap_prompt)->get;
+    is( $text, reply_text( capture('perplexity_agent_function_call_echo') ), 'the echo turn\'s answer' );
+    is_deeply( $mcp->{calls}, [ [ get_weather => { city => 'Berlin' } ] ], 'the tool ran once' );
+
+    my @sent = map { body_of($_) } $mock->requests;
+    is( scalar @sent, 2, 'two Agent requests' );
+    is_deeply( $sent[0], capture_req('perplexity_agent_function_call'), 'turn 1: the captured body' );
+    is_deeply( $sent[1], capture_req('perplexity_agent_function_call_echo'),
+        'turn 2: the captured echo body, which Perplexity accepted' );
+    # The two shapes k213 only had from the docs: the call echoed with its fc_
+    # id and status, and the result as a function_call_output string.
+    is_deeply( $sent[1]{input}[1], capture('perplexity_agent_function_call')->{output}[0],
+        'the function_call item goes back verbatim, id and status included' );
+    is_deeply( $sent[1]{input}[2], { type => 'function_call_output',
+        call_id => 'call_jYNSwNK1Hq1n90240LgqMsP0', output => $cap_result },
+        'the result answers it by call_id with the tool text as a string' );
+    assert_agent_input( $sent[1]{input}, 'echo turn' );
+};
+
+# karr k233 asked whether the Agent API accepts earlier function_call /
+# function_call_output input items when the request carries no tools -- the body
+# an unsendable tool_choice 'none' produces. Live answer: yes (HTTP 200); the
+# preset then ran its own web search.
+subtest "capture: the echo with no tools, as tool_choice 'none' sends it (k233, k232)" => sub {
+    my $engine = cap_ppx();
+    my $conv = echo_conversation( $engine, capture('perplexity_agent_function_call') );
+    my @warns;
+    local $SIG{__WARN__} = sub { push @warns, $_[0] };
+    my $req = $engine->chat_request( $conv, tools => $engine->format_tools([$cap_tool]), tool_choice => 'none' );
+    is_deeply( body_of($req), capture_req('perplexity_agent_function_call_echo_notools'),
+        'no tools, the echo items kept: the body Perplexity accepted' );
+    ok( ( grep { /tool_choice 'none'.*withh[oe]ld/ } @warns ), 'withholding the tools carps' ) or diag @warns;
+
+    my $data = capture('perplexity_agent_function_call_echo_notools');
+    my $resp = $engine->chat_response( capture_http('perplexity_agent_function_call_echo_notools') );
+    is( $resp->content, reply_text($data), 'the answer' );
+    ok( !$resp->has_tool_calls, 'no tool calls' );
+    is( $resp->finish_reason, 'stop', 'finish_reason stop' );
+    my ($search) = grep { $_->{type} eq 'search_results' } @{ $data->{output} };
+    is( scalar @{ $resp->citations // [] }, scalar @{ $search->{results} }, 'the preset search lifts to citations' );
+};
+
+subtest 'capture: the streamed function_call turn (k232)' => sub {
+    my $engine = cap_ppx();
+    my $req = $engine->chat_stream_request( $engine->chat_messages($cap_prompt),
+        tools => $engine->format_tools([$cap_tool]) );
+    is_deeply( body_of($req), capture_req('perplexity_agent_function_call_stream'), 'the captured stream body' );
+
+    # The stream sends the whole call on output_item.added and .done (no
+    # arguments deltas) and again in response.completed's output[]; only the
+    # terminal frame is read, so the call arrives exactly once.
+    my $chunks = $engine->process_stream_data( capture_bytes('perplexity_agent_function_call_stream.sse') );
+    my $calls  = $engine->aggregate_tool_calls($chunks);
+    is( scalar @$calls, 1, 'one call, not three' );
+    is( $calls->[0]->name, 'get_weather', 'its name' );
+    is( $calls->[0]->id, 'call_8RqgmDOEQfr1nSRZIuuskyr2', 'its call_id' );
+    is_deeply( $calls->[0]->arguments, { city => 'Berlin' }, 'its arguments' );
+    my ($final) = grep { $_->is_final } @$chunks;
+    ok( $final, 'response.completed gives the final chunk' );
+    is( $final && $final->finish_reason, 'tool_calls', 'finish_reason tool_calls' );
+    is( $final && $final->model, 'openai/gpt-6-luna', 'the resolved model, not the "fast" label of response.created' );
+    is( join( '', map { $_->content } @$chunks ), '', 'no text' );
+};
+
+# One sample: with a function tool offered, the preset ran its web search and
+# answered in text without calling the tool. The loop must end on that reply.
+subtest 'capture: a preset search turn with a function tool offered (k232)' => sub {
+    my $want   = capture_req('perplexity_agent_search_function_call');
+    my $prompt = $want->{input}[0]{content};
+    my $engine = cap_ppx();
+    is_deeply( body_of( $engine->build_tool_chat_request( $engine->chat_messages($prompt),
+        $engine->format_tools([$cap_tool]) ) ), $want, 'the captured body' );
+
+    my $data = capture('perplexity_agent_search_function_call');
+    my $resp = $engine->chat_response( capture_http('perplexity_agent_search_function_call') );
+    ok( !$resp->has_tool_calls, 'no tool calls' );
+    is( $resp->finish_reason, 'stop', 'finish_reason stop' );
+    my ($search) = grep { $_->{type} eq 'search_results' } @{ $data->{output} };
+    is( scalar @{ $resp->citations // [] }, scalar @{ $search->{results} }, 'search_results lift to citations' );
+
+    my $mcp  = K232::MCP->new;
+    my $mock = Test::MockAsyncHTTP->new( responses => [
+        capture_http('perplexity_agent_search_function_call') ] );
+    my $text = cap_ppx( _async_http => $mock, mcp_servers => [$mcp] )->chat_with_tools_f($prompt)->get;
+    is( $text, reply_text($data), 'chat_with_tools_f returns the text' );
+    is( scalar @{ $mcp->{calls} }, 0, 'no tool ran' );
+    is( $mock->request_count, 1, 'one request' );
+};
+
+# The echo filter's case: a preset turn with search_results, an assistant
+# preamble and the call. The model did not produce one live, so the turn is the
+# function_call capture with the search_results item of the search capture and
+# a preamble message spliced in before the call. Its echo -- search_results
+# dropped, preamble flattened to string content -- was sent live: HTTP 200.
+subtest 'capture: the echo of a mixed preset turn (k232)' => sub {
+    my $turn = capture('perplexity_agent_function_call');
+    my ($search) = grep { $_->{type} eq 'search_results' }
+        @{ capture('perplexity_agent_search_function_call')->{output} };
+    unshift @{ $turn->{output} }, $search,
+        { type => 'message', id => 'msg_k232_preamble', role => 'assistant', status => 'completed',
+          content => [ { type => 'output_text', text => 'Let me check the weather tool.', annotations => [] } ] };
+
+    my $engine = cap_ppx();
+    my $conv = echo_conversation( $engine, $turn );
+    my $req = $engine->build_tool_chat_request( $conv, $engine->format_tools([$cap_tool]) );
+    my $body = body_of($req);
+    is_deeply( $body, capture_req('perplexity_agent_mixed_echo'), 'the body Perplexity accepted' );
+    is_deeply( [ map { $_->{type} } @{ $body->{input} } ],
+        [qw( message message function_call function_call_output )],
+        'user, flattened preamble, the call, its output: search_results left out' );
+    is( $body->{input}[1]{content}, 'Let me check the weather tool.', 'the preamble as a string' );
+
+    my $resp = $engine->chat_response( capture_http('perplexity_agent_mixed_echo') );
+    is( $resp->content, reply_text( capture('perplexity_agent_mixed_echo') ), 'the answer' );
 };
 
 done_testing;

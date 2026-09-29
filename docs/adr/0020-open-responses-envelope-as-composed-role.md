@@ -281,3 +281,39 @@ native builders (ADR 0002 k239 Update). One behavior differs on this envelope: a
 `tool_choice` is deleted where the engine claims no `tool_choice_*` (Perplexity) instead of going
 out as `null`. `_responses_parallel_tool_calls_kwarg` calls the shared
 `_parallel_tool_calls_kwarg`, which adds a carp when a set `parallel_tool_use` is dropped (k241).
+
+## Update (k232 — the Perplexity function-tool shapes are live-verified)
+
+This update revises two statements in the k213 Update: "docs only … no live capture yet" and the
+test note "documented shapes". The maintainer approved six live calls, made on 2026-09-29 (UTC,
+per the captured `Date` headers) with preset `fast` and `max_output_tokens` 300. All six returned
+HTTP 200. The wire matched the k213 implementation, and no code changed.
+
+1. **The function_call turn.** The call is a top-level `output[]` item
+   `{type: function_call, id: fc_<uuid>, call_id, name, arguments: <JSON string>, status: completed}`.
+   It has no `thought_signature`, and no search ran.
+2. **The echo turn with `id` and `status`.** Sending the call item back with its `id` and `status`
+   intact, followed by the `function_call_output`, is accepted.
+3. **The echo without tools.** The same input with no `tools` in the request is also accepted. This
+   answers the k233 question: withholding the tools for an unsendable `none` leaves a valid body,
+   even with earlier `function_call` / `function_call_output` items in the input. The preset then
+   ran its own `web_search`.
+4. **The streamed call turn.** `response.output_item.added` and `.done` each carry the whole call,
+   and there are no argument-delta events. The call appears once in `response.completed`'s
+   `output[]`. The stream yields one tool call, not three.
+5. **Search plus a function tool.** In one sample, the preset searched and answered in text without
+   calling the function.
+6. **The filtered mixed echo.** The input had `search_results` dropped and the assistant preamble
+   flattened to string `content`, as `_responses_echo_item` does, and it was accepted. This turn
+   was *constructed*: the live call confirms only that the filtered echo gets a 200. The claim that
+   the Agent API rejects the *unfiltered* items (the reason for the hook) is still
+   documentation-derived.
+
+The preset `fast` now resolves to `openai/gpt-6-luna` (it was `gpt-5.6-luna` mid-September). A side
+finding: Perplexity sends unsuffixed `x-ratelimit-limit` / `-remaining` / `-reset` (epoch seconds) /
+`-used` headers. `Engine::Remote` does not parse them, so `rate_limit` stays undef on success (karr
+#356). The 18 verbatim capture files are `t/data/perplexity_agent_{function_call,function_call_echo,
+function_call_echo_notools,function_call_stream,search_function_call,mixed_echo}.*`. Each
+`.request.json` holds the body Langertha built, with no key or auth header.
+`t/68_perplexity_function_tools.t` replays them, checking the exact request bodies, the reply
+reading, `chat_with_tools_f` end to end, and the stream.
