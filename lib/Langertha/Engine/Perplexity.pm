@@ -81,9 +81,10 @@ what preserves Perplexity's search+citations identity.
     sonar-deep-research   -> preset "high"
 
 C<$response-E<gt>model> reports the real model the chosen preset ran — a preset
-is a routing label, not a fixed model (as of 2026-09 C<fast>, C<low> and
-C<medium> all resolved to C<openai/gpt-5.6-luna> on the wire), so read the model
-off the response rather than inferring it from the preset.
+is a routing label, not a fixed model (in mid-September 2026 C<fast>, C<low> and
+C<medium> all resolved to C<openai/gpt-5.6-luna> on the wire; by 2026-09-29
+C<fast> resolved to C<openai/gpt-6-luna>), so read the model off the response
+rather than inferring it from the preset.
 
 =head2 Capabilities
 
@@ -95,14 +96,21 @@ the tool loop answers them with C<function_call_output> items. Perplexity never
 runs a function tool itself. A preset still runs its own C<web_search>
 alongside your tools (presets merge tools). The echo of a tool turn keeps only
 what the Agent input accepts: the function calls and the assistant's text; the
-search results and other built-in tool items are left out. This is built from
-Perplexity's documentation, not verified against the live API.
+search results and other built-in tool items are left out. The call turn, its
+echo (the call with its C<id> and C<status>, then the C<function_call_output>)
+and a streamed call turn were checked against the live API (2026-09-29). For a
+turn with search results and an assistant preamble (a constructed turn: the
+model did not produce one live), only this is live-confirmed: the filtered echo
+is accepted with HTTP 200. That the Agent input rejects the unfiltered items
+comes from Perplexity's documentation.
 
 There is no C<tool_choice> and no C<parallel_tool_calls> on the Agent API, so
 every C<tool_choice_*> capability and C<parallel_tool_use> are off and neither
 field is ever sent (a forced choice that cannot be sent carps). C<tool_choice
 =E<gt> 'none'> is honored by leaving the request's tools out (with a carp); a
-choice Langertha cannot read is dropped with a carp. Perplexity's
+choice Langertha cannot read is dropped with a carp. A request without tools
+may still carry earlier C<function_call> and C<function_call_output> items; the
+Agent API accepts them (checked live, 2026-09-29). Perplexity's
 built-in tools (C<web_search>, C<fetch_url>, C<sandbox>, ...) are not modelled
 yet; a native hash of one in C<tools> is sent as given.
 
@@ -174,7 +182,8 @@ sub _build_static_models {[
 # live-confirmed k147, 2026-09-14). A preset is a routing label, not a model id:
 # fast, low and medium all resolved to openai/gpt-5.6-luna on the wire, so the
 # base model behind a preset is Perplexity's to change -- which is why the engine
-# reports whatever $response->model returns rather than mapping it back. high
+# reports whatever $response->model returns rather than mapping it back (by
+# 2026-09-29, k232, fast already resolved to openai/gpt-6-luna). high
 # (sonar-deep-research) was not exercised (cost). reasoning.effort on the
 # fast/low presets is ACCEPTED (HTTP 200, echoed as reasoning:{effort}) but
 # spends no reasoning tokens there -- honored-as-accepted, a no-op on the
@@ -260,7 +269,10 @@ sub _responses_extra_fields {
 # Agent API echo filter (karr k213, ADR 0020 k213 Update). The Agent input is
 # a closed oneOf of message | function_call | function_call_output, and a
 # message part is only input_text / input_image (OpenAPI for POST /v1/agent,
-# fetched 2026-09-25; not live-verified). The Responses echo replays every
+# fetched 2026-09-25). Live-confirmed (k232, 2026-09-29): the echo this builds
+# -- the call verbatim with its fc_ id and status, a preamble flattened to
+# string content, search_results left out -- is accepted (HTTP 200); captures in
+# t/data/perplexity_agent_*. The Responses echo replays every
 # output[] item, which on a preset turn includes search_results /
 # fetch_url_results / *_results / mcp_* items and an assistant message of
 # output_text parts -- all off-schema as input. Keep the calls (thought_signature

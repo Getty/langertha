@@ -505,9 +505,12 @@ Revision history for Langertha
       sent and supports() reports all tool_choice_* and parallel_tool_use
       off; a forced named tool still becomes structured output via
       json_schema. The echo of a tool turn keeps only the calls and the
-      assistant's text, since the Agent input rejects search results and
-      other built-in tool items. Taken from Perplexity's documentation, not
-      verified against the live API.
+      assistant's text; Perplexity's documentation says the Agent input
+      rejects search results and other built-in tool items. Checked against
+      the live API: the call turn, its echo, a streamed call turn, a request
+      that sends no tools (tool_choice => 'none') after an earlier tool
+      turn, and the filtered echo of a turn with search results and an
+      assistant preamble (a constructed turn), which is accepted.
       ToolChoice->to_perplexity is marked legacy (the old Sonar forms).
 
     - A tool_choice is sent only where the engine supports its kind
