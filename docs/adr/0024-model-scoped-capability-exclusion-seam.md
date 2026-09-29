@@ -110,6 +110,8 @@ The rules move to where the constraint actually lives:
   auto-rewrite, and a fail-loud croak is the minimum) stand unchanged.
 - **Extends ADR 0019** — the model-scoped `chat_model`-keyed table, from boolean corrections to
   pairwise exclusions; same matcher grammar, coderef payload.
+- **A per-request `model` override does not re-scope the rules** — they match `chat_model`; a
+  `chat_f` / stream override whose matched rule set differs is warned (ADR 0019 Update k352).
 - **Sits above ADR 0002** — the boolean capability registry, untouched.
 - **Nuances ADR 0005** — its single-path rewrites are unaffected and pre-empt the guard.
 - `CONTEXT.md` gains a `model_capability_exclusions` entry, sibling to `model_capability_corrections`,

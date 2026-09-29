@@ -8,6 +8,15 @@ Revision history for Langertha
       capability flags follow the same per-model decision. A constructor
       tool_wire_format still overrides it.
 
+    - chat_f and chat_stream_realtime_f warn when a per-request model
+      differs from the engine's chat_model in a way that matters: the
+      override only replaces the body's model field, while capabilities,
+      exclusion rules, the reasoning profile, the temperature gate,
+      NousResearch's per-model tool_wire_format and reasoning prompt, and
+      per-model body details are still decided for chat_model. The warning names what would differ; it stays
+      quiet for the same model or when the request uses none of those
+      decisions. The request itself is unchanged.
+
     - Hermes tool calls whose arguments are not a JSON object now reach the
       error-result path instead of silently running on {}, streamed and
       non-streamed alike: a closed <tool_call> block with such arguments

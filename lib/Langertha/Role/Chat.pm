@@ -804,6 +804,15 @@ sub model_capability_exclusions { return () }
 # croak. A no-op when the table is empty or no matcher hits.
 sub _check_capability_exclusions {
   my ( $self, %request ) = @_;
+  $self->$_(%request) for $self->_matched_capability_exclusions;
+  return;
+}
+
+# The rules of model_capability_exclusions whose matcher hits chat_model, in
+# table order. Shared by _check_capability_exclusions and the per-request model
+# override warning (karr k352), which compares the matched set for two models.
+sub _matched_capability_exclusions {
+  my ( $self ) = @_;
   my @rules = $self->model_capability_exclusions;
   return unless @rules;
   # chat_model is the model that actually carries tools / response_format on the
@@ -813,14 +822,14 @@ sub _check_capability_exclusions {
   # (Groq, Cerebras) still holds for model => ''.
   return unless $self->can('chat_model');
   my $model = $self->chat_model // '';
+  my @matched;
   while ( @rules >= 2 ) {
     my ( $matcher, $rule ) = splice @rules, 0, 2;
     my $hit = ref $matcher eq 'Regexp' ? ( $model =~ $matcher )
             :                            ( $model eq $matcher );
-    next unless $hit;
-    $self->$rule(%request);
+    push @matched, $rule if $hit;
   }
-  return;
+  return @matched;
 }
 
 =method model_capability_exclusions
@@ -926,11 +935,146 @@ sub _chat_rewrite_replaces_response_format {
   return;
 }
 
+# karr k352 (split from k238): a `model` passed to chat_f or
+# chat_stream_realtime_f is no canonical control; it rides %extra into the
+# request builder and replaces the body's model field. Every model-scoped wire
+# decision still reads chat_model: the layer-3 capability corrections and the
+# learned facts (ADR 0019 / 0032, and a model-aware layer 2 such as Gemini's),
+# the exclusion rules (ADR 0024), the reasoning profile (ADR 0023), the
+# reasoning temperature gate (ADR 0025), the per-model tool_wire_format (ADR
+# 0033) and the per-model body shape (completion-length key, response-size
+# default, native structured output). Langertha does not re-scope a request to
+# its override (that is a second engine); it warns when the override would get
+# a different decision, naming which.
+#
+# Quiet unless something flips: an override equal to chat_model costs nothing,
+# and only the decisions THIS request consults are compared. A capability flag
+# named here is compared only when one of its request features is in play;
+# image_input never (it reports what the model sees and gates nothing, ADR
+# 0019 k266 Update); any other flag always, so a new model-scoped flag errs
+# toward a warning, not toward silence.
+my %CAP_CONSULTED_BY = (
+  tools_native                => ['tools'],
+  tools_hermes                => ['tools'],
+  server_tools                => ['tools'],
+  tool_choice_auto            => ['tool_choice'],
+  tool_choice_any             => ['tool_choice'],
+  tool_choice_none            => ['tool_choice'],
+  tool_choice_named           => ['tool_choice'],
+  response_format_json_object => ['response_format'],
+  # the ADR 0005 forced-tool rewrite consults it too
+  response_format_json_schema => [ 'response_format', 'tool_choice' ],
+  temperature                 => ['temperature'],
+  reasoning_effort            => ['reasoning'],
+  thinking_budget             => ['reasoning'],
+  parallel_tool_use           => ['parallel_tool_use'],
+  streaming                   => ['streaming'],
+  # Gemini's per-generation flag: consulted only with a bound cachedContent
+  cached_content              => ['cached_content'],
+  image_input                 => [],
+);
+
+# The request features that decide which model-scoped decisions a request
+# consults: from the per-request options, else the engine attribute.
+sub _chat_request_features {
+  my ( $self, $opts, $streaming ) = @_;
+  my $attr_set = sub {
+    my $predicate = 'has_' . $_[0];
+    return $self->can($predicate) && $self->$predicate;
+  };
+  my %features;
+  $features{tools} = 1 if ref $opts->{tools} eq 'ARRAY' && @{ $opts->{tools} };
+  $features{tool_choice} = 1 if defined $opts->{tool_choice};
+  $features{response_format} = 1 if defined $self->_chat_effective_response_format($opts);
+  $features{temperature} = 1 if exists $opts->{temperature} || $attr_set->('temperature');
+  $features{reasoning} = 1
+    if grep { exists $opts->{$_} || $attr_set->($_) } qw( reasoning_effort thinking_budget thinking_display );
+  $features{parallel_tool_use} = 1 if exists $opts->{parallel_tool_use} || $attr_set->('parallel_tool_use');
+  $features{max_tokens} = 1 if exists $opts->{max_tokens};
+  $features{streaming} = 1 if $streaming;
+  $features{cached_content} = 1 if $attr_set->('cached_content');
+  return \%features;
+}
+
+# The model-scoped decisions this engine takes for a request with $features,
+# as label => value. Read-only: no warning, no request. An engine with a
+# model-scoped decision of its own adds it with an `around` (NousResearch's
+# reasoning prompt).
+sub _model_scoped_wire_decisions {
+  my ( $self, $features, $opts ) = @_;
+  my %decision;
+  my $caps = $self->engine_capabilities;
+  for my $cap ( grep { $caps->{$_} } keys %$caps ) {
+    my $by = $CAP_CONSULTED_BY{$cap};
+    next if $by && !grep { $features->{$_} } @$by;
+    $decision{"supports('$cap')"} = 1;
+  }
+  my $tools = $features->{tools} || $features->{tool_choice};
+  $decision{tool_wire_format} = $self->tool_wire_format
+    if $tools && $self->can('tool_wire_format');
+  $decision{model_capability_exclusions} = join ',', map { refaddr $_ } $self->_matched_capability_exclusions
+    if $tools || $features->{response_format};
+  if ( $features->{reasoning} ) {
+    require Langertha::Reasoning::Profile;
+    $decision{'reasoning profile'} =
+      refaddr( Langertha::Reasoning::Profile->for_model( $self->_capability_model ) );
+  }
+  $decision{'temperature gate'} = $self->_temperature_rejected_by_reasoning($opts) ? 1 : 0
+    if $features->{temperature} && $self->can('_temperature_rejected_by_reasoning');
+  my $size = $self->can('get_response_size') ? $self->get_response_size : undef;
+  $decision{'response_size default'} = $size // ''
+    if !$features->{max_tokens} && $self->can('get_response_size');
+  $decision{'completion-length key'} = $self->_max_tokens_key
+    if ( $features->{max_tokens} || $size ) && $self->can('_max_tokens_key');
+  $decision{'native structured output'} = $self->_native_structured_output_for_model ? 1 : 0
+    if $features->{response_format} && $self->can('_native_structured_output_for_model');
+  return %decision;
+}
+
+# Warns when the request's model override flips a decision (see above). The
+# decisions for the override are read off an in-memory clone whose chat_model
+# is the override, as Manifest::Builder probes a model (a builder-made
+# tool_wire_format is resolved again, a constructor one kept, karr k251). A
+# per-request value, so it warns on every request (karr k247). Diagnostic
+# only: if the decisions cannot be computed, the request goes on unwarned and
+# its own path reports the error.
+sub _warn_model_override {
+  my ( $self, $method, $opts, $streaming ) = @_;
+  my $override = $opts->{model};
+  return unless defined $override && !ref $override && length $override;
+  return unless $self->can('chat_model');
+  my $configured = $self->_capability_model // '';
+  return if $override eq $configured;
+  my @flipped;
+  {
+    local $@;
+    eval {
+      my $features = $self->_chat_request_features( $opts, $streaming );
+      my $probe = $self->meta->clone_object( $self, chat_model => $override );
+      $probe->_reset_derived_tool_wire_format if $probe->can('_reset_derived_tool_wire_format');
+      my %mine   = $self->_model_scoped_wire_decisions( $features, $opts );
+      my %theirs = $probe->_model_scoped_wire_decisions( $features, $opts );
+      my %labels = ( %mine, %theirs );
+      @flipped = grep { ( $mine{$_} // '' ) ne ( $theirs{$_} // '' ) } sort keys %labels;
+      1;
+    } or return;
+  }
+  return unless @flipped;
+  $self->_langertha_carp( "".(ref $self).": $method got a per-request model '$override' "
+    . "that differs from chat_model '$configured'; model-scoped wire decisions follow "
+    . "chat_model, and these differ for '$override': " . join( ', ', @flipped )
+    . " -- use an engine whose chat_model is '$override'" );
+  return;
+}
+
 async sub chat_f {
   my ( $self, %opts ) = @_;
 
   my $messages = delete $opts{messages} // [];
   my @messages = ref $messages eq 'ARRAY' ? @$messages : ($messages);
+
+  # Before any decision is taken for chat_model (karr k352).
+  $self->_warn_model_override( 'chat_f', \%opts, 0 );
 
   # A Langertha::ServerTool needs a wire that takes server-side tools (k206).
   Langertha::ServerTool->check_engine( $self, $opts{tools} );
@@ -1158,6 +1302,19 @@ A value that comes from an engine attribute is the same on every request, so
 its drop warns once per engine instance; a value passed with the request warns
 on every request.
 
+A C<model> passed to C<chat_f> is no control: it replaces the model field of
+the request body (on engines that carry the model in the body), but every
+model-scoped decision is still taken for the engine's C<chat_model> — the
+capability picture L<Langertha::Role::Capabilities/supports> answers, the
+C<model_capability_exclusions> rules, the reasoning profile, the temperature
+gate for reasoning models, a per-model C<tool_wire_format> and reasoning
+prompt (L<Langertha::Engine::NousResearch>) and per-model body details such as the
+completion-length key and the default response size. When the override
+differs from C<chat_model> and one of those decisions that the request uses
+would come out differently for it, C<chat_f> warns and names the decisions;
+the request is sent unchanged. For a different model, use an engine whose
+C<chat_model> is that model.
+
 The canonical per-request controls (karr #46) are normalized like
 C<messages>/C<tools> instead of being spread as raw target-wire kwargs:
 C<temperature>, C<max_tokens>, C<response_format>, C<seed>,
@@ -1229,6 +1386,9 @@ async sub chat_stream_realtime_f {
 
   croak "".(ref $self)." does not support streaming"
     unless $self->can('chat_stream_request');
+
+  # Before any decision is taken for chat_model (karr k352).
+  $self->_warn_model_override( 'chat_stream_realtime_f', \%opts, 1 );
 
   # A Langertha::ServerTool needs a wire that takes server-side tools (k206).
   Langertha::ServerTool->check_engine( $self, $opts{tools} );
@@ -1690,7 +1850,8 @@ none). A block that carries no call is streamed as text where it stood, as
 L</chat_f> keeps it in C<content>, and a call tag inside C<E<lt>thinkE<gt>>
 text is no call. Markup that is unclosed when the stream ends is streamed as
 text and gives no call. A stream that ends without a final chunk gets a
-closing chunk for the text still held back and any calls.
+closing chunk for the text still held back and any calls. A per-request
+C<model> warns as in L</chat_f> when it would flip a model-scoped decision.
 
 Returns a L<Future> that resolves to C<($content, \@chunks, \%timing,
 $thinking)> where C<$content> is the full concatenated text, C<\@chunks> the
