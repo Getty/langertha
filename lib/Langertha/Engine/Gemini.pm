@@ -86,6 +86,16 @@ sub model_capability_corrections {
   );
 }
 
+# Tool-result images (karr k344): functionResponse.parts[].inlineData is
+# documented for the Gemini 3 series only (function-calling guide, v1beta;
+# docs-derived, not live-verified, 2026-09-29). Other models keep the k336
+# placeholder string; a later generation joins when its docs say so. The
+# (?!\d) guard keeps a hypothetical gemini-30 out (ADR 0023 k196).
+sub _tool_result_images_on_wire {
+  my ($self) = @_;
+  return ( $self->chat_model // '' ) =~ /\Agemini-3(?!\d)/ ? 1 : 0;
+}
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::Gemini;

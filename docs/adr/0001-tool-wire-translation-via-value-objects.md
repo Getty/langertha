@@ -389,3 +389,35 @@ Deliberately not done: re-attaching tool-result images as a follow-up user messa
 output, but it adds a message the model did not ask for into the tool-loop envelope, and the
 Responses and Gemini 3 wires offer native image outputs (`input_image` parts,
 `functionResponse.parts`) that would be the better target. A possible later feature.
+
+## Update (k344 — tool-result images ride natively on the Responses and Gemini 3 wires)
+
+The k336 "possible later feature" is done for the two wires that have a native form, and not by
+re-attaching a user message. `ToolResult->to($fmt, image_input => 1)` renders a result image
+natively: on `responses`, `function_call_output.output` becomes an array of parts in content order
+(an image as `input_image` with a `data:` URL, every other item as `input_text` with its string
+form); on `gemini`, the image moves out of the `result` string into
+`functionResponse.parts[].inlineData` (`mimeType`, `data`, no `displayName`, which only a `$ref`
+from `response` needs and the v1beta discovery schema of `FunctionResponseBlob` does not list).
+Without a carriable image (MIME outside JPEG/PNG/GIF/WebP on Responses, JPEG/PNG/WebP on Gemini)
+the output is exactly the k336 form. The shape stays on the value object; the orchestration only
+decides whether to ask for it.
+
+`Role::Tools::format_tool_results` asks on those two branches when the selected model claims
+`image_input` (ADR 0019) and the engine's `_tool_result_images_on_wire` hook allows it: true by
+default, `gemini-3*` only on `Engine::Gemini` (the guide documents the feature for the Gemini 3
+series). The hook is a private predicate and not a capability flag, like ADR 0033's
+`_is_hermes_model` and k267's `_content_inline_images_only`: it is wire truth for one
+serializer choice inside the loop, and nothing outside it (the `chat_f` matrix, a manifest, a
+caller) has a question it would answer. The gate is there because the tool loop sends what an MCP server returned, not what the
+caller chose: a text-only model must not start receiving image parts because a tool happened to
+return one. OpenAI `/v1/responses` and Perplexity `/v1/agent` document the same
+`output = string | [input_text | input_image]` shape, so the Responses envelope needs no divergence
+hook for it (ADR 0020); Perplexity's `sonar` presets make no `image_input` claim and keep the string.
+
+The other wires ignore the option instead of croaking: the OpenAI chat tool message and the
+Ollama and Hermes results have no image form, and nothing dies inside the tool loop (k336).
+Anthropic maps images unconditionally since k326 and is unchanged. Both native forms are
+**documentation-derived, not live-verified** (OpenAI API reference, docs.perplexity.ai agent
+reference, Gemini v1beta discovery doc and function-calling guide, 2026-09-29); pinned in
+`t/92_tool_result_images.t`.
