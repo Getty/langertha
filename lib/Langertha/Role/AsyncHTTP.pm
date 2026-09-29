@@ -122,6 +122,17 @@ sub _async_do_request_f {
   return $http->do_request(%args)
     unless blessed($http) && $http->isa('Net::Async::HTTP');
 
+  # Net::Async::HTTP 0.50 loads IO::Async::Internals::Connector (and
+  # IO::Async::SSL for https) only when it connects; when that load dies, the
+  # dead connection keeps the host's slot and every later request to the host
+  # hangs. Check first, so it is a failed Future naming the module (karr k353).
+  my $target = $args{request} ? $args{request}->uri : $args{uri};
+  if ( defined $target ) {
+    require Langertha::HTTP::ConnectCheck;
+    my $error = Langertha::HTTP::ConnectCheck::connect_error( $target, $args{SSL} );
+    return Future->fail( ref($self).": $error\n", 'connect' ) if $error;
+  }
+
   my $stream = $args{on_header} ? 1 : 0;
 
   # Bound the decoded response body against a decompression bomb (karr k346).
@@ -239,6 +250,16 @@ the future B<fails> with C<< <engine class>: request to <url> timed out after
 Ns >> (query string and userinfo left out of the URL) and the category
 C<timeout> or C<stall_timeout>. Passing your own C<timeout> or
 C<stall_timeout> option overrides it.
+
+On the L<Net::Async::HTTP> backend the modules it loads only when it connects
+are checked before the request is handed to it: L<IO::Async::Internals::Connector>,
+and L<IO::Async::SSL> for C<https>. If one fails to load, the future B<fails>
+with C<< <engine class>: cannot connect to <scheme>://<host>:<port>: <module>
+failed to load (<reason>); ... >> and the category C<connect>. Without the check
+L<Net::Async::HTTP> 0.50 would keep the host's connection slot taken by the
+connection that never opened, and every later request to that host would wait
+forever (karr k353). Inline image fetches through such a client
+(L<Langertha::Content::Image/ensure_base64_f>) are checked the same way.
 
 Any extra named options (such as C<on_header> for streaming) are passed to
 C<do_request> unchanged. The backend object itself is not exposed; see

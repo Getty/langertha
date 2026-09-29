@@ -19,6 +19,13 @@ Revision history for Langertha
       the provider and metrics paths, on both the sync LWP and
       Net::Async::HTTP backends; a body that decodes larger is refused.
 
+    - A module Net::Async::HTTP loads only when it connects
+      (IO::Async::Internals::Connector, and IO::Async::SSL for https) that
+      fails to load now fails the request with an error naming the engine,
+      the host and the module. Before, Net::Async::HTTP 0.50 kept the host's
+      connection slot taken and every later request to that host, inline
+      image fetches included, hung forever.
+
     - In Langertha::Chat's tool loops, plugin_before_tool_call sees every
       call, including one to an unknown tool, and may rename it onto a real
       tool; "unknown tool NAME" answers the name the plugins return.

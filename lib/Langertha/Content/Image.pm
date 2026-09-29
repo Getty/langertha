@@ -322,6 +322,13 @@ sub _fetch_one_f {
   my $request = HTTP::Request->new( GET => $url,
     [ 'User-Agent' => 'Langertha-Content-Image/'.$VERSION ] );
   my $orig = $self->url;
+  # The Net::Async::HTTP connect-module check of Role::AsyncHTTP: a module that
+  # fails to load at connect time would wedge the host's slot (karr k353).
+  if ( $http->isa('Net::Async::HTTP') ) {
+    require Langertha::HTTP::ConnectCheck;
+    my $error = Langertha::HTTP::ConnectCheck::connect_error($url);
+    return Future->fail("ensure_base64: failed to fetch $orig: $error\n") if $error;
+  }
   return $http->do_request( request => $request, %args )->else( sub {
     my ($err) = @_;
     $err =~ s/\s+\z//;

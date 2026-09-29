@@ -207,3 +207,54 @@ knarr proxying them) that work today, on upgrade and without a code change. Unse
 both backends when the user sets it. `0` also means no async timeout (Net::Async::HTTP would treat
 `0` as "fail immediately"). Content::Image prefetches keep their own `inline_image_fetch_timeout`
 (k276), which is not routed through the helper.
+
+## Update (k353 — connect-time modules are checked before Net::Async::HTTP gets the request)
+
+Net::Async::HTTP 0.50 loads some modules only when it opens a connection:
+`IO::Async::Internals::Connector` for every connection (through `IO::Async::Loop->connect`), and
+`IO::Async::SSL` (with IO::Socket::SSL, Net::SSLeay and the system libssl) for SSL. It counts the
+connection against the host (`get_connection` pushes it into the host's list) *before*
+`connect_connection` loads them. When the load dies, the `on_error` cleanup never runs, so the dead
+connection keeps the host's slot. With `max_connections_per_host` at the default of 1, every later
+request to that host then waits forever, even after the module can load again. This was reproduced
+on Net::Async::HTTP 0.50 / IO::Async 0.805 against the local test daemon, and first seen in
+langertha-raider (raider k107).
+
+Core checks for this failure before the request instead of recovering from it afterwards:
+
+- **`Langertha::HTTP::ConnectCheck::connect_error($uri [, $ssl])`**, an internal module, requires
+  the connector (and `IO::Async::SSL` >= 0.12 when the connection is SSL). It returns `undef`, or a
+  one-line error naming the module, the first line of its load error and why it is needed. Only
+  scheme, host and port name the target, because a query string or userinfo can carry a key.
+- **`_async_do_request_f` (k278) runs the check on the Net::Async::HTTP backend only**, before
+  `do_request`, and fails the Future with `<engine class>: <error>` and the category `connect`.
+  The check therefore covers every async request core sends (`chat_f`, streaming, `chat_with_tools_f`,
+  `Langertha::Chat`, MetricsPoll, Langfuse, the public `async_request_f` of ADR 0028). The `SyncHTTP`
+  shim and an injected client of another class are not checked: this failure belongs to
+  Net::Async::HTTP only.
+- **`Content::Image` runs the same check itself** before its inline-image fetch, because that fetch
+  (k274) calls the engine's Net::Async::HTTP directly and bypasses `_async_do_request_f`.
+- **SSL rule: `$ssl //= scheme eq 'https'`.** A caller's `SSL` request option wins over the
+  scheme. Net::Async::HTTP 0.50's `_do_request` derives `SSL` from the scheme but passes the
+  caller's options after it, so `http` with `SSL => 1` connects with SSL and `https` with
+  `SSL => 0` connects without. Deriving the rule from the scheme alone would miss the first case, and
+  that case is the leak path again. `t/45_async_http_connect_modules.t` pins both directions against
+  the daemon.
+
+After the first successful load, a module stays in `%INC`, so a request pays a few microseconds
+for the check.
+
+**Assumption.** `IO::Async::Internals::Connector` is a *private* IO::Async module name. The check
+hard-codes it and assumes `IO::Async::Loop` keeps loading it lazily under that name on connect,
+which is true for IO::Async 0.805. If IO::Async renames it, every request fails with a module that
+cannot load, and `ConnectCheck` must follow the rename.
+
+**When it goes away.** The check exists only because of the slot leak. Once a Net::Async::HTTP
+release frees the host's slot when a connect-time load dies, the check can be removed. That upstream
+bug is to be reported separately. langertha-raider carries its own `Langertha::Raider::ConnectCheck`
+(raider k107), which it can drop once it requires the core release that ships this. Calling core's
+module instead would need a public hook (ADR 0028), because `ConnectCheck` is internal.
+Not covered: `Net::Async::SOCKS` (loaded only with `socks_params`, which core never sets), and an
+http→https redirect that Net::Async::HTTP follows by itself. The image path follows redirects hop by
+hop, so each hop there is checked. Test: `t/45_async_http_connect_modules.t` (a real Net::Async::HTTP
+against the local daemon, with an `@INC` blocker). It hung on the second request before the fix.
