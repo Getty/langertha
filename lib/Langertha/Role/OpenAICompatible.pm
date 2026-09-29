@@ -717,7 +717,9 @@ sub transcription_result {
     || ( $type !~ m{\Atext/} && $response->content =~ /\A\s*\{/ );
   return $self->parse_response($response) if $is_json || !$response->is_success;
   $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
-  return { text => $response->decoded_content( default_charset => 'UTF-8' ) };
+  # Bounded Content-Encoding decode (karr k346): a gzip transcript body inflates
+  # under response_max_bytes or is refused with the too-big croak.
+  return { text => $self->_bounded_decoded_content( $response, default_charset => 'UTF-8' ) };
 }
 
 =method transcription_result

@@ -422,82 +422,26 @@ sub _inline_fetched {
 }
 
 # The body with its Content-Encoding undone (karr k342). The cap above counts
-# the bytes on the wire; a compressed body is inflated here in blocks and
-# refused as soon as its decoded size passes the cap, so a small gzip body
-# cannot expand to gigabytes in memory. No backend is trusted to have decoded
-# it: Net::Async::HTTP decodes (and counts) only the encodings it knows and
-# leaves the rest here. Without a cap, HTTP::Message decodes as before.
-my %INFLATE = (
-  identity  => undef,
-  gzip      => 'gzip',  'x-gzip'    => 'gzip',
-  deflate   => 'zlib',  'x-deflate' => 'zlib',
-  bzip2     => 'bzip2', 'x-bzip2'   => 'bzip2',
-);
-
+# the bytes on the wire; a compressed body is inflated in blocks and refused as
+# soon as its decoded size passes the cap, so a small gzip body cannot expand to
+# gigabytes in memory. No backend is trusted to have decoded it: Net::Async::HTTP
+# decodes (and counts) only the encodings it knows and leaves the rest here.
+# Without a cap, HTTP::Message decodes as before. The bounded inflate itself is
+# shared with the provider/metrics decoders (Langertha::HTTP::BoundedDecode,
+# karr k346); the image-flavoured error text stays here through the handlers.
 sub _decoded_body {
   my ( $self, $response, $max ) = @_;
   return $response->decoded_content( charset => 'none' ) unless $max;
-  my $body = $response->content;
-  my @encodings = grep { length } map { s/\A\s+|\s+\z//gr }
-    split /,/, lc( $response->header('Content-Encoding') // '' );
-  for my $encoding ( reverse @encodings ) {   # listed in the order applied
-    croak "ensure_base64: failed to fetch ".$self->url
-      . ": cannot decode Content-Encoding '$encoding' within inline_image_max_bytes"
-      unless exists $INFLATE{$encoding};
-    my $kind = $INFLATE{$encoding} or next;
-    $body = $kind eq 'bzip2'
-      ? $self->_bunzip_capped( $body, $max, $encoding )
-      : $self->_inflate_capped( $body, $max, $encoding, $kind );
-  }
-  return $body;
-}
-
-# zlib inflate in output blocks of at most 64 KiB. deflate is the zlib
-# format, with raw deflate as the fallback that HTTP::Message allows too.
-sub _inflate_capped {
-  my ( $self, $in, $max, $encoding, $kind ) = @_;
-  require Compress::Raw::Zlib;
-  my @bits = $kind eq 'gzip' ? ( Compress::Raw::Zlib::WANT_GZIP() )
-    : ( Compress::Raw::Zlib::MAX_WBITS(), -Compress::Raw::Zlib::MAX_WBITS() );
-  for my $bits (@bits) {
-    my $input = $in;
-    my ( $inflater, $status ) = Compress::Raw::Zlib::Inflate->new(
-      -WindowBits => $bits, -Bufsize => 65_536, -LimitOutput => 1,
-      -ConsumeInput => 1, -AppendOutput => 1 );
-    $self->_undecodable($encoding) unless $status == Compress::Raw::Zlib::Z_OK();
-    my $out = '';
-    while (1) {
-      my @before = ( length $input, length $out );
-      $status = $inflater->inflate( $input, $out );
-      $self->_croak_too_big($max) if length $out > $max;
-      return $out if $status == Compress::Raw::Zlib::Z_STREAM_END();
-      last unless $status == Compress::Raw::Zlib::Z_OK()
-        || $status == Compress::Raw::Zlib::Z_BUF_ERROR();
-      # No progress: the stream ends before its end marker.
-      $self->_undecodable($encoding)
-        if length $input == $before[0] && length $out == $before[1];
-    }
-    $self->_undecodable($encoding) unless $status == Compress::Raw::Zlib::Z_DATA_ERROR();
-  }
-  return $self->_undecodable($encoding);
-}
-
-sub _bunzip_capped {
-  my ( $self, $input, $max, $encoding ) = @_;
-  require Compress::Raw::Bzip2;
-  # appendOutput, consumeInput, small, verbosity, limitOutput
-  my ( $bunzip, $status ) = Compress::Raw::Bunzip2->new( 1, 1, 0, 0, 1 );
-  $self->_undecodable($encoding) unless $status == Compress::Raw::Bzip2::BZ_OK();
-  my $out = '';
-  while (1) {
-    my @before = ( length $input, length $out );
-    $status = $bunzip->bzinflate( $input, $out );
-    $self->_croak_too_big($max) if length $out > $max;
-    return $out if $status == Compress::Raw::Bzip2::BZ_STREAM_END();
-    $self->_undecodable($encoding) unless $status == Compress::Raw::Bzip2::BZ_OK();
-    $self->_undecodable($encoding)
-      if length $input == $before[0] && length $out == $before[1];
-  }
+  require Langertha::HTTP::BoundedDecode;
+  return Langertha::HTTP::BoundedDecode::decode_within(
+    $response->content, scalar $response->header('Content-Encoding'), $max, {
+      too_big     => sub { $self->_croak_too_big( $_[0] ) },
+      undecodable => sub { $self->_undecodable( $_[0] ) },
+      unbounded_encoding => sub {
+        croak "ensure_base64: failed to fetch ".$self->url
+          . ": cannot decode Content-Encoding '$_[0]' within inline_image_max_bytes";
+      },
+    } );
 }
 
 sub _undecodable {
@@ -725,6 +669,12 @@ and C<64:ff9b:1::a.b.c.d>, and 6to4 C<2002:AABB:CCDD::/48>. Any other address in
 the local-use NAT64 prefix C<64:ff9b:1::/48> is refused, since it does not say
 where its IPv4 address sits.
 
+=item * Teredo C<2001:0000::/32> (RFC 4380): its client IPv4 is embedded
+I<obfuscated> (bit-inverted) in the low 32 bits, so unlike 6to4 and NAT64 it
+cannot be re-checked as a plain address — the whole prefix is refused outright.
+A non-Teredo C<2001::/16> address (C<2001:db8::>, C<2001:4860::>, ...) is not
+matched and passes.
+
 =back
 
 A host that does not resolve, and a URL without a host, are refused too.
@@ -782,6 +732,11 @@ sub _is_private_address {
     return _is_private_v4( substr $v6, 12 );
   }
   return _is_private_v4( substr $v6, 2, 4 ) if substr( $v6, 0, 2 ) eq "\x20\x02";
+  # Teredo 2001:0000::/32 (RFC 4380, karr k346): the client's IPv4 sits in the
+  # last 32 bits, obfuscated (bit-inverted), so it cannot be re-checked like
+  # 6to4 or NAT64 above -- refuse the whole prefix outright. A non-Teredo
+  # 2001::/16 address (2001:db8::, 2001:4860::, ...) does not match and passes.
+  return 1 if substr( $v6, 0, 4 ) eq "\x20\x01\0\0";
   my ( $first, $second ) = unpack 'C2', $v6;
   return 1 if ( $first & 0xfe ) == 0xfc;                          # fc00::/7
   return 1 if $first == 0xfe && ( $second & 0x80 ) == 0x80;       # fe80::/10, fec0::/10

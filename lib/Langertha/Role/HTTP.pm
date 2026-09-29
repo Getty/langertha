@@ -32,6 +32,49 @@ or self-hosted endpoint.
 
 =cut
 
+has response_max_bytes => (
+  is => 'ro',
+  isa => 'Int',
+  default => 268_435_456,   # 256 MiB
+);
+
+=attr response_max_bytes
+
+A sanity ceiling, in bytes, on the B<decoded> size of a response body. Default
+C<268435456> (256 MiB); C<0> removes the cap. Decoding a C<Content-Encoding>
+(C<gzip>, C<deflate>, C<bzip2>) has no size bound of its own, so a hostile or
+broken endpoint (a self-hosted C</metrics>, a gateway) could make a small
+compressed body expand to gigabytes in memory — a decompression bomb. A body
+whose decoded size passes this ceiling is refused with C<< <engine class>
+response body exceeds response_max_bytes (<n>) >>. It is a generous ceiling for
+genuinely large provider responses, not a tight limit, and an uncompressed body
+under it is never affected.
+
+Where the bound is applied depends on the backend, because both must be covered:
+
+=over 4
+
+=item * On the synchronous L<LWP::UserAgent> path (and injected clients that do
+not decode) the still-encoded body is inflated in bounded blocks when it is read
+(L</_bounded_decoded_content>, via L<Langertha::HTTP::BoundedDecode>, shared with
+the inline-image fetch of L<Langertha::Content::Image>).
+
+=item * On L<Net::Async::HTTP> the client inflates the body itself while it
+streams (moving C<Content-Encoding> to C<X-Original-Content-Encoding>), so the
+decoded bytes are counted as they arrive and the request is aborted past the
+ceiling (L<Langertha::Role::AsyncHTTP>).
+
+=back
+
+This covers the non-streaming provider and metrics paths: L</parse_response>'s
+trace and error body, C<transcription_result>, C<poll_metrics_f>, and the
+non-streaming C<async_request_f>. A true stream (SSE / NDJSON, an C<on_header>
+request) is unbounded by design and not affected. An encoding the bounded
+decoder cannot inflate in blocks (C<br>, C<zstd>) is refused rather than decoded
+unbounded.
+
+=cut
+
 sub generate_json_body {
   my ( $self, %args ) = @_;
   return $self->json->encode({ %args });
@@ -189,9 +232,57 @@ Basic authentication is set automatically.
 
 our $error_body_max_length = 500;
 
+# A response body with its Content-Encoding undone, but bounded (karr k346,
+# reusing the k342 inflate path): decoded_content inflates a Content-Encoding
+# with no size limit, so a hostile or broken endpoint could inflate a tiny
+# compressed body to gigabytes in memory. Inflate in bounded blocks through the
+# shared Langertha::HTTP::BoundedDecode and refuse a body whose decoded size
+# passes response_max_bytes; then run the charset step the same as
+# decoded_content, on the already-bounded bytes (a throwaway response carries
+# them without a Content-Encoding, so no second inflate). Any %opt
+# (default_charset => ...) reaches that charset step. response_max_bytes => 0
+# removes the cap and decodes as decoded_content did. An uncompressed body just
+# passes through the inflate and gets the charset step.
+sub _bounded_decoded_content {
+  my ( $self, $response, %opt ) = @_;
+  my $max = $self->response_max_bytes;
+  return $response->decoded_content(%opt) unless $max;
+  require Langertha::HTTP::BoundedDecode;
+  require HTTP::Response;
+  my $bytes = Langertha::HTTP::BoundedDecode::decode_within(
+    $response->content, scalar $response->header('Content-Encoding'), $max, {
+      too_big     => sub { croak "".(ref $self)." response body exceeds response_max_bytes ($_[0])" },
+      undecodable => sub { croak "".(ref $self)." response body Content-Encoding '$_[0]' cannot be decoded" },
+      # An encoding this bounded decoder cannot inflate in blocks (br, zstd, ...)
+      # is refused, not passed to decoded_content: falling through to the
+      # unbounded decode would reopen the bomb for that encoding. This is a
+      # deliberate safety choice -- such a body IS decodable by HTTP::Message,
+      # it just cannot be bounded here (karr k346).
+      unbounded_encoding => sub { croak "".(ref $self)." response body Content-Encoding '$_[0]'"
+        . " cannot be decoded within response_max_bytes ($max)" },
+    } );
+  my $decoded = HTTP::Response->new(200);
+  my $type = $response->header('Content-Type');
+  $decoded->header( 'Content-Type' => $type ) if defined $type;
+  $decoded->content_ref( \$bytes );
+  return $decoded->decoded_content(%opt);
+}
+
+=method _bounded_decoded_content
+
+    my $body = $engine->_bounded_decoded_content($http_response);
+    my $text = $engine->_bounded_decoded_content($http_response, default_charset => 'UTF-8');
+
+Like L<HTTP::Message/decoded_content>, but the C<Content-Encoding> step is
+bounded by L</response_max_bytes> (see there), so a decompression bomb is
+refused instead of inflated into memory. C<%opt> passes to the charset step.
+Used by L</parse_response>, C<transcription_result> and C<poll_metrics_f>.
+
+=cut
+
 sub _error_response_body {
   my ( $self, $response ) = @_;
-  my $body = eval { $response->decoded_content };
+  my $body = eval { $self->_bounded_decoded_content($response) };
   $body = $response->content unless defined $body && length $body;
   return '' unless defined $body && length $body;
   $body =~ s/\s+/ /g;
@@ -254,7 +345,15 @@ sub parse_response {
     $log->errorf("[%s] HTTP %s", ref $self, $response->status_line);
     croak $self->_request_failed_message( $response, 'request' );
   }
-  $log->tracef("[%s] Response: %s", ref $self, $response->decoded_content);
+  # Bounded (karr k346) and computed only when trace is on: decoded_content
+  # inflates a Content-Encoding unbounded, and this ran on every response. A
+  # body over response_max_bytes (a bomb, or a legitimately huge response) must
+  # not turn a trace line into a fatal, so the bound croak is caught here.
+  if ( $log->is_trace ) {
+    my $body = eval { $self->_bounded_decoded_content($response) };
+    $log->tracef("[%s] Response: %s", ref $self,
+      defined $body ? $body : $response->status_line);
+  }
   # A 200 that is not JSON (a proxy's HTML page, a truncated body) names the
   # engine and shows the body, like the non-2xx path above (k290).
   my $data;

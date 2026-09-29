@@ -37,6 +37,11 @@ use Langertha::Engine::Gemini;
 # The embedded IPv4 address is now checked like a plain one, and 198.18.0.0/15
 # and 192.0.0.0/24 joined the IPv4 list.
 #
+# karr k346: Teredo 2001:0000::/32 (RFC 4380) was the one IPv4-embedding range
+# k343 deferred -- its client IPv4 is obfuscated in the last 32 bits, so it
+# cannot be re-checked like 6to4/NAT64 and the whole prefix is now refused
+# outright (a non-Teredo 2001::/16 address such as 2001:4860:... stays public).
+#
 # karr k342: the cap measured the bytes on the wire, but the body was stored
 # through decoded_content, which inflates a Content-Encoding without a bound:
 # a 48 KB gzip body stored 50 MB (a 20 MiB one inflates to about 20 GB). The
@@ -246,11 +251,13 @@ for my $name (@backends) {
     64:ff9b::a9fe:a9fe 64:ff9b::7f00:1 64:ff9b::10.0.0.1 64:ff9b::c0a8:101
     64:ff9b:1::a00:1 64:ff9b:1::a9fe:a9fe 64:ff9b:1:a9fe:a9:fe00:: 64:ff9b:1:1::808:808
     2002:a9fe:a9fe:: 2002:7f00:1:: 2002:a00:1::1 2002:c0a8:101:1::
-    ::ffff:0:7f00:1 ::ffff:0:a9fe:a9fe ::ffff:0:10.0.0.1 );
+    ::ffff:0:7f00:1 ::ffff:0:a9fe:a9fe ::ffff:0:10.0.0.1
+    2001::1 2001:0:4136:e378:8000:63bf:3fff:fdd2 2001:0:53aa:64c:0:5efe:a00:1 2001::ffff:ffff );
   my @public = qw( 93.184.216.34 8.8.8.8 172.32.0.1 172.15.255.255 100.128.0.1 100.63.255.255
     192.169.0.1 2606:4700::1111 ::ffff:8.8.8.8
     198.17.255.255 198.20.0.1 192.0.1.1 191.255.255.255
-    64:ff9b::808:808 64:ff9b:1::808:808 2002:808:808:: ::ffff:0:808:808 64:ff9c::a00:1 2003::a00:1 );
+    64:ff9b::808:808 64:ff9b:1::808:808 2002:808:808:: ::ffff:0:808:808 64:ff9c::a00:1 2003::a00:1
+    2001:4860:4860::8888 );
   for my $ip (@private) {
     $dns{'h.test'} = [$ip];
     ok !$deny->( URI->new('http://h.test/x.png') ), "deny_private_hosts refuses $ip";

@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use Moose::Role;
 use Future::AsyncAwait;
 use Future;
+use Carp qw( croak );
 use Scalar::Util qw( blessed );
 
 requires 'user_agent';
@@ -114,21 +115,49 @@ async sub async_request_f {
 sub _async_do_request_f {
   my ( $self, %args ) = @_;
   my $http = $self->_async_http;
-  my $secs = $self->can('has_user_agent_timeout') && $self->has_user_agent_timeout
-    ? $self->user_agent_timeout : 0;
+  # Only Net::Async::HTTP gets the timeout and the body cap below. The sync shim
+  # and injected clients hand back the still-encoded body, which
+  # Role::HTTP::_bounded_decoded_content bounds downstream, and they carry their
+  # own timeout (ADR 0027).
   return $http->do_request(%args)
-    unless $secs && blessed($http) && $http->isa('Net::Async::HTTP')
-      && !exists $args{timeout} && !exists $args{stall_timeout};
+    unless blessed($http) && $http->isa('Net::Async::HTTP');
 
   my $stream = $args{on_header} ? 1 : 0;
-  my $uri    = $args{request}->uri->clone;
-  $uri->query(undef);
-  $uri->fragment(undef);
-  $uri->userinfo(undef) if $uri->can('userinfo');
-  my $what = ref($self) . ': ' . ( $stream ? 'streaming request' : 'request' ) . " to $uri";
 
-  return $http->do_request( %args, ( $stream ? 'stall_timeout' : 'timeout' ) => $secs )
-    ->else( sub {
+  # Bound the decoded response body against a decompression bomb (karr k346).
+  # Unlike LWP, Net::Async::HTTP inflates a Content-Encoding while it streams and
+  # moves the header to X-Original-Content-Encoding, so by the time the finished
+  # response reaches _bounded_decoded_content there is no encoding left to bound
+  # and a bomb has already been inflated in full. Count the decoded bytes as they
+  # arrive (Net::Async::HTTP decodes before this on_header callback) and abort
+  # past response_max_bytes -- the same streamed-byte guard the inline-image fetch
+  # uses (Langertha::Content::Image::_fetch_net_async_f). Only for a non-streaming
+  # request: a caller on_header is a stream, unbounded by design.
+  my $max = ( !$stream && $self->can('response_max_bytes') ) ? $self->response_max_bytes : 0;
+  my ( $abort, $too_big );
+  if ($max) {
+    $abort = Future->new;
+    $args{on_header} = $self->_body_cap_on_header( $http, $max, \$too_big, $abort );
+  }
+
+  # user_agent_timeout -> Net::Async::HTTP's own per-request option, unless the
+  # caller set one (karr k278).
+  my $secs = $self->can('has_user_agent_timeout') && $self->has_user_agent_timeout
+    ? $self->user_agent_timeout : 0;
+  my $timed = $secs && !exists $args{timeout} && !exists $args{stall_timeout};
+
+  return $http->do_request(%args) unless $timed || $max;
+
+  my $request_f = $http->do_request( %args,
+    $timed ? ( ( $stream ? 'stall_timeout' : 'timeout' ) => $secs ) : () );
+
+  if ($timed) {
+    my $uri = $args{request}->uri->clone;
+    $uri->query(undef);
+    $uri->fragment(undef);
+    $uri->userinfo(undef) if $uri->can('userinfo');
+    my $what = ref($self) . ': ' . ( $stream ? 'streaming request' : 'request' ) . " to $uri";
+    $request_f = $request_f->else( sub {
       my ( $message, $category, @details ) = @_;
       return Future->fail(@_)
         unless defined $category && ( $category eq 'timeout' || $category eq 'stall_timeout' );
@@ -137,6 +166,44 @@ sub _async_do_request_f {
         : "$what timed out after ${secs}s without data ($message)";
       return Future->fail( "$text\n", $category, @details );
     } );
+  }
+
+  return $request_f unless $max;
+
+  # Over the cap, whatever ends the fetch first -- the abort cancelling the
+  # request, or the server closing the connection -- becomes the size error.
+  my $too_big_croak = sub {
+    croak "".( ref $self )." response body exceeds response_max_bytes ($max)";
+  };
+  return Future->wait_any( $request_f, $abort )
+    ->then( sub { $too_big ? $too_big_croak->() : Future->done(@_) } )
+    ->else( sub { $too_big ? $too_big_croak->() : Future->fail(@_) } );
+}
+
+# The on_header (Net::Async::HTTP contract) that counts a non-streaming response
+# body's decoded bytes and trips the abort once they pass $max (karr k346).
+# Mirrors the inline-image counter (Langertha::Content::Image::_fetch_net_async_f):
+# the body accumulates on the header response so the finished HTTP::Response still
+# carries it, and the abort runs on the loop's next tick because closing the
+# connection from inside the read handler is not safe.
+sub _body_cap_on_header {
+  my ( $self, $http, $max, $too_big_ref, $abort ) = @_;
+  return sub {
+    my ($header) = @_;
+    my $trip = sub {
+      return if ${$too_big_ref}++;
+      $http->loop->later( sub { $abort->done unless $abort->is_ready } );
+    };
+    my $length = $header->content_length;
+    $trip->() if $header->is_success && defined $length && $length > $max;
+    return sub {
+      return $header unless @_;
+      return if ${$too_big_ref};
+      $header->add_content( $_[0] ) if defined $_[0];
+      $trip->() if length( ${ $header->content_ref } ) > $max;
+      return;
+    };
+  };
 }
 
 =method async_request_f
@@ -176,6 +243,15 @@ C<stall_timeout> option overrides it.
 Any extra named options (such as C<on_header> for streaming) are passed to
 C<do_request> unchanged. The backend object itself is not exposed; see
 L</async_loop> for the event loop.
+
+On the L<Net::Async::HTTP> backend a B<non-streaming> request (no C<on_header>)
+has its decoded response body bounded by
+L<Langertha::Role::HTTP/response_max_bytes>: the client inflates a
+C<Content-Encoding> as it streams, so the decoded bytes are counted and the
+request is aborted past the ceiling, failing the future with C<< <engine class>
+response body exceeds response_max_bytes (<n>) >> (a decompression-bomb guard,
+karr k346). A streaming request (with C<on_header>) is not bounded. Set
+C<response_max_bytes> to C<0> to disable.
 
 =cut
 

@@ -7,6 +7,14 @@ Revision history for Langertha
       OpenAI-Responses or Perplexity reply cut off at max_output_tokens with
       an empty output now reports finish_reason "length".
 
+    - New response_max_bytes engine attribute (default 256 MiB, 0 disables)
+      bounds the decompressed size of gzip/deflate/bzip2 response bodies on
+      the provider and metrics paths, on both the sync LWP and
+      Net::Async::HTTP backends; a body that decodes larger is refused.
+
+    - Content::Image->deny_private_hosts now also refuses Teredo
+      (2001:0000::/32).
+
     - In Langertha::Chat's tool loops, plugin_before_tool_call sees every
       call, including one to an unknown tool, and may rename it onto a real
       tool; "unknown tool NAME" answers the name the plugins return.

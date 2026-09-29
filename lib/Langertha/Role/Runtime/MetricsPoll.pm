@@ -15,6 +15,12 @@ requires qw(
   url
 );
 
+# poll_metrics_f decodes the scraped body through Role::HTTP's bounded decoder
+# (karr k346), so this role needs Role::HTTP composed too. Every composer today
+# (vLLM, SGLang, LlamaCpp) has it via Engine::OpenAIBase; require the attribute
+# so a future MetricsPoll-only composer fails at composition, not at runtime.
+requires 'response_max_bytes';
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::vLLM;
@@ -124,7 +130,11 @@ async sub poll_metrics_f {
     _croak("".(ref($self))." /metrics fetch failed: ".$response->status_line);
   }
 
-  my $body = $response->decoded_content // $response->content;
+  # Bounded Content-Encoding decode (karr k346): a self-hosted /metrics endpoint
+  # (or a proxy in front of it) is not trusted to be well-behaved, so a gzip
+  # body inflates under response_max_bytes (Role::HTTP) or is refused with the
+  # too-big croak rather than expanding unbounded in memory.
+  my $body = $self->_bounded_decoded_content($response) // $response->content;
   return Langertha::Runtime::Metrics->new
     ->parse_and_filter($body, @prefixes);
 }
