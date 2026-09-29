@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-29T22:42:16Z
+claimed_by: async-worker
+class: standard
+completed: 2026-09-29T22:42:16Z
+created: 2026-09-29T18:23:45Z
+id: 353
+priority: medium
+started: 2026-09-29T20:47:35Z
+status: done
+tags:
+- async-http
+- robustness
+title: 'Role::AsyncHTTP: Connect-Module vor dem Request pruefen (Net::Async::HTTP
+  0.50 Slot-Leak)'
+updated: 2026-09-29T22:42:16Z
+---
+
+Aus langertha-raider k107. Net::Async::HTTP 0.50: stirbt in connect_connection ein Modul-Load (IO::Async::Internals::Connector, fuer https IO::Async::SSL), bleibt der Connection-Slot des Hosts belegt -> jede weitere Anfrage an den Host haengt ewig. Raider prueft das jetzt selbst (Langertha::Raider::ConnectCheck::connect_error, vor raid_f/respond_f und in den Web-Tools). Besser in Core: Role::AsyncHTTP fuehrt dieselbe Pruefung fuer alle Nutzer aus; dann kann Raiders Kopie weg. Upstream-Bug bei Net::Async::HTTP (PEVANS) ist separat zu melden.
+
+2026-09-29 20:51 Reproduced on Net::Async::HTTP 0.50 / IO::Async 0.805 against Test::LocalHTTPDaemon: an @INC hook that dies for IO/Async/Internals/Connector.pm (http) or IO/Async/SSL.pm (https) fails request 1 with the raw load error; request 2 to the same host:port hangs forever even after the module loads again. Cause: get_connection pushes the Connection into $self->{connections}{host:port} BEFORE connect_connection runs require (SSL) / $loop->connect (-> __new_feature Connector); the die skips on_error cleanup, so the dead conn fills max_connections_per_host=1. Red test: t/45_async_http_connect_modules.t (HANG on 'Connector back: the next request to the same host is not stuck'). Also affected: Content::Image::_fetch_net_async_f calls do_request on the engine's Net::Async::HTTP directly, bypassing _async_do_request_f.
+
+2026-09-29 20:59 Done (uncommitted, tree commit-ready). New Langertha::HTTP::ConnectCheck::connect_error($uri [,$ssl]): requires IO::Async::Internals::Connector (+ IO::Async::SSL >= 0.12 for https / SSL=>1) and returns a one-line 'cannot connect to scheme://host:port: <Module> failed to load (<reason>); <why>' or undef. Role::AsyncHTTP::_async_do_request_f runs it on the Net::Async::HTTP path only, before do_request, and fails the Future with '<Engine class>: <error>' (category 'connect'); covers every core _f call incl. async_request_f, streaming, MetricsPoll, Langfuse. Content::Image::_fetch_one_f does the same for inline-image fetches, which call the engine's Net::Async::HTTP directly. Test: t/45_async_http_connect_modules.t (real Net::Async::HTTP vs Test::LocalHTTPDaemon, @INC blocker); red before the fix (HANG on the 2nd request to the same host), green after. prove -lr t/ all pass (217 files; t/8x live skip, no keys), perlcritic clean, dzil build OK. Changes entry under NEXT. Follow-ups for the orchestrator: ADR 0027 'Update (k353)' section (adr-auditor); langertha-raider board: drop Raider::ConnectCheck once it requires this core release (or call core's, which would need a public hook per ADR 0028); report the upstream bug to Net::Async::HTTP (get_connection pushes the conn before connect_connection can die). Not covered: Net::Async::SOCKS (only loaded with socks_params, which core never sets); an http->https redirect that Net::Async::HTTP follows itself (the image path follows redirects hop by hop, so it is checked). karr push to remote refused on refs/karr/tasks/99 (unrelated); local card state is fine.
+
+2026-09-29 22:26 Review fixes applied (uncommitted). 2 local $@ around the eval in ConnectCheck. 3 closed-port assertion now matches the expected error positively ('127.0.0.1:PORT - connect: ... failed [... refused'), a HANG fails it. 4 %INC skip guard moved to right before the @INC blocker, after all use lines. 5 POD now says 'a few microseconds' and documents IO::Async::Internals::Connector as a private IO::Async name (hard-coded; assumes IO::Async::Loop keeps loading it lazily under that name, true for 0.805; the whole check can go once Net::Async::HTTP frees the slot itself). NOT applied: point 1 is wrong for Net::Async::HTTP 0.50. _do_request calls _do_one_request(host=>..., port=>..., SSL=>$ssl, %args, ...) and %args still holds the caller's SSL, so an explicit SSL option WINS over the scheme. Proven at the transport boundary: with the reviewer's variant, http + SSL=>1 made Net::Async::HTTP itself require IO::Async::SSL (raw 'Can't locate IO/Async/SSL.pm' = the leak path again). Kept $ssl //= (scheme eq https) and pinned both directions in t/45_async_http_connect_modules.t (now 18 asserts): http+SSL=>1 fails naming IO::Async::SSL and the host's next plain request still works; https+SSL=>0 to the plain daemon is not refused and answers; connect_error unit checks for both. SSL reason reworded to 'an SSL (https) connection needs it'. Verified: prove -lr t/ PASS (217 files, 10463 tests; t/8x live skip, no keys, env count 0), perlcritic 0, dzil build OK. ADR 0027 update: adr-auditor.
+
+Committed b3edf0b, merged to main locally
