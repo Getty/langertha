@@ -1,0 +1,72 @@
+---
+claimed_at: 2026-09-29T17:17:18Z
+claimed_by: claude
+class: standard
+completed: 2026-09-29T17:17:08Z
+created: 2026-09-25T05:48:55Z
+id: 238
+priority: low
+started: 2026-09-29T16:24:35Z
+status: done
+tags:
+- wire
+- adr-candidate
+- nousresearch
+title: Per-model tool_wire_format for gateway engines (NousResearch non-Hermes slugs
+  want the openai tool wire)
+updated: 2026-09-29T17:17:18Z
+---
+
+Split from k237. tool_wire_format is engine-scoped (ADR 0001/0006); NousResearch's inference-api now fronts ~341 models where non-Hermes slugs take native OpenAI tools. Supporting that means a model-scoped tool_wire_format (layer-3-like, keyed on chat_model) — an ADR-level decision touching the value-object dispatch, capability registry (tools_native vs tools_hermes per model) and the manifest. Needs a design pass (llm-advisor + ADR) before any code.
+
+2026-09-25 07:35 llm-advisor design pass (2026-09-25, code-read + 1 offline perl probe, no live calls). RECOMMEND D: per-instance, model-aware tag on NousResearch only; tool-transport flags follow the resolved tag. REJECT B (generic declarative table); C is the fallback.
+
+KEY FACTS
+1. hermes is not a dialect of the endpoint. Nous speaks OpenAI /chat/completions for every slug; hermes is a client-side way of carrying tools in the prompt. The envelope (ADR 0006, manifest dialect openai-chat) stays the same. Only the tool transport changes per model.
+2. Only one engine needs it. OpenRouter / HuggingFace / Replicate / AKIOpenAI send native tools for every model; per-model "no tools" is already layer 3 (tools_native=>0). AKI native is hermes for all models (the /api/call/{model} body has no tools key), so that is endpoint-wide. vLLM / Ollama / llama.cpp tool parsing depends on how the server was launched, not on the model id, so a per-instance constructor arg fits them better than a model table. ADR 0016 rule: no framework seam until a 2nd consumer from a different parent.
+3. EXISTING BUG (probed offline): tool_wire_format has an init_arg. NousResearch->new(model=>"anthropic/claude-sonnet-4.6", tool_wire_format=>"openai") gives fmt=openai, but capabilities stay tools_native=0, tools_hermes=1, tool_choice_named=0. Cause: HermesTools around engine_capabilities (HermesTools.pm:196) deletes the native flags no matter what the tag is. Result: the tools go out natively, but chat_f still rewrites a forced tool to json_schema, and supports() is wrong.
+4. MANIFEST HAZARD (probed): clone_object copies an already-built lazy tool_wire_format. After $h->tool_wire_format has been read, clone_object($h, chat_model=>"x")->tool_wire_format still returns "hermes". Builder::_capabilities_for (Builder.pm:479) would publish stale per-model flags as soon as the tag depends on the model.
+5. Per-request model override: chat_f(model=>...) passes through %extra and replaces the body model in OpenAICompatible::chat_request (the %extra comes last), but every wire decision still uses chat_model. This hole already exists for all of layer 3, 0023 and 0024. A model-scoped tag makes it worse: a Claude slug would get the hermes prompt. It is undocumented, and nothing in core, raider or knarr uses it.
+6. Filed knarr k20 (high): Router _engine_cache_key = engine|url|key_env with no model. A second model on the same engine reuses the first instance, and Handler::Router then relabels the response with the model the client asked for. Every model-scoped decision (today's layer 3 and this proposal) is evaluated for the wrong model. Must be fixed before D pays off behind knarr auto_discover.
+7. Siblings: knarr Request::chat_f_args gates on tools_native || tools_hermes, so it works with D as long as the flags follow the tag. Raider only renders history per the engine tag, per instance, so no change. skeid does not read either. Manifest schema: no change, because tools_native / tools_hermes per model already carry this (ADR 0029 allowlist).
+8. Live (hermes-agent.nousresearch.com/docs/integrations/nous-portal, read 2026-09-25): Hermes + 280+ models; "routing for a given model can change over time"; slugs are OpenRouter-style (anthropic/claude-sonnet-4.6). Nous says Hermes 4 is "not recommended" for tool loops. UNVERIFIED: whether the Nous backend accepts native tools for Hermes-4. If it does, hermes is unnecessary on Nous. Settle with an approved live probe before step (c).
+
+SKETCH (ADR 0031 "tool_wire_format is resolved per engine instance; tool-transport flags follow the resolved tag"; amends 0001/0002/0019)
+a. Invariant: tool_wire_format is resolved ONCE per instance, from constructor arg > engine builder (may read chat_model, which is ro) > dialect default. It is never re-derived per request. Per-request model override is unsupported for model-scoped decisions: chat_f / chat_stream_realtime_f carp when $opts{model} differs from chat_model (separate small ticket, covers layers 3/0023/0024 too).
+b. Role::HermesTools layer-2 rule keys on the tag, not on composition: if tool_wire_format eq "hermes", delete tools_native tool_choice_any tool_choice_named parallel_tool_use; otherwise delete tools_hermes. This fixes fact 3 by itself. Layer-3 corrections still run afterwards.
+c. NousResearch::_build_tool_wire_format: hermes when chat_model =~ qr/\A(?:nousresearch\/)?(?:deep)?hermes/i, else openai. Hermes is the named exception and native is the default: 280+ native models, and an unknown new slug is far more likely native. The user override keeps working via init_arg.
+d. NousResearch reasoning => 1 (Hermes system-prompt toggle) carps and is ignored when the tag is not hermes.
+e. Manifest::Builder probe: add clearer _clear_tool_wire_format (Role::Tools) and call it on the probe after clone_object, both in _capabilities_for and in add_engine. Test: build the tag first, then two models (Hermes + claude slug), and assert different tools_native / tools_hermes.
+f. StaticModels -> live /v1/models (the endpoint serves it per k237), with the static Hermes list kept as offline fallback. Separate ticket, only after knarr k20 (auto_discover would otherwise fan 341 slugs onto one instance).
+g. Tests: request-building for both slugs (Hermes: system-prompt tools, no body tools; claude slug: body tools + named tool_choice, no synthetic rewrite); capability flags per slug; constructor override consistency (fact 3); t/78 unchanged.
+Cost: roughly 30 lines in core (HermesTools rule, one builder, one clearer + Builder call, one carp) plus tests. No value-object changes, no manifest schema change, no sibling changes beyond knarr k20.
+
+WHY NOT A: leaves bug 3 and the Builder hazard in place, and the documented escape hatch "OpenAIBase at this URL" does not work well (no default url / key env / list_models). WHY NOT B: one consumer (ADR 0016). A framework table keyed on chat_model would sit next to layer 3 but drive dispatch rather than flags, which the 0019 layer model does not cover, and it gains nothing over (c). C (a NousPortal class on openai tools, same key env) is a sound FALLBACK if the ADR discussion wants the tag strictly class-bound: zero seam change, AKI/LMStudio family precedent. Downside: users must pick the class by model, and the Hermes class still silently hermes-wraps a Claude slug. Even under C, apply (b) and (e), because they fix existing bugs.
+
+Verdict: D is safe with the listed prerequisites (b, e, knarr k20, plus a live probe of native tools on Hermes-4 before c).
+
+Prereqs filed: k251 (facts 3+4, steps b+e) here; knarr board k20 (router cache ignores model).
+
+Note: ADR 0031 is now taken by k263 (usage records whether input includes cache); the k238 design sketch becomes ADR 0032.
+
+2026-09-25 18:50 ADR numbering: 0032 is now taken by k270 (learned model capabilities from provider metadata). The k238 design sketch becomes ADR 0033.
+
+2026-09-26 22:34 Maintainer-Freigabe für den Live-Probe gegen Nous erteilt (2026-09-27). Voraussetzungen erledigt: Kern k251 (done), knarr k20 (done).
+
+2026-09-29 16:30 llm-advisor OFFLINE re-validation (2026-09-29, code-read + doc research, NO live calls). VERDICT: GO for the conservative step (c) offline; the approved Nous live probe is NOT required to ship. Prereqs re-verified in code: step (b) landed (HermesTools.pm:199-209 keys the layer-2 rule on tool_wire_format eq hermes, not composition, cites k251); step (e) landed (Role::Tools _clear_tool_wire_format clearer + _tool_wire_format_given trigger + _reset_derived_tool_wire_format; Manifest::Builder _capability_clone calls it in both _capabilities_for and add_engine). NousResearch.pm:11 still returns bare hermes, so (c) is the real remaining code.
+
+PROVIDER REALITY that retires the probe: (1) Nous portal doc (hermes-agent.nousresearch.com/docs/integrations/nous-portal, read 2026-09-29) confirms the endpoint is an OpenAI-compatible gateway, base_url .../v1, OpenRouter-style slugs (anthropic/claude-sonnet-4.6, openai/gpt-5.5-pro, google/gemini-3-pro-preview, deepseek/deepseek-v4-pro), non-Hermes routed to real backends -> native tools is the correct wire for non-Hermes (KEY FACT 1 confirmed). (2) Same doc + portal /info: Hermes 4 is officially NOT recommended for tool-calling loops (chat/reasoning model). (3) SMOKING GUN github.com/NousResearch/hermes-agent/issues/741 (opened Mar 9 2026): Hermes-4-405B/70B via Nous Portal INTERMITTENTLY emit tool calls as <tool_call> XML / bare JSON text with finish_reason=stop and empty native tool_calls, EVEN with native function calling wired up. So the probe premise (if Nous accepts native for Hermes-4, hermes is unnecessary) is FALSE: Nous does accept native tools for Hermes-4, but the model unreliably honors them and falls back to Hermes text. hermes wire is therefore the MORE robust choice for Hermes models, and forcing native for Hermes would reintroduce upstream bug #741 (leaked JSON). Conservative default is correct in both probe outcomes.
+
+REGEX: qr/\A(?:nousresearch\/)?(?:deep)?hermes/i is correct for every current served Hermes slug -- Hermes-4-70B/405B, Hermes-4-14B, Hermes-4.3-36B (real, HF NousResearch/Hermes-4.3-36B), DeepHermes-3, and nousresearch/ prefixed + lowercase forms; all non-Hermes vendor slugs fall through to native. ONE known gap: legacy Nous-Hermes-2 prefix (Nous-Hermes-...) does NOT match and would route to native; those models are almost certainly not on the current inference API, and the init_arg override recovers them. Optional hardening: (?:nous-)?(?:deep)?hermes. Not a blocker.
+
+SCOPE: remaining for THIS ticket = {c, d, g} + ADR 0033 (free, reserved for k238). (a) INVARIANT is already satisfied with zero code: tool_wire_format is a lazy slot resolved once from chat_model; the per-request model override only changes the body model field, never chat_model/the tag -- document it in the ADR as already-true. (a) CARP (chat_f/chat_stream_realtime_f warn when opts model != chat_model): NOT implemented today (Role::Chat has no such carp), covers the pre-existing hole for layers 3 / ADR 0023 / 0024 too -> SPLIT to a separate small ticket; #238 is correct and shippable without it (no worse than status quo). (d) reasoning=>1 guard: recommend gating on a shared private _is_hermes_model predicate that _build_tool_wire_format also uses, rather than on tool_wire_format eq hermes directly -- decouples the reasoning prompt from the tool transport (a user who forces tool_wire_format=>openai on a real Hermes model should arguably still get reasoning). (g) tests: extend t/96 with a NO-override two-model probe (Hermes-4-70B -> tools_hermes, anthropic/claude-sonnet-4.6 -> tools_native+tool_choice_named) asserting different flags per model; request-building for both slugs; reasoning carp on a non-hermes slug. t/78 stays unchanged (no new role/cap).
+
+No live call was made. knarr k20 taken as done per this card (sibling repo, not verifiable from core offline).
+
+2026-09-29 16:48 wire-worker note: see below (added via handoff)
+
+2026-09-29 16:49 wire-worker progress: implemented (c)+(d)+(g) offline, no live calls (env clean, TEST_LANGERTHA=0). (c) NousResearch::_build_tool_wire_format derives per model via shared _is_hermes_model predicate, regex m{\A(?:nousresearch/)?(?:nous-)?(?:deep)?hermes}i -> hermes for Hermes slugs, openai default; init_arg override still wins (lazy ro slot, short-circuited by _tool_wire_format_given). (d) reasoning=>1 gated on _is_hermes_model (NOT the tag), one-shot carp on non-Hermes slugs; forced openai on a Hermes model keeps reasoning. (a) no code: chat_f(model=>) overrides only the body model field (OpenAICompatible.pm:466 body model<-chat_model, :479 %extra last), never chat_model / the lazy tag. Files changed: lib/Langertha/Engine/NousResearch.pm; new t/66_nousresearch_model_wire.t (10 subtests red->green); t/96_manifest_builder.t (real-engine 2-model payoff subtest); t/66_hermes_tag_override.t (nous helper model->Hermes-4-70B, strengthens override); t/66_tool_calling_hermes.t (placeholder model 'test'->Hermes-4-70B: 'test' now derives openai). NousResearch POD DESCRIPTION + reasoning attr minimally corrected (adjacent: recommend a pod-writer pass). perlcritic lib/ clean.
+
+2026-09-29 16:54 DONE (offline, no live calls). Steps (c)+(d)+(g) implemented; (a) confirmed already-satisfied with zero code. Full recursive suite PASS: 216 files / 10444 tests, clean env (TEST_LANGERTHA=0); t/8x live tests skip cleanly. perlcritic lib/ clean. Changed: lib/Langertha/Engine/NousResearch.pm (model-aware _build_tool_wire_format + shared _is_hermes_model predicate; reasoning=>1 gated on _is_hermes_model with one-shot carp; minimal POD fix). Tests: new t/66_nousresearch_model_wire.t (red->green); t/96_manifest_builder.t real-engine 2-model payoff subtest; fixed t/66_hermes_tag_override.t and t/66_tool_calling_hermes.t (their non-Hermes placeholder models now derive openai). NOT committed (release-manager owns commits). FOLLOW-UPS for dispatcher: (1) langertha-adr-auditor writes ADR 0033 (decision facts in report/card); (2) langertha-pod-writer pass on NousResearch POD; (3) already-split tickets: (a)-carp for chat_f/chat_stream_realtime_f model!=chat_model, and step (f) StaticModels->live /v1/models (after knarr k20). Proposed commit subject: 'feat: NousResearch derives tool_wire_format per model; hermes is the named exception (k238)'.
+
+landed on main as 9bcb79f with ADR 0033; review passed (no critical/important); NousResearch derives tool_wire_format per model, hermes is the named exception; live probe retired by docs + upstream issue 741. Follow-ups: 352 (model-override carp), step f static-to-live models
