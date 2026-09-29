@@ -1,0 +1,28 @@
+---
+claimed_at: 2026-09-29T01:05:33Z
+claimed_by: claude
+class: standard
+completed: 2026-09-29T01:05:33Z
+created: 2026-09-26T00:26:24Z
+id: 350
+priority: low
+started: 2026-09-29T00:28:40Z
+status: done
+tags:
+- tools
+- hermes
+- responses
+title: 'Hermes tool calls: non-object/undecodable arguments not flagged; Responses
+  incomplete with empty output has no finish_reason'
+updated: 2026-09-29T01:05:40Z
+---
+
+From k345/k349: (1) extract_hermes_from_text turns non-object arguments into {} without arguments_undecodable/arguments_error - the k345 error result never reaches hermes engines. (2) Responses status incomplete + max_output_tokens with empty output (reasoning ate the budget) has no finish_reason - map to length.
+
+2026-09-29 00:40 Fix(2) reconciliation: k349 as-LANDED maps truncated-function-call case to finish_reason 'length' (ResponsesCompatible.pm:644, asserted t/60:118), NOT 'incomplete' as the k349 ticket TEXT said. #350 asks 'length' for empty output. They AGREE -> no divergence. Fix: drop the @tc_data guard on the length clause so empty output (reasoning ate the budget) also maps to length. Truncated-MESSAGE status passthrough still emits 'incomplete' (unchanged).
+
+2026-09-29 00:51 Adjacent (NOT touched, out of scope): the streaming hermes lift drops the flag. _hermes_stream_calls (Role/Tools.pm:243) rebuilds ToolCall from $state->{calls} reading only name/arguments, so a closed <tool_call> block with non-object args in a STREAM would not carry arguments_undecodable to the final chunk. This is pre-existing behaviour (unchanged by this fix; streaming does not run the MCP error-ToolResult path). A truncated streamed block never closes so is never lifted anyway. Candidate follow-up card if streamed hermes bad-args consistency is wanted.
+
+2026-09-29 00:51 DONE, commit-ready (uncommitted). Fix(1) hermes undecodable args: extract_hermes_from_text now routes args through _args_kwargs (the k345 mechanism); flag rides through _hermes_split_text reduced hash + Response BUILDARGS upgrade, so tool_loop_calls/_undecodable_arguments_result answer the model an error ToolResult on all 3 loops (was: silently ran tool on {}). Fix(2) responses empty output: dropped the @tc_data guard on the length clause in ResponsesCompatible._responses_walk_output, so status incomplete + max_output_tokens with output=[] (reasoning ate the budget) maps to finish_reason 'length' -- consistent with k349's landed value (NOT 'incomplete' as the k349 ticket text said; they agree on 'length'). Files: lib/Langertha/ToolCall.pm, lib/Langertha/Role/Tools.pm, lib/Langertha/Response.pm, lib/Langertha/Role/ResponsesCompatible.pm + tests t/60_tool_loop_truncated_args.t, t/66_hermes_lift_parity.t. Verified: prove -lr t/ = 214 files / 10405 tests PASS; new tests red->green confirmed; perlcritic clean on all 4 lib files; env clean (TEST_LANGERTHA=0), t/8x live tests skipped.
+
+Landed as ad09a29 on main; review passed (no Critical/Important, full suite 10405 tests PASS, red->green verified). Follow-up #351 filed for the pre-existing streaming-hermes flag drop.
