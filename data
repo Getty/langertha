@@ -1,0 +1,41 @@
+---
+claimed_at: 2026-09-29T01:48:22Z
+claimed_by: claude
+class: standard
+completed: 2026-09-29T01:48:14Z
+created: 2026-09-26T00:08:58Z
+id: 346
+priority: low
+started: 2026-09-29T00:30:42Z
+status: done
+tags:
+- security
+- http
+title: Bounded decoding for provider/metrics responses; Teredo in deny_private_hosts
+updated: 2026-09-29T01:48:22Z
+---
+
+From k342/k343: (1) decoded_content in Role/HTTP.pm, Role/OpenAICompatible.pm, Role/Runtime/MetricsPoll.pm decodes provider/metrics bodies (gzip) without a size bound - a hostile or broken endpoint (self-hosted metrics, gateways) can inflate memory. Consider a response_max_bytes (default generous, e.g. 256MB) using the k342 _decoded_body helper. (2) Teredo 2001::/32 not refused by deny_private_hosts - refuse (embedded client IPv4 is obfuscated) or document.
+
+Starting k346 in isolated worktree agent-accf6ee1de7a770fc. Plan: (1) extract k342 bounded-inflate into shared Langertha::HTTP::BoundedDecode; add response_max_bytes (256 MiB) + _bounded_decoded_content on Role::HTTP; wire the 4 provider/metrics decoded_content sites (HTTP _error_response_body + parse_response trace, OpenAICompatible transcription_result, MetricsPoll poll_metrics_f). (2) refuse Teredo 2001:0000::/32 in Content::Image _is_private_address + POD + t/47 table. TDD red-first.
+
+Done, commit-ready (uncommitted) in worktree agent-accf6ee1de7a770fc, branch worktree-agent-accf6ee1de7a770fc. FIX(1): extracted k342 bounded-inflate into new Langertha::HTTP::BoundedDecode (decode_within + handlers); Content::Image::_decoded_body now delegates (verbatim error text kept, guarded by t/47). Added response_max_bytes attr (256 MiB default, 0=off) + _bounded_decoded_content on Role::HTTP; wired all 4 decoded_content sites: HTTP _error_response_body, parse_response trace (now is_trace-guarded + eval-lenient so a legit >cap body never fatals a log line), OpenAICompatible transcription_result, MetricsPoll poll_metrics_f. Charset step preserved via a throwaway HTTP::Response over the bounded bytes. ONE shared bound fit all 4 provider sites cleanly (same cap, same croak); only Content::Image diverges (verbatim url text, raw bytes, own cap) -> reuses the algorithm module, keeps its wrapper. FIX(2): refuse Teredo 2001:0000::/32 in _is_private_address (return 1 outright, client IPv4 obfuscated) + POD bullet + t/47 table (4 private Teredo, 1 public boundary 2001:4860:...). Behavior note: on a corrupt/unbounded (br/zstd) Content-Encoding the provider paths now croak 'cannot be decoded' where decoded_content returned undef -> fail-loud on a broken endpoint (br was already broken/undef before). VERIFIED offline: full prove -lr t/ = 215 files/10409 tests PASS, all t/8x live skipped, env|grep -c TEST_LANGERTHA=0; perlcritic clean on all touched files; red->green for both new tests. Patch: scratchpad/k346.patch.
+
+k346 both fixes implemented + verified offline; commit-ready uncommitted tree in worktree agent-accf6ee1de7a770fc. Files: NEW lib/Langertha/HTTP/BoundedDecode.pm; M Content/Image.pm, Role/HTTP.pm, Role/OpenAICompatible.pm, Role/Runtime/MetricsPoll.pm; NEW t/44_response_decode_limits.t; M t/47_image_fetch_limits.t. prove -lr t/ green (215/10409, t/8x skipped), perlcritic clean. Patch at scratchpad/k346.patch. Commit belongs to release-manager.
+
+review: merge with fixes; critical async NaHTTP bound gap; back to async-worker
+
+Fix wave (review verdict 'ready WITH FIXES') addressed in worktree agent-accf6ee1de7a770fc:
+CRITICAL#1 (async backend unbounded): CONFIRMED offline -- Net::Async::HTTP here inflates the body itself and strips Content-Encoding->X-Original-Content-Encoding under BOTH decode_content=1 AND =0 (probed against LocalHTTPDaemon: 518-byte gzip -> 500000-byte content, Content-Encoding gone), so _bounded_decoded_content never sees an encoding to bound. FIXED with the on_header streamed-byte counter (reviewer's preferred approach, NOT option B) in Role::AsyncHTTP::_async_do_request_f + new _body_cap_on_header, mirroring Content::Image::_fetch_net_async_f: counts decoded bytes as NaHTTP streams them, aborts past response_max_bytes via wait_any+loop->later, croaks the same 'response body exceeds response_max_bytes (N)'. Applies to every non-streaming NaHTTP request (chat + poll_metrics_f + export_otlp_f + non-streaming async_request_f); a caller on_header (SSE stream) is exempt. Timeout logic (k278) preserved and composed. Both backends now genuinely bounded (sync/LWP via _bounded_decoded_content on the still-encoded body; NaHTTP via the counter).
+IMPORTANT#2: rationale CORRECTED -- 'br already broken' was FALSE (HTTP::Message::decodable lists br, IO::Uncompress::Brotli installed). KEPT the refusal (correct security choice: falling through to unbounded decoded_content reopens the bomb for br/zstd). Comment in Role::HTTP now says 'decodable by HTTP::Message but cannot be bounded here -> refused deliberately'. FOLLOW-UP for langertha-llm-advisor: does any real provider emit br/zstd on the transcription or /metrics paths? If yes, a bounded br/zstd inflater (or a documented exception) may be needed. Non-blocking.
+MINOR#3: added Test::LocalHTTPDaemon transport-parity across sync LWP + NaHTTP(decode_content=1 and =0) feeding a gzip bomb over loopback; asserts refusal on all. This was RED for both NaHTTP cases before the async cap (t/44 tests 18,21), GREEN after.
+MINOR#4: MetricsPoll now 'requires response_max_bytes' -> composition-time failure for a future Role::HTTP-less composer.
+MINOR#5: blocking inflate in async poll_metrics acknowledged (comment; same tradeoff as image path).
+POD scoped to what's actually bounded (per-backend mechanism, non-streaming only, br/zstd refused).
+VERIFIED: prove -lr t/ = 215 files/10418 tests PASS (was 10409; +9 transport-parity), t/8x live skipped, env|grep -c TEST_LANGERTHA=0; perlcritic clean on all 6 touched files; async/transport regression set (timeouts/keepalive/stream-die/selection/metrics) all green. Teredo fix + Image->BoundedDecode extraction left as-is per verdict. Patch regenerated to scratchpad/k346.patch (805 lines).
+
+Fix wave complete for all 4 review findings (CRITICAL#1 async NaHTTP bound via on_header counter, IMPORTANT#2 br rationale corrected + refusal kept, MINOR#3 transport-parity test red->green, MINOR#4 MetricsPoll requires response_max_bytes). prove -lr t/ green (215/10418, t/8x skipped), perlcritic clean. br/zstd-on-transcription/metrics is a noted non-blocking follow-up for langertha-llm-advisor. Patch regenerated at scratchpad/k346.patch.
+
+round 2 done: async NaHTTP on_header byte-cap in AsyncHTTP; br rationale corrected; t/44 transport parity both backends; MetricsPoll requires added. 10418 tests green. re-review running.
+
+landed on main as 9516511; re-review passed, all 5 findings closed, bomb protection on both LWP and NaHTTP backends
