@@ -255,6 +255,14 @@ sub _hermes_stream_calls {
     Langertha::ToolCall->new(
       name      => $_->{name},
       arguments => ( ref $_->{arguments} eq 'HASH' ? $_->{arguments} : {} ),
+      # Carry the k345 undecodable flag through the streamed lift the same way
+      # the Response BUILDARGS upgrade does (k350): a closed block whose
+      # arguments are no object is a call with arguments {} and the flag, so the
+      # streamed tool_calls match the non-streaming reply's -- karr k351.
+      ( $_->{arguments_undecodable}
+        ? ( arguments_undecodable => 1,
+            ( defined $_->{arguments_error} ? ( arguments_error => $_->{arguments_error} ) : () ) )
+        : () ),
     )
   } @{ $state->{calls} // [] } ];
 }

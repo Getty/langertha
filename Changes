@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Streamed hermes tool calls now carry the arguments_undecodable /
+      arguments_error flag onto the aggregated tool_calls, so a closed
+      <tool_call> block with non-object arguments reads the same streamed
+      as non-streaming.
+
     - Hermes tool calls whose arguments are not a JSON object now reach the
       error-result path instead of silently running on {}. An
       OpenAI-Responses or Perplexity reply cut off at max_output_tokens with

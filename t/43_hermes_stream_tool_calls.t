@@ -160,6 +160,38 @@ subtest 'unclosed or partial markup is text, no call' => sub {
   }
 };
 
+subtest 'a closed bad-args block carries arguments_undecodable, as chat_f' => sub {
+  # A closed <tool_call> whose arguments are not an object IS a call (it has a
+  # name): the non-streaming lift flags it arguments_undecodable so the tool
+  # loop answers the model an error result rather than running the tool on {}
+  # (k350). The streamed lift rebuilt the ToolCall from name/arguments only and
+  # dropped the flag, so the streamed tool_calls disagreed with chat_f's for the
+  # same reply. The streaming path runs no tool loop, so nothing acts on the
+  # flag: it rides for parity, so aggregate_tool_calls returns the same calls,
+  # as equal ToolCall objects, that chat_f's reply carries (its POD contract)
+  # -- karr k351.
+  for my $case (
+    [ 'a non-object (string)' => '<tool_call>{"name":"go","arguments":"x=1"}</tool_call>' ],
+    [ 'a JSON array'          => '<tool_call>{"name":"go","arguments":[1,2]}</tool_call>' ],
+  ) {
+    my ( $label, $text ) = @$case;
+    my $parity = chat_f_turn( [], $text );
+    my $ptc    = $parity->tool_calls->[0];
+    ok( $ptc->arguments_undecodable, "$label: chat_f flags it (k350)" );
+    for my $size ( 1, 4, length $text ) {
+      my $r  = stream_turn( [], [ $text =~ /(.{1,$size})/sg ] );
+      my $tc = $r->{calls}[0];
+      ok( defined $tc, "$label, size $size: the call landed" ) or next;
+      is( $tc->name, 'go', "$label, size $size: name as chat_f's" );
+      ok( $tc->arguments_undecodable,
+        "$label, size $size: streamed call carries arguments_undecodable" );
+      is( $tc->arguments_error, $ptc->arguments_error,
+        "$label, size $size: same reason as chat_f" );
+      is_deeply( $tc->arguments, {}, "$label, size $size: arguments stay {}" );
+    }
+  }
+};
+
 subtest 'finish_reason: tool_calls over stop, a provider value kept' => sub {
   my $r = stream_turn( [], [ $REPLY ] );
   is( $r->{chunks}[-1]->finish_reason, 'tool_calls', 'stream: stop becomes tool_calls' );
