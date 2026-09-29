@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-09-29T22:42:50Z
+claimed_by: wire-worker2
+class: standard
+completed: 2026-09-29T22:42:50Z
+created: 2026-09-26T00:00:23Z
+id: 344
+priority: low
+started: 2026-09-29T20:47:46Z
+status: done
+tags:
+- feature
+- tools
+- images
+title: Tool-result images via native wire outputs (Responses input_image in function_call_output,
+  Gemini 3 functionResponse.parts inlineData)
+updated: 2026-09-29T22:42:50Z
+---
+
+From k336 (ADR 0001 Update): tool-result images are placeholders on string wires. Native routes: Responses function_call_output can carry input_image parts; Gemini 3 (v1beta) functionResponse.parts[{inlineData}]; Anthropic already maps images (k326). Implement per wire behind model capability (image_input), advisor check first.
+
+2026-09-29 20:51 Docs check (2026-09-29, docs-derived, NOT live-verified): (1) OpenAI Responses function_call_output.output = string | array of input_text/input_image/input_file (developers.openai.com API ref; old openai-openapi manual_spec still says string-only). input_image: image_url string (data URL ok), detail optional; formats PNG/JPEG/WEBP/non-animated GIF. (2) Perplexity /v1/agent FunctionCallOutputInput.output = string | array of input_text/input_image (docs.perplexity.ai agent-post ref) -> same shape, so the responses wire needs no per-engine divergence hook. (3) Gemini v1beta FunctionResponse.parts[] = FunctionResponsePart{inlineData:{mimeType,data}} (discovery doc; the guide's example also shows displayName, absent from the discovery schema -> not sent); guide: 'available for Gemini 3 series models', image MIME png/jpeg/webp. Plan: ToolResult->to(fmt, image_input=>1) opt; Role::Tools passes it on responses+gemini when supports('image_input') and engine wire hook allows (Gemini: gemini-3 only). Other wires ignore it (k336 no-die placeholder policy).
+
+2026-09-29 20:55 Implemented (test-first, t/92_tool_result_images.t red for the stated reason, then green): ToolResult->to_responses/to_gemini take image_input=>1; Role::Tools::format_tool_results passes it on the responses+gemini branches via _tool_result_image_opts (supports('image_input') && _tool_result_images_on_wire; default 1, Engine::Gemini: gemini-3(?!\d) only). Other wires ignore the option (k336 no-die placeholder policy; Anthropic unchanged since k326). Decision: gate on image_input because the tool loop sends MCP output the caller never chose; a text-only model must not start getting image parts. That contradicts ADR 0019 k266 'no gate reads it' -> amended ADR 0019 (k344 Update) + ADR 0001 (k344 Update). Also found: ADR 0032 decision 7's rationale ('image_input is advisory, does not change what is sent') is weakened; noted in the 0019 update, no probing engine is on responses/gemini so no behavior impact. PDF (Gemini/Responses input_file) deliberately out of scope.
+
+2026-09-29 21:22 Done (uncommitted, worktree agent-a78429683f43db384): tool-result images ride natively on responses (function_call_output.output = [input_text|input_image data-URL] when an image is present; OpenAIResponses + Perplexity, same documented shape) and Gemini 3 (functionResponse.parts[].inlineData, image moved out of result string), gated by supports('image_input') + _tool_result_images_on_wire (Gemini: gemini-3(?!\d)). openai/ollama/hermes ignore the option (placeholder, k336 no-die policy); anthropic unchanged. DOCS-DERIVED, NOT LIVE-VERIFIED (flagged in POD, Changes, ADR 0001/0019 k344 Updates). Verified: t/92_tool_result_images.t red->green; env-clean prove -lr t/ PASS (217 files, 10452 tests; t/8x live tests skipped, no keys); perlcritic lib/ bin/ maint/ clean; dzil build OK. No live calls. Proposed commit: 'feat: carry tool-result images natively on Responses and Gemini 3 wires (k344)'.
+
+2026-09-29 22:20 Review fixes done (uncommitted): (1) Changes + ToolResult POD no longer say all other wires keep the placeholder -- Anthropic maps images since k326, named explicitly. (2) image_input's new reader documented in Role/ImageInput.pm POD and CLAUDE.md ImageInput bullet; ADR 0032 got '## Update (k344)' (decision 7 rationale; no probing engine is on responses/gemini, a future one must treat a wrong learned image_input as request-changing); ADR 0019 k344 Update now names the downside (over-broad claim -> image part in tool-loop turn -> possible 400). (3) t/92_tool_result_images.t Perplexity assert is is_deeply against [input_image]. (4) ADR 0001 k344 Update says why _tool_result_images_on_wire is a private hook not a flag (precedent ADR 0033 _is_hermes_model, k267 _content_inline_images_only). Verified: env-clean prove -lr t/ PASS (217 files, 10452 tests; t/8x live skipped, no keys), perlcritic lib/ bin/ maint/ clean, dzil build OK. No live calls. #358/#359/#361 not touched.
+
+Committed 30d1ba4, merged to main locally
