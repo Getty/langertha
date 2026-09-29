@@ -1,6 +1,11 @@
 #!/usr/bin/env perl
 # ABSTRACT: Test Hermes-native tool calling via <tool_call> XML tags
 
+# Since karr k238 (ADR 0033) NousResearch derives tool_wire_format from the
+# model: hermes for a Hermes slug, openai otherwise. This file exercises the
+# hermes wire, so every engine uses a Hermes model (Hermes-4-70B). The
+# model -> wire derivation itself is t/66_nousresearch_model_wire.t.
+
 use strict;
 use warnings;
 
@@ -39,7 +44,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   is($nous->hermes_call_tag, 'tool_call', 'default call tag');
@@ -57,7 +62,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $engine = Langertha::Engine::NousResearch->new(
     api_key            => 'test-key',
-    model              => 'test',
+    model              => 'Hermes-4-70B',
     hermes_call_tag    => 'function_call',
     hermes_response_tag => 'function_response',
   );
@@ -75,7 +80,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $engine = Langertha::Engine::NousResearch->new(
     api_key                  => 'test-key',
-    model                    => 'test',
+    model                    => 'Hermes-4-70B',
     hermes_tool_instructions => 'Du bist ein hilfreicher Assistent.',
   );
 
@@ -92,7 +97,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $openai = Langertha::Engine::OpenAI->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   ok(!$openai->does('Langertha::Role::HermesTools'), 'OpenAI: does not compose HermesTools');
@@ -105,7 +110,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -130,7 +135,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -155,7 +160,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -183,7 +188,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -206,7 +211,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   is_deeply($nous->response_tool_calls({}), [], 'empty data returns empty');
@@ -220,7 +225,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -249,7 +254,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   for my $case (
@@ -282,7 +287,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -315,7 +320,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -337,7 +342,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -359,7 +364,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $nous = Langertha::Engine::NousResearch->new(
     api_key => 'test-key',
-    model   => 'test',
+    model   => 'Hermes-4-70B',
   );
 
   my $data = {
@@ -403,7 +408,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $engine = Langertha::Engine::NousResearch->new(
     api_key             => 'test-key',
-    model               => 'test',
+    model               => 'Hermes-4-70B',
     hermes_response_tag => 'fn_response',
   );
 
@@ -435,7 +440,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $engine = Langertha::Engine::NousResearch->new(
     api_key         => 'test-key',
-    model           => 'test',
+    model           => 'Hermes-4-70B',
     hermes_call_tag => 'function_call',
   );
 
@@ -473,7 +478,7 @@ my $json = JSON::MaybeXS->new(utf8 => 1, canonical => 1);
 {
   my $engine = Langertha::Engine::NousResearch->new(
     api_key         => 'test-key',
-    model           => 'test',
+    model           => 'Hermes-4-70B',
     hermes_call_tag => 'fn_call',
   );
 

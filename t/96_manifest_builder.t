@@ -22,6 +22,7 @@ use Langertha::Engine::OpenRouter;
 use Langertha::Engine::Groq;
 use Langertha::Engine::Gemini;
 use Langertha::Engine::Whisper;
+use Langertha::Engine::NousResearch;
 
 # The Builder is how Knarr and Skeid publish what they expose. What matters:
 # the manifest tells the truth about the engine (dialect from the engine
@@ -300,6 +301,28 @@ subtest 'probe resolves a model-aware tool_wire_format per model' => sub {
     my $caps = caps_of( $mp, $i );
     ok $caps->{tools_native} && !$caps->{tools_hermes}, "model $i: the constructor tag is kept";
   }
+};
+
+subtest 'NousResearch publishes different tool flags per model (k238, no override)' => sub {
+  # The payoff of the model-aware builder (ADR 0033) on the REAL engine, not a
+  # test subclass: one NousResearch instance, probed for two models, must
+  # publish disagreeing tool-transport flags -- the Hermes slug on the hermes
+  # wire, the Claude slug on native OpenAI tools. This is the fact-4 manifest
+  # hazard payoff: it only works because _capability_clone resets the derived
+  # tag so each probe resolves it for its own chat_model.
+  my $engine = Langertha::Engine::NousResearch->new( api_key => $SENTINEL, model => 'Hermes-4-70B' );
+  is $engine->tool_wire_format, 'hermes', 'the source engine (Hermes-4-70B) is on the hermes wire';
+  my $m = Langertha::Manifest::Builder->from_engine( $engine,
+    models => [ 'Hermes-4-70B', 'anthropic/claude-sonnet-4.6' ] );
+  my ( $hermes, $claude ) = map { caps_of( $m, $_ ) } 0, 1;
+  ok  $hermes->{tools_hermes}, 'Hermes-4-70B: tools_hermes';
+  ok !$hermes->{tools_native}, 'Hermes-4-70B: not tools_native';
+  ok !$hermes->{tool_choice_named}, 'Hermes-4-70B: no named tool_choice (the prompt cannot force one)';
+  ok  $claude->{tools_native}, 'claude slug: tools_native, not the stale hermes tag';
+  ok !$claude->{tools_hermes}, 'claude slug: not tools_hermes';
+  ok  $claude->{tool_choice_named}, 'claude slug: a named tool_choice';
+  is $engine->tool_wire_format, 'hermes', 'the caller engine keeps its own tag';
+  unlike $m->to_json, qr/\Q$SENTINEL\E/, 'no secret';
 };
 
 subtest 'image_input is published per model (k266)' => sub {

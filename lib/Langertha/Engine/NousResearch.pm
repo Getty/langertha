@@ -8,7 +8,30 @@ extends 'Langertha::Engine::OpenAIBase';
 
 with 'Langertha::Role::Tools', 'Langertha::Role::HermesTools', 'Langertha::Role::StaticModels';
 
-sub _build_tool_wire_format { 'hermes' }
+# karr k238 (ADR 0033, amends 0001/0002/0019): hermes is not the endpoint
+# dialect, it is the wire for Hermes models only. NousResearch is an
+# OpenAI-compatible gateway fronting ~341 models; a non-Hermes slug
+# (anthropic/..., openai/..., ...) routes to a real backend that takes native
+# OpenAI tools, so hermes there would be wrong. Hermes models want the hermes
+# wire -- tools ride the system prompt and <tool_call> tags are lifted onto
+# Response.tool_calls -- which is the robust choice given upstream
+# hermes-agent#741, where Hermes-4 intermittently emits tool calls as
+# <tool_call> XML / bare JSON even with native calling wired up. So Hermes is
+# the named exception; native is the default (safer for the 280+ non-Hermes
+# slugs and any unknown new one). Matches Hermes-4/-4.3, Hermes-3, DeepHermes,
+# the nousresearch/ prefix, lowercase, and the legacy Nous-Hermes-2 form.
+sub _is_hermes_model {
+  my ( $self ) = @_;
+  return $self->chat_model =~ m{\A(?:nousresearch/)?(?:nous-)?(?:deep)?hermes}i ? 1 : 0;
+}
+
+# Resolved once per instance from chat_model (default_model is 'Hermes-4-70B',
+# so reading it never croaks). A tool_wire_format => ... constructor arg wins
+# via the init_arg (Role::Tools), so a user can force either wire on any slug.
+sub _build_tool_wire_format {
+  my ( $self ) = @_;
+  return $self->_is_hermes_model ? 'hermes' : 'openai';
+}
 
 =head1 SYNOPSIS
 
@@ -52,23 +75,23 @@ L<Langertha::Role::OpenAICompatible> with Nous's endpoint
 Available models: C<Hermes-4-70B> (default), C<Hermes-4-405B>,
 C<Hermes-4.3-36B>.
 
-B<Hermes models only.> The endpoint is a gateway that also routes many
-non-Hermes models (Claude, GPT, Gemini, ...), but this engine speaks the
-Hermes prompt format to every model: tools go into the system prompt and
-C<< <tool_call> >> tags are parsed from the reply. For a non-Hermes model
-slug use an OpenAI-compatible engine, e.g. L<Langertha::Engine::OpenRouter>,
-or L<Langertha::Engine::OpenAIBase> pointed at this URL, which send native
-C<tools>.
+The endpoint is a gateway that also routes many non-Hermes models (Claude,
+GPT, Gemini, ...) to their real backends. The tool wire is therefore chosen
+B<per model>: a Hermes model (C<Hermes-*>, C<DeepHermes-*>) uses the Hermes
+prompt format, and every other slug uses native OpenAI C<tools>. Override
+C<tool_wire_format> (C<hermes> | C<openai>) to force either wire on any slug.
 
-Composes L<Langertha::Role::HermesTools> for tool calling. Tool descriptions
-are injected into the system prompt as C<< <tools> >> XML, and
-C<< <tool_call> >> tags are parsed from the model output. No server-side tool
-calling support required. See L<Langertha::Role::HermesTools> for
-customization options. The prompt cannot force a tool, so the engine does not
-claim C<tool_choice_named>; L<Langertha::Role::Chat/chat_f> answers a forced
-tool with a C<json_schema> C<response_format> (the schema also goes into the
-system prompt) and puts the parsed reply on
-L<Langertha::Response/tool_calls> as a synthetic call.
+For a Hermes model, L<Langertha::Role::HermesTools> injects tool descriptions
+into the system prompt as C<< <tools> >> XML and parses C<< <tool_call> >> tags
+from the model output; no server-side tool calling is required. This is also
+the more robust wire for Hermes 4, which intermittently emits its tool calls
+as C<< <tool_call> >> text even when native calling is offered. The prompt
+cannot force a tool, so on the Hermes wire the engine does not claim
+C<tool_choice_named>: L<Langertha::Role::Chat/chat_f> answers a forced tool
+with a C<json_schema> C<response_format> (the schema also goes into the system
+prompt) and puts the parsed reply on L<Langertha::Response/tool_calls> as a
+synthetic call. For a non-Hermes slug the tools and a forced C<tool_choice> go
+out natively.
 
 Get your API key at L<https://portal.nousresearch.com/> and set
 C<LANGERTHA_NOUSRESEARCH_API_KEY>.
@@ -114,6 +137,9 @@ Enable chain-of-thought reasoning for Hermes 4 and DeepHermes 3 models.
 Prepends the standard Nous reasoning system prompt that instructs the model
 to use C<E<lt>thinkE<gt>> tags. The thinking content is automatically
 extracted into L<Langertha::Response/thinking> by L<Langertha::Role::ThinkTag>.
+This is a Hermes-model feature: on a non-Hermes slug the prompt is ignored
+with a warning (the gate is the model, not C<tool_wire_format>, so forcing the
+C<openai> tool wire on a genuine Hermes model still enables reasoning).
 
 With DeepHermes 3, reasoning output appears inline as C<E<lt>thinkE<gt>> tags
 (handled by the think tag filter). With Hermes 4 (without response prefill),
@@ -156,6 +182,18 @@ around _system_messages => sub {
   my ( $orig, $self, @override ) = @_;
   my @system = $self->$orig(@override);
   return @system unless $self->reasoning;
+  # The Nous reasoning prompt is a Hermes-model feature (karr k238, ADR 0033):
+  # gate it on _is_hermes_model, the same predicate _build_tool_wire_format
+  # uses, NOT on tool_wire_format. This decouples the reasoning prompt from the
+  # tool transport, so forcing tool_wire_format => 'openai' on a genuine Hermes
+  # model still gets reasoning. On a non-Hermes slug the prompt is meaningless,
+  # so drop it with one warning.
+  unless ( $self->_is_hermes_model ) {
+    $self->_langertha_carp( "".( ref $self ).": reasoning => 1 is ignored -- the Nous"
+      . " reasoning prompt is a Hermes-model feature and '" . $self->chat_model
+      . "' is not a Hermes model", 'nous_reasoning_non_hermes' );
+    return @system;
+  }
   return ( { role => 'system', content => $self->reasoning_prompt }, @system );
 };
 

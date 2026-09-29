@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::NousResearch derives tool_wire_format per model: Hermes models
+      use the hermes tool-calling wire, every other slug on its multi-model
+      gateway uses native OpenAI tools, and the reasoning system prompt and
+      capability flags follow the same per-model decision. A constructor
+      tool_wire_format still overrides it.
+
     - Hermes tool calls whose arguments are not a JSON object now reach the
       error-result path instead of silently running on {}, streamed and
       non-streamed alike: a closed <tool_call> block with such arguments

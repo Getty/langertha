@@ -18,8 +18,13 @@ use Test::MockAsyncHTTP;
 # rewrote a forced tool to json_schema + synthetic ToolCall (ADR 0005) and put
 # a Hermes <schema> prompt in front, although the wire takes a native forced
 # tool. The flags now follow the tag: hermes clears the native flags, any
-# other tag clears tools_hermes. The default NousResearch (hermes) is
-# unchanged.
+# other tag clears tools_hermes.
+#
+# This file is the CONSTRUCTOR-override direction: the init_arg wins over the
+# builder. Since k238 (ADR 0033) landed the model-aware builder, the base model
+# here is a Hermes slug, whose builder would give 'hermes' -- so forcing
+# 'openai' is a real override, not a no-op. The BUILDER-derived per-model
+# direction is t/66_nousresearch_model_wire.t.
 
 my $json   = JSON::MaybeXS->new( utf8 => 1, canonical => 1 );
 my $schema = { type => 'object', properties => { a => { type => 'number' } }, required => ['a'] };
@@ -30,7 +35,7 @@ sub nous {
   my (@args) = @_;
   my $mock = Test::MockAsyncHTTP->new( responses => [ Test::MockAsyncHTTP->mock_json_response($reply) ] );
   my $engine = Langertha::Engine::NousResearch->new(
-    api_key => 'k', model => 'anthropic/claude-sonnet-4.6', _async_http => $mock, @args );
+    api_key => 'k', model => 'Hermes-4-70B', _async_http => $mock, @args );
   return ( $engine, $mock );
 }
 
