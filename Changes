@@ -2,23 +2,16 @@ Revision history for Langertha
 
 {{$NEXT}}
 
-    - Streamed hermes tool calls now carry the arguments_undecodable /
-      arguments_error flag onto the aggregated tool_calls, so a closed
-      <tool_call> block with non-object arguments reads the same streamed
-      as non-streaming.
-
     - Hermes tool calls whose arguments are not a JSON object now reach the
-      error-result path instead of silently running on {}. An
-      OpenAI-Responses or Perplexity reply cut off at max_output_tokens with
-      an empty output now reports finish_reason "length".
+      error-result path instead of silently running on {}, streamed and
+      non-streamed alike: a closed <tool_call> block with such arguments
+      carries the arguments_undecodable / arguments_error flag onto the
+      aggregated tool_calls, so a stream reads the same as a plain reply.
 
     - New response_max_bytes engine attribute (default 256 MiB, 0 disables)
       bounds the decompressed size of gzip/deflate/bzip2 response bodies on
       the provider and metrics paths, on both the sync LWP and
       Net::Async::HTTP backends; a body that decodes larger is refused.
-
-    - Content::Image->deny_private_hosts now also refuses Teredo
-      (2001:0000::/32).
 
     - In Langertha::Chat's tool loops, plugin_before_tool_call sees every
       call, including one to an unknown tool, and may rename it onto a real
@@ -36,9 +29,10 @@ Revision history for Langertha
 
     - OpenAI Responses and Perplexity: a function call whose arguments were
       cut off no longer dies with a raw JSON parse error; the call carries
-      arguments_undecodable, and a reply of only function calls that stopped
-      on max_output_tokens reports finish_reason "length", so the MCP tool
-      loops treat it as truncated like the other engines.
+      arguments_undecodable. A reply cut off at max_output_tokens that holds
+      only function calls, or no output at all, reports finish_reason
+      "length", so the MCP tool loops treat it as truncated like the other
+      engines.
 
     - New public tool_loop_response and tool_loop_calls on the tool-calling
       role: read a tool-loop reply (HTTP::Response or decoded body) and pick
@@ -59,8 +53,7 @@ Revision history for Langertha
       "[image] image/png (12345 bytes)" (no base64 in the prompt), resource
       links as "[resource_link] name <uri>". Empty content sends the
       structuredContent as JSON; Gemini sends structuredContent as its
-      response object. On Anthropic, text resources of any MIME type and
-      text/* blobs become text documents.
+      response object.
 
     - A Gemini prompt blocked inside an MCP tool loop dies with
       "Langertha::Engine::Gemini prompt blocked: SAFETY" (the blockReason)
@@ -83,15 +76,10 @@ Revision history for Langertha
       not run it and response_tool_calls does not return it, as chat_f and
       streaming already treated it.
 
-    - Security: deny_private_hosts also refuses IPv6 addresses that carry a
-      private IPv4 address (NAT64 64:ff9b::/96 and 64:ff9b:1::/48, 6to4
-      2002::/16, SIIT ::ffff:0:0:0/96) and the IPv4 ranges 192.0.0.0/24 and
-      198.18.0.0/15.
-
-    - Security: inline_image_max_bytes also caps the decoded size of an image
-      sent with a gzip, deflate or bzip2 Content-Encoding, on every backend;
-      a compressed body that inflates past the cap fails the call, and other
-      encodings are refused while a cap is set.
+    - Security: deny_private_hosts also refuses Teredo (2001:0000::/32),
+      IPv6 addresses that carry a private IPv4 address (NAT64 64:ff9b::/96
+      and 64:ff9b:1::/48, 6to4 2002::/16, SIIT ::ffff:0:0:0/96) and the IPv4
+      ranges 192.0.0.0/24 and 198.18.0.0/15.
 
     - Gemini tool declarations send the input schema unchanged as
       parametersJsonSchema instead of parameters, so MCP schemas with
@@ -103,17 +91,22 @@ Revision history for Langertha
       send tool_name plus tool_call_id when the call had an id.
 
     - Anthropic tool results map MCP content onto Anthropic blocks instead of
-      embedding it: images become base64 image blocks, PDF blobs and text
-      resources become documents, text loses annotations and _meta, and
-      resource links, audio and other MIME types become text placeholders.
-      A result with only structuredContent sends it as a JSON string.
+      embedding it: images become base64 image blocks, PDF blobs become
+      documents, text resources of any MIME type and text/* blobs become text
+      documents, text loses annotations and _meta, and resource links, audio
+      and other MIME types become text placeholders. A result with only
+      structuredContent sends it as a JSON string.
 
     - Security: inline image fetches are capped by the new engine attribute
       inline_image_max_bytes (default 20 MiB, 0 for no cap) on every backend;
-      a larger image fails the call. The new optional inline_image_url_filter
-      vets each image URL and redirect hop before it is requested, and
-      Langertha::Content::Image->deny_private_hosts is a ready-made filter
-      against loopback, private, link-local and cloud metadata addresses.
+      a larger image fails the call. The cap also counts the decoded size of
+      an image sent with a gzip, deflate or bzip2 Content-Encoding: a
+      compressed body that inflates past it fails the call, and other
+      encodings are refused while a cap is set. The new optional
+      inline_image_url_filter vets each image URL and redirect hop before it
+      is requested, and Langertha::Content::Image->deny_private_hosts is a
+      ready-made filter against loopback, private, link-local and cloud
+      metadata addresses.
 
     - clear_models_cache also resets the models attribute, so the next access
       to models fetches the list again. Gemini responses fill Response.id from
@@ -130,14 +123,14 @@ Revision history for Langertha
       to another scheme is not followed.
 
     - The MCP tool loops (chat_with_tools_f, and Langertha::Chat's
-      simple_chat_with_tools and simple_chat_with_tools_f) fail on a response
-      whose body reports an error, with the same message chat_f gives, instead
-      of returning an empty answer. A failed request in the sync Chat loop now
-      reports "tool chat request failed", like the async loops.
-
-    - The final text of the MCP tool loops is the text chat_f returns for the
-      same reply: Gemini thought parts stay out of it, and a Mistral
-      content-chunk list comes back as text instead of an array reference.
+      simple_chat_with_tools and simple_chat_with_tools_f) read a reply the
+      way chat_f does. They fail on a response whose body reports an error,
+      with the same message chat_f gives, instead of returning an empty
+      answer, and their final text is the text chat_f returns for the same
+      reply: Gemini thought parts stay out of it, and a Mistral content-chunk
+      list comes back as text instead of an array reference. A failed
+      request in the sync Chat loop now reports "tool chat request failed",
+      like the async loops.
 
     - Ollama->new_openai passes every argument the OllamaOpenAI engine
       accepts (mcp_servers, tool_max_iterations, response_format,
@@ -193,22 +186,24 @@ Revision history for Langertha
       usage, the response's rate_limit, the answering model and
       total_seconds. The bare methods are unchanged.
 
-    - Mistral transcription sends timestamp_granularities and context_bias
-      as repeated form parts under the plain name, the form Mistral reads;
-      OpenAI and Groq keep name[]. generate_multipart_body takes
-      { repeated => [...] } for such a plain-name list field.
-
     - Tests cover the OpenAI, Groq and whisper-handle transcription requests
       (endpoint, auth, multipart parts) and image answers on documented
       bodies (several gpt-image b64_json images; a url item with
       revised_prompt from an OpenAI-compatible server).
 
-    - Retry-After everywhere: Gemini, Ollama, AKI and LM Studio native now
-      report a rate_limit carrying retry_after when a response sends
-      Retry-After or retry-after-ms; retry-after-ms (Azure OpenAI) wins over
-      Retry-After on every engine. A failed chat_f, simple_chat_f or
-      streaming request dies with the same message as the synchronous call,
-      the provider's error body included, on every HTTP backend.
+    - rate_limit now always describes the latest response: a response
+      without rate-limit headers leaves none (instead of the previous one),
+      and a 429 or other error records its headers before the request dies,
+      on every sync and async path including streaming. New
+      RateLimit->retry_after gives Retry-After in seconds (delta-seconds or
+      HTTP-date), and the error message names it: "429 Too Many Requests
+      (retry after 8s)". Retry-After is read everywhere: Gemini, Ollama, AKI
+      and LM Studio native now report a rate_limit carrying retry_after when
+      a response sends Retry-After or retry-after-ms; retry-after-ms (Azure
+      OpenAI) wins over Retry-After on every engine. A failed chat_f,
+      simple_chat_f or streaming request dies with the same message as the
+      synchronous call, the provider's error body included, on every HTTP
+      backend.
 
     - OpenAI: the default image model is gpt-image-2 and the default
       transcription model is gpt-transcribe, also for the whisper handle
@@ -227,16 +222,13 @@ Revision history for Langertha
       gemini-embedding-001, task_type / title / output_dimensionality go
       into embedContentConfig). Both answer supports('embedding').
 
-    - Provider errors inside an otherwise well-formed answer croak too: an
-      OpenAI-compatible choice carrying an error object (OpenRouter), a
-      stream frame with an error beside a choice finishing with "error", and
-      a Responses API body with an error and no output. A blocked Gemini
-      prompt ends a stream with its blockReason as finish_reason.
-
     - Mistral transcribes audio with Voxtral (voxtral-mini-latest by
       default): simple_transcription, simple_transcription_result and their
       _f variants, with diarize, context_bias and timestamp_granularities
-      passed through. xAI generates images with the Imagine API
+      passed through, the two list fields as repeated form parts under the
+      plain name, the form Mistral reads (OpenAI and Groq keep name[]);
+      generate_multipart_body takes { repeated => [...] } for such a
+      plain-name list field. xAI generates images with the Imagine API
       (grok-imagine-image-2.0 by default): simple_image and simple_image_f
       take aspect_ratio, resolution, n and response_format; size, quality
       and style, which xAI does not accept, are dropped with a warning.
@@ -244,22 +236,18 @@ Revision history for Langertha
     - A chat answer without a choice is no longer an empty Response: an
       OpenAI-compatible 200 body with an error object (as gateways such as
       OpenRouter send) or no choices croaks, naming the engine and the error,
-      and so does a stream frame carrying an error. A Gemini prompt blocked
-      by promptFeedback reports its blockReason as finish_reason. New
-      Response refusal (and Stream::Chunk refusal) carries OpenAI's
+      and so does a stream frame carrying an error. Provider errors inside an
+      otherwise well-formed answer croak too: an OpenAI-compatible choice
+      carrying an error object (OpenRouter), a stream frame with an error
+      beside a choice finishing with "error", and a Responses API body with
+      an error and no output. A Gemini prompt blocked by promptFeedback
+      reports its blockReason as finish_reason, also as the end of a stream.
+      New Response refusal (and Stream::Chunk refusal) carries OpenAI's
       message.refusal and a Responses API refusal part.
 
     - Scaleway: the default chat model is llama-3.3-70b-instruct;
       llama-3.1-8b-instruct is no longer served on Scaleway's serverless
       Generative APIs.
-
-    - rate_limit now always describes the latest response: a response
-      without rate-limit headers leaves none (instead of the previous one),
-      and a 429 or other error records its headers before the request dies,
-      on every sync and async path including streaming. New
-      RateLimit->retry_after gives Retry-After in seconds (delta-seconds or
-      HTTP-date), and the error message names it: "429 Too Many Requests
-      (retry after 8s)".
 
     - The OpenAI, Groq, Mistral and Ollama SYNOPSIS show simple_embedding /
       simple_transcription (and the _f variants) for vectors and
@@ -477,12 +465,6 @@ Revision history for Langertha
       entry. A Gemini declaration's parametersJsonSchema is read as its
       schema when it goes to another wire.
 
-    - Groq and Cerebras now croak on tools combined with a response_format
-      also with model => '' and when the response_format is set on the engine
-      rather than passed to chat_f, instead of sending the request the
-      provider rejects. The same holds for SGLang's forced tool_choice rule
-      below. A response_format passed to chat_f still wins over the engine's.
-
     - SGLang croaks on tools with a forced tool_choice (required or a named
       tool) combined with a json_schema, json_object or structural_tag
       response_format, which the SGLang server rejects with HTTP 400;
@@ -607,11 +589,14 @@ Revision history for Langertha
       other level {type: adaptive}. Every level gives the same depth. The
       M2.x models still send nothing, since they cannot turn thinking off. A
       thinking_budget on MiniMax-M3 now croaks. MiniMaxAnthropic follows the
-      same mapping: none on M3 sends thinking {type: disabled} explicitly, and
-      minimal now turns thinking on. Other engines serving a MiniMax or Kimi
-      model id (vLLM, SGLang, proxies, other /anthropic shims) keep sending
-      reasoning_effort / output_config.effort as before. Taken from
-      MiniMax's documentation, not verified against the live API.
+      same mapping and no longer sends output_config.effort, which MiniMax's
+      Anthropic-compatible schema does not have: none on M3 sends thinking
+      {type: disabled} explicitly, and any other level, minimal included,
+      sends thinking {type: adaptive}, which turns thinking on. Other engines
+      serving a MiniMax or Kimi model id (vLLM, SGLang, proxies, other
+      /anthropic shims) keep sending reasoning_effort / output_config.effort
+      as before. Taken from MiniMax's documentation, not verified against the
+      live API.
 
     - Moonshot and MoonshotAnthropic no longer send temperature on any Kimi
       model (kimi-k3, kimi-k2.6, kimi-k2.7-code): Kimi fixes it server-side
@@ -666,11 +651,6 @@ Revision history for Langertha
       A response.failed or error event fails the stream with the provider's
       message instead of ending it silently. Built from OpenAI's documented
       streaming events, not verified against a live stream.
-
-    - MiniMaxAnthropic no longer sends output_config.effort, which MiniMax's
-      Anthropic-compatible schema does not have. A reasoning_effort still
-      sends thinking {type: adaptive}, which turns thinking on. Taken from
-      MiniMax's documentation, not verified against the live API.
 
     - Moonshot: kimi-k3 now sends reasoning_effort (low, high or max; other
       levels are dropped and the server default max applies) instead of
@@ -905,7 +885,12 @@ Revision history for Langertha
       guard on an empty `tools => []`, and no longer attaches a false-success
       empty-argument synthetic tool_call when a forced-tool rewrite returns
       valid but non-object JSON — it leaves tool_calls unset so the caller sees
-      the gap. (ADR 0021.)
+      the gap. Groq and Cerebras also croak with model => '' and when the
+      response_format is set on the engine rather than passed to chat_f (one
+      passed to chat_f still wins over the engine's); SGLang's forced
+      tool_choice rule, which refuses a json_schema, json_object or
+      structural_tag response_format, sees an engine-level one the same way.
+      (ADR 0021.)
 
     - Engine capabilities are now model-scoped on the tool /
       structured-output axis: supports() used to answer from one identical
