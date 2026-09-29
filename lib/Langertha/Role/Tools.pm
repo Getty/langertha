@@ -577,6 +577,21 @@ sub _result_payload {
   );
 }
 
+# Tool-result images ride natively (ToolResult's image_input option; the
+# responses and gemini wires have a form for it, karr k344) only when the
+# selected model sees images (image_input, ADR 0019) and the wire takes them
+# for that model (_tool_result_images_on_wire). The tool loop sends what an
+# MCP server returned, not what the caller chose, so a model that makes no
+# claim keeps the k336 placeholder string.
+sub _tool_result_images_on_wire { 1 }
+
+sub _tool_result_image_opts {
+  my ( $self ) = @_;
+  return () unless $self->_tool_result_images_on_wire
+    && $self->can('supports') && $self->supports('image_input');
+  return ( image_input => 1 );
+}
+
 sub format_tool_results {
   my ( $self, $data, $results ) = @_;
   my $fmt = $self->tool_wire_format;
@@ -596,12 +611,13 @@ sub format_tool_results {
   }
 
   if ( $fmt eq 'gemini' ) {
+    my @opts  = $self->_tool_result_image_opts;
     my @parts = map {
       Langertha::ToolResult->new(
         name    => _result_call_name( $_->{tool_call} ),
         id      => _result_call_id( $_->{tool_call} ),
         _result_payload( $_->{result} ),
-      )->to('gemini')
+      )->to( 'gemini', @opts )
     } @$results;
     my $candidate = $data->{candidates}[0];
     return (
@@ -659,13 +675,14 @@ sub format_tool_results {
     # the Agent input schema on Perplexity (karr k213, ADR 0020).
     @echo = map { $self->_responses_echo_item($_) } @echo
       if $self->can('_responses_echo_item');
+    my @opts = $self->_tool_result_image_opts;
     return (
       @echo,
       map {
         Langertha::ToolResult->new(
           id      => _result_call_id( $_->{tool_call} ),
           _result_payload( $_->{result} ),
-        )->to('responses')
+        )->to( 'responses', @opts )
       } @$results,
     );
   }
@@ -734,6 +751,13 @@ arrayref would land as one bogus conversation element.
 
 Each result's C<tool_call> may be a L<Langertha::ToolCall> (what the tool
 loops pass) or the raw structure L</response_tool_calls> located.
+
+An image in a tool's output reaches the model as an image, not as a text
+placeholder, on the C<responses> wire (C<input_image> parts in
+C<function_call_output.output>) and on Gemini 3 (C<functionResponse.parts>),
+when C<< supports('image_input') >> is true for the configured model; see
+L<Langertha::ToolResult/DESCRIPTION>. Both wire forms are
+documentation-derived, not live-verified.
 
 =cut
 

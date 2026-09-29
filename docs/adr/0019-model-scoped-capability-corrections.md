@@ -294,3 +294,19 @@ catch-all row `qr/\A/ => { image_input => 0 }`; the other no-claim engines keep 
 clear. Without a probe the answers are unchanged. The table walk now resolves `chat_model`
 through `_capability_model`, which turns the croak of an engine without a default model
 (OpenRouter, OllamaOpenAI) into "no model", matched as `''` like the k209 rule above.
+
+## Update (k344 — `image_input` now selects the tool-result image form)
+
+The k266 Update said no gate reads `image_input`. That still holds for what a caller sends: an
+image in a message is never blocked. But `Role::Tools::format_tool_results` now reads the flag to
+choose how a *tool's* image output is represented (ADR 0001 k344 Update): with the claim, the
+Responses and Gemini 3 wires carry it as an image part; without it, it stays the k336 text
+placeholder. It is a representation choice for content the caller did not pick, not a block, and
+an engine or model without the claim behaves exactly as before. The reverse is the cost: an
+over-broad `image_input` claim is no longer harmless on the `responses` and `gemini` wires. If a
+model that does not see images claims the flag, a tool that returns an image makes the next
+tool-loop request carry an image part, which the provider may reject (a 400 mid-loop). The
+layer-3 rows therefore matter for correctness there, not only for reporting. The ADR 0032 rationale for
+learning `image_input` only ("advisory, does not change what is sent") is therefore slightly
+weaker: a learned fact could now change a tool-result's form, but only on the `responses` and
+`gemini` wires, and none of the engines that probe (ADR 0032) uses either.

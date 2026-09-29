@@ -189,3 +189,15 @@ Documentation-derived only: no TSystems key exists (CLAUDE.md), the fixture
 matched exactly (the docs spell ids inconsistently; the static rows are case-insensitive, the
 learned lookup is not). Revisit the id matching if a real answer ever shows ids that differ
 from what callers configure.
+
+## Update (k344 — `image_input` now picks the tool-result image form)
+
+Decision 7 limits probing to `image_input` because that flag "is advisory" and a learned fact
+should not change what is sent. Since k344 the flag has one reader that does change it:
+`Role::Tools::format_tool_results` sends a tool's image as an image part on the `responses` and
+Gemini 3 wires only when the model claims `image_input`, and as a text placeholder otherwise
+(ADR 0001 and ADR 0019 k344 Updates). The scope stays `image_input` only. No probing engine
+(OpenRouter, Mistral, Ollama, OllamaOpenAI, LMStudio, LMStudioOpenAI, LlamaCpp, TSystems) is on
+either wire, so no learned fact changes a request today. An engine on `responses` or `gemini` that
+gains a probe must treat a wrong learned `image_input` as request-changing: it can put an image
+part into a tool-loop turn the model rejects.

@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Images returned by a tool reach the model as images, not as a text
+      placeholder, on the OpenAI Responses and Perplexity Agent APIs
+      (input_image parts in function_call_output) and on Gemini 3 models
+      (functionResponse.parts with inlineData), when the configured model
+      supports('image_input'). Anthropic already sent them as images; other
+      models and the OpenAI chat, Ollama and Hermes wires keep the
+      placeholder. Both wire forms are docs-derived, not live-verified.
+
     - Engine::NousResearch derives tool_wire_format per model: Hermes models
       use the hermes tool-calling wire, every other slug on its multi-model
       gateway uses native OpenAI tools, and the reasoning system prompt and

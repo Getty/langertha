@@ -52,6 +52,14 @@ The flag is advisory. Nothing blocks or strips an image when it is false; an
 image sent to an engine without the claim goes out on the wire as usual and the
 provider decides.
 
+One reader chooses a representation by it: in the tool loop,
+L<Langertha::Role::Tools/format_tool_results> sends an image a I<tool>
+returned as an image part on the C<responses> and Gemini 3 wires only when the
+flag is true, and as a text placeholder otherwise (see
+L<Langertha::ToolResult/DESCRIPTION>). So a claim for a model that does not
+see images is no longer harmless there: the provider may reject the tool-loop
+turn.
+
 This role has no methods or attributes of its own.
 
 =cut

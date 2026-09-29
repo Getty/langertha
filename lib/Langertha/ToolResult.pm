@@ -50,6 +50,30 @@ text placeholder, naming type, MIME type, URI and size.
 On every string wire and on Anthropic, empty content goes out as the
 JSON-encoded L</structured_content>, or as C<''>.
 
+Two wires can also carry an image natively, and do so when C<to> is called
+with C<< image_input => 1 >> (L<Langertha::Role::Tools/format_tool_results>
+passes it when the model claims C<image_input>):
+
+=over
+
+=item * C<responses> -- C<output> becomes an array of parts in content order:
+an image (C<image> block or image resource; JPEG, PNG, GIF, WebP) is an
+C<input_image> with a C<data:> URL in C<image_url>, every other item an
+C<input_text> with the text it has in the string form. Without such an image
+C<output> stays the string. OpenAI C</v1/responses> and Perplexity
+C</v1/agent> document the same shape.
+
+=item * C<gemini> -- an image (JPEG, PNG, WebP) moves out of the C<result>
+string into C<< functionResponse.parts[].inlineData >> (C<mimeType>,
+C<data>). Documented for the Gemini 3 series (v1beta) only.
+
+=back
+
+Both forms are B<documentation-derived, not live-verified>. C<anthropic>
+ignores the option because it maps images always (see above). C<openai>,
+C<ollama> and C<hermes> have no image form in a tool result and ignore it too:
+the image stays a placeholder there.
+
 Not every block is a chat message: the OpenAI Responses block is an C<input>
 I<item> discriminated by C<type> (C<function_call_output>), carrying its payload
 in C<output> and no C<role> at all.
@@ -211,13 +235,42 @@ sub _string_item {
 }
 
 # The whole result as one string: parts joined with "\n"; empty content falls
-# back to the JSON-encoded structured_content, else ''.
+# back to the JSON-encoded structured_content, else ''. _string_of renders a
+# subset, for a wire that carries the other items natively (karr k344).
 sub _string_content {
   my ($self) = @_;
-  my @parts = map { _string_item($_) } $self->_mcp_items;
+  return $self->_string_of( $self->_mcp_items );
+}
+
+sub _string_of {
+  my ( $self, @items ) = @_;
+  my @parts = map { _string_item($_) } @items;
   return join( "\n", @parts ) if @parts;
   return $JSON->encode( $self->structured_content ) if $self->has_structured_content;
   return '';
+}
+
+# --- Native tool-result images (karr k344) ---
+#
+# Two wires take an image inside a tool result: the Open Responses
+# function_call_output (output = string | array of input_text / input_image
+# parts; OpenAI /v1/responses and Perplexity /v1/agent) and Gemini 3's
+# functionResponse.parts[].inlineData (v1beta). Docs-derived, not
+# live-verified (2026-09-29). The caller (Role::Tools) passes image_input => 1
+# only when the model sees images; without it, and on every other wire, the
+# image stays the k336 placeholder.
+
+my %RESPONSES_IMAGE_MIME = map { $_ => 1 } qw( image/jpeg image/png image/gif image/webp );
+my %GEMINI_IMAGE_MIME    = map { $_ => 1 } qw( image/jpeg image/png image/webp );
+
+# The base64 payload of an item the wire takes as an image, else undef.
+sub _native_image_data {
+  my ( $item, $mimes ) = @_;
+  return undef unless $item->{kind} eq 'blob' && defined $item->{data} && !ref $item->{data};
+  return undef unless $item->{type} eq 'image' || $item->{type} eq 'resource';
+  return undef unless $mimes->{ $item->{mime} // '' };
+  ( my $b64 = $item->{data} ) =~ s/\s+//g;
+  return $b64;
 }
 
 # --- Serializers to per-provider result blocks ---
@@ -245,14 +298,30 @@ sub to_ollama {
 }
 
 sub to_responses {
-  my ($self) = @_;
+  my ( $self, %opts ) = @_;
   # A Responses API input item, not a chat message: the wire discriminates on
   # `type`, carries the payload in `output`, and has no `role` at all.
   return {
     type    => 'function_call_output',
     call_id => $self->id,
-    output  => $self->_string_content,
+    output  => ( $opts{image_input} ? $self->_responses_output : $self->_string_content ),
   };
+}
+
+# With an image the wire takes, `output` becomes a part array in content order
+# (one input_text per other item, as the string form renders it); without one
+# it stays the string (karr k344).
+sub _responses_output {
+  my ($self) = @_;
+  my @items = $self->_mcp_items;
+  return $self->_string_of(@items)
+    unless grep { defined _native_image_data( $_, \%RESPONSES_IMAGE_MIME ) } @items;
+  return [ map {
+    my $b64 = _native_image_data( $_, \%RESPONSES_IMAGE_MIME );
+    defined $b64
+      ? { type => 'input_image', image_url => "data:$_->{mime};base64,$b64" }
+      : { type => 'input_text', text => _string_item($_) }
+  } @items ];
 }
 
 # --- Anthropic tool_result content (karr k326) ---
@@ -308,9 +377,25 @@ sub to_anthropic {
 }
 
 sub to_gemini {
-  my ($self) = @_;
+  my ( $self, %opts ) = @_;
+  # With image_input, an image Gemini 3 takes moves out of the result string
+  # into functionResponse.parts[].inlineData (karr k344). No displayName: it is
+  # only needed to $ref a part from `response`, and the v1beta discovery
+  # schema of FunctionResponseBlob does not list it.
+  my ( @rest, @parts );
+  for my $item ( $self->_mcp_items ) {
+    my $b64 = $opts{image_input} ? _native_image_data( $item, \%GEMINI_IMAGE_MIME ) : undef;
+    if ( defined $b64 ) {
+      push @parts, { inlineData => { mimeType => $item->{mime}, data => $b64 } };
+    }
+    else {
+      push @rest, $item;
+    }
+  }
   # functionResponse.response is a JSON object: the MCP structuredContent when
   # the tool gave one, else the result string under `result` (karr k336).
+  # It is required, so an image-only result still sends a `result` string
+  # ('' unless a non-hash structuredContent fills it).
   my $structured = $self->structured_content;
   return {
     functionResponse => {
@@ -319,7 +404,8 @@ sub to_gemini {
       # an invented one would match nothing (karr k328).
       ( length( $self->id ) ? ( id => $self->id ) : () ),
       response => ( ref $structured eq 'HASH'
-        ? $structured : { result => $self->_string_content } ),
+        ? $structured : { result => $self->_string_of(@rest) } ),
+      ( @parts ? ( parts => \@parts ) : () ),
     },
   };
 }
@@ -347,10 +433,12 @@ my %TO_METHOD = (
 
     my $block = $result->to($fmt);
     my $block = $result->to('hermes', response_tag => 'fn_response');
+    my $block = $result->to('responses', image_input => 1);
 
 Serializes to the result block for the given C<tool_wire_format>. Extra options
 are passed through to the per-format serializer (Hermes accepts
-C<response_tag>).
+C<response_tag>; C<responses> and C<gemini> accept C<image_input>, see
+L</DESCRIPTION>, and the other formats ignore it).
 
 =cut
 
