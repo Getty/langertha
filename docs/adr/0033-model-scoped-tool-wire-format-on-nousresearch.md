@@ -131,7 +131,9 @@ predicate but never coupled to each other.
 - **karr #352** — the step-(a) carp when a `chat_f` / `chat_stream_realtime_f` `model` argument
   differs from `chat_model` (so the caller learns the tag / capabilities were resolved for a
   different model than the request body names). This is a pre-existing hole spanning layer 3 /
-  ADR 0023 / ADR 0024, broader than #238; split out rather than solved here.
+  ADR 0023 / ADR 0024, broader than #238; split out rather than solved here. Resolved by k352 as a
+  warning, not a re-scope: an override that flips the resolved tag (or the reasoning prompt) carps
+  (ADR 0019 Update k352).
 - **Step (f) — `Role::StaticModels` → a live `/v1/models` listing** for NousResearch, so the
   ~341-model gateway is discoverable rather than pinned to three static Hermes ids. A separate
   ticket, gated on knarr k20.

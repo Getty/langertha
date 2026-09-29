@@ -197,6 +197,15 @@ around _system_messages => sub {
   return ( { role => 'system', content => $self->reasoning_prompt }, @system );
 };
 
+# The reasoning prompt follows chat_model too, so a per-request model that
+# crosses the Hermes line flips it (karr k352, Role::Chat::_warn_model_override).
+around _model_scoped_wire_decisions => sub {
+  my ( $orig, $self, @args ) = @_;
+  my %decision = $self->$orig(@args);
+  $decision{'reasoning prompt'} = $self->_is_hermes_model ? 1 : 0 if $self->reasoning;
+  return %decision;
+};
+
 around engine_capabilities => sub {
   my ( $orig, $self, @rest ) = @_;
   my $caps = $self->$orig(@rest);

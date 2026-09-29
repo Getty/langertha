@@ -294,3 +294,51 @@ catch-all row `qr/\A/ => { image_input => 0 }`; the other no-claim engines keep 
 clear. Without a probe the answers are unchanged. The table walk now resolves `chat_model`
 through `_capability_model`, which turns the croak of an engine without a default model
 (OpenRouter, OllamaOpenAI) into "no model", matched as `''` like the k209 rule above.
+
+## Update (k352 — a per-request `model` is not re-scoped; it warns when it flips a decision the request uses)
+
+A `model` passed to `chat_f` or `chat_stream_realtime_f` is not a canonical control. It rides
+`%extra` into the request builder and replaces the body's model field. Every model-scoped decision
+still reads `chat_model`: this table and the learned layer (ADR 0032), a model-aware layer 2
+(Gemini's `around`), the exclusion rules (ADR 0024), the reasoning profile (ADR 0023), the
+temperature gate (ADR 0025), the per-model `tool_wire_format` (ADR 0033), and per-model body
+details (the completion-length key, the k225 `response_size` default, native structured output).
+Before this change, a Claude slug passed as the override on a Hermes-tagged NousResearch instance
+silently got the Hermes prompt.
+
+**Decision: warn, don't re-scope.** Re-scoping a request to its override would mean a second engine
+per request. The override may also be intended. So
+`Role::Chat::_warn_model_override` runs at the top of both methods, before any decision is taken.
+It carps rather than croaks, and the request is sent unchanged.
+
+- **Silent** when there is no override (undef, empty, a ref), or when the override equals
+  `chat_model`. Neither case does any work.
+- **Otherwise it compares two engines.** It evaluates the decisions on an in-memory clone with
+  `chat_model => $override`, following the `Manifest::Builder::_capability_clone` pattern:
+  `_reset_derived_tool_wire_format` re-resolves a builder-made tag and keeps a tag given to the
+  constructor (ADR 0033). The clone's decisions are compared with those of the engine as configured.
+- **Only decisions the request uses are compared.** An override that flips nothing on the wire
+  stays silent. A capability flag is compared only when one of its request features is in play
+  (`%CAP_CONSULTED_BY`). For example, `tool_choice_*` needs a `tool_choice`, and
+  `response_format_json_schema` needs a `response_format` or a `tool_choice` (the ADR 0005
+  rewrite). `cached_content` needs a bound cachedContent. `image_input` is never compared: it gates
+  nothing (k266 Update above). **A flag missing from the table is always compared**, so a future
+  model-scoped flag produces a warning instead of silence.
+- **Engines add their own decisions** with an `around _model_scoped_wire_decisions`. NousResearch
+  adds its reasoning prompt this way (when `reasoning` is on). This hook is the extension point for
+  any model-scoped decision taken outside the named hooks above.
+- The warning names the flipped decisions. It is a per-request value, so it fires on every request
+  (k247 convention), through `_langertha_carp`, so it points at the caller's line. If a decision
+  cannot be computed (it dies inside the probe), the request goes on unwarned, and its own path
+  reports the error.
+
+`_check_capability_exclusions` now calls the new `_matched_capability_exclusions` (behavior
+unchanged), so the warning compares the matched rule set for both models. Test:
+`t/78_model_override_warning.t`.
+
+**Known gaps.** A model-scoped decision that is taken inline, rather than through a named hook, is
+not compared: `Engine::DeepSeek::reasoning_kwargs_for` switches on `_is_deepseek_v3(chat_model)`
+(karr #362, an `around _model_scoped_wire_decisions` closes it). Gemini and AKI native carry the
+model in the URL, so the override never reaches their routing (karr #357). The warning text
+("model-scoped wire decisions follow chat_model") is still true there. `Langertha::Chat` takes a
+per-request model without going through `chat_f`, so it gets no warning (karr #360).
