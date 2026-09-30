@@ -9,6 +9,8 @@ requires 'JSON::MaybeXS';
 requires 'JSON::PP';
 requires 'JSON::Schema::Modern', '>= 0.617';
 requires 'LWP::Protocol::https';
+requires 'IO::Socket::SSL';   # used directly by HTTP::UserAgent (connect_address TLS checks)
+requires 'Net::SSLeay';       # ditto: get_verify_result on the pinned session
 requires 'LWP::UserAgent';
 requires 'HTTP::Message';
 requires 'HTTP::Date';
