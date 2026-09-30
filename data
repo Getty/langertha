@@ -1,0 +1,52 @@
+---
+class: standard
+completed: 2026-09-30T05:58:59Z
+created: 2026-09-29T22:13:15Z
+id: 359
+priority: low
+started: 2026-09-30T04:42:53Z
+status: done
+tags:
+- anthropic
+- image-input
+- adr-0019
+title: 'Anthropic-Shims: image_input-Gate fuer Tool-Result-Bilder entscheiden'
+updated: 2026-09-30T05:59:07Z
+---
+
+k344 gated Tool-Result-Bilder auf Responses/Gemini per image_input; Anthropic-native und die /anthropic-Shims (MiniMax/AKI/Moonshot/LMStudio) mappen Bilder seit k326 bedingungslos, obwohl die Shims image_input zuruecksetzen. Entscheiden: gleiches Gate oder bewusst nicht (Hausregel 5). Quelle: k344-Review.
+
+Advisor prueft Provider-Realitaet (Shims akzeptieren Bilder in tool_result?) vor der Entscheidung.
+
+2026-09-30 04:41 llm-advisor VERDIKT (2026-09-30): (a) Gate uebernehmen -- Bild im Anthropic-tool_result nur bei supports('image_input'), sonst k336-Platzhalter als text-Block. Mit zwei Engine-Korrekturen (ohne die waere es falsch):
+
+Provider-Realitaet (Doku 2026-09-30, AKI live):
+- Anthropic 1st-party: dokumentiert, tool_result.content text|image|document|search_result (platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls). Alle Claude 3+ sehen Bilder, Engine claimt -> Gate ist dort No-op.
+- MiniMaxAnthropic: image nur 'M3.1-Flash-Preview / M3 only', M2.x 'do not support image or video input'; tool_result 'Fully supported', Bilder IN tool_result nicht erwaehnt; Verhalten bei M2.x+Bild undokumentiert (platform.minimax.io/docs/api-reference/text-anthropic-api). Korrektur Kartenpraemisse: MiniMaxAnthropic setzt image_input NICHT engine-weit zurueck, sondern claimt M3 per Layer 3 (qr/\AMiniMax-M3(?!\d)/, matcht auch M3.1-Flash-Preview) -> Gate: M3 behaelt Bilder, M2.x Platzhalter. Passt.
+- MoonshotAnthropic: Kimi-Schema dokumentiert tool_result.content = 'either a string or an array of text / image blocks' (platform.kimi.ai/docs/api/messages.md, OpenAPI). Modell-Enum auf /anthropic nur kimi-k3, und kimi-k3 ist Vision (Engine::Moonshot Layer 3). ABER MoonshotAnthropic loescht image_input engine-weit (Layer 2) -> Gate allein = Regression fuer kimi-k3. Pflicht im selben Change: Layer-2-delete durch Layer-3-Zeilen wie Engine::Moonshot ersetzen (qr/\A/ => 0, qr/\Akimi-k(?:3|2\.6|2\.7-code)(?!\d)/ => 1).
+- AKIAnthropic: Doku schweigt (aki.io/docs/compatibility/anthropic-api-compatibility/). LIVE-PROBE (aki.io/anthropic/v1/messages, tool_use -> user tool_result[text, image base64 PNG einfarbig]):
+  * qwen3.6-35b, Bild als normaler user-image-Block (Kontrolle, 16x16 rot): 200, 'Red' -> Shim kann Vision.
+  * qwen3.6-35b, Bild in tool_result (16x16 rot): 200, 'White' ('white background with a small dark icon', halluziniert); zweiter Probe 64x64 gruen, nur Bild: 200, 'Black' ('solid black square'). input_tokens ~340 unabhaengig von Bildgroesse (vs 117 bei user-image) -> Bild kommt im tool_result-Pfad offenbar verstuemmelt/leer beim Modell an. Stille Falschaussage.
+  * gpt-oss-120b (text-only), Bild in tool_result: 200, kein Fehler; Modell sieht nur 'Screenshot captured.' -> stilles Verwerfen.
+  -> Platzhalter ist auf AKI in BEIDEN Faellen strikt besser. Da der user-image-Pfad fuer qwen3.6 funktioniert, wird bald jemand image_input-Zeilen fuer AKIAnthropic nachziehen (wie AKIOpenAI) -> dann wuerden tool_result-Bilder wieder gesendet und falsch gelesen. Daher zusaetzlich AKIAnthropic: sub _tool_result_images_on_wire { 0 } mit Probe-Beleg im Kommentar.
+- LMStudioAnthropic: undokumentiert (lmstudio.ai/docs/developer/anthropic-compat/messages verweist nur auf Anthropic-Doku), self-hosted, Modell unbekannt, claimt nichts -> Platzhalter. Kosten: VLM-Nutzer verlieren Screenshot-Bilder im Loop; konsistent mit LMStudioOpenAI (openai-Wire hat gar keine Bildform). Follow-up (nicht blockierend): model_metadata_format 'lmstudio' auch fuer LMStudioAnthropic, damit probe_model_capabilities_f den vision-Flag lernen kann (ADR 0032).
+
+Warum (a): ADR 0001 k344 Begruendung gilt woertlich auch hier ('the tool loop sends what an MCP server returned, not what the caller chose'). Belegt: Shims liefern 200 bei nicht-sehenden Modellen (kein 400 zum Erkennen), Platzhalter '[image] image/png (N bytes)' sagt dem Modell wenigstens, dass da ein Bild war. (b) waere Hausregel-5-Mitteln: Flag gilt auf 2 Wires, auf dem 3. nicht.
+
+Umsetzungsskizze (langertha-wire-worker):
+1. ToolResult::to_anthropic(%opts): Bild-/Bild-Resource-Blob -> image-Block nur mit image_input => 1, sonst _placeholder-text (wie _anthropic_block 'note'). Native Anthropic-image-Bloecke (mit source, vom Caller gebaut) bleiben pass-through (Caller-Wahl, nicht MCP). k326 ist unreleased (nach 0.502) -> Default darf symmetrisch zu responses/gemini auf Platzhalter kippen; POD 'anthropic ignores the option' umschreiben.
+2. Role::Tools::format_tool_results anthropic-Zweig: ->to('anthropic', $self->_tool_result_image_opts).
+3. MoonshotAnthropic: Layer 2 delete image_input raus, Layer-3-Zeilen wie Moonshot rein.
+4. AKIAnthropic: _tool_result_images_on_wire { 0 } + Probe-Kommentar (Datum, Modelle, Antworten).
+5. Tests: t/92_tool_result_images.t 'wires without a native form' -> anthropic raus, neuer subtest anthropic mit/ohne image_input; t/92_tool_result_anthropic.t Bild-Faelle mit image_input => 1; format_tool_results-Subtest je Engine: Anthropic claude-opus -> image, MiniMaxAnthropic M3 -> image / M2.7 -> Platzhalter, MoonshotAnthropic kimi-k3 -> image, AKIAnthropic qwen3.6-35b -> Platzhalter, LMStudioAnthropic -> Platzhalter; t/78_image_input_capability.t fuer MoonshotAnthropic-Zeilen.
+6. ADR 0001 + 0019: Update (k359), Changes-Eintrag (Zeile 28-32 'Anthropic already sent them as images' anpassen).
+
+Nebenbefund (eigene Karte): AKI-Shim lehnt document-Bloecke im tool_result ab -> HTTP 529 'Unsupported content type: document'; Kimi-Schema listet dort auch nur text|image.
+
+2026-09-30 04:44 Start: worktree ff auf main 2403e56. Plan: to_anthropic(%opts) image_input-Gate (native image-Bloecke pass-through), format_tool_results anthropic-Zweig mit _tool_result_image_opts, MoonshotAnthropic Layer2-delete -> Layer3-Zeilen wie Engine::Moonshot, AKIAnthropic _tool_result_images_on_wire 0. TDD.
+
+2026-09-30 04:57 Done (Variante a). ToolResult::to_anthropic(%opts): MCP-Bild/Bild-Resource -> image-Block nur mit image_input=>1, sonst k336-Platzhalter; native image-Bloecke (source) pass-through; POD korrigiert. Role::Tools anthropic-Zweig -> ->to('anthropic', _tool_result_image_opts + documents-Opt). MoonshotAnthropic: Layer-2-delete raus, Layer-3 wie Engine::Moonshot (qr/\A/ =>0, qr/\Akimi-k(?:3|2\.6|2\.7-code)(?!\d)/ =>1). AKIAnthropic: _tool_result_images_on_wire {0} mit Probe-Beleg. ImageInput-POD, ADR 0001 + 0019 Update (k359), Changes: bestehende {{$NEXT}}-Eintraege k344 + k326 korrigiert (unreleased, waeren sonst falsch). Tests: t/92_tool_result_images.t (anthropic-Gate, format_tool_results je Engine: Claude/M3 image, M2.7/kimi-k2.5/AKI/LMStudio Platzhalter, AKI-anon-Subklasse mit Claim bleibt Platzhalter, Request-Envelope Anthropic+kimi-k3), t/92_tool_result_anthropic.t Bildfaelle mit image_input=>1, t/78_image_input_capability.t Moonshot-Zeilen. Rot vorher (3/12, 5/221 Fails wie erwartet), gruen danach; alle 220 t-Dateien einzeln per perl -Ilib gruen (prove -lr von loadguard abgewiesen), 14 Live-Dateien geskippt. perlcritic OK. Drift fuer Orchestrator: CLAUDE.md ImageInput-Zeile nennt nur responses/Gemini 3 (k344) -- jetzt auch anthropic; Follow-up laut Advisor: model_metadata_format lmstudio fuer LMStudioAnthropic (ADR 0032). Nicht committet.
+
+2026-09-30 Session beendet: Worker gestoppt vor perlcritic/Vollauf. Uncommitteter Stand fuer k359+k364+k366+k367 (Review-Fixes M1-M3/M5/M6, source_blocks-Umbenennung, carp-once, _string_item search_result/content-document) liegt im Worktree .claude/worktrees/agent-ad5f4d0ac402995a5 (Branch worktree-agent-ad5f4d0ac402995a5, Basis 2403e56; main ist weiter, per git apply uebernehmen). Offen: perlcritic, prove -lr t/, Re-Review der Fix-Runde, dann Commit (ein Commit fuer alle vier).
+
+Committed in f569e1d (branch k364)
