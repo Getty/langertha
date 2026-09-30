@@ -1,0 +1,46 @@
+---
+class: standard
+completed: 2026-09-30T05:59:33Z
+created: 2026-09-30T04:59:11Z
+id: 366
+priority: low
+started: 2026-09-30T04:59:22Z
+status: done
+tags:
+- anthropic-shims
+- tools
+title: 'Anthropic-Shims: is_error und search_result im tool_result pruefen (Kimi/MiniMax/LMStudio)'
+updated: 2026-09-30T05:59:42Z
+---
+
+Aus k359/k364. Kimi-OpenAPI (platform.kimi.ai/docs/api/messages.md) listet im tool_result weder is_error noch search_result; Langertha sendet is_error weiter, search_result-Bloecke auf den Shims ungeprueft. llm-advisor: Doku je Shim pruefen (AKI.IO darf live geprobt werden), dann ggf. analog zum k364-documents-Hook behandeln.
+
+llm-advisor VERDIKT (2026-09-30). Kurz: search_result ist handlungsbeduerftig (AKI live 529, Kimi per Schema), is_error nicht (unveraendert senden).
+
+1) is_error:true im tool_result -> (a) UNVERAENDERT SENDEN, alle vier Shims.
+- AKIAnthropic LIVE (aki.io/anthropic/v1/messages, tool_use -> tool_result [text '42'], Frage SUCCESS/FAILURE): qwen3.6-35b mit is_error 200 'SUCCESS 42', ohne is_error 200 'SUCCESS 42', input_tokens beide 378 -> Flag wird angenommen und STILL VERWORFEN (erreicht den Prompt nicht). gpt-oss-120b mit is_error: 200, thinking 'The tool call succeeded', 'SUCCESS 42'. Kein 400.
+- MoonshotAnthropic: Kimi-OpenAPI (platform.kimi.ai/docs/api/messages.md, gelesen 2026-09-30) listet is_error nicht, das tool_result-Objekt hat aber kein additionalProperties:false; Kimi dokumentiert Claude Code auf dem Endpunkt (platform.kimi.ai/docs/guide/claude-code-kimi) und Claude Code sendet is_error bei jedem Tool-Fehler -> angenommen; ob das Modell es sieht: unbelegt.
+- MiniMaxAnthropic: tool_result 'Fully supported' (platform.minimax.io/docs/api-reference/text-anthropic-api, 2026-09-30), Claude-Code-Anleitung (platform.minimax.io/docs/token-plan/claude-code) -> angenommen, Wirkung unbelegt.
+- LMStudioAnthropic: Doku verweist nur auf Anthropic (lmstudio.ai/docs/developer/anthropic-compat/messages), Claude-Code-Integration dokumentiert (lmstudio.ai/docs/integrations/claude-code) -> angenommen, Wirkung unbelegt.
+Warum kein Umbau: kein Shim wirft (kein Loop-Bruch), Senden ist harmlos. Den Flag zu verlieren ist der Status quo auf ALLEN String-Wires: to_openai/to_ollama/to_responses/to_gemini/to_hermes tragen is_error gar nicht, nur der anthropic-Zweig setzt es. Ein Text-Praefix nur auf den Shims waere Hausregel-5-Mitteln (Marker auf 4 Engines, auf ~20 nicht). Risiko bleibt: ein MCP-Fehler, dessen Text nicht nach Fehler klingt, liest das Modell als Erfolg (live gezeigt). Die Fehler, die Langertha selbst erzeugt (unknown tool, arguments are not valid JSON, Error calling tool), benennen sich im Text selbst -> Risiko nur bei Fehlertexten von MCP-Servern. Ausserhalb dieser Karte (Orchestrator entscheidet): wire-uebergreifender Fehlermarker 'wo kein Wire-Flag ankommt, bekommt der Ergebnistext ein Praefix' -- dann einheitlich fuer String-Wires + Shims (Gemini-Doku empfiehlt dafuer response:{error:...}). Nicht in den k364-Hook packen.
+
+2) search_result in tool_result.content
+- AKIAnthropic -> (b) UMWANDELN. LIVE: tool_result.content [{type:search_result, source, title, content:[text]}] -> HTTP 529 {overloaded_error, 'Unsupported content type: search_result'}, qwen3.6-35b 2x + gpt-oss-120b 1x (ein weiterer Versuch nach 120 s Timeout ohne Antwort abgebrochen, Wiederholung wieder 529). Deterministisch wie beim document-Block, kein Retry-Signal: bricht den Loop-Turn.
+- MoonshotAnthropic -> (b) UMWANDELN, nur Doku: Kimi-Schema tool_result.content = string | [text | image] (messages.md, 2026-09-30). Belegt ist die strikte Typpruefung: github.com/MoonshotAI/Kimi-K2.5/issues/27 (Maerz 2026): 400 'Input tag 'document' found using 'type' does not match any of the expected tags: image, server_tool_use, text, thinking, tool_result, tool_use, web_search_tool_result' -> search_result laeuft in dasselbe 400. Gleiche Grundlage wie documents=0 dort.
+- MiniMaxAnthropic -> (c) OFFEN LASSEN (Default 1). Die Feldtabelle (text/image/video/tool_use/tool_result/thinking) nennt weder document noch search_result, 'Fully supported' ohne Unterschema. Das ist dieselbe Beweislage wie beim document-Block, den k364 dort auf 1 gelassen hat; beide gehoeren zusammen entschieden. Ein Fehlschlag waere laut (4xx), nicht still. Wer es klaeren will: EIN freigegebener MiniMax-Probe (document + search_result je 1 Request) klaert beides.
+- LMStudioAnthropic -> (c) OFFEN LASSEN. Self-hosted, undokumentiert, das Verhalten haengt von der LM-Studio-Version ab; ein Fehler waere laut.
+Erreichbarkeit (niedrig, darum prio low richtig): MCP kennt kein search_result (text/image/audio/resource/resource_link); in den Loop kommt es nur ueber einen nicht spec-konformen MCP-Server oder einen Aufrufer, der ToolResult mit nativem search_result baut (_mcp_item reicht type eq 'search_result' als native durch).
+
+Umsetzungsskizze (wire-worker, auf dem k364-Stand, noch uncommittet):
+a. Ein Hook, nicht zwei: document und search_result sind beide Anthropics Quellen-/Zitat-Bloecke, und wo belegt (AKI live, Kimi Schema) werden beide gleich abgelehnt. Empfehlung: jetzt (uncommittet, billig) umbenennen: Option 'documents' -> 'source_blocks', Hook _tool_result_documents_on_wire -> _tool_result_source_blocks_on_wire, 0 auf AKIAnthropic (Kommentar um den search_result-Probe ergaenzen: Datum, Modelle, 529-Text) + MoonshotAnthropic. Minimalvariante, falls der Rename zu viel Churn ist: 'documents => 0' degradiert auch search_result, der Name wird im POD ausdruecklich erklaert.
+b. ToolResult::_anthropic_block, native-Zweig: bei Option 0 und type in (document, search_result) -> { type=>'text', text=>_string_item($item) }.
+c. PFLICHT, sonst geht Inhalt verloren: _string_item rendert natives search_result heute als Platzhalter '[search_result]' (source ist ein String, kein Hash) -> der Text ist weg. Verifiziert: ToolResult->new(content=>[{type=>'search_result',source=>'https://e.com',title=>'T',content=>[{type=>'text',text=>'Quelltown'}]}])->to('openai') ergibt content '[search_result]'. Neuer Zweig in _string_item: search_result -> join("\n", "[search_result] $title <$source>", Texte aus content[].text). Das behebt nebenbei denselben Verlust auf allen String-Wires (openai/ollama/responses/gemini/hermes) -- vorbestehend seit k326/k336, gleiche Stelle, darum im selben Change.
+d. Tests t/92_tool_result_anthropic.t: search_result mit Option 0 -> text-Block mit Titel, source und Text; mit Default -> unveraendert durchgereicht; format_tool_results je Engine: Anthropic/MiniMax/LMStudio search_result nativ, AKI/Kimi text. t/92 (string wires): to('openai') eines search_result enthaelt 'Quelltown' (vorher rot).
+e. POD ToolResult (Absatz 'With documents => 0', Z. ~51) + Role::Tools-Hook-POD + ADR-0001-Update (k364-Abschnitt um k366 ergaenzen) + Changes-Zeile im k326/k364-Eintrag.
+Probe-Dateien: scratchpad p6..p10 (*.json/*.out).
+
+Orchestrator: Advisor-Verdikt angenommen (is_error unveraendert; search_result wie document behandeln, Hook-Umbenennung zu source_blocks). Wird im k359/k364-Worktree mit umgesetzt.
+
+2026-09-30 Session beendet: Worker gestoppt vor perlcritic/Vollauf. Uncommitteter Stand fuer k359+k364+k366+k367 (Review-Fixes M1-M3/M5/M6, source_blocks-Umbenennung, carp-once, _string_item search_result/content-document) liegt im Worktree .claude/worktrees/agent-ad5f4d0ac402995a5 (Branch worktree-agent-ad5f4d0ac402995a5, Basis 2403e56; main ist weiter, per git apply uebernehmen). Offen: perlcritic, prove -lr t/, Re-Review der Fix-Runde, dann Commit (ein Commit fuer alle vier).
+
+Committed in f569e1d (branch k364)
