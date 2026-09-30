@@ -29,7 +29,10 @@ use Langertha::Engine::OpenAI;
 # event loop knarr/skeid/raider serve everything else from. When it is set it
 # now bounds the async request too: a non-streaming request fails after N
 # seconds in total; a stream fails after N seconds without a byte (a long but
-# steady stream is legitimate and must not be cut off). The failure names the
+# steady stream is legitimate and must not be cut off). k373: the healthy-server
+# subtests use 2-3s timeouts (stall 2s, steady 3s with 0.5s gaps) because a 1s
+# limit raced a slow first byte from the local daemon on a loaded machine; only
+# the deliberately hanging subtests keep 1s. The failure names the
 # engine and the URL (query dropped, it may carry a key). Unset keeps the old
 # behavior (no timeout), and the sync LWP path is untouched.
 
@@ -56,9 +59,9 @@ my $server = Test::LocalHTTPDaemon->start( sub {
   if ( $route eq 'stall' ) {            # one chunk, then silence
     @events = ( sse_event('first'), 'STALL', sse_event('never'), @DONE );
   }
-  elsif ( $route eq 'steady' ) {        # 6 chunks 0.4s apart: 2s+ in total, never 1s silent
-    @events = ( ( map { sse_event("c$_") } 1 .. 6 ), @DONE );
-    $pause  = 0.4;
+  elsif ( $route eq 'steady' ) {        # 7 chunks 0.5s apart: 4s in total, never more than 0.5s silent
+    @events = ( ( map { sse_event("c$_") } 1 .. 7 ), @DONE );
+    $pause  = 0.5;
   }
   else {
     return HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'application/json' ],
@@ -136,7 +139,7 @@ subtest 'Langertha::Chat simple_chat_f goes through the same timeout' => sub {
 };
 
 subtest 'a stream that sends one chunk and then stalls fails as a stall' => sub {
-  my $e = engine( "$base/stall/v1", user_agent_timeout => 1 );
+  my $e = engine( "$base/stall/v1", user_agent_timeout => 2 );
   @nahttp_args = ();
   my @seen;
   my $t0 = time;
@@ -146,24 +149,24 @@ subtest 'a stream that sends one chunk and then stalls fails as a stall' => sub 
   my $took = time - $t0;
   ok $f->is_failed, 'the stream fails instead of hanging';
   like failure_of($f),
-    qr/\ALangertha::Engine::OpenAI: streaming request to \Q$base\E\/stall\/v1\/chat\/completions timed out after 1s without data \(Stalled while receiving [^)]+\)\n\z/,
+    qr/\ALangertha::Engine::OpenAI: streaming request to \Q$base\E\/stall\/v1\/chat\/completions timed out after 2s without data \(Stalled while receiving [^)]+\)\n\z/,
     '... named a stall, with engine, URL and timeout';
   is( ( $f->is_failed ? ( $f->failure )[1] : undef ), 'stall_timeout', '... category stall_timeout' );
   is_deeply \@seen, ['first'], '... after delivering the chunk that did arrive';
-  ok $took >= 0.9 && $took < 5, "... about a second after the last byte (took ${\ sprintf '%.2f', $took }s)";
-  is $nahttp_args[0]{stall_timeout}, 1, '... sent as a stall timeout';
+  ok $took >= 1.9 && $took < 8, "... about the timeout after the last byte (took ${\ sprintf '%.2f', $took }s)";
+  is $nahttp_args[0]{stall_timeout}, 2, '... sent as a stall timeout';
   ok !exists $nahttp_args[0]{timeout}, '... not as a total timeout';
 };
 
 subtest 'a slow but steady stream longer than N seconds in total does not time out' => sub {
-  my $e = engine( "$base/steady/v1", user_agent_timeout => 1 );
+  my $e = engine( "$base/steady/v1", user_agent_timeout => 3 );
   my $t0 = time;
   my $f  = $e->chat_stream_realtime_f( messages => [ { role => 'user', content => 'hi' } ] );
   run_capped( $f, 15 );
   my $took = time - $t0;
   ok $f->is_done, 'the stream completes' or diag failure_of($f);
-  is( ( $f->is_done ? ( $f->get )[0] : undef ), 'c1c2c3c4c5c6', '... with all its content' );
-  ok $took > 1.5, "... although it took longer than the timeout in total (${\ sprintf '%.2f', $took }s)";
+  is( ( $f->is_done ? ( $f->get )[0] : undef ), 'c1c2c3c4c5c6c7', '... with all its content' );
+  ok $took > 3.3, "... although it took longer than the timeout in total (${\ sprintf '%.2f', $took }s)";
 };
 
 subtest 'without user_agent_timeout nothing changes: no timeout on the async backend' => sub {
