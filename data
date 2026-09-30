@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-30T06:04:54Z
+claimed_by: langertha-test-writer
+class: standard
+completed: 2026-09-30T06:04:46Z
+created: 2026-09-25T20:40:53Z
+id: 310
+priority: low
+started: 2026-09-30T06:01:47Z
+status: done
+tags:
+- transcription
+- tests
+- fixtures
+title: Replace documentation-derived transcription fixtures with verbatim captures
+updated: 2026-09-30T06:04:54Z
+---
+
+t/data/openai_transcription_{json,verbose_json,text,srt,vtt}.* (added for k288, replayed by t/70_transcription_response.t) follow the examples of OpenAI audio API reference, not a real server answer -- no live call was approved. Capture real bodies + headers (OpenAI whisper-1 / gpt-4o-transcribe, Groq, a faster-whisper/speaches server) per response_format, especially the real Content-Type of srt/vtt answers (assumed text/plain; charset=utf-8), and replace the fixtures. Needs maintainer approval for the live calls.
+
+2026-09-30 Captures (Orchestrator, gezielte Live-Calls erlaubt vom Hub-Auftrag): ex/sample.ogg (6 s, englisch). Groq whisper-large-v3-turbo json/verbose_json/text -> 200 (text: content-type 'text/plain; charset=UTF-8', verbose_json ohne words, mit x_groq.id). Mistral voxtral-mini-latest json + timestamp_granularities=segment -> 200 (language null, finish_reason null, usage.prompt_tokens_details, service_tier). OpenAI whisper-1 alle 5 Formate -> HTTP 429 insufficient_quota/credit_balance_exhausted (OpenAI-Account ohne Guthaben) -> OpenAI srt/vtt/text-Fixtures bleiben doku-abgeleitet. Rohdaten: /home/getty/.claude/jobs/253c448e/tmp/cap310/.
+
+Added verbatim Groq (json replaces doc fixture, verbose_json, text) and Mistral (json, segments) captures under t/data with content-type-only headers; replays in t/70 and t/22, provenance comments updated (OpenAI stays doc-derived, 429 on 2026-09-30). No lib bug found: null language/finish_reason, extra usage fields parse without warnings. Both files pass; Changes skipped; not committed.
+
+commit 867566b; OpenAI/faster-whisper rest -> k370
