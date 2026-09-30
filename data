@@ -1,0 +1,26 @@
+---
+block_reason: Maintainer hat keinen Replicate-Key (2026-09-27); ein Live-Probe ist
+  nicht möglich
+blocked: true
+class: standard
+created: 2026-09-25T06:33:32Z
+id: 243
+priority: medium
+status: backlog
+tags:
+- llm
+- risk
+- engine
+title: Replicate engine targets an undocumented /v1/chat/completions endpoint
+updated: 2026-09-30T06:06:47Z
+---
+
+Found in k242 (llm-advisor, 2026-09-25, docs only). Langertha::Engine::Replicate extends OpenAIBase with url https://api.replicate.com/v1, i.e. POSTs /v1/chat/completions. Replicate official OpenAPI (https://api.replicate.com/openapi.json, info.version 1.0.0-a1, fetched 2026-09-25) has NO chat/completions path: only /predictions, /models/{owner}/{name}/predictions, /deployments/.../predictions, /models, /collections, /files, /trainings, /hardware, /search, /account, /webhooks. replicate.com/docs/llms.txt has no OpenAI-compatibility page. Third-party 2026 comparisons state Replicate is not OpenAI-compatible. The OpenAI-compatible examples on replicate.com model pages (e.g. ibm-granite) are for running the Cog container locally, not the hosted API. Risk: engine may not work at all against the hosted API; POD claims "OpenAI-compatible chat endpoint". TODO: live-probe once a key is available (LANGERTHA_REPLICATE key empty until 2026-09-25 per memory), then either retarget to the predictions API (own format -> Engine::Remote) or document/deprecate. Not live-verified.
+
+2026-09-26 22:34 Maintainer hat keinen Replicate-Key; der Live-Probe kann nicht stattfinden. Offen: nur aus der Doku lösen oder archivieren.
+
+2026-09-30 Unauth-Probe: POST api.replicate.com/v1/chat/completions und eine erfundene Route antworten beide 401 'Unauthenticated' (Auth vor Routing) -> nicht entscheidbar ohne Key. Replicate-Key in .env weiterhin leer.
+
+2026-09-30 06:05 POD corrected in worktree k243 (Engine/Replicate.pm DESCRIPTION + SEE ALSO; Changes). Hosted endpoint no longer claimed; documented as unverified (OpenAPI 2026-09-25, llms.txt), url overridable for local Cog/proxy. Dropped dead openai-compatibility docs link. Langertha.pm catalogue line does not repeat the claim; unchanged. podchecker ok (only =seealso unknown), perl -c ok; dzil not run.
+
+POD korrigiert, commit 69965bd; Karte bleibt offen (Retarget/Deprecate braucht Key bzw. Getty-Entscheidung)
