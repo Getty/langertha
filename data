@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-30T04:47:50Z
+claimed_by: wire-worker
+class: standard
+completed: 2026-09-30T04:47:39Z
+created: 2026-09-29T22:13:00Z
+id: 357
+priority: low
+started: 2026-09-30T04:31:43Z
+status: done
+tags:
+- gemini
+- aki
+- model-override
+title: 'Gemini/AKI native: Per-Request-model aendert das Modell nicht (Modell steht
+  in der URL)'
+updated: 2026-09-30T04:47:50Z
+---
+
+Ein per-request model landet nur als unbekanntes Body-Feld. Croaken oder Override routen. Quelle: k352-Worker. Bekannte Luecke daneben: DeepSeek _is_deepseek_v3 inline in reasoning_kwargs_for wird von der k352-Warnung nicht verglichen.
+
+2026-09-30 04:39 Decision: route, don't croak. New Role::Chat::_url_model(\%extra) deletes 'model' from %extra and returns it (same none-test as _warn_model_override: undef/empty/ref = none) or chat_model; Gemini chat_request + chat_stream_request and AKI chat_request use it for the URL. Bound cachedContent does not block routing (cache in body, model in URL, as for chat_model). Cache-vs-model mismatch 400 not verified offline and applies to chat_model equally -> no check added; possible follow-up for llm-advisor. Tests: t/46_gemini_requests.t, t/25_aki_requests.t red->green; ADR 0019 k352 Known gaps rewritten.
+
+2026-09-30 04:46 Done: per-request model routed into the URL on Gemini (generateContent + streamGenerateContent) and AKI native (/api/call/{model}) via Role::Chat::_url_model; no body field; bound cachedContent routes too. ADR 0019 k352 Known gaps rewritten (route vs croak, ADR 0004 %extra exception). Verified: t/46_gemini_requests.t, t/25_aki_requests.t red->green; prove -lr t/ PASS (219 files); perlcritic lib/ clean; live t/8x skipped (no keys).
+
+Committed b7084b9
