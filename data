@@ -1,0 +1,19 @@
+---
+claimed_at: 2026-09-30T08:14:51Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-30T08:14:42Z
+created: 2026-09-30T06:47:26Z
+id: 376
+priority: medium
+started: 2026-09-30T08:14:42Z
+status: done
+title: 'Gemini ohne api_key: kein ?key= anhängen, keine uninitialized-Warnung'
+updated: 2026-09-30T08:14:51Z
+---
+
+Aus raider #119. Langertha::Engine::Gemini->new(api_key => undef, ...) warnt 'Use of uninitialized value' und hängt ein leeres ?key= an die URL. Gewünscht: Den Key-Parameter weglassen, wenn kein Key gesetzt ist, z. B. für Proxys oder Gateways ohne Key. Mit Test.
+
+2026-09-30 08:14 Done: Gemini gemini_auth_query returns () when api_key undef/empty; explicit undef already skipped builder (lazy_build), so no env read/croak. POD + Changes + t/46_gemini_no_api_key.t (red first, green now); all Gemini tests pass singly.
+
+Committed 3796bfe on branch k376
