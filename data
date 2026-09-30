@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-30T09:11:30Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-30T09:11:30Z
+created: 2026-09-30T06:02:48Z
+id: 369
+priority: low
+started: 2026-09-30T09:09:43Z
+status: done
+title: Manifest::Builder->engine_class_for_dialect (Umkehrung von dialect_for_engine)
+updated: 2026-09-30T09:11:40Z
+---
+
+Wunsch aus langertha-raider (#119, provider --provider HOST): Langertha::Manifest::Builder bietet dialect_for_engine, aber nicht die Umkehrung. raider bildet engine_class_for_dialect vorerst selbst ab (ADR 0007 in raider: Adapter gehört raider). Core-Variante verhindert, dass Dialektliste und Engine-Klassen auseinanderlaufen. Optional, nicht blockierend.
+
+Orchestrator 2026-09-30: zurueckgestellt als Public-API-Frage. Die Umkehrung ist nicht eindeutig: openai-chat deckt ~25 Klassen ab (OpenAIBase ist Basis, nicht Endnutzer-Engine), anthropic-compat 4 Shims + LMStudioAnthropic. Core muesste je Dialekt eine 'generische' Klasse festlegen (z.B. openai-chat -> OpenAIBase oder OpenAI? anthropic-compat -> AnthropicBase?). Laut Karte haelt raider-ADR 0007 fest, dass der Adapter in raider gehoert. Frage an Getty: soll Core das anbieten, und welche Klasse je Dialekt?
+
+Orchestrator 2026-09-30 (Hub hat die Karte zur Umsetzung freigegeben): Entscheidung: Manifest::Builder->engine_class_for_dialect($dialect) liefert je Dialekt die generische Klasse, die die base_url als url nimmt — gespiegelt aus raiders Activation-Adapter: openai-chat=>OpenAI, responses=>OpenAIResponses, perplexity-agent=>Perplexity, anthropic=>Anthropic, anthropic-compat=>AnthropicBase, gemini=>Gemini, ollama=>Ollama, aki=>AKI, lmstudio=>LMStudio; undef fuer unbekannte. Wert: Round-Trip-Test dialect_for_engine(class->new(url=>...)) eq dialect fuer jeden Dialekt der Manifest-Vokabel verhindert Drift. Umsetzung nach k375.
+
+2026-09-30 09:10 Done: Builder->engine_class_for_dialect (loads class via Module::Runtime, already a dep; undef for unknown/undef), all 9 vocabulary dialects mapped, POD + Changes + t/96_manifest_builder.t subtest (table, unknown, round-trip drift guard). Verified: t/96_manifest_builder.t, t/79_pod_catalogue.t, perlcritic green.
+
+Ready for review
+
+2026-09-30 09:11 Committed on branch k369 as b94e5c5
