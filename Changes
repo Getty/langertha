@@ -48,11 +48,18 @@ Revision history for Langertha
 
     - Images returned by a tool reach the model as images, not as a text
       placeholder, on the OpenAI Responses and Perplexity Agent APIs
-      (input_image parts in function_call_output) and on Gemini 3 models
-      (functionResponse.parts with inlineData), when the configured model
-      supports('image_input'). Anthropic already sent them as images; other
-      models and the OpenAI chat, Ollama and Hermes wires keep the
-      placeholder. Both wire forms are docs-derived, not live-verified.
+      (input_image parts in function_call_output), on Gemini 3 models
+      (functionResponse.parts with inlineData) and on the Anthropic wire
+      (image blocks in tool_result), when the configured model
+      supports('image_input'). Other models and the OpenAI chat, Ollama and
+      Hermes wires keep the placeholder, and so does AKIAnthropic for every
+      model: its shim accepts the image but the model does not see it.
+      MoonshotAnthropic now claims image_input for the same Kimi vision
+      models as Moonshot, and on LMStudioAnthropic a vision flag learned by
+      probe_model_capabilities_f now sends the image block. The Responses and Gemini forms are docs-derived,
+      not live-verified, and so is the image block on the /anthropic shims
+      (Kimi documents it, MiniMax does not say; the only live evidence is
+      AKI's negative result).
 
     - Engine::NousResearch derives tool_wire_format per model: Hermes models
       use the hermes tool-calling wire, every other slug on its multi-model
@@ -165,11 +172,22 @@ Revision history for Langertha
       send tool_name plus tool_call_id when the call had an id.
 
     - Anthropic tool results map MCP content onto Anthropic blocks instead of
-      embedding it: images become base64 image blocks, PDF blobs become
-      documents, text resources of any MIME type and text/* blobs become text
-      documents, text loses annotations and _meta, and resource links, audio
-      and other MIME types become text placeholders. A result with only
-      structuredContent sends it as a JSON string.
+      embedding it: images become base64 image blocks (for models that
+      support image_input, see above), PDF blobs become documents, text
+      resources of any MIME type and text/* blobs become text documents, text
+      loses annotations and _meta, and resource links, audio and other MIME
+      types become text placeholders. A result with only structuredContent
+      sends it as a JSON string. AKIAnthropic and MoonshotAnthropic send no
+      document or search_result blocks there (AKI answers both with HTTP
+      529): the text goes out as a text block, a PDF as a placeholder, and a
+      caller-built document or search_result block as its text, with a
+      warning once per engine.
+
+    - A caller-built Anthropic search_result block, or a document block with
+      a content source, in a tool result keeps its text on the OpenAI,
+      Responses, Ollama, Gemini and Hermes wires: a search_result becomes a
+      "[search_result] title <source>" line plus its text, a content
+      document its text parts, instead of a bare placeholder.
 
     - Security: inline image fetches are capped by the new engine attribute
       inline_image_max_bytes (default 20 MiB, 0 for no cap) on every backend;

@@ -60,6 +60,14 @@ L<Langertha::Engine::Moonshot>; an explicit C<response_size> is sent as given.
 Kimi fixes C<temperature> server-side on every current model, so none is sent;
 a C<temperature> other than C<1> is dropped with a warning.
 
+C<image_input> is claimed for the same vision models as on
+L<Langertha::Engine::Moonshot> (C<kimi-k3>, C<kimi-k2.6>, C<kimi-k2.7-code>),
+so an image a tool returns reaches them as an C<image> block in the
+C<tool_result>. Kimi's schema takes no C<document> or C<search_result> there,
+so an embedded text resource goes out as a C<text> block, a PDF as a text
+placeholder, and a native C<document> / C<search_result> block as its text
+(with a warning).
+
 Get your API key at L<https://platform.kimi.ai/> and set
 C<LANGERTHA_MOONSHOT_API_KEY> in your environment.
 
@@ -119,13 +127,33 @@ sub _build_static_models {[
 # documented ids opt back in, because this face parses a thinking toggle for
 # them (kimi-k2.6 enabled|disabled, kimi-k2.7-code enabled only); their
 # Reasoning::Profile rows send it instead of an effort (ADR 0023 k215 Update).
+#
+# image_input (k266, k359, ADR 0019): the same rows as Engine::Moonshot -- this
+# face serves the same Kimi models, and its Messages schema carries image
+# blocks (docs/api/messages.md: tool_result content is "a string or an array
+# of text / image blocks"; llm-advisor 2026-09-30, docs only). The catch-all
+# first row clears the flag for unchecked ids. Until k359 the flag was deleted
+# engine-wide here; it now also picks the tool-result image form, and an
+# engine-wide no-claim would have kept kimi-k3 from seeing a tool's image.
 sub model_capability_corrections {
   return (
+    qr/\A/              => { image_input => 0 },
     qr/\Akimi-k3(?!\d)/ => { temperature => 0 },
     qr/\Akimi-k2(?!\d)/ => { temperature => 0, reasoning_effort => 0 },
     qr/\Akimi-k2\.(?:6|7-code(?:-highspeed)?)\z/ => { reasoning_effort => 1 },
+    qr/\Akimi-k(?:3|2\.6|2\.7-code)(?!\d)/ => { image_input => 1 },
   );
 }
+
+# Source blocks in a tool_result (karr k364, k366): Kimi's Messages OpenAPI
+# schema (platform.kimi.ai/docs/api/messages.md, llm-advisor 2026-09-30, docs
+# only, not live) lists tool_result content as string | [text | image] -- no
+# document, no search_result -- and Kimi checks block types strictly (a 400
+# "Input tag 'document' found using 'type' does not match any of the expected
+# tags" is reported in github.com/MoonshotAI/Kimi-K2.5/issues/27). A text
+# resource goes out as a text block, a PDF as the placeholder, a native
+# document or search_result as its text, rather than a rejected tool-loop turn.
+sub _tool_result_source_blocks_on_wire { 0 }
 
 # Kimi's Messages API documents native output_config.format {type: json_schema,
 # schema} for kimi-k3 (docs/api/messages.md, advisor 2026-09-25, docs only;
@@ -143,14 +171,6 @@ sub _native_structured_output_for_model {
 # thinking-toggle Reasoning::Profile rows serialize as the toggle only on an
 # engine that opts in here; the same model id elsewhere keeps its effort wire.
 sub _reasoning_thinking_toggle { 1 }
-
-around engine_capabilities => sub {
-  my ( $orig, $self, @rest ) = @_;
-  my $caps = $self->$orig(@rest);
-  # image_input (k266, ADR 0019): vision is undocumented / unverified on this face, so no claim.
-  delete $caps->{image_input};
-  return $caps;
-};
 
 __PACKAGE__->meta->make_immutable;
 

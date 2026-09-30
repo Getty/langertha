@@ -220,6 +220,6 @@ probe request only (`around update_request`, matched on `model_metadata_url`); c
 unchanged. Documentation-derived, not live-verified, like the rest of this ADR's fixtures.
 
 The k344 paragraph above said no probing engine is on a wire where `image_input` changes a
-request. This engine is on `anthropic`; if the tool-result image form on that wire is gated on
-`image_input` (the k359 work), a learned fact here is request-changing in the same way: a wrong
-learned `1` sends an image block into a tool-loop turn of a model that cannot read it.
+request. This engine is on `anthropic`, and the tool-result image form on that wire is gated on
+`image_input` (k359, ADR 0001/0019), so a learned fact here is request-changing in the same way:
+a wrong learned `1` sends an image block into a tool-loop turn of a model that cannot read it.

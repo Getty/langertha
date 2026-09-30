@@ -228,8 +228,8 @@ delete the inapplicable flag for their family. → **ADR 0015**.
   `OpenAIResponses` (the `_server_tool_wire_check` hook carries provider divergence). → **ADR 0030**.
 - **ImageInput** — `image_input` capability, model-scoped ("the model sees the image", not just
   "the wire carries it"); family defaults + allowlists per engine, gateways/self-hosted don't claim;
-  never blocks; its one reader picks the tool-result image form on the `responses` / Gemini 3
-  wires (image part vs text placeholder, k344). → **ADR 0019** (k266, k344 Updates).
+  never blocks; its one reader picks the tool-result image form on the `responses` / Gemini 3 /
+  `anthropic` wires (image part vs text placeholder, k344, k359). → **ADR 0019** (k266, k344, k359 Updates).
 - **SystemPrompt**, **Temperature**, **ResponseSize**, **ContextSize**, **Seed**,
   **ResponseFormat** (`decode_loose_json`), **Models**, **ParallelToolUse**.
 - **ReasoningEffort** (`reasoning_effort`) · **PromptCache** (`prompt_cache` / `prompt_cache_key`)

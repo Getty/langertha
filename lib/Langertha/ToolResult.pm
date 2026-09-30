@@ -40,21 +40,42 @@ L</structured_content> object itself when there is one.
 
 Anthropic takes structured blocks, so each MCP block is mapped onto one: text
 keeps only C<text> (and C<cache_control>); an image, or an embedded resource
-whose blob is an image, becomes a base64 C<image> (JPEG, PNG, GIF, WebP); a PDF
-blob becomes a base64 C<document>; a text resource (whatever its MIME type) or a
-C<text/*> blob becomes a text C<document>. Anthropic-native C<image> /
-C<document> blocks (with a C<source>) and C<search_result> pass through.
-Everything else -- C<resource_link>, audio, other MIME types -- becomes the same
-text placeholder, naming type, MIME type, URI and size.
+whose blob is an image, becomes a base64 C<image> (JPEG, PNG, GIF, WebP) when
+C<to> is called with C<< image_input => 1 >> (see below), else the text
+placeholder; a PDF blob becomes a base64 C<document>; a text resource (whatever
+its MIME type) or a C<text/*> blob becomes a text C<document>. Anthropic-native
+C<image> / C<document> blocks (with a C<source>) and C<search_result> pass
+through. Everything else -- C<resource_link>, audio, other MIME types -- becomes
+the same text placeholder, naming type, MIME type, URI and size.
+
+With C<< source_blocks => 0 >> the Anthropic form sends no C<document> or
+C<search_result> block, for a server that rejects them inside a
+C<tool_result>: a text resource or C<text/*> blob becomes a C<text> block
+holding the text (as on the string wires), a PDF blob the placeholder, and an
+Anthropic-native C<document> or C<search_result> a C<text> block with the text
+it has in the string form (below). L<Langertha::Role::Tools/format_tool_results>
+passes it on the C</anthropic> shims of AKI.IO and Moonshot.
+
+An Anthropic-native block on a string wire (or with C<< source_blocks => 0 >>)
+keeps its text: a C<document> with a C<text> source gives that text, one with a
+C<content> source its inner parts joined with C<"\n"> (an image among them as a
+placeholder), a C<search_result> a line C<[search_result] title E<lt>sourceE<gt>>
+followed by its text parts. Anything else becomes a placeholder.
 
 On every string wire and on Anthropic, empty content goes out as the
 JSON-encoded L</structured_content>, or as C<''>.
 
-Two wires can also carry an image natively, and do so when C<to> is called
-with C<< image_input => 1 >> (L<Langertha::Role::Tools/format_tool_results>
-passes it when the model claims C<image_input>):
+Three wires carry an image natively, and do so only when C<to> is called with
+C<< image_input => 1 >> (L<Langertha::Role::Tools/format_tool_results> passes
+it when the model claims C<image_input>):
 
 =over
+
+=item * C<anthropic> -- the base64 C<image> block above. Documented for
+first-party Anthropic; on the C</anthropic> shims it is not live-verified:
+Kimi's schema lists C<image> inside a C<tool_result> (docs only), MiniMax
+documents nothing about it, and the only live evidence is negative (AKI.IO's
+shim accepts it but its models do not see it, so that engine never sends it).
 
 =item * C<responses> -- C<output> becomes an array of parts in content order:
 an image (C<image> block or image resource; JPEG, PNG, GIF, WebP) is an
@@ -69,10 +90,9 @@ C<data>). Documented for the Gemini 3 series (v1beta) only.
 
 =back
 
-Both forms are B<documentation-derived, not live-verified>. C<anthropic>
-ignores the option because it maps images always (see above). C<openai>,
-C<ollama> and C<hermes> have no image form in a tool result and ignore it too:
-the image stays a placeholder there.
+The C<responses> and C<gemini> forms are B<documentation-derived, not
+live-verified>. C<openai>, C<ollama> and C<hermes> have no image form in a
+tool result and ignore the option: the image stays a placeholder there.
 
 Not every block is a chat message: the OpenAI Responses block is an C<input>
 I<item> discriminated by C<type> (C<function_call_output>), carrying its payload
@@ -226,12 +246,40 @@ sub _string_item {
   my $kind = $item->{kind};
   return _placeholder( @{$item}{qw( type mime uri data )} ) if $kind eq 'blob';
   return $item->{text} unless $kind eq 'native';
-  # An Anthropic-native block on a string wire: a text document gives its
-  # text, anything else a placeholder.
-  my $native = $item->{block};
-  my $src    = ref $native->{source} eq 'HASH' ? $native->{source} : {};
-  return $src->{data} if ( $src->{type} // '' ) eq 'text' && defined $src->{data};
-  return _placeholder( $native->{type}, $src->{media_type}, $src->{url} );
+  return _native_string( $item->{block} );
+}
+
+# An Anthropic-native block as text, for a wire that cannot carry it: a text
+# document gives its text, a content document its inner parts (karr k367), a
+# search_result a "[search_result] title <source>" line and its text parts
+# (karr k366), anything else a placeholder. Inner parts render the same way.
+sub _native_string {
+  my ($native) = @_;
+  return _placeholder('unsupported') unless ref $native eq 'HASH';
+  my $type = $native->{type} // '';
+  return $native->{text} // '' if $type eq 'text';
+  if ( $type eq 'search_result' ) {
+    my $source = $native->{source};
+    my $head   = join ' ', '[search_result]', grep { defined && length } $native->{title},
+      ( defined $source && !ref $source && length $source ? "<$source>" : () );
+    return join "\n", $head, _native_parts( $native->{content} );
+  }
+  my $src = ref $native->{source} eq 'HASH' ? $native->{source} : {};
+  my $src_type = $src->{type} // '';
+  return $src->{data} if $src_type eq 'text' && defined $src->{data};
+  if ( $src_type eq 'content' ) {
+    my @parts = _native_parts( $src->{content} );
+    return join "\n", @parts if @parts;
+  }
+  return _placeholder( $type, $src->{media_type}, $src->{url} );
+}
+
+sub _native_parts {
+  my ($parts) = @_;
+  return () unless defined $parts;
+  return ($parts) unless ref $parts;
+  return () unless ref $parts eq 'ARRAY';
+  return map { _native_string($_) } @$parts;
 }
 
 # The whole result as one string: parts joined with "\n"; empty content falls
@@ -257,8 +305,9 @@ sub _string_of {
 # parts; OpenAI /v1/responses and Perplexity /v1/agent) and Gemini 3's
 # functionResponse.parts[].inlineData (v1beta). Docs-derived, not
 # live-verified (2026-09-29). The caller (Role::Tools) passes image_input => 1
-# only when the model sees images; without it, and on every other wire, the
-# image stays the k336 placeholder.
+# only when the model sees images; without it, and on every other wire but
+# Anthropic (same gate, karr k359, below), the image stays the k336
+# placeholder.
 
 my %RESPONSES_IMAGE_MIME = map { $_ => 1 } qw( image/jpeg image/png image/gif image/webp );
 my %GEMINI_IMAGE_MIME    = map { $_ => 1 } qw( image/jpeg image/png image/webp );
@@ -331,47 +380,79 @@ sub _responses_output {
 # follows anthropic-sdk-python lib/tools/mcp.py, except that nothing dies inside
 # the tool loop: what Anthropic cannot carry (audio, resource_link, unsupported
 # MIME types) becomes a text placeholder.
+#
+# Two options, both decided by the caller (Role::Tools) per engine and model:
+#   image_input  an MCP image becomes an image block only with it (karr k359),
+#                as on the responses / gemini wires: the /anthropic shims
+#                answer 200 whether or not the model sees it. An
+#                Anthropic-native image block the caller built passes through.
+#   source_blocks  0 on a wire that rejects Anthropic's source blocks
+#                (document, search_result) in a tool_result (karr k364, k366:
+#                AKI's shim answers 529 "Unsupported content type: document" /
+#                "... search_result"): a text document goes inline as a text
+#                block, as on the string wires, a PDF as the placeholder. That
+#                is wire truth, not a model question, so a native document or
+#                search_result is degraded the same way (Role::Tools carps
+#                when it does). Default 1.
 
 my %ANTHROPIC_IMAGE_MIME = map { $_ => 1 } qw( image/jpeg image/png image/gif image/webp );
 
+# The Anthropic-native block types source_blocks => 0 degrades.
+my %ANTHROPIC_SOURCE_BLOCK = map { $_ => 1 } qw( document search_result );
+
 sub _anthropic_block {
-  my ($item) = @_;
-  my $kind = $item->{kind};
-  return $item->{block} if $kind eq 'native';
+  my ( $item, %opts ) = @_;
+  my $kind          = $item->{kind};
+  my $source_blocks = $opts{source_blocks} // 1;
+  if ( $kind eq 'native' ) {
+    return $item->{block} if $source_blocks || !$ANTHROPIC_SOURCE_BLOCK{ $item->{block}{type} };
+    return { type => 'text', text => _string_item($item) };
+  }
   if ( $kind eq 'text' ) {
     return { type => 'text', text => $item->{text},
       ( exists $item->{cache_control} ? ( cache_control => $item->{cache_control} ) : () ) };
   }
   return { type => 'text', text => $item->{text} } if $kind eq 'note';
   if ( $kind eq 'document' ) {
+    return { type => 'text', text => $item->{text} } unless $source_blocks;
     return { type => 'document',
       source => { type => 'text', media_type => 'text/plain', data => $item->{text} } };
   }
   my ( $type, $mime, $data ) = ( $item->{type}, $item->{mime} // '', $item->{data} );
   if ( defined $data && ( $type eq 'image' || $type eq 'resource' ) ) {
     return { type => 'image', source => { type => 'base64', media_type => $mime, data => $data } }
-      if $ANTHROPIC_IMAGE_MIME{$mime};
+      if $opts{image_input} && $ANTHROPIC_IMAGE_MIME{$mime};
     return { type => 'document',
       source => { type => 'base64', media_type => 'application/pdf', data => $data } }
-      if $type eq 'resource' && $mime eq 'application/pdf';
+      if $source_blocks && $type eq 'resource' && $mime eq 'application/pdf';
   }
   return { type => 'text', text => _placeholder( @{$item}{qw( type mime uri data )} ) };
 }
 
 sub _anthropic_content {
-  my ($self) = @_;
-  my @blocks = map { _anthropic_block($_) } $self->_mcp_items;
+  my ( $self, %opts ) = @_;
+  my @blocks = map { _anthropic_block( $_, %opts ) } $self->_mcp_items;
   return \@blocks if @blocks;
   return $JSON->encode( $self->structured_content ) if $self->has_structured_content;
   return '';
 }
 
-sub to_anthropic {
+# The types of the Anthropic-native source blocks a caller put into the
+# content, each once: what source_blocks => 0 degrades. Role::Tools warns about
+# them (karr k366); an MCP resource is the normal path and not among them.
+sub _native_source_block_types {
   my ($self) = @_;
+  my %seen;
+  return grep { $ANTHROPIC_SOURCE_BLOCK{$_} && !$seen{$_}++ }
+    map { $_->{block}{type} } grep { $_->{kind} eq 'native' } $self->_mcp_items;
+}
+
+sub to_anthropic {
+  my ( $self, %opts ) = @_;
   return {
     type        => 'tool_result',
     tool_use_id => $self->id,
-    content     => $self->_anthropic_content,
+    content     => $self->_anthropic_content(%opts),
     ( $self->is_error ? ( is_error => JSON::MaybeXS::true() ) : () ),
   };
 }
@@ -437,8 +518,9 @@ my %TO_METHOD = (
 
 Serializes to the result block for the given C<tool_wire_format>. Extra options
 are passed through to the per-format serializer (Hermes accepts
-C<response_tag>; C<responses> and C<gemini> accept C<image_input>, see
-L</DESCRIPTION>, and the other formats ignore it).
+C<response_tag>; C<responses>, C<gemini> and C<anthropic> accept
+C<image_input>, C<anthropic> also C<source_blocks>, see L</DESCRIPTION>; the other
+formats ignore them).
 
 =cut
 

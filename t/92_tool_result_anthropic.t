@@ -7,6 +7,10 @@ use JSON::MaybeXS;
 
 use Langertha::ToolResult;
 use Langertha::Engine::Anthropic;
+use Langertha::Engine::MiniMaxAnthropic;
+use Langertha::Engine::MoonshotAnthropic;
+use Langertha::Engine::AKIAnthropic;
+use Langertha::Engine::LMStudioAnthropic;
 
 # Why (karr k326): a tool_result's content goes onto the Anthropic wire, which
 # takes only text | image | document | search_result blocks and rejects unknown
@@ -16,14 +20,33 @@ use Langertha::Engine::Anthropic;
 # next tool-loop turn 400s the moment an MCP tool returns an image or annotated
 # text. The mapping follows anthropic-sdk-python lib/tools/mcp.py, except that
 # nothing dies mid-loop: what Anthropic cannot carry becomes a text placeholder.
+#
+# Since k359 an MCP image becomes an image block only with image_input => 1
+# (the model sees images; t/92_tool_result_images.t), so the image cases here
+# ask for it. Since k364/k366 source_blocks => 0 keeps Anthropic's source
+# blocks (document, search_result) off wires that reject them: AKI's /anthropic
+# shim answers either inside a tool_result with HTTP 529 "Unsupported content
+# type: document" / "... search_result" (live probes 2026-09-30, and 529 is
+# deterministic there, not a retry signal), and Kimi's Messages schema lists
+# only text | image in tool_result. Without the fix, every tool-loop turn in
+# which an MCP tool returns an embedded text resource breaks on those shims.
 
 my $PNG = 'iVBORw0KGgo=';
 
 sub content_of {
   my (@blocks) = @_;
   return Langertha::ToolResult->new( id => 'toolu_1', content => \@blocks )
-    ->to('anthropic')->{content};
+    ->to( 'anthropic', image_input => 1 )->{content};
 }
+
+sub content_without_source_blocks {
+  my (@blocks) = @_;
+  return Langertha::ToolResult->new( id => 'toolu_1', content => \@blocks )
+    ->to( 'anthropic', image_input => 1, source_blocks => 0 )->{content};
+}
+
+my $SEARCH_RESULT = { type => 'search_result', source => 'https://e.com/q', title => 'Quelltown',
+  content => [ { type => 'text', text => 'Population 12' } ] };
 
 subtest 'text keeps only type, text and cache_control' => sub {
   is_deeply(
@@ -115,6 +138,53 @@ subtest 'Anthropic-native blocks pass through' => sub {
   is_deeply( content_of($doc), [$doc], 'document with source kept' );
 };
 
+subtest 'source_blocks => 0: text documents inline as text, PDFs become placeholders' => sub {
+  is_deeply(
+    content_without_source_blocks( { type => 'resource',
+      resource => { uri => 'file:///a.md', mimeType => 'text/markdown', text => '# hi' } } ),
+    [ { type => 'text', text => '# hi' } ],
+    'a text resource becomes a text block (as on the string wires)' );
+  is_deeply(
+    content_without_source_blocks( { type => 'resource',
+      resource => { uri => 'file:///k.txt', mimeType => 'text/plain', blob => 'S8O2bG4=' } } ),
+    [ { type => 'text', text => "K\x{f6}ln" } ],
+    'a text/* blob decodes into a text block' );
+  is_deeply(
+    content_without_source_blocks( { type => 'resource',
+      resource => { uri => 'file:///a.pdf', mimeType => 'application/pdf', blob => 'JVBERi0=' } } ),
+    [ { type => 'text', text => '[resource] application/pdf <file:///a.pdf> (5 bytes)' } ],
+    'a PDF blob becomes the k336 placeholder, never the base64' );
+  is_deeply(
+    content_without_source_blocks(
+      { type => 'document', source => { type => 'text', media_type => 'text/plain', data => 'd' } } ),
+    [ { type => 'text', text => 'd' } ],
+    'a native text document becomes its text: the wire rejects the block type itself' );
+  is_deeply(
+    content_without_source_blocks(
+      { type => 'document', source => { type => 'base64', media_type => 'application/pdf', data => 'JVBERi0=' } } ),
+    [ { type => 'text', text => '[document] application/pdf' } ],
+    'a native PDF document becomes a placeholder' );
+  my $img = { type => 'image', source => { type => 'url', url => 'https://x/y.png' } };
+  is_deeply( content_without_source_blocks($img), [$img], 'a native image block is untouched' );
+  is( content_without_source_blocks( { type => 'image', data => $PNG, mimeType => 'image/png' } )->[0]{type},
+    'image', 'an MCP image still follows image_input only' );
+  is_deeply(
+    content_without_source_blocks( { type => 'document', source => { type => 'content', content => [
+      { type => 'text', text => 'one' }, { type => 'text', text => 'two' } ] } } ),
+    [ { type => 'text', text => "one\ntwo" } ],
+    'a native content document becomes its inner text (k367)' );
+  is_deeply( content_without_source_blocks($SEARCH_RESULT),
+    [ { type => 'text', text => "[search_result] Quelltown <https://e.com/q>\nPopulation 12" } ],
+    'a native search_result becomes a text block with title, source and text (k366)' );
+  is_deeply(
+    Langertha::ToolResult->new( id => 't', content => [ { type => 'resource',
+      resource => { uri => 'mem://x', text => 'plain' } } ] )->to( 'anthropic', source_blocks => 1 )->{content},
+    [ { type => 'document', source => { type => 'text', media_type => 'text/plain', data => 'plain' } } ],
+    'source_blocks => 1 is the default form' );
+  is_deeply( content_of($SEARCH_RESULT), [$SEARCH_RESULT],
+    'by default a native search_result passes through' );
+};
+
 subtest 'empty content' => sub {
   is( content_of(), '', 'empty content becomes the empty string' );
   my $tr = Langertha::ToolResult->new( id => 't', content => [],
@@ -149,6 +219,67 @@ subtest 'format_tool_results maps the MCP result on the Anthropic wire' => sub {
     { type => 'text', text => '[resource_link] r <file:///r>' },
   ], 'MCP blocks mapped' );
   is( $blocks->[1]{content}, '{"n":3}', 'structuredContent carried through the loop' );
+};
+
+subtest 'format_tool_results: document blocks only where the wire takes them' => sub {
+  my $raw = { content => [ { type => 'tool_use', id => 'toolu_1', name => 'read', input => {} } ] };
+  my $res = [ { tool_call => { id => 'toolu_1' }, result => { content => [
+    { type => 'resource', resource => { uri => 'file:///n.txt', mimeType => 'text/plain', text => 'notes' } },
+  ] } } ];
+  my $doc  = [ { type => 'document', source => { type => 'text', media_type => 'text/plain', data => 'notes' } } ];
+  my $text = [ { type => 'text', text => 'notes' } ];
+  my @rows = (
+    [ Anthropic         => 'claude-sonnet-4-6' => $doc,  'first-party: documented document block' ],
+    [ MiniMaxAnthropic  => 'MiniMax-M3'        => $doc,  'MiniMax: undocumented, default kept' ],
+    [ LMStudioAnthropic => 'default'           => $doc,  'LM Studio: undocumented, default kept' ],
+    [ AKIAnthropic      => 'qwen3.6-35b'       => $text, 'AKI: document is a 529, text inline' ],
+    [ MoonshotAnthropic => 'kimi-k3'           => $text, 'Kimi: schema lists text | image only' ],
+  );
+  my $sr_res  = [ { tool_call => { id => 'toolu_1' }, result => { content => [$SEARCH_RESULT] } } ];
+  my $sr_text = [ { type => 'text', text => "[search_result] Quelltown <https://e.com/q>\nPopulation 12" } ];
+  for my $row (@rows) {
+    my ( $name, $model, $want, $why ) = @$row;
+    my $e = "Langertha::Engine::$name"->new( api_key => 'k', model => $model );
+    my @warnings;
+    local $SIG{__WARN__} = sub { push @warnings, @_ };
+    my @msgs = $e->format_tool_results( $raw, $res );
+    is_deeply( $msgs[1]{content}[0]{content}, $want, "$name: $why" );
+    is( scalar @warnings, 0, "$name: an MCP resource is the normal path, no warning" );
+    my $degraded = $want == $text;
+    @msgs = $e->format_tool_results( $raw, $sr_res );
+    is_deeply( $msgs[1]{content}[0]{content}, $degraded ? $sr_text : [$SEARCH_RESULT],
+      "$name: native search_result " . ( $degraded ? 'as text (k366)' : 'passes through' ) );
+  }
+};
+
+subtest 'format_tool_results carps once per engine when it degrades a caller-built source block' => sub {
+  # The caller chose a native document / search_result for the Anthropic
+  # wire; on a shim that rejects it, it silently becoming text would surprise
+  # them. Once per engine instance, as ADR 0035's dropped cache fields.
+  my $raw = { content => [ { type => 'tool_use', id => 'toolu_1', name => 'read', input => {} } ] };
+  my $res = [ { tool_call => { id => 'toolu_1' }, result => { content => [
+    $SEARCH_RESULT,
+    { type => 'document', source => { type => 'text', media_type => 'text/plain', data => 'd' } },
+  ] } } ];
+  my $aki = Langertha::Engine::AKIAnthropic->new( api_key => 'k', model => 'qwen3.6-35b' );
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  $aki->format_tool_results( $raw, $res ) for 1 .. 3;
+  is( scalar @warnings, 1, 'three turns, one warning' );
+  like( $warnings[0], qr/AKIAnthropic/, 'names the engine' );
+  like( $warnings[0], qr/search_result/, 'names search_result' );
+  like( $warnings[0], qr/document/, 'names document' );
+  like( $warnings[0], qr/as text/, 'says what happens instead' );
+
+  @warnings = ();
+  Langertha::Engine::AKIAnthropic->new( api_key => 'k', model => 'qwen3.6-35b' )
+    ->format_tool_results( $raw, $res );
+  is( scalar @warnings, 1, 'a second engine instance warns again' );
+
+  @warnings = ();
+  Langertha::Engine::Anthropic->new( api_key => 'k', model => 'claude-sonnet-4-6' )
+    ->format_tool_results( $raw, $res );
+  is( scalar @warnings, 0, 'first-party Anthropic sends them as they are: no warning' );
 };
 
 done_testing;

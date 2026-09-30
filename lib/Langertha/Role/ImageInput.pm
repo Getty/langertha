@@ -34,18 +34,19 @@ keep the flag and clear it for the listed text-only models
 (C<model_capability_corrections>);
 
 =item * other cloud engines clear it for every model and re-assert it only for
-the documented vision models;
+the documented vision models -- including the C</anthropic> shims of MiniMax
+and Moonshot, which carry the same rows as their OpenAI faces;
 
-=item * gateways, self-hosted servers and the C</anthropic> shims clear it
-for every model: the model behind them is unknown to the client, so the engine
-makes no static claim.
+=item * gateways, self-hosted servers, AKIAnthropic and LMStudioAnthropic clear
+it for every model: the model behind them is unknown to the client, or its
+vision is unverified on that face, so the engine makes no static claim.
 
 =back
 
 The static answer can be replaced by what the provider says about its own
 models: L<Langertha::Role::Capabilities/probe_model_capabilities_f> reads the
 metadata endpoint of OpenRouter, Mistral, Ollama, OllamaOpenAI, LMStudio,
-LMStudioOpenAI, LlamaCpp and TSystems and stores C<image_input> per model on the engine
+LMStudioOpenAI, LMStudioAnthropic, LlamaCpp and TSystems and stores C<image_input> per model on the engine
 instance (ADR 0032). Nothing probes implicitly.
 
 The flag is advisory. Nothing blocks or strips an image when it is false; an
@@ -54,11 +55,12 @@ provider decides.
 
 One reader chooses a representation by it: in the tool loop,
 L<Langertha::Role::Tools/format_tool_results> sends an image a I<tool>
-returned as an image part on the C<responses> and Gemini 3 wires only when the
-flag is true, and as a text placeholder otherwise (see
+returned as an image part on the C<responses>, Gemini 3 and C<anthropic> wires
+only when the flag is true, and as a text placeholder otherwise (see
 L<Langertha::ToolResult/DESCRIPTION>). So a claim for a model that does not
 see images is no longer harmless there: the provider may reject the tool-loop
-turn.
+turn, or (as AKI.IO's C</anthropic> shim does) accept it while the model never
+sees the image.
 
 This role has no methods or attributes of its own.
 

@@ -380,3 +380,22 @@ layer-3 rows therefore matter for correctness there, not only for reporting. The
 learning `image_input` only ("advisory, does not change what is sent") is therefore slightly
 weaker: a learned fact could now change a tool-result's form, but only on the `responses` and
 `gemini` wires, and none of the engines that probe (ADR 0032) uses either.
+
+## Update (k359 — the Anthropic wire reads `image_input` too; MoonshotAnthropic moves its claim to layer 3)
+
+`format_tool_results` now reads the flag on the `anthropic` wire as well (ADR 0001 k359 Update):
+a tool's image becomes an `image` block in the `tool_result` only with the claim, else the k336
+placeholder. So the costs of the k344 Update now hold on three wires, and the no-claim of a shim
+is no longer free. `MoonshotAnthropic` cleared `image_input` engine-wide in layer 2 (k266), which
+would have kept its vision models — `kimi-k3` (the default), `kimi-k2.6`, `kimi-k2.7-code` and
+`-highspeed`, all four ids its static model list names — from seeing a tool's screenshot. It now
+carries `Engine::Moonshot`'s rows in layer 3: the `qr/\A/ => { image_input => 0 }` catch-all, then
+`qr/\Akimi-k(?:3|2\.6|2\.7-code)(?!\d)/` re-asserts it for all four. Kimi's Messages schema
+documents `image` blocks, `tool_result` included (docs only, 2026-09-30; not live-verified on this
+face). `AKIAnthropic` keeps its layer-2 no-claim, and additionally keeps the placeholder through
+`_tool_result_images_on_wire` even under a future claim. `LMStudioAnthropic`'s no-claim is a
+layer-3 catch-all that a probed fact overrides (ADR 0032 k365): it is the first probing engine on
+the `anthropic` wire, so with this change a learned `vision` picks the `image` block in the
+`tool_result` there. That path is not live-verified: LM Studio does not document images in a
+`tool_result`. The k344 remark on ADR 0032 (no probing engine on a request-changing wire) no
+longer holds for this one engine.

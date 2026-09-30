@@ -52,6 +52,7 @@ my %DEFAULT = (
   MiniMax           => 1,  # MiniMax-M3
   MiniMaxAnthropic  => 1,  # MiniMax-M3
   Moonshot          => 1,  # kimi-k3
+  MoonshotAnthropic => 1,  # kimi-k3 (same rows as Moonshot since k359)
   # allowlisted, default is a preset -> no claim
   Perplexity        => 0,  # sonar
   # allowlisted cloud engines, default model is text-only (Groq has none)
@@ -63,7 +64,6 @@ my %DEFAULT = (
   AKIOpenAI         => 0,  # gpt-oss-120b; qwen3.6/qwen3.8/gemma4 allowlisted (k271/k272)
   NousResearch      => 0,
   # shims
-  MoonshotAnthropic => 0,
   AKIAnthropic      => 0,
   LMStudioAnthropic => 0,
   # gateways
@@ -213,6 +213,16 @@ my @ROWS = (
   [ Moonshot        => 'kimi-k2.7-code-highspeed'    => 1 ],
   [ Moonshot        => 'kimi-k2.5'                   => 0 ],
   [ Moonshot        => 'kimi-k30'                    => 0 ],  # multi-digit guard
+  # k359: the /anthropic face serves the same Kimi models and its Messages
+  # schema carries images (tool_result text | image too), so it takes
+  # Engine::Moonshot's rows instead of the engine-wide no-claim. It matters
+  # beyond reporting: the flag now picks the Anthropic tool-result image form.
+  [ MoonshotAnthropic => 'kimi-k3'                   => 1 ],
+  [ MoonshotAnthropic => 'kimi-k2.6'                 => 1 ],
+  [ MoonshotAnthropic => 'kimi-k2.7-code'            => 1 ],
+  [ MoonshotAnthropic => 'kimi-k2.7-code-highspeed'  => 1 ],
+  [ MoonshotAnthropic => 'kimi-k2.5'                 => 0 ],
+  [ MoonshotAnthropic => 'kimi-k30'                  => 0 ],  # multi-digit guard
   [ Cerebras        => 'qwen-3.8-27b'                => 1 ],
   [ Cerebras        => 'gemma-4-31b'                 => 1 ],
   [ Cerebras        => 'kimi-k2.7-code'              => 1 ],
@@ -285,7 +295,6 @@ my @ROWS = (
   [ OpenRouter      => 'openai/gpt-4o'               => 0 ],
   [ vLLM            => 'Qwen/Qwen2.5-VL-7B-Instruct' => 0 ],
   [ Ollama          => 'llava'                       => 0 ],
-  [ MoonshotAnthropic => 'kimi-k3'                   => 0 ],
 );
 for my $row (@ROWS) {
   my ( $name, $model, $want ) = @$row;

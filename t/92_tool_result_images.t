@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: ToolResult carries tool-result images natively on the Responses and Gemini 3 wires when the model sees images
+# ABSTRACT: ToolResult carries tool-result images natively on the Responses, Gemini 3 and Anthropic wires when the model sees images
 use strict;
 use warnings;
 use Test2::Bundle::More;
@@ -10,6 +10,11 @@ use Langertha::Engine::OpenAI;
 use Langertha::Engine::OpenAIResponses;
 use Langertha::Engine::Perplexity;
 use Langertha::Engine::Gemini;
+use Langertha::Engine::Anthropic;
+use Langertha::Engine::MiniMaxAnthropic;
+use Langertha::Engine::MoonshotAnthropic;
+use Langertha::Engine::AKIAnthropic;
+use Langertha::Engine::LMStudioAnthropic;
 
 # Why (karr k344, follow-up of k336 / ADR 0001 k326+k336 Update): on every
 # string wire a tool's image output reaches the model as a placeholder
@@ -33,7 +38,15 @@ use Langertha::Engine::Gemini;
 # (ADR 0019) and the wire takes it for that model; otherwise the k336
 # placeholder string stays. Wires without a native form (openai, ollama,
 # hermes) ignore the option and keep the placeholder -- nothing dies inside the
-# tool loop (k336). Anthropic already maps images (k326) and is unchanged.
+# tool loop (k336).
+#
+# Anthropic's tool_result has an image block (k326), and since k359 it follows
+# the same gate: the /anthropic shims answer 200 whether or not the model sees
+# the image (AKI live probe 2026-09-30: gpt-oss-120b silently dropped it,
+# qwen3.6-35b misread it as a black/white square), so a model without the
+# claim gets the placeholder, which at least says an image was there.
+# First-party Claude claims image_input, so nothing changes there. An
+# Anthropic-native image block a caller built passes through unchanged.
 
 my $PNG  = 'iVBORw0KGgoAAAANSUhEUgAA';    # 18 decoded bytes
 my $JPEG = '/9j/4AAQSkZJRg==';
@@ -120,9 +133,35 @@ subtest 'gemini: image_input adds functionResponse.parts inlineData' => sub {
 
 subtest 'wires without a native form ignore the option' => sub {
   my $r = result( content => \@MIXED );
-  for my $fmt (qw( openai ollama hermes anthropic )) {
+  for my $fmt (qw( openai ollama hermes )) {
     is_deeply( $r->to( $fmt, image_input => 1 ), $r->to($fmt), "$fmt unchanged" );
   }
+};
+
+subtest 'anthropic: image_input gates MCP images; native image blocks pass through' => sub {
+  my $r = result( content => \@MIXED );
+  is_deeply( $r->to( 'anthropic', image_input => 1 )->{content}, [
+    { type => 'text',  text => 'first' },
+    { type => 'image', source => { type => 'base64', media_type => 'image/png', data => $PNG } },
+    { type => 'text',  text => '[resource_link] r.txt <file:///r.txt>' },
+    { type => 'text',  text => '[audio] audio/wav (4 bytes)' },
+    { type => 'text',  text => 'last' },
+  ], 'with image_input the MCP image is a base64 image block' );
+  is_deeply( $r->to('anthropic')->{content}[1],
+    { type => 'text', text => '[image] image/png (18 bytes)' },
+    'without it the MCP image is the k336 placeholder text block' );
+
+  my $res = result( content => [ { type => 'resource', resource => { uri => 'file:///s.png',
+    mimeType => 'image/png', blob => $PNG } } ] );
+  is_deeply( $res->to('anthropic')->{content},
+    [ { type => 'text', text => '[resource] image/png <file:///s.png> (18 bytes)' } ],
+    'an image resource without image_input is a placeholder too' );
+  is( $res->to( 'anthropic', image_input => 1 )->{content}[0]{type}, 'image',
+    '... and an image block with it' );
+
+  my $native = { type => 'image', source => { type => 'base64', media_type => 'image/png', data => $PNG } };
+  is_deeply( result( content => [$native] )->to('anthropic')->{content}, [$native],
+    'an Anthropic-native image block (the caller chose it) passes through without the option' );
 };
 
 # --- the tool loop decides per engine and model ---
@@ -204,6 +243,83 @@ subtest 'the native forms survive the request envelopes' => sub {
   is_deeply( $body->{contents}[-1]{parts}[0]{functionResponse}{parts},
     [ { inlineData => { mimeType => 'image/png', data => $PNG } } ],
     'Gemini request body keeps functionResponse.parts' );
+};
+
+my $ANT_DATA = { content => [ { type => 'tool_use', id => 'toolu_1', name => 'snap', input => {} } ] };
+my $ANT_RESULT = [ { tool_call => { id => 'toolu_1' },
+  result => { content => [ { type => 'image', data => $PNG, mimeType => 'image/png' } ] } } ];
+my $ANT_IMAGE = [ { type => 'image', source => { type => 'base64', media_type => 'image/png', data => $PNG } } ];
+my $ANT_PLACEHOLDER = [ { type => 'text', text => '[image] image/png (18 bytes)' } ];
+
+sub anthropic_content {
+  my ($engine) = @_;
+  my @msgs = $engine->format_tool_results( $ANT_DATA, $ANT_RESULT );
+  return $msgs[1]{content}[0]{content};
+}
+
+sub anthropic_engine {
+  my ( $name, $model ) = @_;
+  return "Langertha::Engine::$name"->new( api_key => 'k', model => $model );
+}
+
+subtest 'format_tool_results: anthropic wire follows image_input per engine and model' => sub {
+  my @rows = (
+    [ Anthropic         => 'claude-sonnet-4-6' => $ANT_IMAGE,       'first-party Claude sees images' ],
+    [ MiniMaxAnthropic  => 'MiniMax-M3'        => $ANT_IMAGE,       'MiniMax-M3 claims image_input' ],
+    [ MiniMaxAnthropic  => 'MiniMax-M2.7'      => $ANT_PLACEHOLDER, 'MiniMax-M2.x is text-only' ],
+    [ MoonshotAnthropic => 'kimi-k3'           => $ANT_IMAGE,       'kimi-k3 is a vision model (Kimi documents text|image in tool_result)' ],
+    [ MoonshotAnthropic => 'kimi-k2.5'         => $ANT_PLACEHOLDER, 'an unlisted Kimi id makes no claim' ],
+    [ AKIAnthropic      => 'qwen3.6-35b'       => $ANT_PLACEHOLDER, 'AKI shim: placeholder' ],
+    [ AKIAnthropic      => 'gpt-oss-120b'      => $ANT_PLACEHOLDER, 'AKI shim, text-only model: placeholder' ],
+    [ LMStudioAnthropic => 'some-vlm'          => $ANT_PLACEHOLDER, 'LM Studio: served model unknown, placeholder' ],
+  );
+  for my $row (@rows) {
+    my ( $name, $model, $want, $why ) = @$row;
+    is_deeply( anthropic_content( anthropic_engine( $name, $model ) ), $want, "$name $model: $why" );
+  }
+};
+
+subtest 'LMStudioAnthropic: a learned vision fact switches the tool result to the image block' => sub {
+  # k365 x k359: LMStudioAnthropic is the first probing engine on the anthropic
+  # wire, so a learned image_input fact (ADR 0032) changes the tool-result
+  # form there. Unlearned it stays the placeholder (the row above); a store
+  # that said "no" must keep it too.
+  my $lms = anthropic_engine( LMStudioAnthropic => 'some-vlm' );
+  $lms->_set_learned_model_capabilities( { 'some-vlm' => { image_input => 1 } } );
+  ok( $lms->supports('image_input'), 'the learned store makes the model claim image_input' );
+  is_deeply( anthropic_content($lms), $ANT_IMAGE, 'learned vision model: base64 image block' );
+
+  my $blind = anthropic_engine( LMStudioAnthropic => 'some-vlm' );
+  $blind->_set_learned_model_capabilities( { 'some-vlm' => { image_input => 0 } } );
+  is_deeply( anthropic_content($blind), $ANT_PLACEHOLDER, 'learned text-only model: placeholder' );
+};
+
+subtest 'AKIAnthropic keeps the placeholder even with an image_input claim' => sub {
+  # The AKI shim's user-image path works for qwen3.6-35b (live probe
+  # 2026-09-30), so an image_input row will likely be added one day; the
+  # tool_result path then still must not carry images, because there the
+  # image reaches the model mangled (answered 'White' / 'Black' for a red /
+  # green square).
+  my $meta = Moose::Meta::Class->create_anon_class(
+    superclasses => ['Langertha::Engine::AKIAnthropic'] );
+  $meta->add_around_method_modifier( engine_capabilities => sub {
+    my ( $orig, $self, @rest ) = @_;
+    return { %{ $self->$orig(@rest) }, image_input => 1 };
+  } );
+  my $aki = $meta->name->new( api_key => 'k', model => 'qwen3.6-35b' );
+  ok( $aki->supports('image_input'), 'the anon subclass claims image_input' );
+  is_deeply( anthropic_content($aki), $ANT_PLACEHOLDER,
+    '_tool_result_images_on_wire keeps the placeholder' );
+};
+
+subtest 'the anthropic image survives the request envelope' => sub {
+  for my $row ( [ Anthropic => 'claude-sonnet-4-6' ], [ MoonshotAnthropic => 'kimi-k3' ] ) {
+    my $e = anthropic_engine(@$row);
+    my @conv = ( { role => 'user', content => 'shoot' }, $e->format_tool_results( $ANT_DATA, $ANT_RESULT ) );
+    my $body = $JSON->decode( $e->chat(@conv)->content );
+    is_deeply( $body->{messages}[-1]{content}[0]{content}, $ANT_IMAGE,
+      "$row->[0] request body keeps the image block" );
+  }
 };
 
 subtest 'string wires in the loop are unchanged' => sub {

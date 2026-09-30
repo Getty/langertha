@@ -421,3 +421,52 @@ Anthropic maps images unconditionally since k326 and is unchanged. Both native f
 **documentation-derived, not live-verified** (OpenAI API reference, docs.perplexity.ai agent
 reference, Gemini v1beta discovery doc and function-calling guide, 2026-09-29); pinned in
 `t/92_tool_result_images.t`.
+
+## Update (k359, k364, k366, k367 — the Anthropic `tool_result` follows the image gate; source blocks only where the wire takes them)
+
+The k344 Update left Anthropic mapping tool-result images unconditionally (k326). That was right
+for first-party Claude and wrong for the `/anthropic` shims, which answer 200 whether or not the
+model sees the image: an AKI.IO live probe (2026-09-30, llm-advisor) showed `gpt-oss-120b`
+silently dropping a `tool_result` image and `qwen3.6-35b` misreading it (a red square answered
+"White", a green one "Black"), although the same model reads a plain user-message image. The k344
+reason — the tool loop sends what an MCP server returned, not what the caller chose — applies
+word for word, so `to_anthropic` now takes `image_input` like `to_responses` / `to_gemini`: an
+MCP image (or image resource) becomes an `image` block only with it, else the k336 placeholder.
+An Anthropic-native `image` block (with a `source`) is the caller's choice and passes through.
+First-party Claude claims `image_input` for every Claude 3+ model, so nothing changes there.
+Keeping Anthropic unconditional would have made the flag mean "sees images" on two wires and
+nothing on the third (house rule 5).
+
+`Engine::AKIAnthropic` sets `_tool_result_images_on_wire` to 0 with the probe in its comment: the
+user-image path works for `qwen3.6-35b`, so an `image_input` row for that face is likely one day,
+and the `tool_result` path must then still not carry images.
+
+Anthropic's source blocks — `document` (k364) and `search_result` (k366) — get a second private
+predicate, `_tool_result_source_blocks_on_wire` (default 1, `Role::Tools`), passed as
+`source_blocks => 0` to `to_anthropic`. One predicate, not one per block type: where there is
+evidence, both are rejected alike. Without it a text resource or `text/*` blob becomes a `text`
+block holding the text (as on the string wires), a PDF blob the placeholder, and a native
+`document` or `search_result` block a `text` block with its string form — unlike a native image,
+because this is a wire fact, not a model question. It is 0 on `AKIAnthropic` (live, 2026-09-30:
+HTTP 529 "Unsupported content type: document" / "... search_result", deterministic, so every
+tool-loop turn with an MCP text resource broke) and on `MoonshotAnthropic` (Kimi's Messages
+OpenAPI lists `tool_result` content as string | text | image; docs only). `MiniMaxAnthropic` and
+`LMStudioAnthropic` keep the default: neither documents the case either way, and a failure there
+would be a loud 4xx, not a silent loss. Both predicates are private for the k344 reason: they
+answer one serializer choice inside the loop and nothing outside it asks.
+
+Degrading a native `document` / `search_result` changes what the caller chose, so
+`format_tool_results` carps once per engine instance when it does (the `_langertha_carp` once-key
+pattern of ADR 0035, key `tool_result_source_blocks`). The value object knows no engine, so the
+warning sits in the orchestration, which asks `ToolResult` for the native source-block types it
+holds. An MCP resource becoming text is the normal path on these shims and stays quiet.
+
+The string form of a native block (k366, k367) keeps its text instead of a bare placeholder: a
+`search_result` is a `[search_result] title <source>` line followed by its text parts, and a
+`document` with a `content` source its inner parts joined with `"\n"` (an image among them as a
+placeholder). This fixes the same loss on every string wire (OpenAI, Responses, Ollama, Gemini,
+Hermes), present since k326/k336. `is_error` stays as it is on every shim (k366): AKI accepts it
+and silently ignores it (live), the other shims document Claude Code, which sends it, and no wire
+fails on it; the flag is lost on every string wire anyway, so a shim-only text marker would split
+the behaviour. Pinned in `t/92_tool_result_images.t`, `t/92_tool_result_anthropic.t` and
+`t/92_tool_result_string.t`.

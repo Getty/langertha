@@ -74,6 +74,15 @@ C<response_size> / C<max_tokens>, B<not> transient server overload: do not treat
 an AKI C<529> as a wait-and-retry signal, and read
 C<< $error->{error}{message} >> for the real diagnostic.
 
+B<Tool results carry text only.> In the tool loop, an image a tool returns
+goes out as a text placeholder (C<[image] image/png (N bytes)>) for every
+model: the shim accepts an image inside a C<tool_result> but the model does not
+see it (live probe 2026-09-30). An embedded text resource goes out as a
+C<text> block and a PDF as a placeholder, because the shim answers a
+C<document> block there with C<529> C<"Unsupported content type: document">;
+a native C<search_result> block (also a C<529>) or C<document> block becomes a
+C<text> block with its text, with a warning.
+
 Get your API key at L<https://aki.io/> and set C<LANGERTHA_AKI_API_KEY>.
 
 B<THIS API IS WORK IN PROGRESS>
@@ -167,6 +176,29 @@ around engine_capabilities => sub {
   delete $caps->{image_input};
   return $caps;
 };
+
+# Tool-result images (karr k359): the shim takes an image inside a tool_result
+# without error but the model does not see it. Live probe 2026-09-30
+# (llm-advisor, aki.io/anthropic/v1/messages): qwen3.6-35b read a plain
+# user-message image correctly (16x16 red -> 'Red'), but the same kind of image
+# inside a tool_result came back as 'White' (16x16 red) and 'Black' (64x64
+# green), with ~340 input tokens whatever the image size; gpt-oss-120b answered
+# 200 and saw only the text. The k336 placeholder at least says an image was
+# there, so it stays even if an image_input row is added for this face later.
+sub _tool_result_images_on_wire { 0 }
+
+# Source blocks in a tool_result (karr k364, k366): live probes 2026-09-30
+# (llm-advisor, aki.io/anthropic/v1/messages) -- a text document answered
+# HTTP 529 {"type":"overloaded_error","message":"Unsupported content type:
+# document"} (qwen3.6-35b), and a search_result block {source, title,
+# content:[text]} answered 529 "Unsupported content type: search_result"
+# (qwen3.6-35b twice, gpt-oss-120b once). Deterministic on AKI, not a retry
+# signal: either breaks the tool-loop turn. An MCP text resource therefore goes
+# out as a text block, a PDF as the placeholder, a native document or
+# search_result as its text. (is_error: true in the same probes was accepted
+# and silently ignored -- 200, same answer and input tokens as without it --
+# so it is still sent, like on every other shim; k366.)
+sub _tool_result_source_blocks_on_wire { 0 }
 
 __PACKAGE__->meta->make_immutable;
 

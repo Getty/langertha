@@ -578,11 +578,11 @@ sub _result_payload {
 }
 
 # Tool-result images ride natively (ToolResult's image_input option; the
-# responses and gemini wires have a form for it, karr k344) only when the
-# selected model sees images (image_input, ADR 0019) and the wire takes them
-# for that model (_tool_result_images_on_wire). The tool loop sends what an
-# MCP server returned, not what the caller chose, so a model that makes no
-# claim keeps the k336 placeholder string.
+# responses, gemini and anthropic wires have a form for it, karr k344, k359)
+# only when the selected model sees images (image_input, ADR 0019) and the
+# wire takes them for that model (_tool_result_images_on_wire). The tool loop
+# sends what an MCP server returned, not what the caller chose, so a model that
+# makes no claim keeps the k336 placeholder.
 sub _tool_result_images_on_wire { 1 }
 
 sub _tool_result_image_opts {
@@ -592,17 +592,44 @@ sub _tool_result_image_opts {
   return ( image_input => 1 );
 }
 
+# Whether the anthropic wire takes Anthropic's source blocks (document,
+# search_result) inside a tool_result (karr k364, k366). First-party Anthropic
+# documents them; a /anthropic shim that rejects them sets this to 0, and
+# ToolResult then sends a text document as a text block, a PDF as the k336
+# placeholder and a native document / search_result as its text. Wire truth,
+# not a model question, so it is a private predicate and not a capability flag.
+sub _tool_result_source_blocks_on_wire { 1 }
+
+# A native document / search_result is the caller's choice for the Anthropic
+# wire, so turning it into text is worth one warning per engine instance (the
+# ADR 0035 once-key pattern). An MCP resource becoming text is the normal path
+# on these shims and stays quiet.
+sub _carp_degraded_source_blocks {
+  my ( $self, $result ) = @_;
+  my @types = $result->_native_source_block_types or return;
+  return unless $self->can('_langertha_carp');
+  $self->_langertha_carp( "".( ref $self ).": sending " . join( ' / ', @types )
+    . " blocks in a tool result as text -- this endpoint takes no document or"
+    . " search_result block inside a tool_result", 'tool_result_source_blocks' );
+  return;
+}
+
 sub format_tool_results {
   my ( $self, $data, $results ) = @_;
   my $fmt = $self->tool_wire_format;
 
   if ( $fmt eq 'anthropic' ) {
+    my $source_blocks = $self->_tool_result_source_blocks_on_wire;
+    my @opts = ( $self->_tool_result_image_opts,
+      ( $source_blocks ? () : ( source_blocks => 0 ) ) );
     my @blocks = map {
-      Langertha::ToolResult->new(
+      my $result = Langertha::ToolResult->new(
         id       => _result_call_id( $_->{tool_call} ),
         _result_payload( $_->{result} ),
         is_error => ( $_->{result}{isError} ? 1 : 0 ),
-      )->to('anthropic')
+      );
+      $self->_carp_degraded_source_blocks($result) unless $source_blocks;
+      $result->to( 'anthropic', @opts );
     } @$results;
     return (
       { role => 'assistant', content => $data->{content} },
@@ -754,10 +781,23 @@ loops pass) or the raw structure L</response_tool_calls> located.
 
 An image in a tool's output reaches the model as an image, not as a text
 placeholder, on the C<responses> wire (C<input_image> parts in
-C<function_call_output.output>) and on Gemini 3 (C<functionResponse.parts>),
-when C<< supports('image_input') >> is true for the configured model; see
-L<Langertha::ToolResult/DESCRIPTION>. Both wire forms are
-documentation-derived, not live-verified.
+C<function_call_output.output>), on Gemini 3 (C<functionResponse.parts>) and on
+the C<anthropic> wire (an C<image> block in the C<tool_result>), when
+C<< supports('image_input') >> is true for the configured model; see
+L<Langertha::ToolResult/DESCRIPTION>. The C<responses> and Gemini forms are
+documentation-derived, not live-verified, and so is the C<anthropic> form on
+the C</anthropic> shims (Kimi documents it, MiniMax does not say).
+L<Langertha::Engine::AKIAnthropic> keeps the placeholder for every model: its
+shim answers a C<tool_result> image without error, but the model does not see
+it.
+
+On the C<anthropic> wire an embedded text resource or PDF goes out as a
+C<document> block, except on L<Langertha::Engine::AKIAnthropic> and
+L<Langertha::Engine::MoonshotAnthropic>, whose C</anthropic> endpoints take no
+C<document> or C<search_result> in a C<tool_result>: there the text goes out as
+a C<text> block and a PDF as a placeholder. An Anthropic-native C<document> or
+C<search_result> block in a tool's output becomes a C<text> block with its text
+there too, and the engine warns once.
 
 =cut
 

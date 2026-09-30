@@ -82,6 +82,35 @@ subtest 'gemini and hermes' => sub {
     { t => 1 }, 'gemini response is the structuredContent object when present' );
 };
 
+# karr k366, k367: an Anthropic-native block a caller built (a search_result, a
+# document whose source is a content array) holds its text inside nested
+# blocks. Rendered as a bare "[search_result]" / "[document]" placeholder, that
+# text never reached the model on any string wire -- nor on the /anthropic
+# shims that take no source blocks (k364/k366), which render through the same
+# string form.
+subtest 'native source blocks keep their text on the string wires' => sub {
+  my $sr = result( content => [ { type => 'search_result', source => 'https://e.com/q',
+    title => 'Quelltown', content => [ { type => 'text', text => 'Population 12' },
+      { type => 'text', text => 'Founded 1302' } ] } ] );
+  my $want_sr = join "\n", '[search_result] Quelltown <https://e.com/q>', 'Population 12',
+    'Founded 1302';
+  is( $sr->to('openai')->{content}, $want_sr, 'search_result: header, then its text parts' );
+  is( $sr->to('ollama')->{content}, $want_sr, '... same on ollama' );
+  is( $sr->to('gemini')->{functionResponse}{response}{result}, $want_sr, '... and gemini' );
+
+  my $doc = result( content => [ { type => 'document', title => 'Notes',
+    source => { type => 'content', content => [
+      { type => 'text', text => 'part one' },
+      { type => 'image', source => { type => 'base64', media_type => 'image/png', data => $PNG } },
+      { type => 'text', text => 'part two' },
+    ] } } ] );
+  is( $doc->to('openai')->{content}, join( "\n", 'part one', '[image] image/png', 'part two' ),
+    'content document: inner text parts joined, an image as a placeholder' );
+  unlike( $doc->to('openai')->{content}, qr/\Q$PNG\E/, '... never its base64' );
+  is( result( content => [ { type => 'document', source => { type => 'content', content => [] } } ] )
+    ->to('openai')->{content}, '[document]', 'an empty content document stays a placeholder' );
+};
+
 subtest 'format_tool_results carries structuredContent on the string wires' => sub {
   my $call = { id => 'call_1', function => { name => 'stats' } };
   my @res  = ( { tool_call => $call, result => { content => [], structuredContent => { n => 3 } } } );
