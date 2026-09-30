@@ -13,6 +13,7 @@ use Langertha::Engine::OpenAI;
 use Langertha::Engine::Anthropic;
 use Langertha::Engine::Moonshot;
 use Langertha::Engine::NousResearch;
+use Langertha::Engine::DeepSeek;
 use Langertha::Engine::Gemini;
 use Langertha::CachedContent;
 
@@ -228,6 +229,29 @@ subtest 'NousResearch: the reasoning prompt follows chat_model (ADR 0033)' => su
   is( $body->{messages}[0]{role}, 'system', 'the Hermes reasoning prompt still goes out (status quo, now warned)' );
   ($warns) = chat_f_run( nous( reasoning => 1 ), model => 'Hermes-4-405B' );
   is( scalar @$warns, 0, 'Hermes to Hermes: no warning' ) or diag @$warns;
+};
+
+subtest 'DeepSeek: the thinking switch follows chat_model (k362)' => sub {
+  # reasoning_kwargs_for sends thinking:{type:enabled} on the V3.2 line and a
+  # flat reasoning_effort on V4, decided off chat_model. Every DeepSeek id
+  # resolves the same reasoning profile, so without its own named decision a
+  # per-request model crossing the V3 line flipped the wire silently.
+  my $ds = sub { Langertha::Engine::DeepSeek->new( api_key => 'k', model => 'deepseek-flash',
+    _async_http => mock(), @_ ) };
+  my ( $warns, $body ) = chat_f_run( $ds->(), model => 'deepseek-v3.2', reasoning_effort => 'high' );
+  is( scalar @$warns, 1, 'per-request reasoning_effort: one warning' ) or diag @$warns;
+  like( $warns->[0], qr/thinking switch/, 'names the thinking switch' );
+  is( $body->{reasoning_effort}, 'high', 'the body still carries the V4 flat effort (status quo, now warned)' );
+  ok( !exists $body->{thinking}, 'and no V3.2 thinking toggle' );
+
+  ($warns) = chat_f_run( $ds->( reasoning_effort => 'low' ), model => 'deepseek-v3.2' );
+  is( scalar @$warns, 1, 'engine reasoning_effort attribute: one warning' ) or diag @$warns;
+
+  ($warns) = chat_f_run( $ds->(), model => 'deepseek-v3.2' );
+  is( scalar @$warns, 0, 'no reasoning control: no warning' ) or diag @$warns;
+
+  ($warns) = chat_f_run( $ds->(), model => 'deepseek-v4-pro', reasoning_effort => 'high' );
+  is( scalar @$warns, 0, 'V4 to V4: no warning' ) or diag @$warns;
 };
 
 {

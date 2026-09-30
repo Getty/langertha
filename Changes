@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - DeepSeek: a per-request model on chat_f or chat_stream_realtime_f that
+      crosses between the V3.2 line and the V4 models now warns when a
+      reasoning effort is set, naming the V3.2 thinking switch versus the V4
+      flat reasoning_effort.
+
     - Perplexity's Agent API x-ratelimit-limit / -remaining / -reset headers
       (no -requests / -tokens suffix) now populate Response.rate_limit as the
       requests bucket; -reset is an epoch instant (requests_reset_at) and

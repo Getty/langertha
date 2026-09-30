@@ -144,6 +144,17 @@ sub reasoning_kwargs_for {
   return ( reasoning_effort => $e );
 }
 
+# The thinking switch follows chat_model too, and every DeepSeek id resolves
+# the same reasoning profile, so a per-request model that crosses the V3 line
+# flips it unnamed otherwise (karr k362, Role::Chat::_warn_model_override).
+around _model_scoped_wire_decisions => sub {
+  my ( $orig, $self, $features, @rest ) = @_;
+  my %decision = $self->$orig( $features, @rest );
+  $decision{'thinking switch'} = _is_deepseek_v3( $self->chat_model ) ? 1 : 0
+    if $features->{reasoning};
+  return %decision;
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

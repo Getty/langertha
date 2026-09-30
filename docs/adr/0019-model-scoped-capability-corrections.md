@@ -325,7 +325,8 @@ It carps rather than croaks, and the request is sent unchanged.
   nothing (k266 Update above). **A flag missing from the table is always compared**, so a future
   model-scoped flag produces a warning instead of silence.
 - **Engines add their own decisions** with an `around _model_scoped_wire_decisions`. NousResearch
-  adds its reasoning prompt this way (when `reasoning` is on). This hook is the extension point for
+  adds its reasoning prompt this way (when `reasoning` is on); DeepSeek adds its V3.2 `thinking`
+  switch (when a reasoning control is set, k362). This hook is the extension point for
   any model-scoped decision taken outside the named hooks above.
 - The warning names the flipped decisions. It is a per-request value, so it fires on every request
   (k247 convention), through `_langertha_carp`, so it points at the caller's line. If a decision
@@ -337,8 +338,9 @@ unchanged), so the warning compares the matched rule set for both models. Test:
 `t/78_model_override_warning.t`.
 
 **Known gaps.** A model-scoped decision that is taken inline, rather than through a named hook, is
-not compared: `Engine::DeepSeek::reasoning_kwargs_for` switches on `_is_deepseek_v3(chat_model)`
-(karr #362, an `around _model_scoped_wire_decisions` closes it). Gemini and AKI native carry the
+not compared unless its engine names it through the `around`. `Engine::DeepSeek::reasoning_kwargs_for`
+was such a case (it switches on `_is_deepseek_v3(chat_model)`, and every DeepSeek id resolves the
+same reasoning profile); k362 closed it with the `thinking switch` decision. Gemini and AKI native carry the
 model in the URL, so the override never reaches their routing (karr #357). The warning text
 ("model-scoped wire decisions follow chat_model") is still true there. `Langertha::Chat` takes a
 per-request model without going through `chat_f`, so it gets no warning (karr #360).
