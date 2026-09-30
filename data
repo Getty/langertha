@@ -1,0 +1,17 @@
+---
+block_reason: OpenAI-Account ohne Guthaben (429 credit_balance_exhausted, 2026-09-30)
+blocked: true
+class: standard
+created: 2026-09-30T06:03:40Z
+id: 370
+priority: low
+status: backlog
+tags:
+- transcription
+- tests
+- fixtures
+title: 'Transkription: OpenAI- und faster-whisper-Fixtures durch echte Captures ersetzen'
+updated: 2026-09-30T06:03:54Z
+---
+
+Rest aus k310. Groq + Mistral sind seit 2026-09-30 echte Captures. OpenAI (whisper-1, json/verbose_json/text/srt/vtt, v.a. echter Content-Type von srt/vtt) blieb doku-abgeleitet: der OpenAI-Account antwortete 429 insufficient_quota / credit_balance_exhausted (kein Guthaben). faster-whisper/speaches: kein Server verfuegbar. Blockiert bis OpenAI-Guthaben da ist; Audio ex/sample.ogg, ~5 Requests, Kosten < 1 Cent.
