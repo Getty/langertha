@@ -594,7 +594,7 @@ sub chat_response {
     $data->{model} ? ( model => $data->{model} ) : (),
     defined $choice->{finish_reason}
       ? ( finish_reason => $self->_openai_finish_reason( $choice->{finish_reason}, scalar @tcs ) ) : (),
-    $data->{usage} ? ( usage => $data->{usage} ) : (),
+    $data->{usage} ? ( usage => $self->_wire_usage( $data->{usage} ) ) : (),
     ( $data->{usage} && $data->{usage}{prompt_tokens_details}
       && defined $data->{usage}{prompt_tokens_details}{cached_tokens}
       ? ( cached_tokens => $data->{usage}{prompt_tokens_details}{cached_tokens} ) : () ),
@@ -606,6 +606,28 @@ sub chat_response {
     @tcs ? ( tool_calls => [ @tcs ] ) : (),
   );
 }
+
+# The usage block as it goes onto the Response / a stream chunk. The default is
+# the wire block itself; an engine that knows something the wire does not say
+# overrides it and returns a copy with a canonical key added (OpenRouter states
+# that its bare usage.cost is USD as cost_usd; ADR 0018 tier 3, ADR 0031, k363),
+# as Role::AnthropicCompatible's _wire_usage does for input_includes_cache.
+# The wire hash itself is never modified.
+sub _wire_usage {
+  my ( $self, $usage ) = @_;
+  return $usage;
+}
+
+=method _wire_usage
+
+Internal hook. Returns the usage block that goes onto the
+L<Langertha::Response> of L</chat_response> and onto a stream chunk. The
+default returns the wire block unchanged. An engine that knows what the wire
+does not say overrides it and returns a copy with a canonical key added, which
+L<Langertha::Usage/from_hash> reads on both paths:
+L<Langertha::Engine::OpenRouter> adds C<cost_usd> from its bare C<usage.cost>.
+
+=cut
 
 # The error a choice reports, as "message (code)", or undef: the choice's own
 # `error` (OpenRouter's NonStreamingChoice / StreamingChoice `error`), or a
@@ -944,7 +966,7 @@ sub _openai_stream_usage_kwargs {
   return () unless ref $usage eq 'HASH';
   my $details = $usage->{prompt_tokens_details};
   return (
-    usage => $usage,
+    usage => $self->_wire_usage($usage),
     ( ref $details eq 'HASH' && defined $details->{cached_tokens}
       ? ( cached_tokens => $details->{cached_tokens} ) : () ),
   );

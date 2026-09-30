@@ -107,5 +107,22 @@ stay verbatim in `raw` for exact accounting.
 - It is deliberately **not** fed into `Pricing` / `Cost`. Those remain the caller's estimate
   from their own price rules; `cost_usd` is the provider's statement. Whether usage records or
   metrics should prefer it over the estimate is left open.
-- Other providers' reported costs (`usage.cost` on OpenRouter and Perplexity) are a separate
-  normalization once their units are checked (karr #363).
+- Perplexity and OpenRouter report their cost under the same generic name, `usage.cost`, in
+  two shapes, so each is normalized where its unit is known (karr #363, ADR 0018):
+  - **Perplexity** (Agent API, Open-Responses envelope) sends an object that names its unit:
+    `{ currency: "USD", total_cost, input_cost, output_cost, cache_*_cost, tool_calls_cost }`
+    — capture-verified (`t/data/perplexity_agent_*`, k147 / k232). A self-describing USD
+    amount is unambiguous on any wire, so `Usage->from_hash` reads `total_cost` (tier 1), but
+    only when `currency` is `USD` and `total_cost` is present; another currency or a missing
+    total stays `undef`, the parts are not summed.
+  - **OpenRouter** sends a bare number in its credits; "OpenRouter uses a credit system where
+    the base currency is US dollars" (openrouter.ai/docs/faq; usage accounting page, read
+    2026-09-30) — docs-derived, no capture. The number names no unit and `cost` is too generic
+    to read as USD from every OpenAI-compatible server, so the universal door does **not** read
+    it. `Engine::OpenRouter` states the unit (tier 3) through a `_wire_usage` hook that
+    `Role::OpenAICompatible` gained for this (default: the wire block unchanged; the parallel
+    of `Role::AnthropicCompatible::_wire_usage` from k265): it returns a copy of the usage block
+    with the canonical `cost_usd` key, which `from_hash` reads first, on the response and the
+    stream path alike. `Usage->from_raw` on an OpenRouter body has no engine and so no
+    `cost_usd`. `cost_details.upstream_inference_cost` (BYOK: what the key's own provider
+    charged) is not OpenRouter's bill and is not folded in.

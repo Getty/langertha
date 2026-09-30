@@ -18,6 +18,12 @@ Revision history for Langertha
       on responses, stream usage frames and Usage->from_raw alike. It is
       undef when no cost is reported, the integer fields stay in the usage
       hash, and merge sums the cost only when both sides report one.
+      It also carries the cost Perplexity and OpenRouter report: Perplexity's
+      usage.cost object is read when it names USD (its total_cost), and
+      OpenRouter's bare usage.cost, in credits that are US dollars, is read
+      by the OpenRouter engine on responses and stream chunks. A unit-less
+      cost number from any other server is not assumed to be USD.
+      OpenRouter's BYOK upstream_inference_cost stays in the raw usage hash.
 
     - DeepSeek: a per-request model on chat_f or chat_stream_realtime_f that
       crosses between the V3.2 line and the V4 models now warns when a

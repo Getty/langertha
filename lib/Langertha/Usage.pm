@@ -2,7 +2,7 @@ package Langertha::Usage;
 # ABSTRACT: Immutable value object for LLM token usage with cross-provider conversion
 our $VERSION = '0.503';
 use Moose;
-use Scalar::Util qw( blessed );
+use Scalar::Util qw( blessed looks_like_number );
 use Hash::Util::FieldHash qw( fieldhash );
 
 # The %{} overload (back-compat for `$response->usage->{...}`) hijacks every
@@ -193,9 +193,23 @@ sub from_hash {
   # chat/completions, Responses, images, video) and, on Responses, also as
   # cost_in_nano_usd (1 USD = 10^9); both may be null there. The finer ticks
   # win. The integers stay verbatim in raw (k354).
+  # The Perplexity Agent API sends usage.cost as an object that names its unit
+  # ({ currency => 'USD', total_cost => ..., input_cost => ... }, the captures
+  # in t/data/perplexity_agent_*); it is read only when the currency is USD and
+  # a total is there. A bare number under the generic name cost (OpenRouter's
+  # credits) carries no unit, so it is not read here: the engine that knows the
+  # unit copies it to the canonical cost_usd key, which is read first (k363).
   my $cost_usd;
-  if    ( defined $hash->{cost_in_usd_ticks} ) { $cost_usd = $hash->{cost_in_usd_ticks} / 10_000_000_000 }
+  my $cost = $hash->{cost};
+  if ( defined $hash->{cost_usd} && !ref $hash->{cost_usd} && looks_like_number( $hash->{cost_usd} ) ) {
+    $cost_usd = 0 + $hash->{cost_usd};
+  }
+  elsif ( defined $hash->{cost_in_usd_ticks} ) { $cost_usd = $hash->{cost_in_usd_ticks} / 10_000_000_000 }
   elsif ( defined $hash->{cost_in_nano_usd} )  { $cost_usd = $hash->{cost_in_nano_usd}  / 1_000_000_000 }
+  elsif ( ref($cost) eq 'HASH' && uc( $cost->{currency} // '' ) eq 'USD'
+    && defined $cost->{total_cost} && !ref $cost->{total_cost} && looks_like_number( $cost->{total_cost} ) ) {
+    $cost_usd = 0 + $cost->{total_cost};
+  }
 
   my %args = ( input_tokens => $input, output_tokens => $output );
   $args{total_tokens}       = 0 + $total       if defined $total;
@@ -549,6 +563,20 @@ C<cost_in_usd_ticks> first as the finer unit; the integers stay verbatim in
 L</raw>, so C<< $usage->{cost_in_usd_ticks} >> still gives exact integer
 accounting. A stream carries it only in its usage frame, which comes when the
 request asks for it (C<stream_options =E<gt> { include_usage =E<gt> 1 }>).
+
+The Perplexity Agent API sends C<usage.cost> as an object that names its
+currency (C<currency>, C<total_cost>, and the parts such as C<input_cost> and
+C<tool_calls_cost>); L</from_hash> reads C<total_cost> when C<currency> is
+C<USD>, and nothing when the currency is another one or the total is missing.
+OpenRouter sends C<usage.cost> as a bare number in its credits, which are US
+dollars; a bare number names no unit, so L</from_hash> does not read it on its
+own. L<Langertha::Engine::OpenRouter> adds it to the usage block as the
+canonical C<cost_usd> key, which L</from_hash> reads first, so it arrives on
+the engine's responses and stream chunks, but not through L</from_raw> on an
+OpenRouter body. For a BYOK request C<cost> is still only what OpenRouter
+charged your credits; what the key's own provider charged is in
+C<cost_details.upstream_inference_cost>, which stays in L</raw> and is not
+added.
 
 C<undef> when the provider reports no cost, never C<0>: it is not an estimate,
 and L<Langertha::Pricing> does not read it — that builds a L<Langertha::Cost>
