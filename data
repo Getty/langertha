@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-30T04:09:21Z
+claimed_by: worker
+class: standard
+completed: 2026-09-30T04:09:11Z
+created: 2026-09-29T22:12:51Z
+id: 356
+priority: low
+started: 2026-09-30T03:46:55Z
+status: done
+tags:
+- perplexity
+- rate-limit
+title: 'Perplexity: x-ratelimit-* Header werden nicht zu RateLimit geparst'
+updated: 2026-09-30T04:09:21Z
+---
+
+Perplexity sendet x-ratelimit-limit/-remaining/-reset (Epoch-Sekunden)/-used ohne Suffix. Engine::Remote::_parse_rate_limit_headers baut ohne retry-after kein Objekt, rate_limit bleibt undef (ADR 0022). Fixtures t/data/perplexity_agent_*.headers.json (k232) in den Replay einbauen. Quelle: k232.
+
+2026-09-30 03:49 Red test added to t/68_perplexity_function_tools.t (k356 subtest): replays all six k232 .headers.json captures; fails as expected -- no RateLimit built, chat_f Response.rate_limit undef ('chat_f: the reset instant' got undef, want 1790714944). Decision: engine-scoped around _parse_rate_limit_headers on Engine::Perplexity (ADR 0018 layer 3), not in Remote/OpenAICompatible: unsuffixed x-ratelimit-reset is epoch-s on Perplexity (captures: reset = Date+1s) but epoch-ms on OpenRouter and delta-seconds in the IETF draft -- a shared reader would need ADR 0022's declined magnitude heuristic. Bucket = requests (used=1 after one request).
+
+2026-09-30 04:07 Done: Engine::Perplexity gets an engine-scoped around _parse_rate_limit_headers (ADR 0018 layer 3): unsuffixed x-ratelimit-limit/-remaining -> requests_limit/_remaining, -reset -> requests_reset (verbatim) + requests_reset_at via Moment->from_wire (epoch-s instant; requests_reset_after derives lazily from received), -used stays in raw; falls through to the Remote Retry-After fallback when none of the three is present. Not in Remote/OpenAICompatible: OpenRouter sends the same names as epoch-ms, the IETF draft as delta-seconds -- a shared reader needs the magnitude heuristic ADR 0022 declines. Test: new k356 subtest in t/68_perplexity_function_tools.t replays all six k232 .headers.json (reset = Date+1s proves instant), chat_f Response.rate_limit via MockAsyncHTTP, and pins that OpenAIResponses does not read the unsuffixed family. Red before fix (Response.rate_limit undef), green after. prove -lr t/: 219 files / 10492 tests PASS, 14 live t/8x skipped (no keys). perlcritic OK. Follow-ups for dispatcher: ADR 0022 Update (k312 addendum said 'no per-engine parsers'; this is the first engine-scoped reader, justified by captured wire truth) -> adr-auditor; Changes entry -> release-manager. Worktree branch was fast-forwarded from 9b82587 to main cad6750 (lacked the k232 captures).
+
+Committed as a0e435f
