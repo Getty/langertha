@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-30T06:48:22Z
+claimed_by: langertha-async-worker
+class: standard
+completed: 2026-09-30T06:48:14Z
+created: 2026-09-30T06:45:55Z
+id: 373
+priority: low
+started: 2026-09-30T06:46:10Z
+status: done
+tags:
+- async
+- tests
+- flaky
+title: Flaky t/45_async_http_timeout.t subtest 4 unter Speicherdruck
+updated: 2026-09-30T06:48:22Z
+---
+
+dzil install 2026-09-30 (main 64053d9, loadguard meldete memory pressure full ~17%): Subtest "a slow but steady stream longer than N seconds in total does not time out" schlug fehl: "streaming request ... timed out after 1s without data (Stalled while waiting for response)", Content undef. Einzeln 3x gruen, im selben Tag 3 volle Laeufe gruen. Die 1-s-Stall-Grenze ist unter Last zu knapp. langertha-async-worker: Abstand zwischen Chunk-Intervall und Timeout vergroessern (z.B. timeout 3 s, Chunks alle 0.5 s, Gesamtdauer > timeout), Testabsicht (Idle-Timeout, nicht Gesamt-Timeout) beibehalten.
+
+2026-09-30 06:47 Test-only fix in t/45_async_http_timeout.t: steady subtest timeout 1->3s, 7 chunks at 0.5s gaps (4s total, took>3.3 assert); stall subtest (healthy first byte raced 1s too, regex expects 'receiving') 1->2s with matching message/stall_timeout/took bounds. Hang/no-timeout/transport-error/sync subtests left at 1s (deliberate waits or no server race). 3 runs all green, ~12.9s each. lib/ untouched.
+
+2026-09-30 06:48 Committed as 3649553 on branch k373 (test-only, no Changes entry).
