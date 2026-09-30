@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-09-30T04:04:28Z
+claimed_by: wire-worker
+class: standard
+completed: 2026-09-30T04:04:19Z
+created: 2026-09-29T22:12:43Z
+id: 355
+priority: low
+started: 2026-09-30T03:46:47Z
+status: done
+tags:
+- xai
+- server-tools
+- adr-0030
+title: 'ServerToolCall: x_search_call fehlt in %RESPONSES_SERVER_ITEM'
+updated: 2026-09-30T04:04:28Z
+---
+
+X-Suchen (xAI Responses) landen sonst nur in raw statt Response.server_tool_calls. lib/Langertha/ServerToolCall.pm. Quelle: k206-Advisor-Notiz.
+
+2026-09-30 04:02 Wire-Form (docs-derived, keine Capture, kein Live-Call): docs.x.ai/developers/tools/tool-usage-details listet in der Tabelle response.output[].type 'x_search_call' = 'X-search tool - handled by SpaceXAI server' neben web_search_call/code_interpreter_call/file_search_call/mcp_call. Feldform des Items ist NICHT dokumentiert; docs.x.ai tools/advanced-usage sagt nur 'Server-side items expose type-specific fields (e.g. action), not name/arguments'. Annahmen: HASH mit type; id/status optional (from_responses nimmt beide nur wenn Skalar), Item bleibt verbatim in data. Capture-Verifikation bleibt k206 Capture #5. Also found (nicht angefasst): sub2api#7690 zaehlt function_call/custom_tool_call mit Namen web_search/x_search als Suchen -- falls xAI Server-Suchen je als custom_tool_call ausgibt, wuerde Tool->_croak_on_client_item croaken; unbelegt, bei Capture #5 pruefen.
+
+2026-09-30 04:02 Done: x_search_call in %RESPONSES_SERVER_ITEM (lib/Langertha/ServerToolCall.pm, Kommentar docs-derived/k355) + Subtest in t/92_server_tool.t (konstruiertes xAI-Item; rot vorher: extract lieferte nur web_search_call, 'id' got ws expected xs_1). Gruen: t/92, t/60_responses_server_tools.t, prove -lr t/ PASS (216 Dateien; t/8x live skipped, keine Keys). perlcritic OK. ADR 0030 braucht kein Update (Tabelleneintrag, Mechanismus unveraendert). Nicht committed; Worktree agent-a1190b044a01a7c8b.
+
+Committed as fb12e5b on main (worktree diff applied, Changes added). dzil build not run: loadguard refused; grep for double braces in Changes clean.
