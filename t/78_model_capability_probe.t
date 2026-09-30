@@ -21,6 +21,7 @@ use Langertha::Engine::Ollama;
 use Langertha::Engine::OllamaOpenAI;
 use Langertha::Engine::LMStudio;
 use Langertha::Engine::LMStudioOpenAI;
+use Langertha::Engine::LMStudioAnthropic;
 use Langertha::Engine::LlamaCpp;
 use Langertha::Engine::OpenAI;
 use Langertha::Engine::Anthropic;
@@ -78,6 +79,13 @@ my $server = Test::LocalHTTPDaemon->start( sub {
     if $path eq '/mistral-old/v1/models' && $method eq 'GET';
   return json_response( fixture('lmstudio_api_v1_models.json') )
     if $path eq '/lms/api/v1/models' && $method eq 'GET';
+  # "Require Authentication" on: LM Studio documents only the Bearer header
+  # for its native REST API (lmstudio.ai/docs/developer/core/authentication).
+  if ( $path eq '/lms-auth/api/v1/models' && $method eq 'GET' ) {
+    return json_response( '{"error":"Unauthorized"}', 401 )
+      unless ( $req->header('Authorization') // '' ) eq 'Bearer lms-token';
+    return json_response( fixture('lmstudio_api_v1_models.json') );
+  }
   if ( $path eq '/ollama/api/show' && $method eq 'POST' ) {
     my $model = eval { $json->decode( $req->content )->{model} } // '';
     return json_response( fixture( $OLLAMA_SHOW{$model} ) ) if $OLLAMA_SHOW{$model};
@@ -174,10 +182,15 @@ for my $backend ( [ default => sub { () } ], [ sync => sub { ( _async_http => sy
     is claims($e), 1, 'static no-claim + probe yes -> yes';
   };
 
-  subtest "LMStudio native + OpenAI face ($label): /api/v1/models capabilities.vision" => sub {
+  # k365: the Anthropic face is the same LM Studio server; its url is the
+  # server root (it appends /v1/messages), so the native /api/v1/models sits
+  # directly under it.
+  subtest "LMStudio native + OpenAI + Anthropic face ($label): /api/v1/models capabilities.vision" => sub {
     for my $e (
       Langertha::Engine::LMStudio->new( url => "$base/lms", model => 'google/gemma-4-26b-a4b', $http->() ),
       Langertha::Engine::LMStudioOpenAI->new( url => "$base/lms/v1", model => 'google/gemma-4-26b-a4b', $http->() ),
+      Langertha::Engine::LMStudioAnthropic->new( url => "$base/lms", model => 'google/gemma-4-26b-a4b', $http->() ),
+      Langertha::Engine::LMStudioAnthropic->new( url => "$base/lms/", model => 'google/gemma-4-26b-a4b', $http->() ),
     ) {
       is $e->model_metadata_url, "$base/lms/api/v1/models", ref($e) . ': native models URL';
       is claims($e), 0, ref($e) . ': no claim before the probe';
@@ -263,6 +276,22 @@ for my $backend ( [ default => sub { () } ], [ sync => sub { ( _async_http => sy
     is_deeply $legacy->probe_model_capabilities, {}, 'a server without modalities gives no fact';
   };
 }
+
+# k365: LMStudioAnthropic sends its token as x-api-key (what /v1/messages
+# takes), but the native /api/v1/models documents only Bearer. With "Require
+# Authentication" on, the probe must carry the token as Bearer or it 401s;
+# the chat wire keeps its x-api-key header and gains nothing.
+subtest 'LMStudioAnthropic: the probe carries the token as Bearer, chat does not' => sub {
+  my $e = Langertha::Engine::LMStudioAnthropic->new(
+    url => "$base/lms-auth", api_key => 'lms-token', model => 'google/gemma-4-26b-a4b' );
+  is $e->probe_model_capabilities->{'google/gemma-4-26b-a4b'}{image_input}, 1,
+    'auth-enabled server answers the probe';
+  is claims($e), 1, 'vision model claims after the probe';
+
+  my $chat = $e->chat('Hi');
+  is $chat->header('x-api-key'), 'lms-token', 'chat request keeps x-api-key';
+  is $chat->header('Authorization'), undef, 'chat request gets no Bearer header';
+};
 
 # ---------------------------------------------------------------------------
 subtest 'precedence: probe is authoritative for the models it reports' => sub {

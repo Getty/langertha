@@ -201,3 +201,25 @@ Gemini 3 wires only when the model claims `image_input`, and as a text placehold
 either wire, so no learned fact changes a request today. An engine on `responses` or `gemini` that
 gains a probe must treat a wrong learned `image_input` as request-changing: it can put an image
 part into a tool-loop turn the model rejects.
+
+## Update (k365 — LMStudioAnthropic probes too: the first probing engine on the `anthropic` wire)
+
+The Future-work LMStudioAnthropic item is done. The Anthropic face talks to the same LM Studio
+server as the other two, and its `url` is the server root (the envelope appends
+`/v1/messages`; lmstudio.ai `anthropic-compat` gives `http://localhost:1234` as the base URL), so
+`model_metadata_url` is `server_root_url($url) . '/api/v1/models'`, the document the other two
+faces read, with format `lmstudio`. As there (decision 4), the layer-2
+`delete $caps->{image_input}` became the layer-3 catch-all `qr/\A/ => { image_input => 0 }`, so a
+learned fact can answer per model; `AnthropicBase` composes `Role::ImageInput`, so the layer-1
+wire gate lets a learned `1` through.
+
+One wire difference: LM Studio documents its API token only as `Authorization: Bearer` for the
+native REST API, while this engine sends it as `x-api-key` (documented for `/v1/messages`). With
+"Require Authentication" on, the probe would 401, so the engine adds the Bearer header to the
+probe request only (`around update_request`, matched on `model_metadata_url`); chat requests are
+unchanged. Documentation-derived, not live-verified, like the rest of this ADR's fixtures.
+
+The k344 paragraph above said no probing engine is on a wire where `image_input` changes a
+request. This engine is on `anthropic`; if the tool-result image form on that wire is gated on
+`image_input` (the k359 work), a learned fact here is request-changing in the same way: a wrong
+learned `1` sends an image block into a tool-loop turn of a model that cannot read it.

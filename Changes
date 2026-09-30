@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - LMStudioAnthropic can now learn per model whether it sees images, like the
+      other two LM Studio engines: probe_model_capabilities_f reads the server's
+      native /api/v1/models (capabilities.vision). The probe request also sends
+      the API token as a Bearer header, which LM Studio's native API expects;
+      chat requests are unchanged.
+
     - Gemini and AKI (native) now send a per-request model, from chat_f or
       Langertha::Chat, to that model's URL. It used to land in the body as
       an unknown field while the configured model answered.
