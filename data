@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-30T04:52:09Z
+claimed_by: worker
+class: standard
+completed: 2026-09-30T04:52:01Z
+created: 2026-09-30T04:35:14Z
+id: 363
+priority: low
+started: 2026-09-30T04:37:10Z
+status: done
+tags:
+- usage
+- cost
+- normalize
+title: 'Usage.cost_usd: usage.cost von OpenRouter/Perplexity normalisieren'
+updated: 2026-09-30T04:52:09Z
+---
+
+Folge aus k354 (ADR 0031 Update k354). Usage.cost_usd liest bisher nur xAI cost_in_usd_ticks/cost_in_nano_usd. OpenRouter und Perplexity liefern usage.cost (und ggf. usage.cost_details) - Einheit je Provider belegen (Doku + vorhandene Captures unter t/data, z. B. perplexity_agent_* aus k232), dann in Usage->from_hash auf USD normalisieren (Hausregel: Wire-Quirks normalisieren). Offline, Fixture-basiert, docs-derived kennzeichnen falls keine Capture.
+
+2026-09-30 04:49 Done (worktree agent-a0aaa0e5bc8170430, branch worktree-agent-a0aaa0e5bc8170430, base 2403e56). Units: Perplexity Agent usage.cost = object {currency:USD,total_cost,...} (REAL captures t/data/perplexity_agent_*) -> read in Usage->from_hash (tier 1) only when currency USD + total_cost present. OpenRouter usage.cost = bare number in credits, credits are USD (openrouter.ai/docs/faq, docs-derived, no capture) -> NOT read in from_hash (generic unit-less name); new Role::OpenAICompatible::_wire_usage hook (default identity, parallel of AnthropicCompatible), Engine::OpenRouter overrides it to add canonical cost_usd key (tier 3); from_hash reads canonical cost_usd first. BYOK cost_details.upstream_inference_cost not folded in. from_raw on an OpenRouter body gets no cost_usd (no engine). Tests: t/91_usage_provider_cost.t +6 subtests (red for undef cost_usd, then green); docs-derived fixtures t/data/openrouter_{chat_cost_doc.json,stream_cost_doc.sse}. prove -lr t/ PASS (220 files; live t/8x skipped, env clean). perlcritic clean. ADR 0031 k354 last bullet rewritten.
+
+Committed as f7c56c3
