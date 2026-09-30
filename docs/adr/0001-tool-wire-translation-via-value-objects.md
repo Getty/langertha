@@ -511,3 +511,32 @@ All of it is **documentation-derived, not live-verified** (OpenAI API reference
 docs.perplexity.ai `agent-post` reference, ai.google.dev `generate-content/function-calling`
 "Multimodal function responses": "Documents: application/pdf, text/plain", all fetched
 2026-09-30). Pinned in `t/92_tool_result_pdf.t`.
+
+## Update (k371 — anthropic tool-result PDFs stay a wire decision)
+
+k361 gated native tool-result PDFs on `image_input` for `responses` and Gemini 3. The anthropic
+wire deliberately does **not** follow: its PDF `document` block is decided by
+`_tool_result_source_blocks_on_wire` alone (k326/k364). The asymmetry is provider reality, not
+drift. OpenAI and Gemini document PDF input as a vision feature; on the Anthropic dialect the text
+track is evidenced without vision: a live probe (2026-09-30, tool_use → tool_result with a text
+part plus a base64 `application/pdf` `document`, a 1-page PDF carrying a codeword) got HTTP 200 and
+the correct codeword from MiniMax-M2.7 (text-only, `image_input` 0, 244 input tokens) and from
+MiniMax-M3 (vision, 3159 tokens, page seen as well), although MiniMax's documented content-block
+enum has no `document`. Gating on `image_input` would regress working PDF reading on M2.x into the
+k336 placeholder; first-party Claude models all claim `image_input`, so the gate would be a no-op
+there. Only a PDF/base64 document was probed; a text-source `document` and `search_result` were
+not. `MiniMaxAnthropic` states `_tool_result_source_blocks_on_wire { 1 }` explicitly, with that
+evidence, so the default cannot be flipped as "undocumented". Pinned in
+`t/92_tool_result_anthropic.t` (behavior rows plus the override via `find_method_by_name`).
+
+## Update (k372 — LMStudioAnthropic takes no source blocks in a tool_result)
+
+`Engine::LMStudioAnthropic` now sets `_tool_result_source_blocks_on_wire { 0 }`, like
+`MoonshotAnthropic` and `AKIAnthropic`: an MCP text resource (the common case) goes out as a
+`text` block, a PDF as the k336 placeholder, a native `document` / `search_result` as its text,
+with the once-per-engine carp. Evidence is **indirect and not live-verified** (no LM Studio server
+in the project): the anthropic-compat docs only point to Anthropic's, the changelog lists only
+"Images in tool call results" for `/v1/messages`, and lmstudio-bug-tracker#1792 (LM Studio 0.4.11,
+Apr 2026) reports PDFs rejected with a 400 even for vision models, with no document type. The
+axis is the wire, not `image_input` (k371): a learned-vision model gets the same treatment. Flip
+back to the default if a probe shows `document` accepted.

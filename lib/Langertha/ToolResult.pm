@@ -56,7 +56,8 @@ C<tool_result>: a text resource or C<text/*> blob becomes a C<text> block
 holding the text (as on the string wires), a PDF blob the placeholder, and an
 Anthropic-native C<document> or C<search_result> a C<text> block with the text
 it has in the string form (below). L<Langertha::Role::Tools/format_tool_results>
-passes it on the C</anthropic> shims of AKI.IO and Moonshot.
+passes it on the C</anthropic> shims of AKI.IO, Moonshot and
+(conservatively, not live-verified) LM Studio.
 
 An Anthropic-native block on a string wire (or with C<< source_blocks => 0 >>)
 keeps its text: a C<document> with a C<text> source gives that text, one with a

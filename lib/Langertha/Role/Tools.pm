@@ -602,7 +602,9 @@ sub _tool_result_image_opts {
 # 400 mid-loop. Off by default: every other wire (openai, ollama, hermes,
 # Perplexity's Agent API, older Gemini) has no documented form. The anthropic
 # wire's PDF document block is decided by _tool_result_source_blocks_on_wire
-# (k326, k364) and does not read this.
+# (k326, k364) and does not read this, nor image_input (k371): the Anthropic
+# dialect extracts PDF text without vision (MiniMax-M2.7, text-only, read one
+# live 2026-09-30), so the block is a wire fact, not a model question.
 sub _tool_result_pdf_on_wire { 0 }
 
 sub _tool_result_pdf_opts {
@@ -822,10 +824,12 @@ keeps the placeholder (its Agent API documents only text and image parts
 there), as do the OpenAI chat, Ollama and Hermes wires and Gemini before 3.
 
 On the C<anthropic> wire an embedded text resource or PDF goes out as a
-C<document> block, except on L<Langertha::Engine::AKIAnthropic> and
-L<Langertha::Engine::MoonshotAnthropic>, whose C</anthropic> endpoints take no
+C<document> block, except on L<Langertha::Engine::AKIAnthropic>,
+L<Langertha::Engine::MoonshotAnthropic> and (conservatively, not live-verified)
+L<Langertha::Engine::LMStudioAnthropic>, whose C</anthropic> endpoints take no
 C<document> or C<search_result> in a C<tool_result>: there the text goes out as
-a C<text> block and a PDF as a placeholder. An Anthropic-native C<document> or
+a C<text> block and a PDF as a placeholder. The PDF C<document> block elsewhere
+does not depend on C<image_input> (k371). An Anthropic-native C<document> or
 C<search_result> block in a tool's output becomes a C<text> block with its text
 there too, and the engine warns once.
 

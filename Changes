@@ -2,6 +2,13 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - LMStudioAnthropic no longer sends Anthropic document / search_result
+      blocks inside a tool_result: an MCP text resource goes out as a text
+      block, a PDF as the placeholder, a native document or search_result as
+      its text (with the once-per-engine warning). LM Studio documents none of
+      them and its bug tracker reports PDFs rejected with a 400. Conservative,
+      not live-verified (k372)
+
     - Engine::Replicate POD no longer claims an OpenAI-compatible hosted chat
       endpoint: Replicate's OpenAPI documents none, the engine is unverified
       against the hosted API, and url can point at a local Cog container or

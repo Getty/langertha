@@ -113,6 +113,20 @@ sub model_capability_corrections {
   );
 }
 
+# Source blocks in a tool_result (karr k364, k371): deliberately 1, the
+# Role::Tools default, stated here so nobody flips it to 0 as "undocumented".
+# MiniMax's docs do not know `document` (RequestContentBlock.type enum is
+# text | image | video | tool_use | tool_result | thinking | mid_conv_system;
+# tool_result.content is "string or array of text/image", docs only), but a
+# live probe 2026-09-30 (tool_use -> tool_result[text, document{base64
+# application/pdf}], 1-page PDF reading a codeword) got HTTP 200 and the
+# correct codeword from both MiniMax-M2.7 (text-only, 244 input tokens: text
+# extracted without vision) and MiniMax-M3 (3159 input tokens: page seen as
+# well). Gating on image_input would turn working PDF reading on M2.x into the
+# placeholder. Only a PDF/base64 document was probed; a text-source document
+# and search_result were NOT.
+sub _tool_result_source_blocks_on_wire { 1 }
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

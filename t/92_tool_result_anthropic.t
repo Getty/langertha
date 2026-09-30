@@ -231,7 +231,7 @@ subtest 'format_tool_results: document blocks only where the wire takes them' =>
   my @rows = (
     [ Anthropic         => 'claude-sonnet-4-6' => $doc,  'first-party: documented document block' ],
     [ MiniMaxAnthropic  => 'MiniMax-M3'        => $doc,  'MiniMax: undocumented, default kept' ],
-    [ LMStudioAnthropic => 'default'           => $doc,  'LM Studio: undocumented, default kept' ],
+    [ LMStudioAnthropic => 'default'           => $text, 'LM Studio: no document type documented, text inline (k372)' ],
     [ AKIAnthropic      => 'qwen3.6-35b'       => $text, 'AKI: document is a 529, text inline' ],
     [ MoonshotAnthropic => 'kimi-k3'           => $text, 'Kimi: schema lists text | image only' ],
   );
@@ -249,6 +249,47 @@ subtest 'format_tool_results: document blocks only where the wire takes them' =>
     @msgs = $e->format_tool_results( $raw, $sr_res );
     is_deeply( $msgs[1]{content}[0]{content}, $degraded ? $sr_text : [$SEARCH_RESULT],
       "$name: native search_result " . ( $degraded ? 'as text (k366)' : 'passes through' ) );
+  }
+};
+
+subtest 'format_tool_results: the anthropic PDF document block is a wire decision, not an image_input one' => sub {
+  # k371 (ADR 0001 k371 Update): unlike OpenAI Responses / Gemini 3 (k361), the
+  # anthropic PDF path ignores image_input. Live 2026-09-30: MiniMax-M2.7
+  # (text-only) read a PDF document block inside a tool_result correctly
+  # (HTTP 200), so gating on image_input would turn working PDF reading into a
+  # placeholder. Red the moment someone adds that gate.
+  my $raw = { content => [ { type => 'tool_use', id => 'toolu_1', name => 'read', input => {} } ] };
+  my $res = [ { tool_call => { id => 'toolu_1' }, result => { content => [
+    { type => 'resource', resource => { uri => 'file:///a.pdf', mimeType => 'application/pdf', blob => 'JVBERi0=' } },
+  ] } } ];
+  my $pdf_doc = [ { type => 'document',
+    source => { type => 'base64', media_type => 'application/pdf', data => 'JVBERi0=' } } ];
+  my $ph = [ { type => 'text', text => '[resource] application/pdf <file:///a.pdf> (5 bytes)' } ];
+  my @rows = (
+    [ Anthropic        => 'claude-sonnet-4-6' => $pdf_doc, 1, 'first-party, vision model' ],
+    [ MiniMaxAnthropic => 'MiniMax-M2.7'      => $pdf_doc, 0, 'text-only model still gets the document block' ],
+    [ MiniMaxAnthropic => 'MiniMax-M3'        => $pdf_doc, 1, 'vision model, same block' ],
+    [ LMStudioAnthropic => 'default'          => $ph,      0, 'LM Studio: PDF is the placeholder (k372)' ],
+  );
+  for my $row (@rows) {
+    my ( $name, $model, $want, $vision, $why ) = @$row;
+    my $e = "Langertha::Engine::$name"->new( api_key => 'k', model => $model );
+    is( $e->supports('image_input') ? 1 : 0, $vision, "$name $model: image_input is $vision" );
+    my @msgs = $e->format_tool_results( $raw, $res );
+    is_deeply( $msgs[1]{content}[0]{content}, $want, "$name $model: $why" );
+  }
+};
+
+subtest 'explicit _tool_result_source_blocks_on_wire overrides are pinned' => sub {
+  # MiniMaxAnthropic's 1 equals the Role::Tools default, so a behavior row
+  # cannot see its deletion; pin the override (as t/92_tool_result_pdf.t does
+  # for Perplexity) so the live-probed 1 cannot be flipped as "undocumented".
+  for my $row ( [ MiniMaxAnthropic => 1 ], [ LMStudioAnthropic => 0 ] ) {
+    my ( $name, $want ) = @$row;
+    my $class = "Langertha::Engine::$name";
+    my $method = $class->meta->find_method_by_name('_tool_result_source_blocks_on_wire');
+    is( $method->original_package_name, $class, "$name defines its own predicate" );
+    is( $class->new( api_key => 'k' )->_tool_result_source_blocks_on_wire, $want, "... and it says $want" );
   }
 };
 
