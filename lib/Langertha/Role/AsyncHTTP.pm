@@ -5,7 +5,7 @@ use Moose::Role;
 use Future::AsyncAwait;
 use Future;
 use Carp qw( croak );
-use Scalar::Util qw( blessed );
+use Scalar::Util qw( blessed reftype );
 
 requires 'user_agent';
 
@@ -115,12 +115,85 @@ async sub async_request_f {
 sub _async_do_request_f {
   my ( $self, %args ) = @_;
   my $http = $self->_async_http;
-  # Only Net::Async::HTTP gets the timeout and the body cap below. The sync shim
-  # and injected clients hand back the still-encoded body, which
-  # Role::HTTP::_bounded_decoded_content bounds downstream, and they carry their
-  # own timeout (ADR 0027).
+  # Only Net::Async::HTTP gets the timeout, the body cap and the redirect policy
+  # below. The sync shim and injected clients hand back the still-encoded body,
+  # which Role::HTTP::_bounded_decoded_content bounds downstream, and they carry
+  # their own timeout (ADR 0027); the sync shim runs the engine's user_agent,
+  # a Langertha::HTTP::UserAgent with the same redirect policy (karr k374).
   return $http->do_request(%args)
     unless blessed($http) && $http->isa('Net::Async::HTTP');
+
+  # Redirects (karr k374). Net::Async::HTTP follows a GET redirect with a fresh
+  # request carrying the Location's query as it is, so a server echoing the
+  # request URI sent Gemini's ?key= to the new host, while on the same origin
+  # the credential header was lost. It follows nothing here (max_redirects => 0);
+  # each hop is decided by Langertha::HTTP::Redirect, the policy the sync LWP
+  # agent follows too. A caller's max_redirects is the hop limit, else the
+  # client's own (the max_redirects it was built with, default 3). Only GET and
+  # HEAD are ever followed, so any other request is the single hop it was.
+  # The client's own limit is Net::Async::HTTP private state (checked against
+  # 0.50, where configure stores it in $self->{max_redirects}); read defensively
+  # and fall back to that version's default of 3.
+  my $hops = exists $args{max_redirects} ? delete $args{max_redirects}
+    : ( reftype($http) // '' ) eq 'HASH' && defined $http->{max_redirects} ? $http->{max_redirects}
+    : 3;
+  $args{max_redirects} = 0;
+  # A caller passing uri => instead of request => (no core caller does) gets no
+  # redirect following: Net::Async::HTTP builds that request itself, so it is
+  # the single hop max_redirects => 0 allows and a 3xx comes back as it is.
+  my $request = $args{request};
+  return $self->_async_one_request_f( $http, %args )
+    unless $hops && $request && ( uc $request->method ) =~ /\A(?:GET|HEAD)\z/;
+  require Langertha::HTTP::Redirect;
+  return $self->_async_follow_f( $http, \%args, $hops, undef );
+}
+
+# One hop of a followed chain, then the next one if the policy follows it. A
+# caller's on_header must not see a redirect that is followed (its body is
+# discarded, as Net::Async::HTTP does); a redirect that is not followed reaches
+# it like any other response. Future->then propagates a cancel of the returned
+# future to the hop in flight.
+sub _async_follow_f {
+  my ( $self, $http, $args, $hops, $previous ) = @_;
+  my %hop = %{$args};
+  # Decided once per response (on_header and the completed hop both ask), so a
+  # refusal's Client-Warning is added once.
+  my ( $decided, $next );
+  my $follows = sub {
+    my ($response) = @_;
+    return $next if $decided && $decided == $response;
+    $decided = $response;
+    $response->previous($previous) if $previous && !$response->previous;
+    if ( $hops > 0 ) {
+      $next = Langertha::HTTP::Redirect::next_request( $hop{request}, $response );
+    }
+    else {
+      $next = undef;
+      $response->push_header( 'Client-Warning' =>
+          'redirect not followed: Langertha::HTTP::Redirect: hop limit reached' )
+        if $response->is_redirect && defined $response->header('Location');
+    }
+    return $next;
+  };
+  if ( my $on_header = $hop{on_header} ) {
+    $hop{on_header} = sub {
+      my ($response) = @_;
+      return sub { return @_ ? () : $response } if $follows->($response);
+      return $on_header->($response);
+    };
+  }
+  return $self->_async_one_request_f( $http, %hop )->then( sub {
+    my ($response) = @_;
+    my $next = $follows->($response);
+    return Future->done($response) unless $next;
+    return $self->_async_follow_f( $http, { %{$args}, request => $next }, $hops - 1, $response );
+  } );
+}
+
+# One Net::Async::HTTP request with the connect check, the body cap and the
+# timeout applied.
+sub _async_one_request_f {
+  my ( $self, $http, %args ) = @_;
 
   # Net::Async::HTTP 0.50 loads IO::Async::Internals::Connector (and
   # IO::Async::SSL for https) only when it connects; when that load dies, the
@@ -260,6 +333,26 @@ L<Net::Async::HTTP> 0.50 would keep the host's connection slot taken by the
 connection that never opened, and every later request to that host would wait
 forever (karr k353). Inline image fetches through such a client
 (L<Langertha::Content::Image/ensure_base64_f>) are checked the same way.
+
+Redirects follow L<Langertha::HTTP::Redirect> on every backend core builds:
+on L<Net::Async::HTTP> they are followed here one hop at a time (the client
+itself is told C<< max_redirects => 0 >>), on the synchronous fallback by the
+engine's L<Langertha::HTTP::UserAgent>. Only C<GET> and C<HEAD> are followed,
+never from C<https> to C<http>; a redirect on the same origin keeps the request
+as it was, one to another origin drops every header but the representation
+ones (so no credential header of any name goes along), the URL's userinfo, and
+any query value the request carried as a credential. C<http://host> to
+C<https://host> counts as another origin, so a keyed GET behind such a redirect
+arrives without its key and gets a 401: configure the C<https> URL. A C<POST>
+is never followed. A redirect that is not followed resolves the future with
+the 3xx response, with a C<Client-Warning> header naming the reason
+(C<redirect not followed: Langertha::HTTP::Redirect: ...>, also when the hop
+limit ran out). The hop limit is a C<max_redirects> option if given, else the
+client's own (3 by default); the C<timeout> applies per hop. With
+C<on_header> the callback sees only the response the chain ends on, a
+redirect that was not followed included (karr k374). A request passed as
+C<< uri => >> instead of C<< request => >> is not followed at all. An injected
+client of another class follows redirects on its own terms.
 
 Any extra named options (such as C<on_header> for streaming) are passed to
 C<do_request> unchanged. The backend object itself is not exposed; see

@@ -258,3 +258,13 @@ Not covered: `Net::Async::SOCKS` (loaded only with `socks_params`, which core ne
 http→https redirect that Net::Async::HTTP follows by itself. The image path follows redirects hop by
 hop, so each hop there is checked. Test: `t/45_async_http_connect_modules.t` (a real Net::Async::HTTP
 against the local daemon, with an `@INC` blocker). It hung on the second request before the fix.
+
+## Update (k374 — redirects follow one Langertha-owned policy on both backends; ADR 0036)
+
+Backend parity now includes redirects. Neither client kept an engine credential on its origin
+(LWP 6.83 forwards `x-api-key`; both forward an echoed `?key=`), and they disagreed on same-origin
+hops. The default `user_agent` is now `Langertha::HTTP::UserAgent` (policy in `redirect_ok`), and
+`_async_do_request_f` calls Net::Async::HTTP with `max_redirects => 0` and follows each GET/HEAD hop
+through `Langertha::HTTP::Redirect`. That also closes the gap noted in the k353 Update above: an
+http→https redirect is now a hop core follows itself, so the connect-module check runs on it.
+Injected clients keep their own redirect behaviour. Decision and rationale: ADR 0036.

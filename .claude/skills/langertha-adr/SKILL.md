@@ -103,6 +103,7 @@ the same change, or stops and reports.
 | Usage cache counts, `Pricing` cache rates, `Cost` | 0031 |
 | Runtime metrics scrape | 0014 |
 | Async transport, sync fallback | 0027 |
+| Redirects: credential policy on both transports (`HTTP::Redirect`, `HTTP::UserAgent`) | 0036 |
 | Distribution boundary (Raider extraction) | 0026 (0007/0008 history) |
 
 ## Companion

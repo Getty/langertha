@@ -2,6 +2,29 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Security: a redirect to another origin no longer carries the engine's
+      credential. LWP kept every request header but Authorization (and that
+      too before LWP 6.83), so a GET such as list_models sent x-api-key to
+      whatever host the server redirected to; on both backends a server
+      echoing the request URI into Location sent Gemini's (and AKI's) ?key=
+      along. Both backends now follow redirects under one policy
+      (Langertha::HTTP::Redirect): only GET/HEAD, never https -> http, the
+      same origin unchanged, another origin with only the representation
+      headers (Accept*, Content-Type, Content-Language, User-Agent), no
+      userinfo and no query value the request carried as a credential, and
+      not at all if a credential would still be in the URL. http://host to
+      https://host is another origin as well: a keyed GET behind an
+      http-to-https redirect now arrives without its key and gets a 401, so
+      configure the https URL. POST is never redirected, even when an agent's
+      requests_redirectable lists it. A refused redirect comes back as the 3xx
+      with a Client-Warning header naming the reason. The engine's
+      default user_agent is now a Langertha::HTTP::UserAgent (an LWP::UserAgent
+      subclass); an agent you pass in keeps its own redirect behaviour.
+      Net::Async::HTTP redirects are followed hop by hop, which also keeps
+      the credential on a same-origin redirect (it used to be dropped) and
+      resolves a relative Location against https correctly. POST requests
+      were and are never redirected (k374)
+
     - LMStudioAnthropic no longer sends Anthropic document / search_result
       blocks inside a tool_result: an MCP text resource goes out as a text
       block, a PDF as the placeholder, a native document or search_result as

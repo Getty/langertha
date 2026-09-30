@@ -439,7 +439,8 @@ has user_agent => (
 );
 sub _build_user_agent {
   my ( $self ) = @_;
-  return LWP::UserAgent->new(
+  require Langertha::HTTP::UserAgent;
+  return Langertha::HTTP::UserAgent->new(
     agent => $self->user_agent_agent,
     $self->has_user_agent_timeout ? ( timeout => $self->user_agent_timeout ) : (),
   );
@@ -447,8 +448,26 @@ sub _build_user_agent {
 
 =attr user_agent
 
-The L<LWP::UserAgent> instance used for synchronous HTTP requests. Built lazily
-with C<user_agent_agent> and C<user_agent_timeout>.
+The L<LWP::UserAgent> instance used for synchronous HTTP requests (and by the
+synchronous fallback of the C<_f> methods). Built lazily with
+C<user_agent_agent> and C<user_agent_timeout> as a
+L<Langertha::HTTP::UserAgent>, which follows redirects under
+L<Langertha::HTTP::Redirect>: only C<GET>/C<HEAD>, never from C<https> to
+C<http>, and to another origin without any credential (every header but the
+representation ones is dropped, and a credential the request carried in its
+query is removed from the new URL). C<http://host> to C<https://host> is
+another origin too: a keyed GET behind an http-to-https redirect arrives
+without its key and gets a 401, so configure the C<https> URL. A C<POST> is
+never redirected, even if you add it to C<requests_redirectable>. A refused
+redirect comes back as the 3xx with a C<Client-Warning> naming the reason. The
+L<Net::Async::HTTP> backend follows the same policy
+(L<Langertha::Role::AsyncHTTP/async_request_f>).
+
+An agent passed in is used as it is, with its own redirect behaviour: a plain
+L<LWP::UserAgent> clones the request with every header but C<Authorization>
+(and keeps even that before LWP 6.83), so an C<x-api-key> or similar header
+would reach whatever host a server redirects to. Pass a
+L<Langertha::HTTP::UserAgent> (it takes the same arguments) to keep the policy.
 
 =cut
 
