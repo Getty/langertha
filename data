@@ -1,0 +1,29 @@
+---
+claimed_at: 2026-09-30T06:18:07Z
+claimed_by: langertha-wire-worker
+class: standard
+completed: 2026-09-30T06:18:07Z
+created: 2026-09-29T22:13:31Z
+id: 361
+priority: low
+started: 2026-09-30T06:00:52Z
+status: done
+tags:
+- tool-result
+- wire
+- k344
+title: Tool-Result-PDFs nativ (Responses input_file, Gemini functionResponse.parts)
+updated: 2026-09-30T06:18:07Z
+---
+
+Follow-up zu k344: PDFs in Tool-Ergebnissen, beide Provider dokumentieren es. Docs-derived, ohne Live-Verifikation kennzeichnen.
+
+2026-09-30 06:06 Docs checked 2026-09-30: OpenAI API ref FunctionCallOutput.output = string | [input_text|input_image|input_file] (input_file: file_data, file_id, file_url, filename, detail); PDF guide sends file_data as data:application/pdf;base64,... + filename (server requires filename in practice). Perplexity agent-post: output = input_text|input_image only -> keeps placeholder. Gemini generate-content function-calling guide: Gemini 3 multimodal function responses, MIME list images + application/pdf, text/plain. Gate plan: private _tool_result_pdf_on_wire (OpenAIResponses 1, Gemini 3, else 0) AND image_input (both providers document PDF understanding as a vision feature). Red tests in t/92_tool_result_pdf.t.
+
+2026-09-30 06:11 Implemented (worktree k361, uncommitted). ToolResult: new native_pdf option -> responses input_file {filename, file_data data:application/pdf;base64} (filename = URI basename + .pdf, else document.pdf; always sent, server rejects file_data without it), gemini functionResponse.parts inlineData application/pdf. Role::Tools: private _tool_result_pdf_on_wire (default 0) + _tool_result_pdf_opts, read on responses/gemini branches, requires image_input too. OpenAIResponses=1, Gemini=gemini-3 image predicate, Perplexity explicit 0 (Agent API has no input_file). Tests t/92_tool_result_pdf.t (9 subtests) red->green; t/92_*, t/78_image_input/registry, t/79, t/60/62/68 pass singly; perlcritic clean. ADR 0001 + 0019 k361 Updates, Changes, POD (ToolResult, Role::Tools, ImageInput), CLAUDE.md ImageInput line. OPEN QUESTIONS: (1) gate uses image_input as the model half (both providers document PDF reading as vision) - a separate document_input capability was deliberately NOT invented; revisit if a provider documents PDF for a non-vision model or vice versa. (2) The anthropic wire's PDF document block is wire-only (source_blocks) and ignores image_input, so a text-only shim model (e.g. MiniMax-M2.7) still gets a PDF document block - alignment not done, for the dispatcher to decide. (3) Native Anthropic document blocks with a base64 PDF source still become the placeholder on responses/gemini (not converted). All docs-derived, not live-verified.
+
+2026-09-30 06:11 Done: native tool-result PDFs on OpenAIResponses (input_file) and Gemini 3 (functionResponse.parts), gated on private _tool_result_pdf_on_wire + image_input; Perplexity keeps placeholder. Verified by t/92_tool_result_pdf.t and related tests run singly, perlcritic clean. Full suite not run (orchestrator).
+
+2026-09-30 06:16 Review minors fixed: _pdf_filename now uses URI (hierarchical path only: generic URI with no scheme or an absolute path) + URI::Escape::uri_unescape decoded as UTF-8 -> 'my%20report.pdf' = 'my report.pdf'; urn:, data:, rootless foo:bar/x, empty path -> document.pdf (7 new test rows). Perplexity override pinned via meta->find_method_by_name(...)->original_package_name eq Perplexity; mutation (override line deleted) fails that test, the behavior rows alone did not. POD + ADR 0001 k361 wording updated. perlcritic clean, t/92_tool_result_pdf.t green.
+
+2026-09-30 06:17 Committed on branch k361 as 92ed18b
