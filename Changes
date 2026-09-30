@@ -2,6 +2,10 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Manifest::Builder->engine_class_for_dialect($dialect), the inverse of
+      dialect_for_engine: the generic engine class per manifest dialect
+      (loaded; undef for an unknown one), round-trip tested (k369).
+
     - Security: new engine attribute connect_address pins the connection to
       an address you checked (DNS-rebinding guard, k375, raider #119). Every
       request to the host of the engine's url connects to that IPv4/IPv6

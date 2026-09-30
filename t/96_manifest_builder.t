@@ -369,4 +369,33 @@ subtest 'every engine capability is classified' => sub {
   }
 };
 
+# k369: engine_class_for_dialect is the inverse of dialect_for_engine; the
+# round trip over the whole dialect vocabulary stops the dialect list and the
+# engine classes drifting apart.
+subtest 'engine_class_for_dialect' => sub {
+  my $builder = 'Langertha::Manifest::Builder';
+  my %expect = (
+    'openai-chat'      => 'Langertha::Engine::OpenAI',
+    'responses'        => 'Langertha::Engine::OpenAIResponses',
+    'perplexity-agent' => 'Langertha::Engine::Perplexity',
+    'anthropic'        => 'Langertha::Engine::Anthropic',
+    'anthropic-compat' => 'Langertha::Engine::AnthropicBase',
+    'gemini'           => 'Langertha::Engine::Gemini',
+    'ollama'           => 'Langertha::Engine::Ollama',
+    'aki'              => 'Langertha::Engine::AKI',
+    'lmstudio'         => 'Langertha::Engine::LMStudio',
+  );
+  is $builder->engine_class_for_dialect($_), $expect{$_}, "$_ => $expect{$_}" for sort keys %expect;
+  is $builder->engine_class_for_dialect('no-such-dialect'), undef, 'unknown dialect => undef';
+  is $builder->engine_class_for_dialect(undef), undef, 'undef dialect => undef';
+
+  require Langertha::Manifest::Endpoint;
+  for my $dialect ( Langertha::Manifest::Endpoint->known_dialects ) {
+    my $engine_class = $builder->engine_class_for_dialect($dialect);
+    ok defined $engine_class, "vocabulary dialect $dialect has an engine class" or next;
+    my $engine = $engine_class->new( url => 'http://127.0.0.1:1', api_key => 'k', model => 'm' );
+    is $builder->dialect_for_engine($engine), $dialect, "round trip: $dialect";
+  }
+};
+
 done_testing;

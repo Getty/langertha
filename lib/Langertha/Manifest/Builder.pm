@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use Moose;
 use Carp qw( carp croak );
 use Scalar::Util qw( blessed );
+use Module::Runtime qw( use_module );
 use URI;
 use Langertha::Manifest;
 
@@ -213,6 +214,50 @@ sub dialect_for_engine {
 
 The manifest dialect of an engine (see L</DESCRIPTION>), or C<undef> when
 its family has none.
+
+=cut
+
+# The inverse of @DIALECT_BY_CLASS: per dialect the one generic class that
+# takes the endpoint's base_url as its `url` (not a vendor subclass).
+my %ENGINE_CLASS_BY_DIALECT = (
+  'openai-chat'      => 'Langertha::Engine::OpenAI',
+  'responses'        => 'Langertha::Engine::OpenAIResponses',
+  'perplexity-agent' => 'Langertha::Engine::Perplexity',
+  'anthropic'        => 'Langertha::Engine::Anthropic',
+  'anthropic-compat' => 'Langertha::Engine::AnthropicBase',
+  'gemini'           => 'Langertha::Engine::Gemini',
+  'ollama'           => 'Langertha::Engine::Ollama',
+  'aki'              => 'Langertha::Engine::AKI',
+  'lmstudio'         => 'Langertha::Engine::LMStudio',
+);
+
+sub engine_class_for_dialect {
+  my ( $class, $dialect ) = @_;
+  return undef unless defined $dialect;
+  my $engine_class = $ENGINE_CLASS_BY_DIALECT{$dialect} or return undef;
+  return use_module($engine_class);
+}
+
+=method engine_class_for_dialect
+
+    my $engine_class = Langertha::Manifest::Builder->engine_class_for_dialect('openai-chat');
+    my $engine = $engine_class->new( url => $endpoint->base_url, api_key => $key );
+
+The inverse of L</dialect_for_engine>: the generic engine class that speaks
+a manifest dialect, loaded and ready for C<new>, or C<undef> for an unknown
+(or undefined) dialect. It never croaks on an unknown dialect.
+
+Each dialect maps to the one class that takes the endpoint's C<base_url> as
+its C<url>, not to a vendor subclass: C<openai-chat> is
+L<Langertha::Engine::OpenAI> (the ~25 OpenAI-compatible engines share that
+wire), C<responses> L<Langertha::Engine::OpenAIResponses>, C<perplexity-agent>
+L<Langertha::Engine::Perplexity>, C<anthropic> L<Langertha::Engine::Anthropic>,
+C<anthropic-compat> L<Langertha::Engine::AnthropicBase> (the C</anthropic>
+shims), C<gemini> L<Langertha::Engine::Gemini>, C<ollama>
+L<Langertha::Engine::Ollama>, C<aki> L<Langertha::Engine::AKI> and
+C<lmstudio> L<Langertha::Engine::LMStudio>. Every dialect of
+L<Langertha::Manifest::Endpoint/known_dialects> has a class, and a test holds
+the round trip: C<dialect_for_engine> of that class gives the dialect back.
 
 =cut
 
