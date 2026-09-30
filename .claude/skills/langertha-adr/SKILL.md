@@ -104,6 +104,7 @@ the same change, or stops and reports.
 | Runtime metrics scrape | 0014 |
 | Async transport, sync fallback | 0027 |
 | Redirects: credential policy on both transports (`HTTP::Redirect`, `HTTP::UserAgent`) | 0036 |
+| Connection pinning (`connect_address`, DNS rebinding) | 0037 |
 | Distribution boundary (Raider extraction) | 0026 (0007/0008 history) |
 
 ## Companion

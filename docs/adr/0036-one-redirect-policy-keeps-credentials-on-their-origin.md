@@ -99,3 +99,12 @@ guarantee core can document.
 - Run the sync hop loop in Langertha for *any* LWP agent (disable LWP's own redirects for the
   request, follow via the policy), which would make the policy independent of the agent's class
   and could retire the subclass. Not needed for the default configuration.
+
+## Update (k375 — a pinned engine refuses to leave its host; ADR 0037)
+
+`guard_referral` / `next_request` take an optional pinned host. With `connect_address` set
+(ADR 0037), a hop from the pinned host to any other host is refused — the address was checked for
+that host only — and the 3xx comes back with a `Client-Warning` naming `connect_address`; a
+same-host hop on any port stays pinned and still has its credentials handled as above. Decision 4
+("injected clients keep their own behaviour") does not hold under a pin: an injected client that
+cannot pin is refused rather than left to its own redirect behaviour.

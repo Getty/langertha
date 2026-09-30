@@ -86,6 +86,7 @@ refactors:
 - **0034** — non-chat calls (embedding / transcription / image) return an opt-in `Langertha::CallResult` (value + `usage` via `Usage->from_raw`, `rate_limit`, `model`, `total_seconds`, `raw`) from `simple_embedding_result(_f)` / `simple_transcription_call(_f)` / `simple_image_result(_f)`; deliberately not `Langertha::Response` (chat-shaped), bare methods unchanged
 - **0035** — a bound Gemini `cachedContent` owns `systemInstruction` / `tools` / `toolConfig`: `generateContent` drops them (both spellings, body and `%extra`) and carps once per engine, rather than croaking or merging into the cache; evidence is the observed server 400, not the docs (k340)
 - **0036** — one Langertha-owned redirect policy (`Langertha::HTTP::Redirect`) on both transports: same origin unchanged, cross-origin keeps only representation headers and strips chain credentials from the URL, GET/HEAD only, no https→http; default `user_agent` is `Langertha::HTTP::UserAgent`, injected clients keep their own (k374, amends 0027)
+- **0037** — `connect_address` pins an engine's TCP connection to a caller-checked IP (DNS-rebinding defence); Host, SNI and the certificate check keep the host name; async `on_ready` / sync request-scoped `_extra_sock_opts` + `_check_sock` wraps verify every connection before writing; cross-host redirects and unpinnable setups refuse (k375, amends 0036)
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision

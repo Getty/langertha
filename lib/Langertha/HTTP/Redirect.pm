@@ -116,7 +116,7 @@ case-insensitively, a default port equal to its explicit number).
 =cut
 
 sub next_request {
-  my ( $request, $response ) = @_;
+  my ( $request, $response, $pinned_host ) = @_;
   return undef unless $FOLLOWED_CODE{ $response->code };
   my $location = $response->header('Location');
   return undef unless defined $location && length $location;
@@ -126,21 +126,23 @@ sub next_request {
     URI->new_abs( $location, $request->uri ), $request->headers->clone, $request->content );
   $next->protocol( $request->protocol ) if defined $request->protocol;
   $next->remove_header( 'Host', 'Cookie' );
-  return guard_referral( $next, $response ) ? $next : undef;
+  return guard_referral( $next, $response, $pinned_host ) ? $next : undef;
 }
 
 =func next_request
 
     my $next = Langertha::HTTP::Redirect::next_request( $request, $response );
+    my $next = Langertha::HTTP::Redirect::next_request( $request, $response, $pinned_host );
 
 The request to send for the redirect C<$response> to C<$request>, or C<undef>
 when it is not followed. C<$request> is not modified. The chain of earlier
 responses (C<< $response->previous >>) is searched for credentials too.
+C<$pinned_host> is passed on to L</guard_referral>.
 
 =cut
 
 sub guard_referral {
-  my ( $referral, $response ) = @_;
+  my ( $referral, $response, $pinned_host ) = @_;
   # The method of the request the redirect answers, not the referral's: LWP
   # turns a 302/303 POST into a GET, and a requests_redirectable with POST in it
   # would otherwise re-send a body (a chat, AKI's key) to wherever Location says.
@@ -155,6 +157,12 @@ sub guard_referral {
     unless $scheme eq 'http' || $scheme eq 'https';
   return _refuse( $response, 'not from https to http' )
     if lc( $from->scheme // '' ) eq 'https' && $scheme eq 'http';
+  # A connection pinned to a checked address (connect_address, karr k375) is
+  # pinned for its host only; another host would be resolved afresh, which is
+  # the DNS-rebinding window the pin closes.
+  return _refuse( $response, "connect_address pins $pinned_host; not to another host (" . lc( $to->host // '' ) . ')' )
+    if defined $pinned_host && $from->can('host') && lc( $from->host // '' ) eq lc $pinned_host
+      && !( $to->can('host') && lc( $to->host // '' ) eq lc $pinned_host );
   return 1 if same_origin( $from, $to );
 
   $referral->remove_header($_) for grep { !$KEEP{ lc $_ } } $referral->header_field_names;
@@ -196,6 +204,7 @@ sub _refuse {
 =func guard_referral
 
     my $follow = Langertha::HTTP::Redirect::guard_referral( $referral, $response );
+    my $follow = Langertha::HTTP::Redirect::guard_referral( $referral, $response, $pinned_host );
 
 Applies the policy to C<$referral>, the request about to be sent for the
 redirect C<$response> (whose C<request> is the hop it answers). Returns false
@@ -205,6 +214,13 @@ Langertha::HTTP::Redirect: ...>); otherwise strips C<$referral> in place if it
 goes to another origin and returns true. The method checked is the one of
 C<< $response->request >>, so a C<POST> is refused even when an agent's
 C<requests_redirectable> would allow it.
+
+When C<$pinned_host> is given (the host of an engine's
+L<Langertha::Role::HTTP/connect_address>), a redirect from that host to any
+other host is refused too (C<connect_address pins ...; not to another host>):
+the pinned address was checked for that host only. A redirect staying on the
+host, on any port, is decided as usual and connects to the pinned address
+again.
 
 =cut
 

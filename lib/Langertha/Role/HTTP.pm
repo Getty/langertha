@@ -4,6 +4,7 @@ our $VERSION = '0.503';
 use Moose::Role;
 
 use Carp qw( croak );
+use Scalar::Util ();
 use Log::Any qw( $log );
 use Time::HiRes qw( gettimeofday tv_interval );
 use URI;
@@ -31,6 +32,155 @@ internally and only require this attribute to be set when pointing at a custom
 or self-hosted endpoint.
 
 =cut
+
+has connect_address => (
+  is => 'ro',
+  isa => 'Maybe[Str]',
+  trigger => sub { $_[0]->_check_connect_address },
+);
+
+=attr connect_address
+
+    my $engine = Langertha::Engine::OpenAI->new(
+      url             => 'https://llm.example.com/v1',
+      api_key         => $key,
+      connect_address => '203.0.113.7',   # what llm.example.com resolved to when you checked it
+    );
+
+An IPv4 or IPv6 address literal (no brackets, port or scope; C<undef> means
+none). When set, every request the engine sends to the B<host of its
+L</url>> opens its TCP connection to this address instead of resolving the
+name again. The request still names the host everywhere else: the C<Host>
+header, and for C<https> the TLS SNI and the name the server certificate is
+verified against. Certificate verification itself is configured as it would
+be without the pin. This is for a caller that resolved the host and checked
+its addresses against a policy (no loopback, private or cloud-metadata
+address, say): without the pin the name is resolved again at connect time,
+and a DNS answer that changed in between (DNS rebinding) would send the
+request somewhere that was never checked (karr k375).
+
+It covers every request core sends to that host, on every backend core
+builds: the synchronous methods and the synchronous fallback of the C<_f>
+methods through the engine's L</user_agent> (a L<Langertha::HTTP::UserAgent>
+built with the pin), and the L<Net::Async::HTTP> backend of the C<_f>
+methods, streaming included (L<Langertha::Role::AsyncHTTP/async_request_f>).
+That includes C<list_models>, the capability probe and the metrics scrape,
+which go to the same host. Requests to other hosts (a Langfuse endpoint, say)
+are not pinned. B<Not pinned either>: image URLs fetched for inlining
+(L<Langertha::Content::Image/ensure_base64>, C<ensure_base64_f>) resolve
+their host again, even when it is the pinned host; only on the synchronous
+fallback, where the fetch runs through a copy of the engine's agent, is a
+same-host image pinned. Vet image URLs with
+L<Langertha::Role::Chat/inline_image_url_filter> if that matters.
+
+Redirects: a redirect from the pinned host to another host is B<not
+followed> on any backend; the 3xx is returned with a C<Client-Warning>
+(C<redirect not followed: Langertha::HTTP::Redirect: connect_address pins
+...>). The address was checked for this host only, and following would
+resolve the new host afresh. A redirect on the same host (another port or
+path) stays pinned. Configure the URL the redirect points to, with its own
+checked address, instead.
+
+Before a request is written the connection is checked, new or reused: its
+peer must be the pinned address and, over C<https>, the session's
+certificate chain must have verified and the certificate must be for the
+host. Where verification is switched off the check follows: on the
+synchronous side both parts apply when LWP's C<verify_hostname> is on (its
+default); on L<Net::Async::HTTP> C<< SSL_verify_mode => 0 >> (on the client
+or the request) skips both, C<< SSL_verifycn_scheme => 'none' >> the name
+part. A connection that fails the check is not used (a C<500> response on the
+synchronous side, a failed future with category C<connect_address> on
+L<Net::Async::HTTP>). This matters for connection reuse:
+L<Net::Async::HTTP> pools connections by address and port, so two engines
+pinning different names to one address on a B<shared> client would
+otherwise share a TLS session verified for only one of them. With the check,
+the request of the engine whose name the pooled connection was not verified
+for B<fails> (it is not retried on a new connection); give such engines a
+client each. The refused connection is closed once idle, so later requests
+get a fresh one. Likewise an LWP C<conn_cache> shared with another agent
+could hand over a socket that agent opened elsewhere, or without
+verification; such a socket is refused.
+
+What the pin cannot do is refused rather than silently skipped:
+
+=over 4
+
+=item * With a L</user_agent> passed in, it must be a
+L<Langertha::HTTP::UserAgent> built with the same pin (C<< connect_host =>
+<host of url>, connect_address => ... >>); anything else croaks at
+construction, because the synchronous requests go straight to that agent.
+
+=item * An injected C<_async_http> client that is neither a
+L<Net::Async::HTTP> nor the synchronous shim over a correctly pinned agent
+fails every request to the pinned host (the future fails with C<...
+connect_address ... cannot be applied ...>). So does a L<Net::Async::HTTP>
+client configured with a C<proxy_host> or C<proxy_path>, and on the
+synchronous side a request that LWP would send through a proxy (a C<500>
+response): a proxy resolves the name itself. Through a SOCKS proxy the
+connection's peer is the proxy, so the peer check refuses it.
+
+=back
+
+Engines derived from this one carry the pin while their URL is on the same
+host (L<Langertha::Engine::OpenAI/whisper>, C<< Ollama->openai >>, C<<
+LMStudio->openai >> / C<< ->anthropic >>, also with a C<url> of your own on
+that host); on another host they get none.
+
+=cut
+
+# The host connect_address pins (lower-cased), or undef without a pin.
+sub _connect_host {
+  my ($self) = @_;
+  return undef unless defined $self->connect_address;
+  # The accessor, not has_url: many engines build a default url lazily.
+  my $url = $self->url;
+  return undef unless defined $url;
+  my $uri = URI->new($url);
+  return undef unless $uri->can('host') && defined $uri->host && length $uri->host;
+  return lc $uri->host;
+}
+
+# ( connect_address => ... ) for an engine derived from this one that will use
+# $url, when $url is on the pinned host; else nothing (karr k375).
+sub _connect_address_for {
+  my ( $self, $url ) = @_;
+  my $host = $self->_connect_host;
+  return () unless defined $host && defined $url;
+  my $uri = URI->new("$url");
+  return () unless $uri->can('host') && lc( $uri->host // '' ) eq $host;
+  return ( connect_address => $self->connect_address );
+}
+
+# Runs once, after construction set every attribute (Moose triggers do).
+sub _check_connect_address {
+  my ($self) = @_;
+  my $address = $self->connect_address;
+  return unless defined $address;
+  require Langertha::HTTP::UserAgent;
+  my $error = Langertha::HTTP::UserAgent::connect_address_error($address);
+  croak "".(ref $self).": $error" if $error;
+  croak "".(ref $self).": connect_address needs a url with an http or https host to pin"
+    unless defined $self->_connect_host && ( URI->new( $self->url )->scheme // '' ) =~ /\Ahttps?\z/i;
+  if ( $self->has_user_agent and my $why = $self->_connect_pin_error( $self->user_agent ) ) {
+    croak "".(ref $self).": $why";
+  }
+  return;
+}
+
+# Why $ua would not pin this engine's requests, or undef when it does.
+sub _connect_pin_error {
+  my ( $self, $ua ) = @_;
+  my $host    = $self->_connect_host;
+  my $address = $self->connect_address;
+  my $pinned = Scalar::Util::blessed($ua) && $ua->isa('Langertha::HTTP::UserAgent')
+    && defined $ua->connect_address && defined $ua->connect_host
+    && lc $ua->connect_host eq $host
+    && Langertha::HTTP::UserAgent::same_address( $ua->connect_address, $address );
+  return undef if $pinned;
+  return "connect_address $address cannot be applied through the user_agent passed in ("
+    . ( Scalar::Util::blessed($ua) // ref($ua) || 'not an object' ) . '); pass a Langertha::HTTP::UserAgent built with'
+    . " connect_host => '$host', connect_address => '$address', or let the engine build its user_agent";
+}
 
 has response_max_bytes => (
   is => 'ro',
@@ -443,6 +593,8 @@ sub _build_user_agent {
   return Langertha::HTTP::UserAgent->new(
     agent => $self->user_agent_agent,
     $self->has_user_agent_timeout ? ( timeout => $self->user_agent_timeout ) : (),
+    defined $self->connect_address
+      ? ( connect_host => $self->_connect_host, connect_address => $self->connect_address ) : (),
   );
 }
 
@@ -468,6 +620,10 @@ L<LWP::UserAgent> clones the request with every header but C<Authorization>
 (and keeps even that before LWP 6.83), so an C<x-api-key> or similar header
 would reach whatever host a server redirects to. Pass a
 L<Langertha::HTTP::UserAgent> (it takes the same arguments) to keep the policy.
+
+With a L</connect_address> the built agent carries the pin
+(C<connect_host> / C<connect_address> of L<Langertha::HTTP::UserAgent>); an
+agent passed in must carry the same pin, or construction croaks.
 
 =cut
 

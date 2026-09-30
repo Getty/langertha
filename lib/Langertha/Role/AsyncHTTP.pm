@@ -6,6 +6,7 @@ use Future::AsyncAwait;
 use Future;
 use Carp qw( croak );
 use Scalar::Util qw( blessed reftype );
+use URI;
 
 requires 'user_agent';
 
@@ -115,13 +116,30 @@ async sub async_request_f {
 sub _async_do_request_f {
   my ( $self, %args ) = @_;
   my $http = $self->_async_http;
+  my $is_nahttp = blessed($http) && $http->isa('Net::Async::HTTP');
+  # connect_address (karr k375): only Net::Async::HTTP (per-request host and
+  # SSL_* options, _async_one_request_f) and the sync shim over a pinned
+  # Langertha::HTTP::UserAgent can pin; any other client would resolve the
+  # name itself, so a request to the pinned host fails instead of going out.
+  if ( my $pin_host = $self->can('_connect_host') ? $self->_connect_host : undef ) {
+    my $target = $args{request} ? $args{request}->uri : $args{uri};
+    my $to_pinned = defined $target && URI->new("$target")->can('host')
+      && lc( URI->new("$target")->host // '' ) eq $pin_host;
+    if ($to_pinned) {
+      my $error = $is_nahttp ? $self->_nahttp_pin_error( $http, \%args )
+        : blessed($http) && $http->isa('Langertha::Request::SyncHTTP')
+          ? $self->_connect_pin_error( $http->user_agent )
+        : 'connect_address ' . $self->connect_address . ' cannot be applied through an injected '
+          . ( blessed($http) // 'unblessed' ) . ' client (only Net::Async::HTTP or Langertha::Request::SyncHTTP can pin)';
+      return Future->fail( ref($self) . ": $error\n", 'connect_address' ) if $error;
+    }
+  }
   # Only Net::Async::HTTP gets the timeout, the body cap and the redirect policy
   # below. The sync shim and injected clients hand back the still-encoded body,
   # which Role::HTTP::_bounded_decoded_content bounds downstream, and they carry
   # their own timeout (ADR 0027); the sync shim runs the engine's user_agent,
   # a Langertha::HTTP::UserAgent with the same redirect policy (karr k374).
-  return $http->do_request(%args)
-    unless blessed($http) && $http->isa('Net::Async::HTTP');
+  return $http->do_request(%args) unless $is_nahttp;
 
   # Redirects (karr k374). Net::Async::HTTP follows a GET redirect with a fresh
   # request carrying the Location's query as it is, so a server echoing the
@@ -165,7 +183,8 @@ sub _async_follow_f {
     $decided = $response;
     $response->previous($previous) if $previous && !$response->previous;
     if ( $hops > 0 ) {
-      $next = Langertha::HTTP::Redirect::next_request( $hop{request}, $response );
+      $next = Langertha::HTTP::Redirect::next_request( $hop{request}, $response,
+        $self->can('_connect_host') ? $self->_connect_host : undef );
     }
     else {
       $next = undef;
@@ -204,6 +223,21 @@ sub _async_one_request_f {
     require Langertha::HTTP::ConnectCheck;
     my $error = Langertha::HTTP::ConnectCheck::connect_error( $target, $args{SSL} );
     return Future->fail( ref($self).": $error\n", 'connect' ) if $error;
+  }
+
+  # connect_address (karr k375): connect to the checked address, not to a
+  # fresh resolution of the name. Net::Async::HTTP 0.50 uses host/port only as
+  # the connection target (and its pool key); the Host header comes from the
+  # request URI, and for SSL it sets SSL_hostname => host before the request's
+  # own SSL_* options, so these name the host for SNI and the certificate check.
+  # A redirect is never followed by the client here (max_redirects => 0), so
+  # the target cannot leak into another hop.
+  if ( defined $target and my $pin_host = $self->can('_connect_host') ? $self->_connect_host : undef ) {
+    my $uri = URI->new("$target");
+    if ( $uri->can('host') && lc( $uri->host // '' ) eq $pin_host ) {
+      %args = ( %args, _connect_pin_args( $uri, $self->connect_address ) );
+      $args{on_ready} = $self->_connect_pin_on_ready( $http, $uri, \%args );
+    }
   }
 
   my $stream = $args{on_header} ? 1 : 0;
@@ -262,6 +296,83 @@ sub _async_one_request_f {
   return Future->wait_any( $request_f, $abort )
     ->then( sub { $too_big ? $too_big_croak->() : Future->done(@_) } )
     ->else( sub { $too_big ? $too_big_croak->() : Future->fail(@_) } );
+}
+
+# The Net::Async::HTTP request options that connect a request for $uri to
+# $address while naming the host for TLS (karr k375).
+sub _connect_pin_args {
+  my ( $uri, $address ) = @_;
+  my $host = $uri->host;
+  my $literal = $host =~ /:/ || $host =~ /\A[0-9.]+\z/;
+  return (
+    host => $address,
+    port => $uri->port,
+    ( lc( $uri->scheme // '' ) eq 'https'
+      ? ( SSL_hostname => ( $literal ? undef : $host ), SSL_verifycn_name => $host )
+      : () ),
+  );
+}
+
+# The on_ready (Net::Async::HTTP 0.50 runs it with the connection before it
+# writes the request, for a new and for a pooled connection alike) that checks
+# the connection really is to the pinned address and, over TLS, was verified
+# for this host. The client pools connections by host:port, and host is now
+# the address: two engines pinning different names to one address on a shared
+# client would otherwise share a TLS session verified for the first name
+# (karr k375). A refused connection is closed once idle (never under a request
+# that is using it), so it leaves the pool and a request queued behind it gets
+# a fresh one.
+sub _connect_pin_on_ready {
+  my ( $self, $http, $uri, $args ) = @_;
+  my $address = $self->connect_address;
+  my $host    = $uri->host;
+  my $https   = lc( $uri->scheme // '' ) eq 'https';
+  my $params  = ( reftype($http) // '' ) eq 'HASH' && ref $http->{ssl_params} eq 'HASH' ? $http->{ssl_params} : {};
+  # Verification switched off for this request or client: SSL_verify_mode
+  # => 0 skips both checks, SSL_verifycn_scheme => 'none' the name check
+  # (what the connection itself would have skipped; LWP's verify_hostname
+  # => 0 is the same pair on the sync side).
+  my %tls = map { $_ => ( exists $args->{$_} ? $args->{$_} : $params->{$_} ) } qw( SSL_verify_mode SSL_verifycn_scheme );
+  my $check_chain = $https && !( defined $tls{SSL_verify_mode} && !$tls{SSL_verify_mode} );
+  my $check_name  = $check_chain && !( defined $tls{SSL_verifycn_scheme} && $tls{SSL_verifycn_scheme} eq 'none' );
+  my $caller_on_ready = $args->{on_ready};
+  my $class = ref $self;
+  return sub {
+    my ($conn) = @_;
+    my $handle = $conn->read_handle;
+    my $peer = $handle ? eval { $handle->peerhost } : undef;
+    require Langertha::HTTP::UserAgent;
+    my $error = !( defined $peer && Langertha::HTTP::UserAgent::same_address( $peer, $address ) )
+      ? "connect_address $address was not used: the connection goes to " . ( $peer // 'an unknown peer' )
+      : undef;
+    if ( !$error && $check_chain ) {
+      my $tls = Langertha::HTTP::UserAgent::tls_identity_error( $handle, $host,
+        chain => 1, name => $check_name );
+      $error = "connect_address $address: $tls" if $tls;
+    }
+    if ($error) {
+      $conn->loop->later( sub { $conn->close if $conn->read_handle && $conn->is_idle } ) if $conn->loop;
+      return Future->fail( "$class: $error\n", 'connect_address' );
+    }
+    return $caller_on_ready ? $caller_on_ready->($conn) : Future->done;
+  };
+}
+
+# Why this Net::Async::HTTP request could not be pinned, or undef (karr k375).
+sub _nahttp_pin_error {
+  my ( $self, $http, $args ) = @_;
+  my $address = $self->connect_address;
+  # With uri => Net::Async::HTTP sets host from the URI itself, over ours.
+  return "connect_address $address needs a request => HTTP::Request, not uri =>"
+    unless $args->{request};
+  # A proxy connection goes to the proxy, which resolves the name itself. The
+  # client's own proxy settings are private state (hash fields in 0.50).
+  my $client = ( reftype($http) // '' ) eq 'HASH' ? $http : {};
+  for my $key (qw( proxy_host proxy_path )) {
+    return "connect_address $address cannot be used through a proxy ($key)"
+      if defined $args->{$key} || defined $client->{$key};
+  }
+  return undef;
 }
 
 # The on_header (Net::Async::HTTP contract) that counts a non-streaming response
@@ -353,6 +464,20 @@ C<on_header> the callback sees only the response the chain ends on, a
 redirect that was not followed included (karr k374). A request passed as
 C<< uri => >> instead of C<< request => >> is not followed at all. An injected
 client of another class follows redirects on its own terms.
+
+With a L<Langertha::Role::HTTP/connect_address>, a request to the host of
+the engine's C<url> connects to that address: on L<Net::Async::HTTP> the
+request is given C<host> / C<port> as the connection target and, for
+C<https>, C<SSL_hostname> and C<SSL_verifycn_name> naming the host (the
+C<Host> header comes from the request URL as always), and an C<on_ready>
+check that the connection (new or pooled) goes to the address and, over TLS,
+was verified for the host; on the synchronous fallback the engine's pinned
+L<Langertha::HTTP::UserAgent> does it. A
+redirect from the pinned host to another host is not followed. A client that
+cannot pin (an injected client of another class, the shim over an agent
+without the same pin, a L<Net::Async::HTTP> with a proxy, a C<< uri => >>
+request) fails the future with category C<connect_address> instead of
+sending the request (karr k375).
 
 Any extra named options (such as C<on_header> for streaming) are passed to
 C<do_request> unchanged. The backend object itself is not exposed; see

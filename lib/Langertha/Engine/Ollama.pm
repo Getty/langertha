@@ -92,6 +92,8 @@ sub openai {
     url => $self->url.'/v1',
     model => $self->model,
     defined $self->api_key ? ( api_key => $self->api_key ) : (),
+    # The pin carries over while the url stays on its host (karr k375).
+    $self->_connect_address_for( exists $args{url} ? $args{url} : $self->url.'/v1' ),
     $self->embedding_model ? ( embedding_model => $self->embedding_model ) : (),
     $self->chat_model ? ( chat_model => $self->chat_model ) : (),
     $self->has_system_prompt ? ( system_prompt => $self->system_prompt ) : (),
@@ -107,7 +109,8 @@ sub openai {
 
 Returns a L<Langertha::Engine::OllamaOpenAI> instance configured for Ollama's
 C</v1> OpenAI-compatible endpoint, inheriting the current model, embedding
-model, API key, system prompt, and temperature settings. Supports streaming,
+model, API key, system prompt, and temperature settings (and
+L<Langertha::Role::HTTP/connect_address> while the url stays on its host). Supports streaming,
 embeddings, and MCP tool calling.
 
 =cut

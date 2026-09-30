@@ -183,6 +183,8 @@ sub openai {
     url => $url.'/v1',
     model => $self->model,
     api_key => $api_key,
+    # The pin carries over while the url stays on its host (karr k375).
+    $self->_connect_address_for( exists $args{url} ? $args{url} : $url.'/v1' ),
     $self->has_system_prompt ? ( system_prompt => $self->system_prompt ) : (),
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
     %args,
@@ -196,7 +198,8 @@ sub openai {
 
 Returns a L<Langertha::Engine::LMStudioOpenAI> instance configured for LM Studio's
 OpenAI-compatible C</v1> endpoint. Carries over model, api_key,
-system_prompt, and temperature by default.
+system_prompt, and temperature by default, and
+L<Langertha::Role::HTTP/connect_address> while the url stays on its host.
 
 =cut
 
@@ -211,6 +214,7 @@ sub anthropic {
     url => $self->url,
     model => $self->model,
     api_key => $api_key,
+    $self->_connect_address_for( exists $args{url} ? $args{url} : $self->url ),
     $self->has_system_prompt ? ( system_prompt => $self->system_prompt ) : (),
     $self->has_temperature ? ( temperature => $self->temperature ) : (),
     %args,
@@ -224,7 +228,8 @@ sub anthropic {
 
 Returns a L<Langertha::Engine::LMStudioAnthropic> instance configured for
 LM Studio's Anthropic-compatible C</v1/messages> endpoint. Carries over model,
-api_key, system_prompt, and temperature by default.
+api_key, system_prompt, and temperature by default, and
+L<Langertha::Role::HTTP/connect_address> while the url stays on its host.
 
 =cut
 

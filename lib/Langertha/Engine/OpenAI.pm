@@ -203,6 +203,7 @@ sub _build_whisper {
     transcription_model => $self->transcription_model,
     user_agent_agent    => $self->user_agent_agent,
     $self->has_user_agent_timeout ? ( user_agent_timeout => $self->user_agent_timeout ) : (),
+    defined $self->connect_address ? ( connect_address => $self->connect_address ) : (),
   );
 }
 
@@ -210,7 +211,8 @@ sub _build_whisper {
 
 Lazy-built L<Langertha::Engine::TranscriptionBase> instance bound to
 this engine's C<api_key>, C<url>, C<transcription_model> (C<gpt-transcribe>
-unless set), C<user_agent_agent> and C<user_agent_timeout>, so it
+unless set), C<user_agent_agent>, C<user_agent_timeout> and
+L<Langertha::Role::HTTP/connect_address>, so it
 transcribes exactly as C<< $openai->simple_transcription >> does.
 Useful when you have an OpenAI engine handy and want a focused
 transcription handle without re-stating credentials:

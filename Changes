@@ -2,6 +2,26 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Security: new engine attribute connect_address pins the connection to
+      an address you checked (DNS-rebinding guard, k375, raider #119). Every
+      request to the host of the engine's url connects to that IPv4/IPv6
+      literal instead of resolving the name again, while the Host header,
+      TLS SNI and the certificate name check still use the host name. It
+      covers the sync methods and the sync fallback (the engine's
+      Langertha::HTTP::UserAgent, which gains connect_host/connect_address)
+      and Net::Async::HTTP, streaming included, so also list_models, the
+      capability probe and the metrics scrape. A redirect from the pinned
+      host to another host is not followed (3xx with a Client-Warning); one
+      on the same host stays pinned. Before a request is written, the
+      connection (new or reused from a pool or conn_cache) must go to the
+      address and, over TLS, carry a verified certificate for the host.
+      What cannot pin is refused instead of silently resolving: an injected user_agent
+      without the same pin croaks at construction, a proxy or an injected
+      async client of another class fails the request. Image URLs fetched
+      for inlining are not pinned. OpenAI->whisper, Ollama->openai and
+      LMStudio->openai/anthropic carry the pin while their url stays on the
+      host.
+
     - Gemini: an explicit api_key => undef now means "no key" (keyless proxy or
       gateway). No empty ?key= is appended to any URL and the 'uninitialized
       value' warning is gone; leaving api_key out still reads
