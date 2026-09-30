@@ -1,0 +1,33 @@
+---
+claimed_at: 2026-09-30T06:23:51Z
+claimed_by: langertha-wire-worker
+class: standard
+completed: 2026-09-30T06:23:51Z
+created: 2026-09-30T06:19:34Z
+id: 372
+priority: low
+started: 2026-09-30T06:20:43Z
+status: done
+tags:
+- llm
+- risk
+- anthropic
+- tool-result
+title: 'LMStudioAnthropic: source_blocks (document/search_result im tool_result) auf
+  0?'
+updated: 2026-09-30T06:24:00Z
+---
+
+Aus k371 (llm-advisor, 2026-09-30). LMStudioAnthropic laesst _tool_result_source_blocks_on_wire auf Default 1 (k364/k366: 'undokumentiert, Fehler waere laut'). Damit wird JEDE MCP-Text-Resource (haeufig!) zum document{source:text}-Block und jedes PDF zum document{base64}-Block.
+
+Indizien gegen document-Support: lmstudio.ai/docs/developer/anthropic-compat(/messages) verweist nur auf Anthropic-Doku; lmstudio.ai/changelog nennt fuer /v1/messages nur 'Images in tool call results', keine documents; lmstudio-bug-tracker#1792 (0.4.11, Apr 2026): API lehnt PDFs ab (400), auch fuer Vision-Modelle, kein document-Typ. llama.cpp/MLX-Backends haben keinen PDF-Parser. Alles indirekt, NICHT live-verifiziert (kein LM-Studio-Server im Projekt).
+
+Kosten von 0: Text-document -> text-Block (verlustfrei, Text inline), PDF -> k336-Platzhalter (LM Studio kann PDFs nach aktuellem Stand ohnehin nicht), search_result -> Text. Nutzen: vermeidet einen wahrscheinlichen 400 mitten im Tool-Loop bei jeder eingebetteten Text-Resource.
+
+Empfehlung: entweder ein Probe gegen eine aktuelle LM-Studio-Version (tool_result mit document{source:text} + document{base64 pdf}, je 1 Request) oder konservativ sub _tool_result_source_blocks_on_wire { 0 } auf LMStudioAnthropic mit Doku-Kommentar (wie MoonshotAnthropic), Test-Zeile in t/92_tool_result_anthropic.t ('LM Studio: undocumented, default kept' -> text), ADR 0001 Update. Achse ist der Wire, NICHT image_input (k371).
+
+2026-09-30 06:22 Done in worktree k371 (uncommitted): LMStudioAnthropic source_blocks 0 + indirect-evidence comment (not live-verified); LM Studio row now text, search_result degrades, override pinned; POD (engine, Role::Tools, ToolResult); ADR 0001 k372 Update; Changes entry. Carp-once applies via Role::Tools as on AKI/Moonshot. CLAUDE.md/Langertha.pm need no change.
+
+2026-09-30 06:22 Done: LMStudioAnthropic source_blocks 0; tests green, perlcritic clean; not live-verified
+
+2026-09-30 06:24 Committed as 64053d9 on branch k371
