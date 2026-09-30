@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-09-30T05:13:05Z
+claimed_by: worker
+class: standard
+completed: 2026-09-30T05:12:54Z
+created: 2026-09-30T04:59:03Z
+id: 365
+priority: low
+started: 2026-09-30T05:06:45Z
+status: done
+tags:
+- image_input
+- lmstudio
+- modelprobe
+title: 'LMStudioAnthropic: model_metadata_format lmstudio fuer probe_model_capabilities_f'
+updated: 2026-09-30T05:13:05Z
+---
+
+Aus k359 (llm-advisor). Seit k359 bekommt LMStudioAnthropic Tool-Result-Bilder nur als Platzhalter (kein image_input-Claim). LMStudioOpenAI/LMStudio native koennen den Vision-Flag per probe_model_capabilities_f lernen (ADR 0032, model_metadata_format lmstudio); LMStudioAnthropic nicht. Pruefen, ob derselbe Server-/models-Endpunkt erreichbar ist, und model_metadata_format lmstudio auch dort setzen. Offline, Request-Building + Fixture.
+
+2026-09-30 05:11 Done: LMStudioAnthropic now has model_metadata_format 'lmstudio' and model_metadata_url = ModelProbe->server_root_url(url).'/api/v1/models'. Its url is the server root (it appends /v1/messages; LM Studio's anthropic-compat docs give http://localhost:1234 as the base), so this is the same native document the other two faces read. The layer-2 delete of image_input became a layer-3 catch-all qr/\A/ => {image_input=>0}, as on LMStudio and LMStudioOpenAI. AnthropicBase already composes Role::ImageInput and Role::Capabilities (via Chat), so the probe was already wired; the role did not need changing. Auth: LM Studio documents only Authorization: Bearer for the native REST API, and this engine sends x-api-key. So an around update_request adds Bearer to the probe request only (matched on model_metadata_url); chat requests are unchanged. Tests: t/78_model_capability_probe.t, where the LM Studio subtest now also runs the Anthropic face (url with and without a trailing slash, default backend plus the sync shim), and a new subtest against an auth-enabled daemon route checks that the probe sends Bearer and chat does not. Red first: the URL was undef and nothing was learned; with the Bearer hook removed the auth subtest fails. Green with perl -Ilib on that file and 17 related files. loadguard refused prove -lr t/ every time, so the full suite was not run. No live calls. ADR 0032: Update (k365) appended. Evidence is documentation-derived, not live-verified.
+
+Committed as 0881ad5
