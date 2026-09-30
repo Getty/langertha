@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Engine::Replicate POD no longer claims an OpenAI-compatible hosted chat
+      endpoint: Replicate's OpenAPI documents none, the engine is unverified
+      against the hosted API, and url can point at a local Cog container or
+      proxy (k243)
+
     - New CLI bin/langertha_image generates and stores images through an explicit
       proxy (subscription proxy, no API key) or openai backend, with
       backend-specific URL environment variables (LANGERTHA_IMAGE_PROXY_URL,
