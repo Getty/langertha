@@ -26,6 +26,7 @@ has cached_tokens      => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
 has cache_write_tokens => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
 has reasoning_tokens   => ( is => 'ro', isa => 'Maybe[Int]', default => undef );
 has input_includes_cache => ( is => 'ro', isa => 'Maybe[Bool]', default => undef );
+has cost_usd           => ( is => 'ro', isa => 'Maybe[Num]', default => undef );
 
 has raw => (
   is => 'ro',
@@ -47,6 +48,7 @@ around cached_tokens      => sub { my ( $orig, $self ) = @_; $DATA{$self}{cached
 around cache_write_tokens => sub { my ( $orig, $self ) = @_; $DATA{$self}{cache_write_tokens} };
 around reasoning_tokens   => sub { my ( $orig, $self ) = @_; $DATA{$self}{reasoning_tokens} };
 around input_includes_cache => sub { my ( $orig, $self ) = @_; $DATA{$self}{input_includes_cache} };
+around cost_usd           => sub { my ( $orig, $self ) = @_; $DATA{$self}{cost_usd} };
 around raw => sub { my ( $orig, $self ) = @_; $DATA{$self}{raw} };
 
 # The constructor's writes to $self->{attr} go through the overload and are
@@ -61,6 +63,7 @@ sub BUILD {
     cache_write_tokens => $args->{cache_write_tokens},
     reasoning_tokens   => $args->{reasoning_tokens},
     input_includes_cache => $args->{input_includes_cache},
+    cost_usd           => $args->{cost_usd},
     raw                => $args->{raw},
   };
 }
@@ -185,11 +188,21 @@ sub from_hash {
   elsif ( ref($otd) eq 'HASH' && defined $otd->{reasoning_tokens} ) { $reasoning = $otd->{reasoning_tokens} }
   elsif ( defined $gemini_thoughts )                                { $reasoning = $gemini_thoughts }
 
+  # What the provider says the request was billed, normalized to USD. xAI
+  # reports it in the usage block as cost_in_usd_ticks (1 USD = 10^10 ticks;
+  # chat/completions, Responses, images, video) and, on Responses, also as
+  # cost_in_nano_usd (1 USD = 10^9); both may be null there. The finer ticks
+  # win. The integers stay verbatim in raw (k354).
+  my $cost_usd;
+  if    ( defined $hash->{cost_in_usd_ticks} ) { $cost_usd = $hash->{cost_in_usd_ticks} / 10_000_000_000 }
+  elsif ( defined $hash->{cost_in_nano_usd} )  { $cost_usd = $hash->{cost_in_nano_usd}  / 1_000_000_000 }
+
   my %args = ( input_tokens => $input, output_tokens => $output );
   $args{total_tokens}       = 0 + $total       if defined $total;
   $args{cached_tokens}      = 0 + $cached       if defined $cached;
   $args{cache_write_tokens} = 0 + $cache_write  if defined $cache_write;
   $args{reasoning_tokens}   = 0 + $reasoning    if defined $reasoning;
+  $args{cost_usd}           = $cost_usd         if defined $cost_usd;
   $args{input_includes_cache} = $includes ? 1 : 0 if defined $includes;
   $args{raw} = $hash;
   return $class->new(%args);
@@ -282,8 +295,8 @@ OpenAI (C<prompt_tokens> / C<completion_tokens>), Anthropic and Open-Responses
 (C<input_tokens> / C<output_tokens>), Ollama (C<prompt_eval_count> /
 C<eval_count>) and Gemini (C<promptTokenCount> / C<candidatesTokenCount> /
 C<totalTokenCount>) spellings, in that order of preference, plus the cache
-counts described under L</cached_tokens> and L</cache_write_tokens> and the
-L</reasoning_tokens> share.
+counts described under L</cached_tokens> and L</cache_write_tokens>, the
+L</reasoning_tokens> share and the provider-reported L</cost_usd>.
 
 Gemini counts thinking and the tool-use prompt beside the prompt and the
 answer (C<totalTokenCount> is their sum), so from the Gemini spelling
@@ -325,10 +338,14 @@ sub merge {
     # All inside: 1 when every side said so, else undef (which reads as inside).
     $includes = ( grep { !defined $_->input_includes_cache } @reported ) ? undef : 1;
   }
+  # A cost is only known for the sum when both sides report one: a partial
+  # sum would read as the whole bill.
+  my @costs = grep { defined } $self->cost_usd, $other->cost_usd;
   return ref($self)->new(
     input_tokens  => $input,
     output_tokens => $self->output_tokens + $other->output_tokens,
     %cache,
+    @costs == 2 ? ( cost_usd => $costs[0] + $costs[1] ) : (),
     defined $includes ? ( input_includes_cache => $includes ) : (),
   );
 }
@@ -345,8 +362,9 @@ C<input_tokens> (false) the sum is false. When one counts it inside (true, or
 C<undef>) and the other beside, the beside side's cache counts are added to its
 C<input_tokens> before summing and the sum is true, so pricing the merged Usage
 costs the same as pricing both parts. When both count it inside, the sum is
-true, or C<undef> if either side's flag was C<undef>. L</raw> is not carried
-over.
+true, or C<undef> if either side's flag was C<undef>. L</cost_usd> is summed
+only when both sides report one; otherwise the sum's cost is C<undef>, since
+a partial sum would read as the whole bill. L</raw> is not carried over.
 
 =cut
 
@@ -518,6 +536,23 @@ C<completion_tokens_details.reasoning_tokens>, then the Open-Responses
 C<output_tokens_details.reasoning_tokens>, then Gemini's C<thoughtsTokenCount>
 (which Gemini reports beside C<candidatesTokenCount>, so L</from_hash> adds it
 into C<output_tokens>). C<undef> when the provider does not report one.
+
+=attr cost_usd
+
+What the provider says the request was billed, in US dollars, when it reports
+it: the actual charge after its discounts (prompt caching) and including its
+server-side tool fees. xAI puts it in every usage block (chat completions,
+Responses, image and video generation) as the integer C<cost_in_usd_ticks>
+(1 USD = 10,000,000,000 ticks), and on Responses also as C<cost_in_nano_usd>
+(1 USD = 1,000,000,000 nano-USD). L</from_hash> converts whichever is present,
+C<cost_in_usd_ticks> first as the finer unit; the integers stay verbatim in
+L</raw>, so C<< $usage->{cost_in_usd_ticks} >> still gives exact integer
+accounting. A stream carries it only in its usage frame, which comes when the
+request asks for it (C<stream_options =E<gt> { include_usage =E<gt> 1 }>).
+
+C<undef> when the provider reports no cost, never C<0>: it is not an estimate,
+and L<Langertha::Pricing> does not read it — that builds a L<Langertha::Cost>
+from your own price rules.
 
 =method uncached_input_tokens
 

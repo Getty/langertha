@@ -89,3 +89,23 @@ one beside: the beside side's `cached_tokens` and `cache_write_tokens` are added
 `input_tokens` before summing and the sum is true — lossless, so pricing the merged Usage
 costs exactly the sum of pricing each part, and the flag describes the sum. Both inside: true,
 or `undef` if either side's flag was `undef` (which reads as inside anyway).
+
+## Update (k354 — provider-reported cost is `Usage.cost_usd`, beside Pricing)
+
+Some providers report what they actually billed. xAI puts it in every usage block as the
+integer `cost_in_usd_ticks` (1 USD = 10^10 ticks; chat completions, Responses, images, video)
+and, on Responses, also as `cost_in_nano_usd` (1 USD = 10^9); docs.x.ai cost-tracking and the
+REST references, read 2026-09-30, docs-derived, not capture-verified. `Usage->from_hash` — the
+value-object door every usage block passes (ADR 0018 tier 1; the field names are unique to
+xAI) — normalizes it to `cost_usd` in US dollars, ticks first as the finer unit; the integers
+stay verbatim in `raw` for exact accounting.
+
+- `cost_usd` is `undef` when nothing is reported, never `0`: an unknown cost must not read as
+  free.
+- `merge` sums it only when both sides report one; otherwise the sum's cost is `undef`, so a
+  partial sum never reads as the whole bill.
+- It is deliberately **not** fed into `Pricing` / `Cost`. Those remain the caller's estimate
+  from their own price rules; `cost_usd` is the provider's statement. Whether usage records or
+  metrics should prefer it over the estimate is left open.
+- Other providers' reported costs (`usage.cost` on OpenRouter and Perplexity) are a separate
+  normalization once their units are checked (karr #363).

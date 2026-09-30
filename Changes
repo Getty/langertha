@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Langertha::Usage has a new cost_usd attribute: what the provider says
+      the request was billed, in US dollars. It is read from xAI's
+      usage.cost_in_usd_ticks (1 USD = 10^10 ticks; chat completions,
+      Responses, images, video) or, failing that, usage.cost_in_nano_usd,
+      on responses, stream usage frames and Usage->from_raw alike. It is
+      undef when no cost is reported, the integer fields stay in the usage
+      hash, and merge sums the cost only when both sides report one.
+
     - DeepSeek: a per-request model on chat_f or chat_stream_realtime_f that
       crosses between the V3.2 line and the V4 models now warns when a
       reasoning effort is set, naming the V3.2 thinking switch versus the V4
