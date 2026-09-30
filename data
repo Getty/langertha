@@ -1,0 +1,22 @@
+---
+class: standard
+completed: 2026-09-30T04:10:00Z
+created: 2026-09-29T22:13:08Z
+id: 358
+priority: medium
+started: 2026-09-30T04:10:00Z
+status: done
+tags:
+- raider
+- sibling
+- k344
+title: 'langertha-raider: Tool-Result-Renderer bricht bei function_call_output.output
+  als Array (k344)'
+updated: 2026-09-30T04:10:00Z
+---
+
+Raider.pm:1201-1205 _render_history_block erwartet output als String; bei image_input=1 auf Responses-Engines kommt "tool_result: " leer. Fix: _render_history_payload_value($block->{output}), input_image als [image]. Betrifft sibling dist langertha-raider; Board dort. Repro: Scratchpad repro.pl der k344-Review. Nach Core-Release von k344.
+
+Uebertragen aufs langertha-raider-Board als raider#112; dort bearbeitet.
+
+Erledigt in langertha-raider b7c1a05 (raider#112). Folgebefunde als raider#114/#115.
