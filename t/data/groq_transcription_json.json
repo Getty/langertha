@@ -1,6 +1,1 @@
-{
-  "text": "Hallo aus Berlin, das ist ein Test der Spracherkennung.",
-  "x_groq": {
-    "id": "req_01j5vqe3v7fbfb5k0z2r8d9x4n"
-  }
-}
+{"text":" This is an example sound file in org-forbus format from Wikipedia, the free encyclopedia.","x_groq":{"id":"req_01m3rcex7sevcvf7ncrhj1scv9"}}

@@ -27,12 +27,15 @@ use Langertha::Engine::Mistral;
 # "standard") and its curl docs send repeated timestamp_granularities /
 # context_bias parts, and a name[] key risks being silently dropped.
 #
-# The response fixtures are NOT captures (live calls need the maintainer's
-# approval): mistral_transcription_doc.json is the 200 example of Mistral's
-# API reference (docs.mistral.ai/api/endpoint/audio/transcriptions, also in
-# share/mistral.yaml) with the long text shortened;
-# mistral_transcription_segments_doc.json is built from the
-# TranscriptionSegmentChunk schema of the same spec (diarized segments).
+# Fixture provenance (k310): mistral_transcription_capture.json and
+# mistral_transcription_segments_capture.json are verbatim captures (Mistral
+# voxtral-mini-latest, 2026-09-30, a 6 s English ogg; the second with
+# timestamp_granularities=segment; headers files keep only content-type).
+# mistral_transcription_doc.json (the 200 example of Mistral's API reference,
+# docs.mistral.ai/api/endpoint/audio/transcriptions, also in share/mistral.yaml,
+# long text shortened) and mistral_transcription_segments_doc.json (built from
+# the TranscriptionSegmentChunk schema of the same spec) stay documentation-
+# derived: the capture has speaker_id null and no diarized speakers.
 
 my $boundary = 'XyXLaXyXngXyXerXyXthXyXaXyX';
 my $data_dir = path(__FILE__)->parent->child('data');
@@ -114,6 +117,29 @@ subtest 'response parsing (transcription_result, k288)' => sub {
   my $diarized = $mistral->transcription_result( fixture_http('mistral_transcription_segments_doc') );
   is_deeply( [ map { [ $_->{speaker_id}, $_->{start} ] } @{ $diarized->{segments} } ],
     [ [ speaker_0 => 0 ], [ speaker_1 => 1.4 ] ], 'diarized segments with timing reachable' );
+};
+
+subtest 'response parsing: real captures (language null, finish_reason null, extra usage)' => sub {
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  my $http = fixture_http('mistral_transcription_capture');
+  is( $mistral->transcription_response($http),
+    'This is an example sound file in Augvorbis format from Wikipedia, the free encyclopedia.', 'text' );
+  my $result = $mistral->transcription_result($http);
+  is( $result->{model}, 'voxtral-mini-latest', 'model kept' );
+  ok( exists $result->{language} && !defined $result->{language}, 'language null stays undef' );
+  is_deeply( $result->{segments}, [], 'segments empty without a granularity' );
+  ok( !defined $result->{finish_reason}, 'finish_reason null' );
+  is( $result->{usage}{prompt_audio_seconds}, 6, 'usage.prompt_audio_seconds' );
+  is( $result->{usage}{prompt_tokens_details}{audio_tokens}, 375, 'usage.prompt_tokens_details kept' );
+  is( $result->{usage}{service_tier}, 'standard', 'service_tier kept' );
+
+  my $seg = $mistral->transcription_result( fixture_http('mistral_transcription_segments_capture') );
+  is( scalar @{ $seg->{segments} }, 1, 'one segment' );
+  is( $seg->{segments}[0]{type}, 'transcription_segment', 'segment type' );
+  is( $seg->{segments}[0]{end}, 6, 'segment end' );
+  ok( exists $seg->{segments}[0]{speaker_id} && !defined $seg->{segments}[0]{speaker_id}, 'speaker_id null without diarize' );
+  is_deeply( \@warnings, [], 'no warnings on null fields' ) or diag(@warnings);
 };
 
 subtest 'simple_transcription_f / simple_transcription_result_f over the async backend' => sub {

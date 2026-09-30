@@ -21,10 +21,14 @@ use Langertha::Engine::Whisper;
 # JSON string", and verbose_json kept only ->{text}, silently dropping the
 # segments and word timestamps the caller asked for.
 #
-# The fixtures are NOT captures: live calls need the maintainer's approval, so
-# they follow the response examples of OpenAI's audio API reference
-# (platform.openai.com/docs/api-reference/audio). The karr ticket filed with
-# this change asks for verbatim captures to replace them.
+# Fixture provenance (k310): the openai_transcription_* fixtures are NOT
+# captures -- they follow the response examples of OpenAI's audio API reference
+# (platform.openai.com/docs/api-reference/audio); the OpenAI account had no
+# credits on 2026-09-30 (HTTP 429 insufficient_quota), so they stay
+# documentation-derived, including the assumed srt/vtt Content-Type. The
+# groq_transcription_{json,verbose_json,text} fixtures ARE verbatim captures
+# (Groq whisper-large-v3-turbo, 2026-09-30, a 6 s English ogg; the headers
+# files keep only content-type).
 
 my $data_dir = path(__FILE__)->parent->child('data');
 my $json     = JSON::MaybeXS->new->canonical(1)->utf8(1);
@@ -93,14 +97,38 @@ subtest 'errors still croak with the engine and body' => sub {
 # karr k295: Groq answers response_format json with an extra x_groq object
 # (the request id a Groq support ticket asks for). Groq composes the same
 # OpenAICompatible parser; transcription_result must keep the provider's
-# fields, not rebuild a { text } hash. Fixture follows the response example
-# of console.groq.com/docs/api-reference#audio-transcription -- not a capture.
+# fields, not rebuild a { text } hash. Fixture: verbatim Groq capture of
+# 2026-09-30 (whisper-large-v3-turbo), k310.
 subtest 'Groq json keeps x_groq' => sub {
   require Langertha::Engine::Groq;
   my $groq = Langertha::Engine::Groq->new( api_key => 'gsk-test' );
   my $http = fixture_http('groq_transcription_json', 'json');
-  is($groq->transcription_response($http), 'Hallo aus Berlin, das ist ein Test der Spracherkennung.', 'text');
-  is($groq->transcription_result($http)->{x_groq}{id}, 'req_01j5vqe3v7fbfb5k0z2r8d9x4n', 'x_groq.id kept');
+  is($groq->transcription_response($http), ' This is an example sound file in org-forbus format from Wikipedia, the free encyclopedia.', 'text (Groq keeps the leading space)');
+  is($groq->transcription_result($http)->{x_groq}{id}, 'req_01m3rcex7sevcvf7ncrhj1scv9', 'x_groq.id kept');
+};
+
+subtest 'Groq verbose_json capture: segments, no words, x_groq' => sub {
+  require Langertha::Engine::Groq;
+  my $groq = Langertha::Engine::Groq->new( api_key => 'gsk-test' );
+  my $http = fixture_http('groq_transcription_verbose_json', 'json');
+  like($groq->transcription_response($http), qr/\A This is an example sound file/, 'text');
+  my $result = $groq->transcription_result($http);
+  is($result->{language}, 'English', 'language is the English name, not a code');
+  is($result->{duration}, 6.104062464, 'duration');
+  is(scalar @{ $result->{segments} }, 1, 'segments reachable');
+  is($result->{segments}[0]{end}, 5.8399997, 'segment timing');
+  ok(!exists $result->{words}, 'no words unless word granularity was asked for');
+  is($result->{x_groq}{id}, 'req_01m3rcexk4exkskfr8hmq9ptdp', 'x_groq.id kept');
+};
+
+subtest 'Groq text capture: upper-case charset=UTF-8 read as text' => sub {
+  require Langertha::Engine::Groq;
+  my $groq = Langertha::Engine::Groq->new( api_key => 'gsk-test' );
+  my $http = fixture_http('groq_transcription_text', 'txt');
+  is($http->header('Content-Type'), 'text/plain; charset=UTF-8', 'fixture carries the real header');
+  is($groq->transcription_response($http),
+    ' This is an example sound file in org-forbus format from Wikipedia, the free encyclopedia.',
+    'plain body, no trailing newline on the wire');
 };
 
 subtest 'simple_transcription_result round trip' => sub {
