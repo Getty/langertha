@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-30T04:48:07Z
+claimed_by: wire-worker
+class: standard
+completed: 2026-09-30T04:47:58Z
+created: 2026-09-29T22:13:23Z
+id: 360
+priority: low
+started: 2026-09-30T04:31:35Z
+status: done
+tags:
+- chat
+- model-override
+title: 'Langertha::Chat: per-request model umgeht chat_f, keine Override-Warnung (k352-Luecke)'
+updated: 2026-09-30T04:48:07Z
+---
+
+Langertha::Chat.pm:104-106,126-131: model geht ueber _extra direkt in chat_request/build_tool_chat_request und laeuft an der k352-Warnung vorbei; POD behauptet mehr. Warnung ergaenzen oder POD korrigieren.
+
+2026-09-30 04:39 Warning raised, POD corrected to match: Chat::_warn_model_override calls the engine's Role::Chat::_warn_model_override (no copy) at the top of simple_chat/_f, simple_chat_stream, and after tool gathering in simple_chat_with_tools/_f (once per call, not per iteration), labeled 'Langertha::Chat-><method>', features = wrapper temperature + gathered tools + streaming; guarded by can() for non-Role::Chat mocks. Tests: t/78_model_override_warning.t new subtest red->green.
+
+2026-09-30 04:46 Done: Langertha::Chat raises the engine's own _warn_model_override (no copy) once per call in all five entry points, with wrapper temperature / gathered tools / streaming as features; model attr POD corrected. Verified: t/78_model_override_warning.t new subtest red->green; prove -lr t/ PASS; perlcritic lib/ clean; live t/8x skipped.
+
+Committed b7084b9
