@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Gemini: an explicit api_key => undef now means "no key" (keyless proxy or
+      gateway). No empty ?key= is appended to any URL and the 'uninitialized
+      value' warning is gone; leaving api_key out still reads
+      LANGERTHA_GEMINI_API_KEY and croaks when unset (k376, raider #119).
+
     - Security: a redirect to another origin no longer carries the engine's
       credential. LWP kept every request header but Authorization (and that
       too before LWP 6.83), so a GET such as list_models sent x-api-key to

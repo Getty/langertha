@@ -182,7 +182,12 @@ sub _build_api_key {
 
 The Google Generative Language API key. If not provided, reads from
 C<LANGERTHA_GEMINI_API_KEY> environment variable. Get your key at
-L<https://aistudio.google.com/app/apikey>. Required.
+L<https://aistudio.google.com/app/apikey>. Required for the Developer API.
+
+Pass C<< api_key =E<gt> undef >> explicitly to send no key at all (a keyless
+proxy or gateway in front of Gemini): the environment variable is then not
+read, no C<key> query parameter is added to any URL, and nothing warns. Leaving
+C<api_key> out keeps the default: environment variable, croak when unset.
 
 =cut
 
@@ -238,7 +243,8 @@ sub gemini_api_version { 'v1beta' }
 
 sub gemini_auth_query {
   my ( $self ) = @_;
-  return ( key => $self->api_key );
+  my $key = $self->api_key;
+  return defined $key && length $key ? ( key => $key ) : ();
 }
 
 sub gemini_endpoint {
@@ -275,7 +281,8 @@ declarations are sent as C<parametersJsonSchema>, which C<v1> does not have.
 =method gemini_auth_query
 
 The auth seam: returns the credential as a C<< ( name =E<gt> value ) >> query
-pair list, C<< ( key =E<gt> $self->api_key ) >> for the Developer API. A
+pair list, C<< ( key =E<gt> $self->api_key ) >> for the Developer API, or the
+empty list when C<api_key> is C<undef> or empty. A
 consumer that authenticates by header instead returns the empty list here and
 sets the header in C<update_request>.
 
