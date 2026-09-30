@@ -269,6 +269,20 @@ dies of `chat_f`, `simple_chat_f`, `chat_with_tools_f`, `Langertha::Chat` and
 the stream parser. `t/12_rate_limit_retry_after.t` compares the texts across the mocked
 client, LWP, the sync shim and `Net::Async::HTTP`.
 
+**Update (k356).** Addendum (a) is narrowed: it rules out parsers for engines that
+*send no* rate-limit headers, not a parser for one provider that does. Perplexity's Agent
+API sends `x-ratelimit-limit` / `-remaining` / `-reset` / `-used` with no `-requests` /
+`-tokens` suffix, so `Engine::Perplexity` reads them in an `around
+_parse_rate_limit_headers` (one provider's spelling → the engine, ADR 0018). The mapping
+rests on the k232 header captures, not docs: `-reset` is an epoch-seconds *instant*
+(0–1 s after each capture's own `Date`), so it fills `requests_reset_at`; `used=1` after
+one request makes it the requests bucket; `-used` stays in `raw`. It is deliberately not a
+shared parser: the same unsuffixed names mean epoch-*ms* on OpenRouter and delta-seconds
+in the IETF RateLimit draft, and this ADR declines guessing the kind by magnitude. Without
+any of the three headers the engine falls back to the Remote `Retry-After` path.
+`t/68_perplexity_function_tools.t` replays all six captures and guards that
+`OpenAIResponses` ignores the unsuffixed names.
+
 ## Future work
 
 - **karr k137** — capture real rate-limit response headers across the engine

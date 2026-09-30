@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Perplexity's Agent API x-ratelimit-limit / -remaining / -reset headers
+      (no -requests / -tokens suffix) now populate Response.rate_limit as the
+      requests bucket; -reset is an epoch instant (requests_reset_at) and
+      -used stays in raw. rate_limit stays undef only when the reply carries
+      none of these headers or Retry-After.
+
     - xAI's x_search_call output item (X Search on the Responses wire) is
       now recorded in Response.server_tool_calls instead of being skipped
       into raw. Docs-derived, not capture-verified.

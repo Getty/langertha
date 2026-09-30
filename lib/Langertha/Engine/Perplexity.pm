@@ -327,6 +327,33 @@ sub model_capability_corrections {
   );
 }
 
+# Rate limit (karr k356, ADR 0022): the Agent API sends x-ratelimit-limit /
+# -remaining / -reset / -used with no -requests / -tokens suffix, and the Remote
+# fallback reads only Retry-After. Read here, not in a shared parser: on
+# Perplexity -reset is an epoch-seconds instant (the k232 captures put it one
+# second after their own Date header), while other senders of the same names use
+# other kinds (OpenRouter an epoch-ms, the IETF RateLimit draft delta-seconds),
+# and ADR 0022 declines guessing the kind by magnitude. used=1 after one request
+# makes it the requests bucket. -used stays in raw; retry_after is derived from
+# raw as on every engine.
+around _parse_rate_limit_headers => sub {
+  my ( $orig, $self, $http_response ) = @_;
+  require Langertha::RateLimit;
+  require Langertha::Moment;
+  my %raw = Langertha::RateLimit::_collect_headers($http_response);
+  my ( $limit, $remaining, $reset ) = @raw{ map { "x-ratelimit-$_" } qw( limit remaining reset ) };
+  return $self->$orig($http_response) unless defined $limit || defined $remaining || defined $reset;
+  my $reset_at = Langertha::Moment->from_wire($reset);
+  return Langertha::RateLimit->new(
+    received => Langertha::Moment->now_utc,
+    ( defined $limit     ? ( requests_limit     => $limit + 0 )     : () ),
+    ( defined $remaining ? ( requests_remaining => $remaining + 0 ) : () ),
+    ( defined $reset     ? ( requests_reset     => $reset )         : () ),
+    ( defined $reset_at  ? ( requests_reset_at  => $reset_at )      : () ),
+    raw => \%raw,
+  );
+};
+
 __PACKAGE__->meta->make_immutable;
 
 =seealso

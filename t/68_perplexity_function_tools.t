@@ -525,4 +525,55 @@ subtest 'capture: the echo of a mixed preset turn (k232)' => sub {
     is( $resp->content, reply_text( capture('perplexity_agent_mixed_echo') ), 'the answer' );
 };
 
+# karr k356, ADR 0022: every captured Agent reply carries x-ratelimit-limit /
+# -remaining / -reset / -used with no -requests / -tokens suffix, and no
+# Retry-After -- so the Remote fallback parser built no RateLimit and
+# Response.rate_limit stayed undef on a provider that does report its limit.
+# The family is read on Perplexity only: its -reset is an epoch instant (the
+# captures put it a second after their own Date header), while other senders of
+# the same unsuffixed names use other kinds (OpenRouter an unofficial epoch-ms,
+# the IETF RateLimit draft delta-seconds). A shared parser would have to guess
+# the kind by magnitude, which ADR 0022 declines. used=1 after one request is
+# why the bucket is requests, not tokens.
+my @rl_captures = qw(
+    perplexity_agent_function_call perplexity_agent_function_call_echo
+    perplexity_agent_function_call_echo_notools perplexity_agent_function_call_stream
+    perplexity_agent_mixed_echo perplexity_agent_search_function_call
+);
+
+subtest 'capture: x-ratelimit-* headers become Response.rate_limit (k356)' => sub {
+    require HTTP::Date;
+    for my $name (@rl_captures) {
+        my $h = $json->decode( capture_bytes("$name.headers.json") );
+        my $rl = cap_ppx()->_parse_rate_limit_headers(
+            HTTP::Response->new( 200, 'OK', [ %$h ], '' ) );
+        ok( $rl, "$name: a RateLimit without Retry-After" ) or next;
+        is( $rl->requests_limit, $h->{'x-ratelimit-limit'}, "$name: requests_limit" );
+        is( $rl->requests_remaining, $h->{'x-ratelimit-remaining'}, "$name: requests_remaining" );
+        is( $rl->requests_reset, $h->{'x-ratelimit-reset'}, "$name: requests_reset verbatim" );
+        ok( $rl->has_requests_reset_at, "$name: the instant half is what the wire spoke" );
+        is( 0 + ( $rl->requests_reset_at // 0 ), $h->{'x-ratelimit-reset'}, "$name: requests_reset_at is the epoch" );
+        my $ahead = $h->{'x-ratelimit-reset'} - HTTP::Date::str2time( $h->{date} );
+        ok( $ahead >= 0 && $ahead <= 60, "$name: reset is ${ahead}s after the reply's Date, an instant" );
+        ok( !defined $rl->tokens_limit && !defined $rl->tokens_reset_at, "$name: no tokens bucket invented" );
+        ok( !defined $rl->retry_after, "$name: no retry_after invented" );
+        is( $rl->raw->{'x-ratelimit-used'}, $h->{'x-ratelimit-used'}, "$name: used stays in raw" );
+    }
+
+    my $mock = Test::MockAsyncHTTP->new( responses => [ capture_http('perplexity_agent_function_call') ] );
+    my $engine = cap_ppx( _async_http => $mock );
+    my $resp = $engine->chat_f( messages => $engine->chat_messages($cap_prompt),
+        tools => $engine->format_tools([$cap_tool]) )->get;
+    ok( $resp->has_rate_limit, 'chat_f: the Response carries the rate limit' );
+    is( $resp->has_rate_limit && $resp->rate_limit->requests_remaining, 0, 'chat_f: remaining 0 of 1' );
+    is( $resp->has_rate_limit && 0 + $resp->rate_limit->requests_reset_at, 1790714944, 'chat_f: the reset instant' );
+
+    # The shared OpenAI dialect keeps its suffixed reading: the same headers do
+    # not turn into a reset instant there.
+    my $oai = Langertha::Engine::OpenAIResponses->new( api_key => 'k', model => 'gpt-5.5-pro' )
+        ->_parse_rate_limit_headers( capture_http('perplexity_agent_function_call') );
+    ok( !defined $oai->requests_reset_at && !defined $oai->requests_limit,
+        'OpenAIResponses: unsuffixed x-ratelimit-* are not read as requests' );
+};
+
 done_testing;
