@@ -399,3 +399,14 @@ the `anthropic` wire, so with this change a learned `vision` picks the `image` b
 `tool_result` there. That path is not live-verified: LM Studio does not document images in a
 `tool_result`. The k344 remark on ADR 0032 (no probing engine on a request-changing wire) no
 longer holds for this one engine.
+
+## Update (k361 — `image_input` also selects the tool-result PDF form on OpenAI Responses and Gemini 3)
+
+`format_tool_results` reads the flag for one more representation choice (ADR 0001 k361 Update): a
+PDF a tool returned rides as an `input_file` part (OpenAIResponses) or a
+`functionResponse.parts` `inlineData` part (Gemini 3) only when the model claims `image_input`,
+and stays the k336 placeholder otherwise. The flag keeps its meaning ("the model sees images"):
+both providers document PDF reading as a vision feature, so no new flag was made for it. The k344
+cost widens accordingly — an over-broad claim on OpenAIResponses or Gemini 3 can now also put a
+PDF part into a tool-loop turn for a model that cannot take it. Perplexity is unaffected (its
+Agent API has no `input_file`; the engine's `_tool_result_pdf_on_wire` is 0).

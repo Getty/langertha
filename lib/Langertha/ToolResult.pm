@@ -6,6 +6,8 @@ use Carp qw( croak );
 use JSON::MaybeXS;
 use MIME::Base64 ();
 use Encode ();
+use URI ();
+use URI::Escape ();
 
 =head1 SYNOPSIS
 
@@ -93,6 +95,31 @@ C<data>). Documented for the Gemini 3 series (v1beta) only.
 The C<responses> and C<gemini> forms are B<documentation-derived, not
 live-verified>. C<openai>, C<ollama> and C<hermes> have no image form in a
 tool result and ignore the option: the image stays a placeholder there.
+
+A PDF (an embedded resource whose blob is C<application/pdf>) rides natively
+on two more of those wires when C<to> is called with C<< native_pdf => 1 >>
+(L<Langertha::Role::Tools/format_tool_results> passes it on OpenAI Responses
+and Gemini 3, for a model that claims C<image_input>):
+
+=over
+
+=item * C<responses> -- C<output> becomes the part array as above, the PDF an
+C<input_file> with C<file_data> (a C<data:application/pdf;base64,...> URL) and
+a C<filename>: the percent-decoded last segment of the resource URI's
+hierarchical path, with C<.pdf> appended when missing; an opaque URI
+(C<urn:>, C<data:>) or an empty path gives C<document.pdf>. Documented for OpenAI
+C</v1/responses>; Perplexity's C</v1/agent> takes no C<input_file>, so the
+PDF stays the placeholder there.
+
+=item * C<gemini> -- the PDF moves out of the C<result> string into
+C<< functionResponse.parts[].inlineData >> with C<mimeType>
+C<application/pdf>. Documented for the Gemini 3 series.
+
+=back
+
+Both are B<documentation-derived, not live-verified>. The other wires ignore
+C<native_pdf>: C<openai>, C<ollama> and C<hermes> keep the placeholder, and
+C<anthropic> sends its C<document> block whenever C<source_blocks> allows it.
 
 Not every block is a chat message: the OpenAI Responses block is an C<input>
 I<item> discriminated by C<type> (C<function_call_output>), carrying its payload
@@ -322,6 +349,55 @@ sub _native_image_data {
   return $b64;
 }
 
+# --- Native tool-result PDFs (karr k361) ---
+#
+# The same two wires take a PDF inside a tool result: OpenAI /v1/responses as
+# an input_file part of function_call_output.output (API reference,
+# FunctionCallOutput: string | [input_text | input_image | input_file]; the
+# PDF-files guide sends file_data as a data:application/pdf;base64,... URL
+# with a filename), Gemini 3 as functionResponse.parts[].inlineData
+# (generate-content function-calling guide: "Documents: application/pdf,
+# text/plain"). Perplexity's /v1/agent lists only input_text / input_image.
+# Docs-derived, not live-verified (developers.openai.com, ai.google.dev,
+# docs.perplexity.ai, 2026-09-30). The caller (Role::Tools) passes
+# native_pdf => 1 only where the wire takes it and the model claims
+# image_input; otherwise the PDF stays the k336 placeholder. A PDF is an MCP
+# embedded resource blob, the one MCP shape that carries a document (as on the
+# anthropic wire, k326).
+
+# The base64 payload of an item that is a PDF, else undef.
+sub _native_pdf_data {
+  my ($item) = @_;
+  return undef unless $item->{kind} eq 'blob' && $item->{type} eq 'resource';
+  return undef unless ( $item->{mime} // '' ) eq 'application/pdf';
+  return undef unless defined $item->{data} && !ref $item->{data};
+  ( my $b64 = $item->{data} ) =~ s/\s+//g;
+  return $b64;
+}
+
+# input_file's filename: the reference marks it optional, but the server
+# rejects file_data without one (community reports, 2025-2026). The last
+# segment of the resource URI's hierarchical path, percent-decoded (as UTF-8
+# characters, like every string here -- k252), with .pdf appended when it has
+# no such extension (the name is what the model sees the attachment as). An
+# opaque URI (urn:, data:, a rootless scheme:path) or an empty path gives a
+# generic name.
+sub _pdf_filename {
+  my ($uri) = @_;
+  my $name = '';
+  if ( defined $uri && !ref $uri && length $uri ) {
+    my $parsed = URI->new($uri);
+    if ( $parsed->isa('URI::_generic')
+      && ( !defined $parsed->scheme || $parsed->path =~ m{\A/} ) ) {
+      my ($segment) = $parsed->path =~ m{([^/]*)\z};
+      $name = Encode::decode( 'UTF-8', URI::Escape::uri_unescape($segment),
+        Encode::FB_DEFAULT() );
+    }
+  }
+  return 'document.pdf' unless length $name;
+  return $name =~ /\.pdf\z/i ? $name : "$name.pdf";
+}
+
 # --- Serializers to per-provider result blocks ---
 
 sub to_openai {
@@ -353,24 +429,38 @@ sub to_responses {
   return {
     type    => 'function_call_output',
     call_id => $self->id,
-    output  => ( $opts{image_input} ? $self->_responses_output : $self->_string_content ),
+    output  => $self->_responses_output(%opts),
   };
 }
 
-# With an image the wire takes, `output` becomes a part array in content order
-# (one input_text per other item, as the string form renders it); without one
-# it stays the string (karr k344).
+# One item as a native Responses part (input_image with image_input, karr
+# k344; input_file with native_pdf, karr k361), else undef.
+sub _responses_native_part {
+  my ( $item, %opts ) = @_;
+  if ( $opts{image_input} ) {
+    my $b64 = _native_image_data( $item, \%RESPONSES_IMAGE_MIME );
+    return { type => 'input_image', image_url => "data:$item->{mime};base64,$b64" }
+      if defined $b64;
+  }
+  if ( $opts{native_pdf} ) {
+    my $b64 = _native_pdf_data($item);
+    return { type => 'input_file', filename => _pdf_filename( $item->{uri} ),
+      file_data => "data:application/pdf;base64,$b64" } if defined $b64;
+  }
+  return undef;
+}
+
+# With an item the wire takes natively, `output` becomes a part array in
+# content order (one input_text per other item, as the string form renders
+# it); without one it stays the string (karr k344, k361).
 sub _responses_output {
-  my ($self) = @_;
+  my ( $self, %opts ) = @_;
   my @items = $self->_mcp_items;
-  return $self->_string_of(@items)
-    unless grep { defined _native_image_data( $_, \%RESPONSES_IMAGE_MIME ) } @items;
+  my @native = map { _responses_native_part( $_, %opts ) } @items;
+  return $self->_string_of(@items) unless grep { defined } @native;
   return [ map {
-    my $b64 = _native_image_data( $_, \%RESPONSES_IMAGE_MIME );
-    defined $b64
-      ? { type => 'input_image', image_url => "data:$_->{mime};base64,$b64" }
-      : { type => 'input_text', text => _string_item($_) }
-  } @items ];
+    $native[$_] // { type => 'input_text', text => _string_item( $items[$_] ) }
+  } 0 .. $#items ];
 }
 
 # --- Anthropic tool_result content (karr k326) ---
@@ -460,14 +550,21 @@ sub to_anthropic {
 sub to_gemini {
   my ( $self, %opts ) = @_;
   # With image_input, an image Gemini 3 takes moves out of the result string
-  # into functionResponse.parts[].inlineData (karr k344). No displayName: it is
-  # only needed to $ref a part from `response`, and the v1beta discovery
-  # schema of FunctionResponseBlob does not list it.
+  # into functionResponse.parts[].inlineData (karr k344), with native_pdf a
+  # PDF likewise (karr k361). No displayName: it is only needed to $ref a
+  # part from `response`, and the v1beta discovery schema of
+  # FunctionResponseBlob does not list it.
   my ( @rest, @parts );
   for my $item ( $self->_mcp_items ) {
-    my $b64 = $opts{image_input} ? _native_image_data( $item, \%GEMINI_IMAGE_MIME ) : undef;
+    my ( $b64, $mime );
+    $b64 = _native_image_data( $item, \%GEMINI_IMAGE_MIME ) if $opts{image_input};
+    $mime = $item->{mime} if defined $b64;
+    if ( !defined $b64 && $opts{native_pdf} ) {
+      $b64  = _native_pdf_data($item);
+      $mime = 'application/pdf';
+    }
     if ( defined $b64 ) {
-      push @parts, { inlineData => { mimeType => $item->{mime}, data => $b64 } };
+      push @parts, { inlineData => { mimeType => $mime, data => $b64 } };
     }
     else {
       push @rest, $item;
@@ -515,12 +612,13 @@ my %TO_METHOD = (
     my $block = $result->to($fmt);
     my $block = $result->to('hermes', response_tag => 'fn_response');
     my $block = $result->to('responses', image_input => 1);
+    my $block = $result->to('gemini', image_input => 1, native_pdf => 1);
 
 Serializes to the result block for the given C<tool_wire_format>. Extra options
 are passed through to the per-format serializer (Hermes accepts
 C<response_tag>; C<responses>, C<gemini> and C<anthropic> accept
-C<image_input>, C<anthropic> also C<source_blocks>, see L</DESCRIPTION>; the other
-formats ignore them).
+C<image_input>, C<responses> and C<gemini> also C<native_pdf>, C<anthropic>
+also C<source_blocks>, see L</DESCRIPTION>; the other formats ignore them).
 
 =cut
 

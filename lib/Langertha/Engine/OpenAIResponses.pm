@@ -102,6 +102,17 @@ around engine_capabilities => sub {
     return $caps;
 };
 
+# Tool-result PDFs (karr k361): function_call_output.output takes an
+# input_file part (API reference, FunctionCallOutput: "string or array of
+# ResponseInputTextContent or ResponseInputImageContent or
+# ResponseInputFileContent", developers.openai.com/api/reference/resources/
+# responses/methods/create; data: URL + filename per the PDF-files guide,
+# developers.openai.com/api/docs/guides/pdf-files; fetched 2026-09-30).
+# Docs-derived, not live-verified. Role::Tools still requires image_input
+# (the guide names vision models for PDF input). Perplexity shares the
+# envelope but not this part, so the flag sits here, not on the role.
+sub _tool_result_pdf_on_wire { 1 }
+
 __PACKAGE__->meta->make_immutable;
 
 =head1 SEE ALSO

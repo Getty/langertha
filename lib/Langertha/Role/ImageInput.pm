@@ -57,7 +57,9 @@ One reader chooses a representation by it: in the tool loop,
 L<Langertha::Role::Tools/format_tool_results> sends an image a I<tool>
 returned as an image part on the C<responses>, Gemini 3 and C<anthropic> wires
 only when the flag is true, and as a text placeholder otherwise (see
-L<Langertha::ToolResult/DESCRIPTION>). So a claim for a model that does not
+L<Langertha::ToolResult/DESCRIPTION>). A PDF a tool returned follows the same
+flag on OpenAI Responses and Gemini 3, which read PDFs through the model's
+vision. So a claim for a model that does not
 see images is no longer harmless there: the provider may reject the tool-loop
 turn, or (as AKI.IO's C</anthropic> shim does) accept it while the model never
 sees the image.

@@ -327,6 +327,14 @@ sub model_capability_corrections {
   );
 }
 
+# Tool-result PDFs (karr k361): the Agent API's FunctionCallOutputInput.output
+# is "a JSON string or an array of input_text and input_image content parts",
+# and no input schema lists input_file (docs.perplexity.ai/api-reference/
+# agent-post, fetched 2026-09-30), so a PDF stays the k336 placeholder while
+# OpenAIResponses sends it as input_file. Spelled out (the Role::Tools default
+# is 0 too) because this is where the shared Responses envelope diverges.
+sub _tool_result_pdf_on_wire { 0 }
+
 # Rate limit (karr k356, ADR 0022): the Agent API sends x-ratelimit-limit /
 # -remaining / -reset / -used with no -requests / -tokens suffix, and the Remote
 # fallback reads only Retry-After. Read here, not in a shared parser: on

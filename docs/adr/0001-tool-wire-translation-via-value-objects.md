@@ -470,3 +470,44 @@ and silently ignores it (live), the other shims document Claude Code, which send
 fails on it; the flag is lost on every string wire anyway, so a shim-only text marker would split
 the behaviour. Pinned in `t/92_tool_result_images.t`, `t/92_tool_result_anthropic.t` and
 `t/92_tool_result_string.t`.
+
+## Update (k361 — tool-result PDFs ride natively on OpenAI Responses and Gemini 3)
+
+The k344 mechanism now also carries a PDF (an MCP embedded resource blob, `application/pdf` — the
+one MCP shape that holds a document, as on the anthropic wire since k326). `ToolResult->to($fmt,
+native_pdf => 1)` renders it on `responses` as an `input_file` part of
+`function_call_output.output` (`file_data` a `data:application/pdf;base64,...` URL, `filename`
+the percent-decoded last segment of the resource URI's hierarchical path with `.pdf` appended
+when missing, `document.pdf` for an opaque URI such as `urn:uuid:…` or an empty path), and on `gemini` as a `functionResponse.parts[].inlineData` part with `mimeType`
+`application/pdf`. The part array of `responses` now forms when any item is carried natively (an
+image under `image_input`, a PDF under `native_pdf`); each option carries only its own kind.
+`filename` is optional in the OpenAI reference but the server rejects `file_data` without it
+(community reports 2025–2026), so it is always sent.
+
+`Role::Tools::format_tool_results` asks for it on the `responses` and `gemini` branches through a
+third private predicate, `_tool_result_pdf_on_wire` (default 0): 1 on `Engine::OpenAIResponses`,
+the `gemini-3*` image predicate on `Engine::Gemini`, and an explicit 0 on `Engine::Perplexity`,
+where the shared envelope diverges — its Agent API's `FunctionCallOutputInput.output` lists only
+`input_text` / `input_image` and no input schema has `input_file`. The flag sits on the engines,
+not on `Role::ResponsesCompatible`, because `Role::Tools` already owns the `_tool_result_*`
+predicates and a same-named method on two roles composed into one class would conflict. Off by
+default because every other wire (openai chat, ollama, hermes, Gemini before 3) documents no PDF
+inside a tool result, and the anthropic wire's PDF `document` block stays governed by
+`source_blocks` (k326/k364).
+
+The model half of the gate is `image_input`, not a new flag: both providers document PDF
+understanding as a vision feature (OpenAI's PDF guide puts extracted text *and page images* into
+the context and says this "requires models with vision capabilities"; Gemini reads documents
+through its vision), and the k344 reason applies unchanged — the tool loop sends what an MCP
+server returned, so a text-only model (`gpt-oss-*`, `o3-mini` on OpenAIResponses) keeps the
+placeholder instead of risking a 400 mid-loop. A separate `document_input` capability was
+considered and not invented: no provider in the tree documents PDF input for a model that does
+not see images, or the reverse, so it would be a second name for the same fact (open question on
+karr k361, to reopen when one does). The anthropic `document` path is wire-only and does not read
+`image_input`; aligning it is noted on k361, not done here.
+
+All of it is **documentation-derived, not live-verified** (OpenAI API reference
+`developers.openai.com/api/reference/resources/responses/methods/create` and PDF-files guide,
+docs.perplexity.ai `agent-post` reference, ai.google.dev `generate-content/function-calling`
+"Multimodal function responses": "Documents: application/pdf, text/plain", all fetched
+2026-09-30). Pinned in `t/92_tool_result_pdf.t`.

@@ -71,6 +71,16 @@ Revision history for Langertha
       (Kimi documents it, MiniMax does not say; the only live evidence is
       AKI's negative result).
 
+    - PDFs returned by a tool (an embedded resource with application/pdf)
+      reach the model as a file, not as a text placeholder, on the OpenAI
+      Responses API (an input_file part with a data: URL and a filename in
+      function_call_output) and on Gemini 3 models (functionResponse.parts
+      with inlineData), when the configured model supports('image_input'):
+      both providers read PDFs through the model's vision. The Perplexity
+      Agent API documents no file part there and keeps the placeholder, as
+      do the OpenAI chat, Ollama and Hermes wires and Gemini before 3. Both
+      forms are docs-derived, not live-verified.
+
     - Engine::NousResearch derives tool_wire_format per model: Hermes models
       use the hermes tool-calling wire, every other slug on its multi-model
       gateway uses native OpenAI tools, and the reasoning system prompt and

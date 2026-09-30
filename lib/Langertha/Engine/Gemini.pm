@@ -96,6 +96,14 @@ sub _tool_result_images_on_wire {
   return ( $self->chat_model // '' ) =~ /\Agemini-3(?!\d)/ ? 1 : 0;
 }
 
+# Tool-result PDFs (karr k361): the same guide section lists "Documents:
+# application/pdf, text/plain" beside the image types for Gemini 3
+# multimodal function responses (ai.google.dev/gemini-api/docs/
+# generate-content/function-calling, fetched 2026-09-30; docs-derived, not
+# live-verified), so a PDF follows the image predicate. (A text/plain blob is
+# already decoded into the result string.)
+sub _tool_result_pdf_on_wire { shift->_tool_result_images_on_wire }
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::Gemini;

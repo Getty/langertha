@@ -592,6 +592,26 @@ sub _tool_result_image_opts {
   return ( image_input => 1 );
 }
 
+# Tool-result PDFs ride natively (ToolResult's native_pdf option, karr k361)
+# only where the wire documents a PDF inside a tool result for the selected
+# model (_tool_result_pdf_on_wire: OpenAIResponses' input_file, Gemini 3's
+# functionResponse.parts) and the model claims image_input: both providers
+# document PDF understanding as a vision feature (OpenAI parses page text and
+# page images and names vision models; Gemini reads documents through its
+# vision), so a text-only model keeps the k336 placeholder rather than risk a
+# 400 mid-loop. Off by default: every other wire (openai, ollama, hermes,
+# Perplexity's Agent API, older Gemini) has no documented form. The anthropic
+# wire's PDF document block is decided by _tool_result_source_blocks_on_wire
+# (k326, k364) and does not read this.
+sub _tool_result_pdf_on_wire { 0 }
+
+sub _tool_result_pdf_opts {
+  my ( $self ) = @_;
+  return () unless $self->_tool_result_pdf_on_wire
+    && $self->can('supports') && $self->supports('image_input');
+  return ( native_pdf => 1 );
+}
+
 # Whether the anthropic wire takes Anthropic's source blocks (document,
 # search_result) inside a tool_result (karr k364, k366). First-party Anthropic
 # documents them; a /anthropic shim that rejects them sets this to 0, and
@@ -638,7 +658,7 @@ sub format_tool_results {
   }
 
   if ( $fmt eq 'gemini' ) {
-    my @opts  = $self->_tool_result_image_opts;
+    my @opts  = ( $self->_tool_result_image_opts, $self->_tool_result_pdf_opts );
     my @parts = map {
       Langertha::ToolResult->new(
         name    => _result_call_name( $_->{tool_call} ),
@@ -702,7 +722,7 @@ sub format_tool_results {
     # the Agent input schema on Perplexity (karr k213, ADR 0020).
     @echo = map { $self->_responses_echo_item($_) } @echo
       if $self->can('_responses_echo_item');
-    my @opts = $self->_tool_result_image_opts;
+    my @opts = ( $self->_tool_result_image_opts, $self->_tool_result_pdf_opts );
     return (
       @echo,
       map {
@@ -790,6 +810,16 @@ the C</anthropic> shims (Kimi documents it, MiniMax does not say).
 L<Langertha::Engine::AKIAnthropic> keeps the placeholder for every model: its
 shim answers a C<tool_result> image without error, but the model does not see
 it.
+
+A PDF in a tool's output (an embedded resource blob, C<application/pdf>)
+reaches the model as a file, not as a text placeholder, on
+L<Langertha::Engine::OpenAIResponses> (an C<input_file> part in
+C<function_call_output.output>) and on Gemini 3 (C<functionResponse.parts>),
+when C<< supports('image_input') >> is true for the configured model: both
+providers document PDF understanding as a vision feature. Both forms are
+documentation-derived, not live-verified. L<Langertha::Engine::Perplexity>
+keeps the placeholder (its Agent API documents only text and image parts
+there), as do the OpenAI chat, Ollama and Hermes wires and Gemini before 3.
 
 On the C<anthropic> wire an embedded text resource or PDF goes out as a
 C<document> block, except on L<Langertha::Engine::AKIAnthropic> and
