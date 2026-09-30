@@ -185,4 +185,29 @@ subtest 'ServerToolCall->extract: only provider-executed call items' => sub {
   ok( !eval { Langertha::ServerToolCall->extract( anthropic => {} ); 1 }, 'anthropic is not supported yet' );
 };
 
+# Why (karr k355, ADR 0030): xAI's Responses API reports an X Search as its own
+# output item type, x_search_call, "handled by SpaceXAI server" next to
+# web_search_call (docs.x.ai/developers/tools/tool-usage-details, table of
+# response.output[].type). Unrecognised, the item is skipped and the search is
+# visible only in Response.raw -- a caller reading server_tool_calls would never
+# learn X was searched (and X Search is billed per post fetched). The item
+# below is constructed: the type is documented, the rest of its fields are not
+# (docs-derived, no xAI capture yet -- k206 capture #5), so only type, id and
+# status are asserted and the item is kept verbatim.
+subtest 'ServerToolCall: xAI x_search_call is a provider-executed call' => sub {
+  my $item = { type => 'x_search_call', id => 'xs_1', status => 'completed' };
+  my $data = { output => [
+    { type => 'reasoning', id => 'rs', summary => [] },
+    $item,
+    { type => 'web_search_call', id => 'ws', status => 'completed' },
+    { type => 'message', id => 'm', content => [] },
+  ] };
+  my @calls = Langertha::ServerToolCall->extract( responses => $data );
+  is_deeply( [ map { $_->type } @calls ], [qw( x_search_call web_search_call )],
+    'x_search_call lands next to web_search_call, in wire order' );
+  is( $calls[0]->id, 'xs_1', 'id' );
+  is( $calls[0]->status, 'completed', 'status' );
+  is( $calls[0]->data, $item, 'data is the very item' );
+};
+
 done_testing;

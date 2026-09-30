@@ -87,9 +87,11 @@ The provider's item, verbatim.
 # tool_search_call (execution => 'client') is client-actionable instead, and
 # the walkers croak on it (Langertha::Tool->_croak_on_client_item). Anything
 # else unknown is skipped -- values open; it stays on Response.raw.
+# x_search_call is xAI's X Search item (docs.x.ai tool-usage-details, k355;
+# documentation-derived, not capture-verified).
 my %RESPONSES_SERVER_ITEM = map { $_ => 1 } qw(
   web_search_call file_search_call code_interpreter_call image_generation_call
-  mcp_call mcp_list_tools shell_call tool_search_call
+  mcp_call mcp_list_tools shell_call tool_search_call x_search_call
 );
 
 sub from_responses {
