@@ -1,0 +1,51 @@
+---
+claimed_at: 2026-09-30T06:23:33Z
+claimed_by: langertha-wire-worker
+class: standard
+completed: 2026-09-30T06:23:33Z
+created: 2026-09-30T06:15:41Z
+id: 371
+priority: low
+started: 2026-09-30T06:20:34Z
+status: done
+tags:
+- tool-result
+- anthropic
+- image-input
+title: 'Anthropic-Wire: PDF-document-Block im tool_result zusaetzlich an image_input
+  koppeln?'
+updated: 2026-09-30T06:23:42Z
+---
+
+Aus k361-Review (Frage 2). Seit k361 gehen Tool-Result-PDFs auf Responses/Gemini 3 nur nativ, wenn das Modell image_input claimt (Begruendung: OpenAI/Gemini lesen PDFs ueber Vision). Auf dem anthropic-Wire entscheidet source_blocks allein (k326/k364): ein text-only Shim-Modell (MiniMaxAnthropic M2.7, LMStudioAnthropic ohne Vision-Claim) bekommt weiter einen base64-document-Block. AKI/Moonshot bekommen schon den Platzhalter (source_blocks 0), first-party Claude claimt image_input (No-op). Konsistenz (Hausregel 5) spricht fuers Koppeln; Gegenargument k364: document ist Wire-Fakt, nicht Modellfrage, und Anthropic extrahiert PDF-Text auch ohne Vision. llm-advisor pruefen lassen (MiniMax/LM Studio Doku), dann entscheiden.
+
+2026-09-30 06:19 llm-advisor VERDIKT (2026-09-30): NICHT an image_input koppeln. Das PDF-document-Block im anthropic-tool_result bleibt reine Wire-Entscheidung (_tool_result_source_blocks_on_wire). Die Asymmetrie zu k361 ist Provider-Realitaet, keine Inkonsistenz -> als 'deliberate keep' festhalten.
+
+Evidenz:
+- Anthropic 1st-party (platform.claude.com/docs/en/build-with-claude/pdf-support, gelesen 2026-09-30): 'All active models support PDF processing'; Pipeline = pro Seite extrahierter Text PLUS Seitenbild; 'PDF support relies on Claude's vision capabilities'. Alle Claude-3+ claimen image_input (Engine::Anthropic Layer 3, nur claude-2/instant => 0, retired) -> Gate waere dort No-op. Doku-Satz 'relies on vision' ist KEIN Argument fuers Koppeln, weil kein Claude-Modell ohne image_input aktiv ist.
+- MiniMaxAnthropic: Doku (platform.minimax.io/docs/api-reference/text-anthropic-api + OpenAPI /docs/api-reference/text/api/openapi-chat-anthropic.json, beide 2026-09-30) kennt document GAR NICHT: RequestContentBlock.type enum = text|image|video|tool_use|tool_result|thinking|mid_conv_system; tool_result.content 'string or array of text/image'; M2.x 'text and tool-call content blocks only'. LIVE-PROBE (2 Requests, api.minimax.io/anthropic/v1/messages, tool_use -> tool_result[text 'Report attached.', document{source:{type:base64, media_type:application/pdf}}], 1-Seiten-PDF 609 Bytes mit Text 'The secret codeword is PELICAN-47.'):
+  * MiniMax-M2.7 (text-only, image_input 0): HTTP 200, 'The exact codeword it contains is **PELICAN-47**', input_tokens 244 -> Text-Extraktion OHNE Vision, korrekt.
+  * MiniMax-M3 (vision, image_input 1): HTTP 200, 'PELICAN-47', input_tokens 3159 -> Seite offenbar zusaetzlich als Bild.
+  -> MiniMax verhaelt sich wie Anthropic (Text + ggf. Seitenbild), trotz fehlender Doku. Koppeln waere fuer M2.x eine REGRESSION: funktionierendes PDF-Lesen -> Platzhalter. Default source_blocks=1 auf MiniMax ist damit live bestaetigt (nur PDF/base64 geprueft; document{source:text} und search_result NICHT geprobt).
+- LMStudioAnthropic: undokumentiert (lmstudio.ai/docs/developer/anthropic-compat + /messages verweisen nur auf Anthropic-Doku, 2026-09-30). Changelog (lmstudio.ai/changelog) nennt 'Images in tool call results in /v1/responses, /v1/chat/completions, /v1/messages', KEINE documents; lmstudio-bug-tracker#1792 (LM Studio 0.4.11, Apr 2026): API lehnt PDFs ab (400 'url field must be a base64 encoded image'), selbst fuer Vision-Modelle (Gemma 4), und bietet keinen document-Typ. -> Wenn LM Studio scheitert, dann am WIRE, unabhaengig von Vision: image_input waere die falsche Achse (ein Gemma-4-VLM mit gelerntem image_input wuerde trotzdem den document-Block bekommen). Richtige Stellschraube ist source_blocks -> eigene Karte.
+- Warum k361 trotzdem koppelt (bleibt richtig): OpenAI/Gemini dokumentieren PDF-Input als Vision-Feature, eine Text-Extraktion fuer Nicht-Vision-Modelle ist dort nicht dokumentiert. Auf dem Anthropic-Dialekt ist die Textspur belegt (M2.7 live).
+
+Restrisiko (keine Aktion): gescanntes PDF ohne Textlayer an text-only Modell (M2.x) -> Modell sieht nichts/wenig, evtl. Halluzination; der Platzhalter wuerde den Inhalt aber ebenso nicht liefern.
+
+Umsetzungsskizze (langertha-wire-worker, klein, KEINE Gate-Aenderung):
+1. lib/Langertha/Engine/MiniMaxAnthropic.pm: sub _tool_result_source_blocks_on_wire { 1 } explizit, Kommentar mit Probe-Beleg (Datum, M2.7 200/PELICAN-47/244 tok, M3 200/3159 tok, Doku-enum ohne document) -> verankert den Default gegen spaeteres 'undokumentiert, also 0'.
+2. lib/Langertha/Role/Tools.pm Kommentar bei _tool_result_pdf_on_wire (k361-Stand): ein Satz, warum der anthropic-PDF-Pfad image_input bewusst NICHT liest (k371, Text-Extraktion ohne Vision).
+3. t/92_tool_result_anthropic.t: neue Zeile(n) im per-Engine-Subtest mit PDF-Blob (resource application/pdf): MiniMaxAnthropic 'MiniMax-M2.7' (supports image_input = 0) -> document-Block; Anthropic claude-* -> document. Test haelt den deliberate keep: faellt rot, sobald jemand das Gate einbaut.
+4. ADR 0001: '## Update (k371 — anthropic tool-result PDFs stay a wire decision)' mit obiger Begruendung; Changes nur falls POD-sichtbar (nein, Verhalten unveraendert).
+5. POD ToolResult/Role::Tools: nichts falsch, optional ein Halbsatz 'independent of image_input'.
+Probe-Dateien: /tmp/k371 (t.pdf, m27.json/out, m3.json/out).
+
+2026-09-30 06:19 LM-Studio-Wire-Frage als eigene Karte k372 abgelegt (source_blocks, nicht image_input).
+
+Orchestrator: Advisor-Verdikt angenommen (nicht gaten, Pin + Doku). k372 gleich mit: LMStudioAnthropic source_blocks 0 konservativ (kein Server zum Proben; Bugtracker #1792 400 bei PDFs, kein document-Typ).
+
+2026-09-30 06:22 Done in worktree k371 (uncommitted): explicit MiniMaxAnthropic _tool_result_source_blocks_on_wire {1} + probe-evidence comment; Role::Tools comment; t/92_tool_result_anthropic.t PDF rows (M2.7 image_input 0 -> document) + override pin via find_method_by_name; ADR 0001 k371 Update. No gate change, no Changes entry.
+
+2026-09-30 06:22 Done: pin + tests + ADR; t/92_tool_result_{anthropic,pdf,images}.t green, perlcritic clean
+
+2026-09-30 06:23 Committed as 64053d9 on branch k371
