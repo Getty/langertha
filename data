@@ -1,0 +1,35 @@
+---
+class: standard
+completed: 2026-09-30T05:59:16Z
+created: 2026-09-30T04:41:29Z
+id: 364
+priority: high
+started: 2026-09-30T04:42:23Z
+status: done
+tags:
+- llm
+- risk
+- anthropic
+- tool-result
+title: 'Anthropic-Shims: document-Bloecke im tool_result brechen den Tool-Loop (AKI
+  529)'
+updated: 2026-09-30T05:59:25Z
+---
+
+Gefunden bei k359 (llm-advisor, 2026-09-30).
+
+ToolResult::to_anthropic (k326) mappt eine MCP-Text-Resource, einen text/*-Blob und einen PDF-Blob auf einen Anthropic 'document'-Block. First-party Anthropic nimmt das (dokumentiert). Die /anthropic-Shims nicht zuverlaessig:
+
+- AKIAnthropic, LIVE-Probe 2026-09-30: tool_result.content [text, {type:document, source:{type:text, media_type:text/plain, data:...}}] an qwen3.6-35b -> HTTP 529 {"type":"overloaded_error","message":"Unsupported content type: document"}. Also bricht jeder Tool-Loop-Turn, sobald ein MCP-Tool eine eingebettete Text-Resource liefert (haeufig!). 529 ist bei AKI deterministisch, kein Retry-Signal (siehe AKIOpenAI-POD).
+- MoonshotAnthropic: Kimi-OpenAPI (platform.kimi.ai/docs/api/messages.md) listet tool_result.content nur als string | [text | image]; kein document (auch kein is_error). Verhalten bei document nicht belegt (Doku only).
+- MiniMaxAnthropic / LMStudioAnthropic: undokumentiert.
+
+Vorschlag: privater Engine-Hook (Muster _tool_result_images_on_wire), z.B. _tool_result_documents_on_wire, default 1, auf AKIAnthropic + MoonshotAnthropic 0 (MiniMax/LMStudio nach Probe/Doku); ohne ihn wird ein Text-document zu einem text-Block (Text inline, wie der String-Wire) und ein PDF zum k336-Platzhalter. Owning ADR: 0001 (k326 Update). Verwandt: k359, k361.
+
+2026-09-30 04:45 Start: Option documents=>0 an ToolResult->to('anthropic'), Hook _tool_result_documents_on_wire (default 1, Role::Tools), 0 auf AKIAnthropic + MoonshotAnthropic. Text-document -> text-Block, PDF -> k336-Platzhalter. Auch Aufrufer-native document-Bloecke werden auf diesen Wires degradiert (Wire-Fakt, AKI 529 deterministisch) -- anders als native image-Bloecke (dort ist image_input Modellfrage, nicht Wire).
+
+2026-09-30 04:58 Done. ToolResult->to('anthropic', documents => 0): Text-Resource/text-*-Blob -> text-Block (Text inline), PDF-Blob -> k336-Platzhalter, nativer document-Block -> sein Text bzw. Platzhalter (Wire-Fakt, daher anders als native Bilder). Privater Hook Role::Tools::_tool_result_documents_on_wire (default 1); 0 auf AKIAnthropic (Live-Beleg 529 im Kommentar) und MoonshotAnthropic (Kimi-OpenAPI text|image, docs only). MiniMaxAnthropic + LMStudioAnthropic: Default belassen, beide undokumentiert -- nach Probe/Doku ggf. nachziehen. Engine-POD AKIAnthropic/MoonshotAnthropic + Role::Tools-POD, ADR 0001 Update (k359,k364), Changes k326-Eintrag ergaenzt. Tests: t/92_tool_result_anthropic.t neue Subtests (documents=>0 je Blockart; format_tool_results je Engine: Anthropic/MiniMax/LMStudio document, AKI/Kimi text) -- rot vorher (2/9 Subtests), gruen danach; Gesamtlauf 220 Dateien gruen, 14 Live geskippt. Nicht live verifiziert (keine Calls). Offen/notiert: Kimi-Schema listet auch kein is_error in tool_result (wird weiter gesendet) und search_result-Bloecke auf den Shims sind ungeprueft -- beides nicht in Scope. Nicht committet.
+
+2026-09-30 Session beendet: Worker gestoppt vor perlcritic/Vollauf. Uncommitteter Stand fuer k359+k364+k366+k367 (Review-Fixes M1-M3/M5/M6, source_blocks-Umbenennung, carp-once, _string_item search_result/content-document) liegt im Worktree .claude/worktrees/agent-ad5f4d0ac402995a5 (Branch worktree-agent-ad5f4d0ac402995a5, Basis 2403e56; main ist weiter, per git apply uebernehmen). Offen: perlcritic, prove -lr t/, Re-Review der Fix-Runde, dann Commit (ein Commit fuer alle vier).
+
+Committed in f569e1d (branch k364)
