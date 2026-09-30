@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-09-30T04:31:13Z
+claimed_by: wire-worker
+class: standard
+completed: 2026-09-30T04:31:03Z
+created: 2026-09-29T22:28:01Z
+id: 362
+priority: low
+started: 2026-09-30T04:21:45Z
+status: done
+tags:
+- wire
+- follow-up
+- chat
+title: 'DeepSeek: _is_deepseek_v3 thinking switch als _model_scoped_wire_decisions-Entscheidung
+  benennen (k352-Luecke)'
+updated: 2026-09-30T04:31:13Z
+---
+
+Aus k352 (ADR 0019 Update k352). Role::Chat::_warn_model_override vergleicht nur benannte modellabhaengige Entscheidungen. Engine::DeepSeek::reasoning_kwargs_for entscheidet den thinking-Switch inline ueber _is_deepseek_v3(chat_model); ein per-Request-model, das die V3-Grenze kreuzt, kippt ihn ohne Warnung. Fix: around _model_scoped_wire_decisions in Engine/DeepSeek.pm (wie NousResearch reasoning prompt), wenn eine Reasoning-Kontrolle gesetzt ist; Test in t/78_model_override_warning.t. Offline, kein Live-Call.
+
+2026-09-30 04:29 Done: around _model_scoped_wire_decisions in lib/Langertha/Engine/DeepSeek.pm adds decision 'thinking switch' = _is_deepseek_v3(chat_model) when features->{reasoning} (per-request reasoning_effort or engine attribute). Root cause: all DeepSeek ids resolve the same Reasoning::Profile (same refaddr), so 'reasoning profile' never flipped. Test: new subtest in t/78_model_override_warning.t (red before fix: 0 warnings/no 'thinking switch'; green after) covers per-request + attribute effort, silent without reasoning control, silent V4->V4. ADR 0019 k352 'Known gaps' + extension-point bullet amended (gap closed). prove -lr t/ PASS (219 files; live t/8x skipped, no keys); perlcritic lib/ clean. Not committed.
+
+Committed as 6868594
