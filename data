@@ -1,0 +1,27 @@
+---
+claimed_at: 2026-09-30T04:36:45Z
+claimed_by: worker
+class: standard
+completed: 2026-09-30T04:36:45Z
+created: 2026-09-29T22:12:36Z
+id: 354
+priority: low
+started: 2026-09-30T04:21:53Z
+status: done
+tags:
+- xai
+- usage
+- adr-0031
+title: 'XAI: Kostenfelder cost_in_usd_ticks / cost_in_nano_usd gehen verloren'
+updated: 2026-09-30T04:36:45Z
+---
+
+1 USD = 10^10 Ticks (xAI-Doku 2026-09-29). Engine::XAI verwirft die Felder auch ueber chat/completions. Bereich ADR 0031 (Usage/Pricing). Quelle: k206-Advisor-Notiz.
+
+2026-09-30 04:22 Worktree ff'd to main a0e435f; starting wire research + Usage/Pricing read.
+
+2026-09-30 04:26 Wire (docs-derived, docs.x.ai REST ref chat-completions.md/responses.md/images.md + /developers/cost-tracking, read 2026-09-30): usage.cost_in_usd_ticks (int; chat/completions required, Responses int|null, images/video); usage.cost_in_nano_usd only on Responses (int|null). 1 USD = 1e10 ticks = 1e9 nano. Cause: nothing was actually dropped from raw (OpenAICompatible passes the usage hash verbatim, $resp->usage->{cost_in_usd_ticks} worked) - there was just no typed field. No existing provider-cost field in Usage/Cost/Pricing (Perplexity usage.cost hash + OpenRouter usage.cost only ride in raw). Decision: new Usage.cost_usd (Maybe[Num]) read at the from_hash door, ticks first then nano; undef when unreported; merge sums only when both sides report. Pricing/Cost untouched. Red->green in t/91_usage_provider_cost.t.
+
+2026-09-30 04:34 Done (uncommitted, worktree agent-aa37c124880e68c1f on a0e435f): Langertha::Usage gains cost_usd (Maybe[Num]) - from_hash reads usage.cost_in_usd_ticks/1e10, else cost_in_nano_usd/1e9; undef when unreported; merge sums only when both sides report. Files: lib/Langertha/Usage.pm, t/91_usage_provider_cost.t, t/data/xai_chat_cost_doc.json, t/data/xai_stream_cost_doc.sse (docs-derived, not captures). Red (Can't locate object method cost_usd) -> green; prove -lr t/ PASS 220 files, live t/8x skipped (no keys in env). perlcritic OK. ADR need: Update on ADR 0031 (provider-reported cost beside Pricing, not fed into Cost). Follow-ups for the dispatcher: Perplexity usage.cost hash and OpenRouter usage.cost could feed cost_usd (units to verify); whether UsageRecord/Metrics should prefer provider cost over Pricing estimate.
+
+Committed as 2403e56
