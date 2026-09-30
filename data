@@ -1,0 +1,21 @@
+---
+class: standard
+completed: 2026-09-30T05:59:50Z
+created: 2026-09-30T05:05:42Z
+id: 367
+priority: low
+started: 2026-09-30T05:06:15Z
+status: done
+tags:
+- tools
+- tool-result
+title: 'ToolResult: nativer document-Block mit source.type content verliert Text auf
+  String-Wires/documents=>0'
+updated: 2026-09-30T05:59:59Z
+---
+
+Aus k359/k364-Review (M4). ToolResult::_string_item macht aus einem vom Aufrufer gebauten Anthropic-document mit source {type=>"content", content=>[text-Bloecke]} nur "[document]" - der enthaltene Text geht verloren. Betrifft die String-Wires (openai/ollama/hermes/gemini-Text) schon laenger und seit k364 auch anthropic mit documents=>0 (AKIAnthropic, MoonshotAnthropic). Fix: bei source.type content die inneren text-Teile zusammenfuegen (Bilder als Platzhalter). Test in t/92_tool_result_anthropic.t + String-Wire-Test. Offline.
+
+2026-09-30 Session beendet: Worker gestoppt vor perlcritic/Vollauf. Uncommitteter Stand fuer k359+k364+k366+k367 (Review-Fixes M1-M3/M5/M6, source_blocks-Umbenennung, carp-once, _string_item search_result/content-document) liegt im Worktree .claude/worktrees/agent-ad5f4d0ac402995a5 (Branch worktree-agent-ad5f4d0ac402995a5, Basis 2403e56; main ist weiter, per git apply uebernehmen). Offen: perlcritic, prove -lr t/, Re-Review der Fix-Runde, dann Commit (ein Commit fuer alle vier).
+
+Committed in f569e1d (branch k364)
