@@ -897,6 +897,37 @@ my $images = $openai->simple_image('A viking with an axe in pixel art');
 
 Default model is `gpt-image-2`, which always answers `b64_json`. Pass `size`, `quality`, or `n` as extra arguments.
 
+### Command line: `langertha_image`
+
+`langertha_image` generates one to ten images and writes them to files. The
+backend is always explicit, there is no discovery and no fallback:
+
+```console
+# LANGERTHA_OPENAI_API_KEY is already exported
+langertha_image \
+  --backend openai --output "$HOME/openai-image.png" \
+  'A precise image prompt'
+
+langertha_image --backend proxy \
+  --url http://127.0.0.1:18765/v1 \
+  --prompt-file prompt.txt --output "$HOME/subscription-image.png"
+```
+
+- `proxy` talks only to the given OpenAI-compatible local subscription proxy
+  (`--url` or `LANGERTHA_IMAGE_PROXY_URL`), sends no API key and no
+  Authorization header, and never falls back to Platform billing.
+- `openai` uses the regular OpenAI Platform with `LANGERTHA_OPENAI_API_KEY`
+  (billed separately); its URL override is `LANGERTHA_IMAGE_OPENAI_URL`.
+  `LANGERTHA_IMAGE_BACKEND` sets the default backend (`openai` when unset).
+- `--prompt-prefix TEXT` (or `LANGERTHA_IMAGE_PROMPT_PREFIX`) puts a paragraph
+  before the prompt; `--n COUNT` asks for several images, written as
+  `name-1.png`, `name-2.png`, ...
+- An existing target is never overwritten without `--force`, and all targets
+  are checked before the request is sent.
+- stdout carries only the finished paths, one per line; backend, model, token
+  usage and runtime go to stderr. Keys, signed URLs and payloads are never
+  printed.
+
 ## Transcription (Whisper)
 
 `Langertha::Engine::Whisper` is a slim transcription-only engine (extends

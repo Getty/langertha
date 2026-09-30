@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New CLI bin/langertha_image generates and stores images through an explicit
+      proxy (subscription proxy, no API key) or openai backend, with
+      backend-specific URL environment variables (LANGERTHA_IMAGE_PROXY_URL,
+      LANGERTHA_IMAGE_OPENAI_URL), prompt prefixing, Base64 and URL result
+      materialization, atomic multi-image output and overwrite protection.
     - LMStudioAnthropic can now learn per model whether it sees images, like the
       other two LM Studio engines: probe_model_capabilities_f reads the server's
       native /api/v1/models (capabilities.vision). The probe request also sends
