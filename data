@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-09-30T06:10:50Z
+claimed_by: langertha-worker
+class: standard
+completed: 2026-09-30T06:10:41Z
+created: 2026-09-30T05:25:10Z
+id: 368
+priority: high
+started: 2026-09-30T05:25:26Z
+status: done
+tags:
+- cli
+- image-generation
+title: CLI bin/langertha_image (proxy|openai Bildgenerierung)
+updated: 2026-09-30T06:10:50Z
+---
+
+Neue CLI bin/langertha_image nach Spec /home/getty/dev/perl-developer/docs/superpowers/specs/2026-09-30-langertha-image-cli-llama-skill-design.md und Plan /home/getty/dev/perl-developer/docs/superpowers/plans/2026-09-30-langertha-image-cli.md. Backends nur proxy|openai (kein auto, kein Fallback), backend-spezifische URL-Env (LANGERTHA_IMAGE_PROXY_URL / LANGERTHA_IMAGE_OPENAI_URL), proxy ohne API-Key, Prompt-Prefix, b64/URL-Materialisierung, atomare Ausgabe, n 1..10, Ueberschreibschutz mit Preflight vor dem Provider-Call. Tests t/95_image_cli.t nur mit lokalen HTTP-Fixtures (Test::LocalHTTPDaemon). README + Changes. Danach dzil install + genau EIN Live-Smoke ueber den Proxy (Hub-Auftrag 2026-09-30).
+
+2026-09-30 05:38 k368 worker: added bin/langertha_image, t/95_image_cli.t (15 subtests/167 assertions pass via perl -Ilib), README section, Changes bullet; perlcritic clean. Deviations: lazy require of Langertha modules, download cap 64MiB, exit 2 on errors. Not run: prove -lr, dzil.
+
+2026-09-30 05:56 Review fixes applied: UTF-8 decode of prompt/prefix (paths stay bytes, no :utf8 layers), unit tests of _resolve_backend_url via do, data: URL redaction, cleanup/move-failure test, error-location strip regex, metadata printed before validation, no-clobber link() move without --force, NAME head dropped, env-default test. t/95_image_cli.t: 21 subtests, 216 assertions, 0 failures; perlcritic clean.
+
+Committed on branch k368 as 88a3c50 (not yet on main); dzil install + live smoke pending
+
+Commit 88a3c50 auf main; dzil install 0.503 ok (Tests im Install gruen), /home/getty/perl5/bin/langertha_image; Live-Smoke ueber Proxy ok (gpt-image-2, 1024x1536 PNG, visuell geprueft). Hub gemeldet.
