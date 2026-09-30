@@ -298,4 +298,24 @@ is_deeply($min_decoded, [{
     'anthropic() honours explicit url override');
 }
 
+# --- A per-request model is routed into the URL (karr k357) ---
+# The native wire names the model as the endpoint in /api/call/{model}. A
+# per-request model (chat_f, Langertha::Chat's model) used to ride %extra into
+# the body as an unknown field while the URL still named chat_model, so the
+# override never changed which model answered. It now names the endpoint for
+# that request and never reaches the body.
+{
+  my $engine = Langertha::Engine::AKI->new( api_key => 'testkey', model => 'minimax_m3' );
+  my $msgs = [ { role => 'user', content => 'hi' } ];
+  my $request = $engine->chat_request( $msgs, model => 'qwen3_32b' );
+  is( $request->uri, 'https://aki.io/api/call/qwen3_32b', 'per-request model: the endpoint names the override' );
+  ok( !exists $json->decode( $request->content )->{model}, 'per-request model: no model field in the body' );
+  for my $none ( undef, '' ) {
+    my $plain = $engine->chat_request( $msgs, model => $none );
+    is( $plain->uri, 'https://aki.io/api/call/minimax_m3', 'an empty override keeps chat_model' );
+    ok( !exists $json->decode( $plain->content )->{model}, 'and sends no model field' );
+  }
+  is( $engine->chat_model, 'minimax_m3', 'the engine keeps its chat_model' );
+}
+
 done_testing;

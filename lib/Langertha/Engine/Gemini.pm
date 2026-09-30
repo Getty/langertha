@@ -292,6 +292,10 @@ L</gemini_url>. The C<models/> prefix lives here so a consumer with a
 different resource path (Vertex AI's C<publishers/google/models/>) overrides
 one method.
 
+The chat routes pass C<chat_model> as C<{model}>, or a per-request C<model>
+(from L<Langertha::Role::Chat/chat_f> or L<Langertha::Chat/model>) for that
+request; the override is not sent in the body.
+
 =cut
 
 # The REST contract names the field `cachedContent` and takes the resource
@@ -374,8 +378,9 @@ sub chat_request {
     }
   }
 
-  # Build the URL with model and API key
-  my $model_name = $self->chat_model;
+  # Build the URL with model and API key. A per-request model names the model
+  # in the path, never in the body (karr k357).
+  my $model_name = $self->_url_model( \%extra );
   my $url = $self->gemini_model_url( $model_name, 'generateContent' );
 
   my %request_body = (
@@ -727,8 +732,8 @@ sub chat_stream_request {
     }
   }
 
-  # Build the URL for streaming endpoint
-  my $model_name = $self->chat_model;
+  # Build the URL for streaming endpoint (a per-request model as in chat_request)
+  my $model_name = $self->_url_model( \%extra );
   my $url = $self->gemini_model_url( $model_name, 'streamGenerateContent', alt => 'sse' );
 
   my %request_body = (

@@ -102,8 +102,17 @@ conversation passed to C<plugin_before_llm_call>.
 
 =attr model
 
-Optional model name override. When set, overrides the engine's
-C<chat_model> via C<%extra> pass-through.
+Optional model name override. When set, it is passed to the engine's request
+builder as a per-request C<model> through C<%extra>: it replaces the model in
+the request body, or in the URL on engines that name the model there
+(L<Langertha::Engine::Gemini>, L<Langertha::Engine::AKI>). It does not change
+the engine's C<chat_model>, and every model-scoped decision (capabilities, tool
+wire format, reasoning profile, body details) is still taken for
+C<chat_model>, as for a C<model> passed to L<Langertha::Role::Chat/chat_f>.
+When one of those decisions that the call uses would differ for this model,
+each chat call warns once and names the decisions; the request is sent
+unchanged. For a different model, use an engine whose C<chat_model> is that
+model.
 
 =attr temperature
 
@@ -129,6 +138,19 @@ sub _extra {
     ($self->has_model       ? (model       => $self->model)       : ()),
     ($self->has_temperature ? (temperature => $self->temperature) : ()),
   );
+}
+
+# The wrapper's model rides %extra into the engine's request builder past
+# chat_f, so the engine's per-request model warning (Role::Chat, karr k352) is
+# raised here, once per call, with the request features the call uses: the
+# wrapper's temperature, the gathered tools, streaming (karr k360).
+sub _warn_model_override {
+  my ( $self, $method, $streaming, %request ) = @_;
+  return unless $self->has_model;
+  my $engine = $self->engine;
+  return unless $engine->can('_warn_model_override');
+  $engine->_warn_model_override( "Langertha::Chat->$method", { $self->_extra, %request }, $streaming );
+  return;
 }
 
 # Each message goes through the engine's own per-message step of chat_messages,
@@ -202,6 +224,7 @@ sub simple_chat {
   my ( $self, @messages ) = @_;
   $log->debugf("[Chat] simple_chat via %s", ref $self->engine);
   my $engine = $self->_assert_chat_engine;
+  $self->_warn_model_override( 'simple_chat', 0 );
   my $conversation = $self->_build_messages(@messages);
 
   $conversation = $self->_run_plugin_before_llm_call($conversation, 1)->get;
@@ -238,6 +261,7 @@ sub _failed_message {
 async sub simple_chat_f {
   my ( $self, @messages ) = @_;
   my $engine = $self->_assert_chat_engine;
+  $self->_warn_model_override( 'simple_chat_f', 0 );
   my $conversation = await $self->_build_messages_f(@messages);
 
   $conversation = await $self->_run_plugin_before_llm_call($conversation, 1);
@@ -271,6 +295,7 @@ sub simple_chat_stream {
     unless $engine->can('chat_stream_request');
   croak "simple_chat_stream requires a callback as first argument"
     unless ref $callback eq 'CODE';
+  $self->_warn_model_override( 'simple_chat_stream', 1 );
   my $conversation = $self->_build_messages(@messages);
 
   $conversation = $self->_run_plugin_before_llm_call($conversation, 1)->get;
@@ -344,6 +369,7 @@ sub simple_chat_with_tools {
   $log->debugf("[Chat] simple_chat_with_tools via %s, %d tools, max_iterations=%d",
     ref $engine, scalar @$all_tools, $self->tool_max_iterations);
   my $formatted_tools = $engine->format_tools($all_tools);
+  $self->_warn_model_override( 'simple_chat_with_tools', 0, tools => $formatted_tools );
   my $conversation = $self->_build_messages(@messages);
 
   for my $iteration (1..$self->tool_max_iterations) {
@@ -448,6 +474,7 @@ async sub simple_chat_with_tools_f {
 
   my ($all_tools, $tool_server_map) = $self->_gather_tools;
   my $formatted_tools = $engine->format_tools($all_tools);
+  $self->_warn_model_override( 'simple_chat_with_tools_f', 0, tools => $formatted_tools );
   my $conversation = await $self->_build_messages_f(@messages);
 
   for my $iteration (1..$self->tool_max_iterations) {

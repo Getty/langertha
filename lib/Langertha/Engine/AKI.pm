@@ -269,7 +269,9 @@ sub chat_request {
   # native placement here and are consumed without being emitted.
   my $controls = delete $extra{controls} // {};
 
-  my $model = $self->chat_model;
+  # The model is the endpoint; a per-request model names it there, never in
+  # the body (karr k357).
+  my $model = $self->_url_model( \%extra );
   return $self->generate_http_request(
     POST => $self->url.'/api/call/'.$model,
     sub { $self->chat_response(shift) },
@@ -295,7 +297,10 @@ sub chat_request {
 Generates a native AKI.IO chat request. Posts to C</api/call/{model}> with
 messages encoded as JSON in the C<chat_context> field. Includes C<key>,
 C<temperature>, C<top_k>, C<top_p>, C<max_gen_tokens>, and
-C<wait_for_result> parameters as configured. Returns an HTTP request object.
+C<wait_for_result> parameters as configured. A C<model> in C<%extra> (a
+per-request model from L<Langertha::Role::Chat/chat_f> or
+L<Langertha::Chat/model>) replaces C<{model}> in the URL for this request and
+is not sent in the body. Returns an HTTP request object.
 
 =cut
 

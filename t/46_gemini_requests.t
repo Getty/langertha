@@ -11,7 +11,7 @@ use Langertha::Engine::Gemini;
 
 my $json = JSON::MaybeXS->new->canonical(1)->utf8(1);
 
-plan(58);
+plan(59);
 
 my $gemini = Langertha::Engine::Gemini->new(
   api_key => 'test_api_key_123',
@@ -301,6 +301,43 @@ subtest 'tool declarations send parametersJsonSchema' => sub {
   ok(exists $schema->{'$schema'}, 'the caller\'s schema is not mutated');
   is_deeply($now, { name => 'now', description => 'Time' }, 'no-argument tool declares no schema');
   is_deeply($ping, { name => 'ping', description => 'Ping' }, 'schemaless tool declares no schema');
+};
+
+subtest 'a per-request model is routed into the URL (k357)' => sub {
+  # Gemini carries the model in the path (models/{model}:generateContent), not
+  # in the body. A per-request model (chat_f, Langertha::Chat's model) used to
+  # ride %extra into the body as an unknown field while the URL still named
+  # chat_model, so the override never changed which model answered. It now
+  # names the model in the URL for that request and never reaches the body.
+  my $engine = Langertha::Engine::Gemini->new( api_key => 'k', model => 'gemini-2.5-flash' );
+  my $msgs = [ { role => 'user', content => 'hi' } ];
+
+  my $request = $engine->chat_request( $msgs, model => 'gemini-2.5-pro' );
+  like( $request->uri, qr{/v1beta/models/gemini-2\.5-pro:generateContent\?key=k$},
+    'generateContent URL names the override' );
+  ok( !exists $json->decode( $request->content )->{model}, 'no model field in the body' );
+
+  my $stream = $engine->chat_stream_request( $msgs, model => 'gemini-2.5-pro' );
+  like( $stream->uri, qr{/v1beta/models/gemini-2\.5-pro:streamGenerateContent\?key=k&alt=sse$},
+    'streamGenerateContent URL names the override' );
+  ok( !exists $json->decode( $stream->content )->{model}, 'no model field in the streaming body' );
+
+  for my $none ( undef, '' ) {
+    my $plain = $engine->chat_request( $msgs, model => $none );
+    like( $plain->uri, qr{/models/gemini-2\.5-flash:generateContent}, 'an empty override keeps chat_model' );
+    ok( !exists $json->decode( $plain->content )->{model}, 'and sends no model field' );
+  }
+
+  # A bound cachedContent does not stop the routing: the cache is named in the
+  # body, the model in the URL, exactly as for chat_model (ADR 0035).
+  require Langertha::CachedContent;
+  my $cached = Langertha::Engine::Gemini->new( api_key => 'k', model => 'gemini-2.5-flash',
+    cached_content => Langertha::CachedContent->new( name => 'cachedContents/abc' ) );
+  my $cc_request = $cached->chat_request( $msgs, model => 'gemini-2.5-pro' );
+  like( $cc_request->uri, qr{/models/gemini-2\.5-pro:generateContent}, 'bound cache: URL names the override' );
+  is( $json->decode( $cc_request->content )->{cachedContent}, 'cachedContents/abc', 'and the cache is still named' );
+
+  is( $engine->chat_model, 'gemini-2.5-flash', 'the engine keeps its chat_model' );
 };
 
 done_testing;

@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: chat_f / chat_stream_realtime_f warn when a per-request model flips a model-scoped wire decision
+# ABSTRACT: chat_f / chat_stream_realtime_f / Langertha::Chat warn when a per-request model flips a model-scoped wire decision
 use strict;
 use warnings;
 
@@ -299,6 +299,114 @@ subtest 'chat_stream_realtime_f warns the same way' => sub {
   like( $warns->[0], qr/chat_stream_realtime_f.*tool_wire_format/s, 'names the stream call and the tool wire' );
   $warns = $stream->( model => 'Hermes-4-70B', tools => [$TOOL] );
   is( scalar @$warns, 0, 'same model: no warning' ) or diag @$warns;
+};
+
+# karr k360. Langertha::Chat's model attribute rides %extra straight into
+# chat_request / chat_stream_request / build_tool_chat_request, past chat_f, so
+# the same silent flip happened there without a word. Every Chat entry point
+# now raises the engine's own warning, with the features the call uses (the
+# wrapper's temperature, the gathered tools, streaming), once per call.
+{
+  package Test::CannedUA;
+  use parent -norequire, 'LWP::UserAgent';
+  sub new { my ( $class, $body ) = @_; my $self = LWP::UserAgent::new($class); $self->{body} = $body; $self->{sent} = []; $self }
+  sub sent { $_[0]{sent} }
+  sub request {
+    my ( $self, $request ) = @_;
+    push @{ $self->{sent} }, $request;
+    return HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'application/json' ],
+      JSON::MaybeXS->new( utf8 => 1 )->encode( $self->{body} ) );
+  }
+}
+{
+  package Test::OneToolMCP;
+  use Future;
+  sub new { bless { tool => $_[1] }, $_[0] }
+  sub list_tools { Future->done( [ $_[0]{tool} ] ) }
+  sub call_tool { die "no tool call expected\n" }
+}
+
+subtest 'Langertha::Chat: its model warns like a per-request model (k360)' => sub {
+  require Langertha::Chat;
+  require HTTP::Response;
+  require LWP::UserAgent;
+  my $moon = sub { Langertha::Engine::Moonshot->new( api_key => 'k', model => 'kimi-k2.5',
+    _async_http => mock(), @_ ) };
+  my $capture = sub {
+    my ($code) = @_;
+    my @warns;
+    local $SIG{__WARN__} = sub { push @warns, $_[0] };
+    $code->();
+    return [ grep { /per-request model/ } @warns ];
+  };
+
+  # kimi-k3 has a larger response-size default (ADR 0019 k225), which a plain
+  # chat sends as its max_tokens.
+  my $engine = $moon->();
+  my $line = __LINE__ + 1;
+  my $warns = $capture->( sub { Langertha::Chat->new( engine => $engine, model => 'kimi-k3' )->simple_chat_f('hi')->get } );
+  is( scalar @$warns, 1, 'simple_chat_f: one warning' ) or diag @$warns;
+  like( $warns->[0], qr/Langertha::Chat->simple_chat_f got a per-request model 'kimi-k3'.*chat_model 'kimi-k2\.5'/s,
+    'names the Chat call, the override and the configured model' );
+  like( $warns->[0], qr/response_size default/, 'names the flipped decision' );
+  like( $warns->[0], qr/\Q at $file line $line.\E/, "names this file's call line" );
+  my ($request) = $engine->_async_http->requests;
+  is( $json->decode( $request->content )->{model}, 'kimi-k3', 'the request still goes out with the override' );
+
+  $warns = $capture->( sub { Langertha::Chat->new( engine => $moon->(), model => 'kimi-k2.5' )->simple_chat_f('hi')->get } );
+  is( scalar @$warns, 0, 'the same model: no warning' ) or diag @$warns;
+  $warns = $capture->( sub { Langertha::Chat->new( engine => $moon->() )->simple_chat_f('hi')->get } );
+  is( scalar @$warns, 0, 'no model: no warning' ) or diag @$warns;
+
+  my $sync = $moon->( user_agent => Test::CannedUA->new($openai_reply) );
+  $warns = $capture->( sub { Langertha::Chat->new( engine => $sync, model => 'kimi-k3' )->simple_chat('hi') } );
+  is( scalar @$warns, 1, 'simple_chat: one warning' ) or diag @$warns;
+  like( $warns->[0], qr/Langertha::Chat->simple_chat got/, 'names simple_chat' );
+
+  # The wrapper's own temperature is a request feature: claude-opus-4-8 takes
+  # none (layer 3), which only matters when one is sent.
+  my $anth = sub { Langertha::Engine::Anthropic->new( api_key => 'k', model => 'claude-sonnet-4-6',
+    _async_http => mock($anthropic_reply) ) };
+  $warns = $capture->( sub { Langertha::Chat->new( engine => $anth->(), model => 'claude-opus-4-8' )->simple_chat_f('hi')->get } );
+  is( scalar @$warns, 0, 'Anthropic without temperature: no warning' ) or diag @$warns;
+  $warns = $capture->( sub { Langertha::Chat->new( engine => $anth->(), model => 'claude-opus-4-8',
+    temperature => 0.5 )->simple_chat_f('hi')->get } );
+  is( scalar @$warns, 1, 'the Chat temperature: one warning' ) or diag @$warns;
+  like( $warns->[0], qr/supports\('temperature'\)/, 'names the temperature capability' );
+
+  # The tool loop: the gathered tools are a request feature, and the loop
+  # warns once per call, not once per iteration.
+  my $mcp = Test::OneToolMCP->new($TOOL);
+  $warns = $capture->( sub { Langertha::Chat->new( engine => nous(), model => 'anthropic/claude-sonnet-4.6',
+    mcp_servers => [$mcp] )->simple_chat_with_tools_f('hi')->get } );
+  is( scalar @$warns, 1, 'simple_chat_with_tools_f: one warning' ) or diag @$warns;
+  like( $warns->[0], qr/simple_chat_with_tools_f.*tool_wire_format/s, 'names the loop call and the tool wire' );
+  $warns = $capture->( sub { Langertha::Chat->new( engine => nous( user_agent => Test::CannedUA->new($openai_reply) ),
+    model => 'anthropic/claude-sonnet-4.6', mcp_servers => [$mcp] )->simple_chat_with_tools('hi') } );
+  is( scalar @$warns, 1, 'simple_chat_with_tools: one warning' ) or diag @$warns;
+  $warns = $capture->( sub { Langertha::Chat->new( engine => nous(), model => 'Hermes-4-405B',
+    mcp_servers => [$mcp] )->simple_chat_with_tools_f('hi')->get } );
+  is( scalar @$warns, 0, 'Hermes to Hermes in the loop: no warning' ) or diag @$warns;
+
+  # simple_chat_stream: stopped at chat_stream_request, the claim is the warning.
+  my $streamer = Moose::Util::with_traits( 'Langertha::Engine::NousResearch', 'Test::StopAtStreamRequest' )
+    ->new( api_key => 'k', model => 'Hermes-4-70B', reasoning => 1 );
+  $warns = $capture->( sub {
+    ok( !eval { Langertha::Chat->new( engine => $streamer, model => 'anthropic/claude-sonnet-4.6' )
+      ->simple_chat_stream( sub {}, 'hi' ); 1 }, 'stream stopped' );
+    is( $@, "stop before sending\n", 'at the recording stop' );
+  } );
+  is( scalar @$warns, 1, 'simple_chat_stream: one warning' ) or diag @$warns;
+  like( $warns->[0], qr/simple_chat_stream.*reasoning prompt/s, 'names the stream call and the reasoning prompt' );
+
+  # Gemini names the model in the URL: the Chat model now routes there (k357).
+  my $gemini_reply = { candidates => [ { finishReason => 'STOP',
+    content => { role => 'model', parts => [ { text => 'ok' } ] } } ] };
+  my $gemini = Langertha::Engine::Gemini->new( api_key => 'k', model => 'gemini-2.5-flash',
+    _async_http => mock($gemini_reply) );
+  $capture->( sub { Langertha::Chat->new( engine => $gemini, model => 'gemini-2.5-pro' )->simple_chat_f('hi')->get } );
+  ($request) = $gemini->_async_http->requests;
+  like( $request->uri, qr{/models/gemini-2\.5-pro:generateContent}, 'Gemini: the Chat model names the URL model' );
 };
 
 done_testing;

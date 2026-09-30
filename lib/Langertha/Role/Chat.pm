@@ -1067,6 +1067,19 @@ sub _warn_model_override {
   return;
 }
 
+# The model a request goes to on a wire that names it in the URL (Gemini's
+# models/{model}:generateContent, AKI native's /api/call/{model}): the
+# per-request override when there is one (the same test as
+# _warn_model_override), else chat_model. The `model` key is taken out of
+# %extra either way: there it would only ride the body as an unknown field
+# while the URL still named chat_model (karr k357).
+sub _url_model {
+  my ( $self, $extra ) = @_;
+  my $override = delete $extra->{model};
+  return $override if defined $override && !ref $override && length $override;
+  return $self->chat_model;
+}
+
 async sub chat_f {
   my ( $self, %opts ) = @_;
 
@@ -1303,8 +1316,9 @@ its drop warns once per engine instance; a value passed with the request warns
 on every request.
 
 A C<model> passed to C<chat_f> is no control: it replaces the model field of
-the request body (on engines that carry the model in the body), but every
-model-scoped decision is still taken for the engine's C<chat_model> — the
+the request body, or, on engines that carry the model in the URL
+(L<Langertha::Engine::Gemini>, L<Langertha::Engine::AKI>), the model named in
+the URL, but every model-scoped decision is still taken for the engine's C<chat_model> — the
 capability picture L<Langertha::Role::Capabilities/supports> answers, the
 C<model_capability_exclusions> rules, the reasoning profile, the temperature
 gate for reasoning models, a per-model C<tool_wire_format> and reasoning

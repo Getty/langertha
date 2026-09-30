@@ -340,10 +340,30 @@ unchanged), so the warning compares the matched rule set for both models. Test:
 **Known gaps.** A model-scoped decision that is taken inline, rather than through a named hook, is
 not compared unless its engine names it through the `around`. `Engine::DeepSeek::reasoning_kwargs_for`
 was such a case (it switches on `_is_deepseek_v3(chat_model)`, and every DeepSeek id resolves the
-same reasoning profile); k362 closed it with the `thinking switch` decision. Gemini and AKI native carry the
-model in the URL, so the override never reaches their routing (karr #357). The warning text
-("model-scoped wire decisions follow chat_model") is still true there. `Langertha::Chat` takes a
-per-request model without going through `chat_f`, so it gets no warning (karr #360).
+same reasoning profile); k362 closed it with the `thinking switch` decision.
+
+**URL-routed wires (k357): route, don't croak.** Gemini (`models/{model}:generateContent`, both the
+plain and the streaming route) and AKI native (`/api/call/{model}`) name the model in the URL, not in
+the body. Before k357 the override rode `%extra` into the body as an unknown field while the URL
+still named `chat_model`, so it never changed which model answered. Now
+`Role::Chat::_url_model(\%extra)` takes `model` out of `%extra` and returns it for the URL, or
+`chat_model` when there is no override (the same test as the warning: undef, empty or a ref is none).
+This is the one `%extra` key these two engines consume instead of passing it through (ADR 0004): on
+their wire, the URL is where the model field lives. The override now behaves as on every body-routed
+wire (the model changes, the decisions stay with `chat_model`, the warning says so), which is the
+normalize-don't-gatekeep reading. A croak would refuse on two engines what every other engine
+accepts. A bound Gemini `cachedContent` does not block the routing: the cache is named in the body
+and the model in the URL, as with `chat_model` (ADR 0035). Whether the server rejects a cache used with a
+model other than the one it was created for is not verified here. That holds for a mismatched
+`chat_model` as well, so no check was added for the override alone.
+
+**`Langertha::Chat` (k360).** The wrapper's `model` attribute rides `%extra` into `chat_request`,
+`chat_stream_request` and `build_tool_chat_request` without going through `chat_f`. Every Chat
+entry point (`simple_chat`, `simple_chat_f`, `simple_chat_stream`, `simple_chat_with_tools`,
+`simple_chat_with_tools_f`) now calls the engine's `_warn_model_override` itself, once per call, as
+`Langertha::Chat-><method>`. It passes the features the call uses: the wrapper's `temperature`,
+the gathered tools (the tool loops), streaming. The warning is the same function, not a copy, and
+it is silent for an engine without it.
 
 ## Update (k344 — `image_input` now selects the tool-result image form)
 

@@ -2,6 +2,15 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Gemini and AKI (native) now send a per-request model, from chat_f or
+      Langertha::Chat, to that model's URL. It used to land in the body as
+      an unknown field while the configured model answered.
+
+    - Langertha::Chat now warns, like chat_f, when its model differs from
+      the engine's chat_model in a way that changes model-scoped wire
+      decisions. The model attribute documentation says what the override
+      does and does not change.
+
     - Langertha::Usage has a new cost_usd attribute: what the provider says
       the request was billed, in US dollars. It is read from xAI's
       usage.cost_in_usd_ticks (1 USD = 10^10 ticks; chat completions,
