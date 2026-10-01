@@ -1,6 +1,6 @@
 package Langertha::Engine::TSystems;
 # ABSTRACT: T-Systems AI Foundation Services (LLM Hub)
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak );
 

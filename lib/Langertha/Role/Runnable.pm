@@ -1,6 +1,6 @@
 package Langertha::Role::Runnable;
 # ABSTRACT: Common async execution contract (run_f) for runnable nodes
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose::Role;
 
 =head1 SYNOPSIS

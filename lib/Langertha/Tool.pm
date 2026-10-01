@@ -1,6 +1,6 @@
 package Langertha::Tool;
 # ABSTRACT: Immutable canonical tool definition with cross-provider format conversion
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak carp );
 use JSON::MaybeXS;

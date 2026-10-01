@@ -1,6 +1,6 @@
 package Langertha::Reasoning::Profile;
 # ABSTRACT: Typed per-model reasoning wire-truth (accepted vocabulary + numeric bounds)
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Moose::Util::TypeConstraints;
 use Carp qw( croak );

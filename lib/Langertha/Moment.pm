@@ -1,6 +1,6 @@
 package Langertha::Moment;
 # ABSTRACT: Instant on the wire — a Time::Moment that numifies to its Unix epoch
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use strict;
 use warnings;
 use parent 'Time::Moment';

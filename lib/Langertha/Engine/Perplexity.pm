@@ -1,6 +1,6 @@
 package Langertha::Engine::Perplexity;
 # ABSTRACT: Perplexity Agent API (search-augmented)
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak );
 

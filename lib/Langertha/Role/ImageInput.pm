@@ -1,6 +1,6 @@
 package Langertha::Role::ImageInput;
 # ABSTRACT: Role for an engine whose wire can carry image input
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose::Role;
 
 =head1 SYNOPSIS

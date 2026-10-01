@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.503     2026-10-01 17:19:38Z
 
     - Manifest::Builder->engine_class_for_dialect($dialect), the inverse of

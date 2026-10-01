@@ -1,6 +1,6 @@
 package Langertha::CachedContent;
 # ABSTRACT: Immutable value object for a Gemini explicit cachedContent resource
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak );
 

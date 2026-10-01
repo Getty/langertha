@@ -1,6 +1,6 @@
 package Langertha::Role::RuntimeKnobs;
 # ABSTRACT: Role for a self-hosted engine with per-request prefix-cache runtime knobs
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose::Role;
 use Carp qw( croak );
 use Langertha::Runtime::Knobs;

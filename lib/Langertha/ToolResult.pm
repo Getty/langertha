@@ -1,6 +1,6 @@
 package Langertha::ToolResult;
 # ABSTRACT: Immutable canonical result of executing one tool, with cross-provider conversion
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;

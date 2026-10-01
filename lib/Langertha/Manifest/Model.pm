@@ -1,6 +1,6 @@
 package Langertha::Manifest::Model;
 # ABSTRACT: One model entry of a provider manifest: id, endpoint, declared capabilities
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use JSON::MaybeXS ();
 with 'Langertha::Manifest::Validation';

@@ -1,6 +1,6 @@
 package Langertha::VLLMHook::Config;
 # ABSTRACT: Loader for vLLM-Hook model_configs/*.json files
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS ();

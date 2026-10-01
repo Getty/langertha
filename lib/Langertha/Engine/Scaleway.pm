@@ -1,6 +1,6 @@
 package Langertha::Engine::Scaleway;
 # ABSTRACT: Scaleway Generative APIs
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak );
 

@@ -1,6 +1,6 @@
 package Langertha::RunContext;
 # ABSTRACT: Structured, dependency-free execution context for runnable nodes
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak );
 use Scalar::Util qw( blessed );

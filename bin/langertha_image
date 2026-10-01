@@ -13,7 +13,7 @@ use File::Temp qw( tempfile );
 use URI;
 use Encode ();
 
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 
 Configure(qw( no_auto_abbrev no_ignore_case ));
 

@@ -1,6 +1,6 @@
 package Langertha::Role::AnthropicCompatible;
 # ABSTRACT: Role for Anthropic-compatible API format
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose::Role;
 use Carp qw( croak carp );
 use JSON::MaybeXS;

@@ -1,6 +1,6 @@
 package Langertha::Role::AsyncHTTP;
 # ABSTRACT: Async HTTP backend selection (injected > Net::Async::HTTP > sync LWP fallback)
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose::Role;
 use Future::AsyncAwait;
 use Future;

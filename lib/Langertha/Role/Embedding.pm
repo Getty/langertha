@@ -1,6 +1,6 @@
 package Langertha::Role::Embedding;
 # ABSTRACT: Role for APIs with embedding functionality
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );

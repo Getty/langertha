@@ -1,6 +1,6 @@
 package Langertha::Engine::Moonshot;
 # ABSTRACT: Moonshot AI Kimi API (OpenAI-compatible)
-our $VERSION = '0.503';
+our $VERSION = '0.504';
 use Moose;
 use Carp qw( croak );
 
