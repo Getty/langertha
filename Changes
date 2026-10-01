@@ -2,6 +2,16 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Docker: the Dockerfile is rebuilt for the Dist::Zilla-built distribution
+      as build context: two stages on perl:5.40-slim, prerequisites through
+      cpm with the recommended async transport, Langertha installed into the
+      image. The release builds, tags (latest, <major>, <version>) and pushes
+      raudssus/langertha through the bundle's Dist::Zilla::Plugin::Docker::API
+      (docker_image in dist.ini). Every dzil build or dzil test now builds the
+      image unless DZIL_DOCKER_API_SKIP=1 is set. docker-entrypoint.sh and the
+      LANGERTHA_UID / LANGERTHA_GID / LANGERTHA_VERSION build arguments are
+      gone.
+
 0.503     2026-10-01 17:19:38Z
 
     - Manifest::Builder->engine_class_for_dialect($dialect), the inverse of
