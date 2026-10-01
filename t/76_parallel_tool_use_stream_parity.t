@@ -42,16 +42,20 @@ my $tool = {
                      required => ['city'] },
 };
 
-# [ label, constructor args, request args (tools filled in), wire value or undef (absent) ]
+# [ label, constructor args, request args (tools filled in), wire value or undef (absent),
+#   drop carps over both builders on an engine without the flag ]
+# The last column is ADR 0025 drop+carp as k241/k247 shaped it: a per-request
+# control carps on every request (two builders = 2), an engine attribute once
+# per engine instance (1), and nothing set or no tools stays silent (0).
 sub cases {
     my ($tools) = @_;
     return (
-        [ 'control true',            {},                         [ tools => $tools, controls => { parallel_tool_use => 1 } ], 1 ],
-        [ 'control false',           {},                         [ tools => $tools, controls => { parallel_tool_use => 0 } ], 0 ],
-        [ 'engine attribute false',  { parallel_tool_use => 0 }, [ tools => $tools ], 0 ],
-        [ 'control beats attribute', { parallel_tool_use => 0 }, [ tools => $tools, controls => { parallel_tool_use => 1 } ], 1 ],
-        [ 'unset',                   {},                         [ tools => $tools ], undef ],
-        [ 'no tools',                { parallel_tool_use => 0 }, [ controls => { parallel_tool_use => 1 } ], undef ],
+        [ 'control true',            {},                         [ tools => $tools, controls => { parallel_tool_use => 1 } ], 1, 2 ],
+        [ 'control false',           {},                         [ tools => $tools, controls => { parallel_tool_use => 0 } ], 0, 2 ],
+        [ 'engine attribute false',  { parallel_tool_use => 0 }, [ tools => $tools ], 0, 1 ],
+        [ 'control beats attribute', { parallel_tool_use => 0 }, [ tools => $tools, controls => { parallel_tool_use => 1 } ], 1, 2 ],
+        [ 'unset',                   {},                         [ tools => $tools ], undef, 0 ],
+        [ 'no tools',                { parallel_tool_use => 0 }, [ controls => { parallel_tool_use => 1 } ], undef, 0 ],
     );
 }
 
@@ -112,11 +116,21 @@ subtest 'responses: parallel_tool_calls on both builders' => sub {
 subtest 'perplexity: no parallel_tool_calls field on either builder' => sub {
     # The Agent API has no such field (k213); the capability gate holds on both.
     for my $case ( cases( [ $tool ] ) ) {
-        my ( $label, $ctor, $args ) = @$case;
+        my ( $label, $ctor, $args, undef, $want_carps ) = @$case;
         my $engine = Langertha::Engine::Perplexity->new( api_key => 'k', %$ctor );
+        # The drop is loud (k241): collect that carp, pass anything else on.
+        my @drop_carps;
+        local $SIG{__WARN__} = sub {
+            return push @drop_carps, $_[0] if $_[0] =~ /dropping parallel_tool_use/;
+            warn @_;
+        };
         my ( $sync, $stream ) = bodies( $engine, @$args );
         ok( !exists $sync->{parallel_tool_calls}, "$label: chat_request sends none" );
         ok( !exists $stream->{parallel_tool_calls}, "$label: chat_stream_request sends none" );
+        is( scalar @drop_carps, $want_carps, "$label: $want_carps drop carp(s) over both builders" )
+            or diag @drop_carps;
+        like( $_, qr/\ALangertha::Engine::Perplexity: dropping parallel_tool_use/,
+            "$label: the carp names the engine" ) for @drop_carps;
     }
 };
 

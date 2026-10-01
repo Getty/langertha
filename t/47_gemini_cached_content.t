@@ -341,7 +341,9 @@ sub _with_capture {
   my @captured;
   require Langertha::Request::HTTP;
 
-  no warnings 'redefine';
+  # 'once': Gemini inherits both methods and FakeUA exists only here, so each
+  # glob is named a single time in this file.
+  no warnings qw( redefine once );
   *Langertha::Engine::Gemini::generate_http_request = sub {
     my ( $self, $method, $url, $cb, %body ) = @_;
     push @captured, { method => $method, url => $url, body => \%body };

@@ -7,8 +7,22 @@ use warnings;
 use Test2::Bundle::More;
 
 use Langertha::ToolCall;
-use Langertha::Output::Tools;
 use Langertha::Engine::NousResearch;
+
+# The Output::Tools facade is under test on purpose (third door of the parity
+# check below). Loading it carps its deprecation notice once; that notice is
+# expected here, anything else it says is passed on.
+my @facade_warnings;
+{
+  local $SIG{__WARN__} = sub {
+    return push @facade_warnings, $_[0] if $_[0] =~ /backwards-compatibility facade/;
+    warn @_;
+  };
+  require Langertha::Output::Tools;
+}
+is( scalar @facade_warnings, 1, 'loading Langertha::Output::Tools carps its deprecation notice once' );
+like( $facade_warnings[0], qr/New code should use Langertha::ToolCall directly/,
+  'the notice names Langertha::ToolCall as the replacement' );
 
 # karr k255 (ADR 0001, k253 Update): the public door
 # Langertha::ToolCall->extract_hermes_from_text (Output::Tools, skeid's

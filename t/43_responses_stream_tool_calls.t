@@ -216,7 +216,10 @@ SKIP: {
 
     my $server = Test::LocalHTTPDaemon->start( sub {
         my ($request) = @_;
-        my @events = ( tool_call_events( failed => $request->uri->path =~ m{^/failed/} ), "data: [DONE]\n\n" );
+        # scalar(): a failed match in list context is the empty list, which
+        # would leave `failed` without a value (odd-sized option list).
+        my @events = ( tool_call_events( failed => scalar( $request->uri->path =~ m{^/failed/} ) ),
+            "data: [DONE]\n\n" );
         return HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'text/event-stream' ], sub {
             return shift(@events) // '';
         } );

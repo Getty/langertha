@@ -39,6 +39,20 @@ sub body {
   return $json->decode( $e->chat_request( $e->chat_messages('p'), %extra )->content );
 }
 
+# ( $result, \@carps ) for $code: the "dropping temperature" carps it raised
+# are collected (the drop is loud, ADR 0025 k214 Update), anything else is
+# passed on.
+sub with_temperature_drops {
+  my ($code) = @_;
+  my @drops;
+  local $SIG{__WARN__} = sub {
+    return push @drops, $_[0] if $_[0] =~ /dropping temperature/;
+    warn @_;
+  };
+  my $result = $code->();
+  return ( $result, \@drops );
+}
+
 # ---------------------------------------------------------------------------
 # k135 point 1: temperature capability is per-MODEL.
 #   The verified 400-set (broader than the ticket's Opus 4.7/4.8): Opus 4.7,
@@ -78,13 +92,22 @@ isnt !!engine( model => 'claude-opus-4-8' )->supports('temperature'),
   my $suppressed = body( 'claude-opus-4-8', );
   # attribute path
   my $e = engine( model => 'claude-opus-4-8', temperature => 0.5 );
-  my $attr = $json->decode( $e->chat_request( $e->chat_messages('p') )->content );
+  my ( $attr, $attr_drops ) = with_temperature_drops( sub {
+    $json->decode( $e->chat_request( $e->chat_messages('p') )->content ) } );
   ok !exists $attr->{temperature},
     'opus-4-8: engine-attribute temperature is suppressed on the wire';
+  is scalar @$attr_drops, 1, 'opus-4-8: the attribute drop carps';
+  like $attr_drops->[0],
+    qr/\ALangertha::Engine::Anthropic: dropping temperature=0\.5 -- model 'claude-opus-4-8' does not take a temperature/,
+    'opus-4-8: the carp names the engine, the value and the model';
 
-  my $per_req = body( 'claude-opus-4-8', controls => { temperature => 0.9 } );
+  my ( $per_req, $per_req_drops ) = with_temperature_drops( sub {
+    body( 'claude-opus-4-8', controls => { temperature => 0.9 } ) } );
   ok !exists $per_req->{temperature},
     'opus-4-8: per-request temperature control is suppressed too';
+  is scalar @$per_req_drops, 1, 'opus-4-8: the per-request drop carps';
+  like $per_req_drops->[0], qr/dropping temperature=0\.9 -- model 'claude-opus-4-8'/,
+    'opus-4-8: the carp names the per-request value';
 
   my $kept = do {
     my $k = engine( model => 'claude-3-5-sonnet-20240620', temperature => 0.5 );
