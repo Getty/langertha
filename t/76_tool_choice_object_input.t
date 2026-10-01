@@ -12,7 +12,10 @@ use Test::MockAsyncHTTP;
 
 use Langertha::ToolChoice;
 # Input::Tools warns it is a legacy facade on load; its helpers are still an entry point.
-BEGIN { local $SIG{__WARN__} = sub {}; require Langertha::Input::Tools }
+BEGIN {
+    local $SIG{__WARN__} = sub { return if $_[0] =~ /backwards-compatibility facade/; warn @_ };
+    require Langertha::Input::Tools;
+}
 use Langertha::Engine::OpenAI;
 use Langertha::Engine::Anthropic;
 use Langertha::Engine::Gemini;

@@ -22,7 +22,6 @@ use Module::Runtime qw( require_module );
 my $canon = JSON::MaybeXS->new->canonical(1)->utf8(1);
 my $want  = $canon->decode( path('t/data/reasoning_thinking_toggle_scope_base.json')->slurp_raw );
 
-local $SIG{__WARN__} = sub {};
 for my $key ( sort keys %$want ) {
   my ( $short, $model, $effort, $kind ) = split /\|/, $key;
   my $class = "Langertha::Engine::$short";

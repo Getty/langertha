@@ -88,7 +88,6 @@ sub outcome {
 
 sub capture {
   my %got;
-  local $SIG{__WARN__} = sub {};
   for my $short ( sort keys %ENGINES ) {
     my $class = "Langertha::Engine::$short";
     require_module($class);

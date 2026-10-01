@@ -164,11 +164,18 @@ for my $builder (qw( chat_request chat_stream_request )) {
   for my $effort (qw( none minimal low medium high xhigh max )) {
     my $engine = Langertha::Engine::Moonshot->new(
       api_key => 'k', model => 'kimi-k2.6', reasoning_effort => $effort, temperature => 0.6 );
-    my $got;
+    # The temperature drop is loud (ADR 0025 k214 Update, text asserted in
+    # t/79_kimi_temperature_gate.t): collect that carp, pass anything else on.
+    my ( $got, @drops );
     {
-      local $SIG{__WARN__} = sub {};
+      local $SIG{__WARN__} = sub {
+        return push @drops, $_[0] if $_[0] =~ /\ALangertha::Engine::Moonshot: dropping temperature=0\.6\b/;
+        warn @_;
+      };
       $got = $json->decode( $engine->$builder( @MSG, controls => {} )->content );
     }
+    is( scalar @drops, 1, "Moonshot kimi-k2.6 $builder '$effort': one temperature drop carp" )
+      or diag @drops;
     my $want = { type => $effort eq 'none' ? 'disabled' : 'enabled' };
     is_deeply( $got->{thinking}, $want,
       "Moonshot kimi-k2.6 $builder '$effort': top-level thinking $want->{type}, no keep" );

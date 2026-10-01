@@ -286,10 +286,18 @@ subtest 'unchanged: no tools, tool_choice none, non-hermes, AKI native' => sub {
   is( $r->{seen}, $REPLY, 'hermes without tools: the tags stay in the text' );
   is_deeply( $r->{calls}, [], 'no call' );
 
+  # The withhold is loud: collect that carp, pass anything else on.
+  my @withheld;
   {
-    local $SIG{__WARN__} = sub {};
+    local $SIG{__WARN__} = sub {
+      return push @withheld, $_[0] if $_[0] =~ /tool_choice none on the hermes tool wire/;
+      warn @_;
+    };
     $r = stream_turn( [], [ $REPLY ], tool_choice => 'none' );
   }
+  is( scalar @withheld, 1, 'tool_choice none: one carp' ) or diag @withheld;
+  like( $withheld[0], qr/\ALangertha::Engine::NousResearch: .*the tools were withheld from the system prompt/,
+    'the carp names the engine and says the tools were withheld' );
   is( $r->{seen}, $REPLY, 'tool_choice none withholds the tools, so no lift' );
 
   my $openai = Langertha::Engine::OpenAI->new( api_key => 'k', model => 'gpt-4o',
