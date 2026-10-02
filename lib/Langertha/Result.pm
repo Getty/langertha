@@ -1,5 +1,5 @@
 package Langertha::Result;
-# ABSTRACT: Reserved namespace — the result value object moved to Langertha::Raider::Result
+# ABSTRACT: Reserved namespace - the result value object moved to Langertha::Raider::Result
 our $VERSION = '0.504';
 use strict;
 use warnings;

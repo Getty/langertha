@@ -1,5 +1,5 @@
 package Langertha;
-# ABSTRACT: The clan of fierce vikings with 🪓 and 🛡️ to AId your rAId
+# ABSTRACT: The clan of fierce vikings with axes and shields to AId your rAId
 our $VERSION = '0.504';
 use utf8;
 use strict;
@@ -184,12 +184,6 @@ sub new_engine {
     print $gemini->simple_chat('Explain the difference between Moose and Moo.');
 
 =head1 DESCRIPTION
-
-=begin html
-
-<p><img src="/assets/github.jpg" alt="Langertha" width="100%"></p>
-
-=end html
 
 Langertha provides a unified Perl interface for interacting with various Large
 Language Model (LLM) APIs. It abstracts away provider-specific differences,
