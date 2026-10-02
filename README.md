@@ -1,10 +1,6 @@
-```
- __                              __   __
-|  .---.-.-----.-----.-----.----|  |_|  |--.---.-.
-|  |  _  |     |  _  |  -__|   _|   _|     |  _  |
-|__|___._|__|__|___  |_____|__| |____|__|__|___._|
----------------|_____|----------------------------
-```
+<p align="center">
+  <img src="assets/github.jpg" alt="Langertha">
+</p>
 
 <p align="center">
   <em>The clan of fierce vikings with axes and shields to AId your rAId</em>
@@ -81,20 +77,16 @@ print $openai->simple_chat('Hello from Perl!');
 
 ## Architecture at a Glance
 
-```text
-Engine (provider API adapter)
-  -> low-level provider calls (chat, streaming, tools, embeddings, images, transcription)
+![Langertha architecture: Engine, Wrappers, Raider, Raid](assets/architecture.jpg)
 
-Wrappers (task-focused facades)
-  -> Chat / Embedder / ImageGen with optional overrides + plugins
-
-Raider (autonomous worker agent)
-  -> history, mission, tool loop, self-tools, plugins, continuation
-
-Raid (workflow orchestration)
-  -> compose Raider + Raid nodes as Sequential / Parallel / Loop trees
-  -> shared RunContext + unified Result semantics
-```
+- **Engine** (provider API adapter) — low-level provider calls: chat, streaming, tools,
+  embeddings, images, transcription
+- **Wrappers** (task-focused facades) — Chat / Embedder / ImageGen with optional
+  overrides + plugins
+- **Raider** (autonomous worker agent) — history, mission, tool loop, self-tools, plugins,
+  continuation
+- **Raid** (workflow orchestration) — compose Raider + Raid nodes as Sequential / Parallel /
+  Loop trees, with a shared RunContext + unified Result semantics
 
 ## Usage Examples
 

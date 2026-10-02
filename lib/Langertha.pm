@@ -185,6 +185,12 @@ sub new_engine {
 
 =head1 DESCRIPTION
 
+=begin html
+
+<p><img src="/assets/github.jpg" alt="Langertha" width="100%"></p>
+
+=end html
+
 Langertha provides a unified Perl interface for interacting with various Large
 Language Model (LLM) APIs. It abstracts away provider-specific differences,
 giving you a consistent API whether you're using OpenAI, Anthropic Claude,
