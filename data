@@ -1,0 +1,51 @@
+---
+claimed_at: 2026-10-14T01:33:16Z
+claimed_by: claude
+class: standard
+completed: 2026-10-14T03:54:46Z
+created: 2026-10-06T19:39:38Z
+id: 378
+priority: high
+started: 2026-10-14T01:33:16Z
+status: done
+tags:
+- bug
+- streaming
+- anthropic
+- ollama
+- review-2026-10-06
+title: 'Anthropic- und Ollama-Stream: Fehler-Frame mitten im Stream endet als stiller,
+  abgeschnittener Erfolg'
+updated: 2026-10-14T03:54:46Z
+---
+
+k301/k311/k317 haben den Vertrag 'ein Fehler im Stream lässt das Stream-Future scheitern' für OpenAI-kompatible Engines (`lib/Langertha/Role/OpenAICompatible.pm:840-856`), Gemini (`lib/Langertha/Engine/Gemini.pm:830`), Responses (`lib/Langertha/Role/ResponsesCompatible.pm:851`) und LMStudio durchgesetzt. Zwei Dialekte fehlen:
+
+- **Anthropic-Familie** (`lib/Langertha/Role/AnthropicCompatible.pm:726-858`): `parse_stream_chunk` kennt `message_start`, `content_block_*`, `message_delta`, `message_stop` und fällt für alles andere auf `return undef` (`:857`). Das von Anthropic dokumentierte `event: error` mit `{"type":"error","error":{"type":"overloaded_error",...}}` wird damit verworfen. Der nicht-streamende `chat_response` croakt für genau diese Hülle (`:527-536`, k338).
+- **Ollama nativ** (`lib/Langertha/Engine/Ollama.pm:572-603`): eine NDJSON-Zeile `{"error":"..."}` (Ollama schickt sie, wenn der Runner nach dem 200 stirbt) wird zu einem inhaltslosen, nicht-finalen Chunk.
+
+In beiden Fällen endet der Stream ohne Exception: der Aufrufer bekommt den bis dahin gelieferten Teiltext als vollständige Antwort, ohne finalen Chunk, ohne finish_reason, ohne Usage. In einem Tool-Loop oder bei Raider wird der halbe Satz zur Antwort.
+
+**Nachstellen** (kein Netz, beide Parser-Pfade):
+
+```perl
+use Langertha::Engine::Anthropic; use Langertha::Engine::Ollama;
+my $a = Langertha::Engine::Anthropic->new(api_key => 'x');
+my $sse = join '', map { "$_\n\n" }
+  qq{event: message_start\ndata: {"type":"message_start","message":{"model":"claude","usage":{"input_tokens":5}}}},
+  qq{event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Half an ans"}}},
+  qq{event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}};
+my $chunks = $a->process_stream_data($sse);          # kein croak, 1 Chunk 'Half an ans', kein is_final
+my $o = Langertha::Engine::Ollama->new(url => 'http://x', model => 'm');
+$o->process_stream_data(qq{{"message":{"content":"Half an ans"},"done":false}\n{"error":"model runner has unexpectedly stopped"}\n});
+                                                      # kein croak, 2 Chunks, kein is_final
+```
+
+Dieselbe Eingabe im OpenAI-Dialekt croakt mit `stream carried an error: Overloaded (529)`. Der asynchrone Pfad (`_process_stream_buffer`) verhält sich für Anthropic identisch (geprüft).
+
+**Fertig, wenn** beide Parser einen Fehler-Frame mit `<Klasse> stream carried an error: <Text>` croaken (Text über `_body_error_text`), die Anthropic-Shims (MiniMax/Moonshot/AKI/LMStudio-Anthropic) das erben, und je ein Test neben den k301/k311-Tests den Fall für den synchronen und den asynchronen Pfad festhält. Prüfenswert im selben Zug: ein Anthropic-Stream, der ohne `message_stop` endet (Verbindung weg), wird heute ebenfalls nicht gemeldet -- ein `_finish_stream_state` gibt es nur in der OpenAI-kompatiblen Rolle (für offene Tool-Calls), die Anthropic-Rolle hat keins.
+
+---
+Fleet review 2026-10-06 · kind: bug · confidence: verified
+
+Umgesetzt: Branch k378-377 (Worktree .claude/worktrees/k378-377), Commit 1222f51. Anthropic parse_stream_chunk + Ollama parse_stream_chunk croaken 'stream carried an error: <Text>'; Shims erben. Test t/44_stream_error_frame_anthropic_ollama.t (sync+async, rot gegen altes lib, gruen neu); Lauf t/0*.t t/4*.t t/76 t/77: 80 Dateien PASS. NICHT erledigt: Anthropic-Stream ohne message_stop (Verbindungsabbruch) wird weiter nicht gemeldet - braucht Entscheidung/_finish_stream_state-Gegenstueck. Folge in langertha-raider/knarr: Streams koennen jetzt croaken statt still zu enden.
