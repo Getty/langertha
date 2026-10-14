@@ -572,6 +572,14 @@ sub chat_stream_request {
 sub parse_stream_chunk {
   my ( $self, $data ) = @_;
 
+  # Ollama sends {"error":"..."} as an NDJSON line when the runner dies after
+  # the 200; it parsed to an empty, non-final chunk and the stream ended as a
+  # silent, truncated success. -- karr k378
+  if ( ref $data eq 'HASH' && defined $data->{error} ) {
+    croak "".(ref $self)." stream carried an error: "
+      .( $self->_body_error_text( $data->{error} ) // 'no error message' );
+  }
+
   my $content = $data->{message}{content} // '';
   my $is_done = $data->{done} ? 1 : 0;
 
