@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Streaming: a mid-stream error frame now fails the stream on the Anthropic
+      family (`event: error`) and native Ollama (`{"error":"..."}` NDJSON line)
+      with "<Class> stream carried an error: <text>", as the OpenAI-compatible,
+      Gemini and Responses parsers already did, instead of ending as a silent,
+      truncated success.
+    - HTTP: Basic auth taken from URL userinfo keeps a colon in the password,
+      percent-decodes user and password, and no longer drops the header for a
+      user or password of "0".
     - Docker: the Dockerfile is rebuilt for the Dist::Zilla-built distribution
       as build context: two stages on perl:5.40-slim, prerequisites through
       cpm with the recommended async transport, Langertha installed into the
