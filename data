@@ -1,0 +1,55 @@
+---
+claimed_at: 2026-10-14T01:33:25Z
+claimed_by: claude
+class: standard
+completed: 2026-10-14T03:54:37Z
+created: 2026-10-06T19:39:29Z
+id: 377
+priority: medium
+started: 2026-10-14T01:33:25Z
+status: done
+tags:
+- bug
+- http
+- auth
+- review-2026-10-06
+title: 'generate_http_request: Basic-Auth aus URL-Userinfo verliert Passwörter mit
+  '':'' / %-Kodierung und schickt bei Passwort ''0'' ohne Auth'
+updated: 2026-10-14T03:54:37Z
+---
+
+`Langertha::Role::HTTP::generate_http_request` nimmt die Userinfo aus der URL und baut daraus den Basic-Auth-Header (`lib/Langertha/Role/HTTP.pm:318-319` und `:339-344`):
+
+```perl
+my ( $user, $pass ) = split(/:/, $userinfo);
+if ($user and $pass) {
+  $request->authorization_basic($user, $pass);
+}
+```
+
+Drei Fehler in vier Zeilen:
+
+1. `split(/:/, ...)` ohne Limit: ein Passwort mit `:` wird am zweiten Doppelpunkt abgeschnitten (`user:pa:ss` -> Passwort `pa`).
+2. `URI->userinfo` liefert die Userinfo **kodiert**; sie wird nicht mit `uri_unescape` dekodiert. Ein Passwort mit `@`, `/`, `#`, `%` usw. muss in der URL kodiert stehen und geht dann als `p%40ss` statt `p@ss` auf den Draht.
+3. `if ($user and $pass)` prüft Wahrheit statt Länge: bei Passwort oder User `0` wird **kein** Auth-Header gesetzt -- die Userinfo ist da aber schon aus der URL entfernt (`:319`), die Anfrage geht also stillschweigend unauthentifiziert raus.
+
+Betrifft jede Engine mit `url => 'https://user:pass@host/...'` (typisch: Ollama/vLLM/llama.cpp hinter einem Reverse-Proxy mit Basic-Auth).
+
+**Nachstellen**
+
+```
+perl -Ilib -e 'package T; use Moose; with "Langertha::Role::JSON","Langertha::Role::HTTP"; has url=>(is=>"ro");
+  package main; my $t=T->new(url=>"x");
+  for my $u ("http://user:pa:ss\@h/x","http://user:p%40ss\@h/x","http://user:0\@h/x"){
+    my ($a,$b)=$t->generate_http_request(GET=>$u, sub{})->authorization_basic;
+    print "$u => ",($a//"undef")," / ",($b//"undef"),"\n" }'
+```
+
+liefert heute `user / pa`, `user / p%40ss`, `undef / undef`.
+
+**Fertig, wenn** `split /:/, $userinfo, 2`, beide Teile `uri_unescape`d, Bedingung auf `defined`/`length` statt Wahrheit; ein Test in `t/` deckt die drei Fälle ab. Im Repo gibt es bisher keinen Test, der Userinfo in der Engine-URL berührt (`grep -rn userinfo t/` ist leer).
+
+---
+Fleet review 2026-10-06 · kind: bug · confidence: verified
+
+Umgesetzt: Branch k378-377, Commit e71c747. split mit Limit 2, uri_unescape, defined/length. Test t/09_http_userinfo_basic_auth.t (rot alt/gruen neu). Randbefund: dekodierter User mit ':' ist per RFC 7617 nicht darstellbar, HTTP::Request croakt (laut, belassen). Gleicher Lauf PASS.
