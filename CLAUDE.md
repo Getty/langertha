@@ -24,7 +24,7 @@ and lane are in the house rules. Agents in this repo:
 | Change the wire seam itself: Tool/ToolCall/ToolResult/ToolChoice, capability registry, `chat_f` rewrite matrix, reasoning/cache wire formats | `langertha-wire-worker` |
 | Review a diff / branch / fix wave (read-only, severity-ranked findings + verdict) | `langertha-reviewer` |
 | Write / extend tests (regression, TDD red phase, fixtures, transport tests) | `langertha-test-writer` |
-| User-facing POD, `lib/Langertha.pm` catalogues, `Changes` entries | `langertha-pod-writer` |
+| User-facing POD, `lib/Langertha.pm` catalogues | `langertha-pod-writer` |
 | Commits, `Changes`, card → done, pre-release audit | `langertha-release-manager` |
 | Backfill & record architecture decisions in `docs/adr/` | `langertha-adr-auditor` |
 | Validate / red-team a plan against LLM-provider reality; market & provider Sonderheiten | `langertha-llm-advisor` |
