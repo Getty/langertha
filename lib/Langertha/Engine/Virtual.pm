@@ -5,6 +5,7 @@ use Moose;
 use Carp qw( croak );
 use Encode ();
 use HTTP::Response;
+use HTTP::Status ();
 use LWP::UserAgent;
 use Module::Runtime qw( use_module );
 use Path::Tiny;
@@ -162,6 +163,14 @@ is answered by an C<after> rule, a predicate or the fallback.
 
 =item * C<< tools( [ [ $name => \%arguments ], ... ] ) >>: call several tools
 in one turn.
+
+=item * C<< error( $status, $message ) >> (C<< { error => { status => 429, message => '...' } } >>):
+fail the request like a server that answers with this HTTP status (400 to
+599) and message, so the caller's error path runs: C<simple_chat> croaks and
+the C<_f> calls fail with C<< <class> request failed: 429 Too Many Requests -
+... >>. It cannot be combined with an answer or tool calls. A C<sub> may
+return it. Served over HTTP by L<Langertha::Virtual::Server> it is the
+response with that status and an OpenAI-style error body.
 
 =item * a plain string: the same as C<answer> of it.
 
@@ -432,7 +441,7 @@ has _script_position => (
 );
 
 my %RULES_FILE_KEYS = map { $_ => 1 } qw( rules after fallback script );
-my %REACTION_KEYS   = map { $_ => 1 } qw( answer text tool_calls );
+my %REACTION_KEYS   = map { $_ => 1 } qw( answer text tool_calls error );
 my %PRESETS         = (
   echo  => '_preset_echo',
   files => '_preset_files',
@@ -495,8 +504,17 @@ sub _normalize_reaction {
   croak $class.": $where must be a text, a HashRef or a sub, not ".( defined $reaction ? ref $reaction : 'undef' )
     unless ref $reaction eq 'HASH';
   my @unknown = grep { !$REACTION_KEYS{$_} } sort keys %$reaction;
-  croak $class.": $where has unknown keys: @unknown (known: answer, text, tool_calls)" if @unknown;
+  croak $class.": $where has unknown keys: @unknown (known: answer, text, tool_calls, error)" if @unknown;
   croak $class.": $where has both answer and text" if exists $reaction->{answer} && exists $reaction->{text};
+  if ( exists $reaction->{error} ) {
+    my $error = $reaction->{error};
+    croak $class.": the error of $where must be { status => ..., message => ... }"
+      unless ref $error eq 'HASH' && defined $error->{status} && $error->{status} =~ /\A[45]\d\d\z/
+        && defined $error->{message} && !ref $error->{message};
+    croak $class.": $where has an error together with an answer or tool calls"
+      if grep { exists $reaction->{$_} } qw( answer text tool_calls );
+    return { error => { status => 0 + $error->{status}, message => $error->{message} } };
+  }
   my $answer = exists $reaction->{answer} ? $reaction->{answer} : $reaction->{text};
   croak $class.": the answer of $where must be a text" if ref $answer;
   my $calls = $reaction->{tool_calls} // [];
@@ -634,22 +652,46 @@ around format_tool_results => sub {
 # on every path (sync, _f, the tool loops), as with a real server.
 sub _virtual_response {
   my ( $self, $request ) = @_;
-  unless ( uc( $request->method ) eq 'POST' && $request->uri->path =~ m{/chat/completions\z} ) {
-    return $self->_virtual_http_response( $request, 404, 'Not Found',
-      'answers only chat completions, not '.$request->method.' '.$request->uri->path );
+  my $reply = $self->virtual_reply( $request->method, $request->uri->path, $request->content );
+  return $self->_virtual_http_response( $request, @{$reply}{qw( code message content )} );
+}
+
+sub virtual_reply {
+  my ( $self, $method, $path, $content ) = @_;
+  unless ( uc($method) eq 'POST' && $path =~ m{/chat/completions\z} ) {
+    return { code => 404, message => 'Not Found',
+      content => "answers only chat completions, not $method $path" };
   }
-  my $view = $self->_request_view( $self->json->decode( $request->content ) );
+  my $view = $self->_request_view( $self->json->decode($content) );
   push @{ $self->requests }, $view;
   my ( $reaction, $error );
   eval { $reaction = $self->_reaction_for($view); 1 } or $error = $@ || 'unknown error';
   if ( defined $error ) {
     $error =~ s/\s+\z//;
-    return $self->_virtual_http_response( $request, 500, 'Reaction Failed', $error );
+    return { code => 500, message => 'Reaction Failed', content => $error };
   }
-  return $self->_virtual_http_response( $request, 500, 'No Reaction', $self->_no_reaction_message($view) )
+  return { code => 500, message => 'No Reaction', content => $self->_no_reaction_message($view) }
     unless $reaction;
-  return $self->_virtual_http_response( $request, 200, 'OK', $self->_completion( $view, $reaction ) );
+  if ( my $failure = $reaction->{error} ) {
+    return { code => $failure->{status}, message => HTTP::Status::status_message( $failure->{status} ) // 'Error',
+      content => $failure->{message} };
+  }
+  return { code => 200, message => 'OK', content => $self->_completion( $view, $reaction ) };
 }
+
+=method virtual_reply
+
+    my $reply = $engine->virtual_reply( POST => '/v1/chat/completions', $json_text );
+    # { code => 200, message => 'OK', content => \%completion }
+
+The engine's answer to one HTTP request, as data: the status C<code> and
+C<message>, and the C<content>, which is the chat completion (a HashRef) on
+success and an error text otherwise. The in-process transport and
+L<Langertha::Virtual::Server> both answer through it; it records the request
+like any other. A path other than C<.../chat/completions> or a method other
+than C<POST> is a C<404>. The body must be the JSON of a chat request.
+
+=cut
 
 # $content is a completion body (JSON) or an error text (text/plain).
 sub _virtual_http_response {

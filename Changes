@@ -13,6 +13,19 @@ Revision history for Langertha
       real OpenAI-dialect builder and parser, so chat_f, simple_chat and the
       MCP tool loops (core's, Langertha::Chat's, langertha-raider's public
       hooks) run unchanged; only the HTTP round trip stays in the process.
+    - New Langertha::Virtual::Server: serves a Virtual engine over HTTP on
+      127.0.0.1 (POST /v1/chat/completions with tool_calls, stream:true as
+      server-sent events, GET /v1/models, JSON 404s; optional debug endpoint
+      GET /_virtual/requests), so programs that reach their upstream by URL
+      can run against it without network or key. Runs in the caller's
+      IO::Async loop (loop => $loop) or in its own process with
+      Langertha::Virtual::Server->spawn (pid and url) and ->reap; delay
+      makes a client run into its timeout. No new dependencies. The
+      Anthropic dialect (/v1/messages) is not served.
+    - Langertha::Virtual::Rules::error($status, $message): a Virtual reaction
+      that fails the request with an HTTP error status (429, 500, ...);
+      Langertha::Engine::Virtual::virtual_reply returns a request's answer
+      as data.
     - Streaming: a mid-stream error frame now fails the stream on the Anthropic
       family (`event: error`) and native Ollama (`{"error":"..."}` NDJSON line)
       with "<Class> stream carried an error: <text>", as the OpenAI-compatible,

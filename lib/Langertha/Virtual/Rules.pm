@@ -6,13 +6,13 @@ use warnings;
 use Carp qw( croak );
 use Exporter 'import';
 
-our @EXPORT_OK   = qw( answer tool tools after );
+our @EXPORT_OK   = qw( answer tool tools after error );
 our %EXPORT_TAGS = ( all => \@EXPORT_OK );
 
 =head1 SYNOPSIS
 
     use Langertha::Engine::Virtual;
-    use Langertha::Virtual::Rules qw( answer tool tools after );
+    use Langertha::Virtual::Rules qw( answer tool tools after error );
 
     my $engine = Langertha::Engine::Virtual->new(
       rules => [
@@ -96,6 +96,25 @@ sub tools {
 
 The reaction "call these tools in one turn", in order. Each element is a
 C<[ $name, \%arguments ]> pair or a L</tool> reaction.
+
+=cut
+
+sub error {
+  my ( $status, $message ) = @_;
+  croak __PACKAGE__.'::error needs an HTTP status from 400 to 599'
+    unless defined $status && !ref $status && $status =~ /\A[45]\d\d\z/;
+  croak __PACKAGE__.'::error needs a message' unless defined $message && !ref $message;
+  return { error => { status => 0 + $status, message => $message } };
+}
+
+=func error
+
+    error( 429, 'Rate limit reached' )
+
+The reaction "fail like a server that answers with this status and message":
+C<< { error => { status => 429, message => '...' } } >>. The status is an
+HTTP error status (400 to 599). The caller sees its usual error path: a
+C<croak> from C<simple_chat>, a failed future from the C<_f> calls.
 
 =cut
 
