@@ -2,6 +2,17 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New engine Langertha::Engine::Virtual (also under the name Mock,
+      Langertha::Engine::Mock): answers without network, key or model, by
+      rules -- exact text, Regexp with captures, predicate subs, and after()
+      rules for the turn that brings tool results back -- or by a script of
+      one reply per request. Reactions are data (answer, tool, tools from the
+      new Langertha::Virtual::Rules) or subs that get the request. Rules can
+      come from YAML (rules_file); presets echo and files; requests, calls
+      and results are recorded for tests. Requests and replies go through the
+      real OpenAI-dialect builder and parser, so chat_f, simple_chat and the
+      MCP tool loops (core's, Langertha::Chat's, langertha-raider's public
+      hooks) run unchanged; only the HTTP round trip stays in the process.
     - Streaming: a mid-stream error frame now fails the stream on the Anthropic
       family (`event: error`) and native Ollama (`{"error":"..."}` NDJSON line)
       with "<Class> stream carried an error: <text>", as the OpenAI-compatible,

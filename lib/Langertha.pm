@@ -196,7 +196,7 @@ B<THIS API IS WORK IN PROGRESS.>
 
 =over 4
 
-=item * B<35 engines> -- unified API across cloud and local LLM providers
+=item * B<37 engines> -- unified API across cloud and local LLM providers
 
 =item * B<Chat, streaming, embeddings, transcription, image generation>
 
@@ -370,6 +370,13 @@ namespace) rather than for direct use.
 =item * L<Langertha::Engine::Scaleway> - Scaleway Generative APIs (EU)
 
 =item * L<Langertha::Engine::Hetzner> - Hetzner Inference API (EU/Germany, OpenAI-compatible)
+
+=item * L<Langertha::Engine::Virtual> - Rule-driven engine without network,
+key or model, for tests, demos and manual runs (rules, script mode, presets
+C<echo> and C<files>, rules from YAML)
+
+=item * L<Langertha::Engine::Mock> - L<Langertha::Engine::Virtual> under the
+engine name C<Mock>
 
 =item * L<Langertha::Engine::TranscriptionBase> - Slim base for OpenAI-shape
 transcription-only engines (no chat / tools / embeddings / image generation).

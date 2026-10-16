@@ -174,6 +174,9 @@ Engine::Remote              url required, JSON + HTTP
   ├── Engine::TranscriptionBase  Transcription-only OpenAI-shape base (no chat/tools)
   │     └── Whisper         self-hosted faster-whisper-server etc.
   │
+  ├── Virtual               rule-driven in-process engine (no network, no key) for tests and hand use; OpenAI-shaped, composes OpenAICompatible directly, not OpenAIBase
+  │     └── Mock            thin alias of Virtual
+  │
   │  Non-OpenAI formats (own request/response handling)
   ├── Perplexity            Agent API (/v1/agent), Open-Responses envelope via Role::ResponsesCompatible; search-augmented, citations; client function tools, no `tool_choice` (k213)
   ├── Gemini                ?key= auth, functionDeclarations, thought parts, embedContent embeddings
