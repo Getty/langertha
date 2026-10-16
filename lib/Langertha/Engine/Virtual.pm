@@ -9,23 +9,24 @@ use HTTP::Status ();
 use LWP::UserAgent;
 use Module::Runtime qw( use_module );
 use Path::Tiny;
-use Scalar::Util qw( weaken );
+use Scalar::Util qw( looks_like_number weaken );
 use YAML::PP;
 use Langertha::Request::SyncHTTP;
 use Langertha::Virtual::Rules ();
 
 extends 'Langertha::Engine::Remote';
 
-# Chat and the tool loop run through the real OpenAI-dialect request builder
-# and parser (OpenAICompatible + OpenAPI); only the transport is replaced by
-# the in-process rule evaluation below. No Streaming, Temperature,
-# ResponseFormat, ...: the engine claims only what it serves.
+# Chat, streaming and the tool loop run through the real OpenAI-dialect request
+# builders and parsers (OpenAICompatible + OpenAPI + Streaming); only the
+# transport is replaced by the in-process rule evaluation below. No
+# Temperature, ResponseFormat, ...: the engine claims only what it serves.
 with map { 'Langertha::Role::'.$_ } qw(
   OpenAICompatible
   OpenAPI
   Models
   ResponseSize
   SystemPrompt
+  Streaming
   Chat
   Tools
 );
@@ -72,6 +73,18 @@ with map { 'Langertha::Role::'.$_ } qw(
     # Rules from a YAML file
     my $from_file = Langertha::Engine::Virtual->new( rules_file => 't/data/rules.yml' );
 
+    # Token usage, and streaming in pieces of four characters
+    my $counted = Langertha::Engine::Virtual->new(
+      rules => [ 'Hello' => answer( 'Hi there!', usage => { prompt_tokens => 3, completion_tokens => 2 } ) ],
+      stream_chunk_size => 4,
+    );
+    $counted->simple_chat('Hello')->usage->total_tokens;   # 5
+    my ( $content, $chunks ) = await $counted->chat_stream_realtime_f(
+      messages       => [ { role => 'user', content => 'Hello' } ],
+      stream_options => { include_usage => 1 },              # the usage as a last chunk
+      chunk_callback => sub { print $_[0]->content },        # Hi t, here, !
+    );
+
     # What happened
     $engine->requests;   # every request the engine answered, as seen by the rules
     $engine->calls;      # every tool call it emitted: [ $name, \%arguments ]
@@ -98,12 +111,14 @@ L<Langertha::Role::AsyncHTTP/async_loop> is C<undef>. The in-process
 transport is the engine's own C<user_agent> (and the C<_async_http> built
 over it); passing either to the constructor replaces it.
 
-The engine supports chat and tool calling (C<chat>, C<tools_native>, the
-C<tool_choice_*> flags, C<parallel_tool_use>, C<response_size>,
-C<system_prompt>). There is no streaming, no embedding, no transcription and
-no image generation. Request parameters it has no use for (C<tool_choice>, a
-C<response_format>, C<max_tokens>, ...) are accepted and visible in
-L</requests>, but do not change the reaction.
+The engine supports chat, tool calling and streaming (C<chat>,
+C<tools_native>, the C<tool_choice_*> flags, C<parallel_tool_use>,
+C<response_size>, C<system_prompt>, C<streaming>; see L</STREAMING>). There is
+no embedding, no transcription and no image generation. Request parameters it
+has no use for (C<tool_choice>, a C<response_format>, C<max_tokens>, ...) are
+accepted and visible in L</requests>, but do not change the reaction. A reply
+carries token usage only when a reaction or L</default_usage> gives it (see
+L</USAGE>).
 
 L<Langertha::Engine::Mock> is the same engine under the name C<Mock>.
 
@@ -177,6 +192,11 @@ response with that status and an OpenAI-style error body.
 =item * a HashRef with C<answer> (or its alias C<text>) and C<tool_calls>
 together: a reply that carries text and calls.
 
+=item * any of these HashRefs (not C<error>) with C<usage>, a HashRef: the
+reply's token usage (see L</USAGE>). The helpers take it as an option:
+C<< answer( $text, usage => \%usage ) >>, C<< tool( $name => \%arguments, usage => \%usage ) >>,
+C<< tools( \@calls, usage => \%usage ) >>.
+
 =item * a B<sub>: called with the request and the captures of the trigger,
 C<< $sub->( $request, @captures ) >>; it returns one of the above (not
 another sub).
@@ -244,8 +264,9 @@ or, for script mode, C<script:> with a list of reactions:
       - text: Done.
 
 A reaction is C<< { answer: ... } >> (or C<< { text: ... } >>),
-C<< { tool_calls: [ [ name, { arguments } ], ... ] } >>, both, or a plain
-string. The keys C<rules>, C<after>, C<fallback> and C<script> are the only
+C<< { tool_calls: [ [ name, { arguments } ], ... ] } >> or both, each
+optionally with C<< usage: { prompt_tokens: ..., completion_tokens: ... } >>,
+or a plain string. The keys C<rules>, C<after>, C<fallback> and C<script> are the only
 ones allowed; anything else croaks. C<after> rules come after the C<rules>
 ones. A key the file sets cannot also be passed to the constructor.
 
@@ -255,6 +276,47 @@ C<1.0>, C<0x10>) must be quoted, else the rule never matches the prompt. The
 entries of each map are taken in alphabetical order of their keys, not file
 order, so C<after> rules too: when several match one tool result, the first in
 that order wins.
+
+=head1 USAGE
+
+By default a reply carries no C<usage> block, so
+L<Langertha::Response/has_usage> is false, as with a server that reports none.
+A reaction's C<usage> gives the reply one; without it, L</default_usage> does,
+when set. The block is OpenAI's wire usage (C<prompt_tokens>,
+C<completion_tokens>, C<total_tokens>, and any further keys such as
+C<prompt_tokens_details>, passed on unchanged); C<total_tokens> is added as
+the sum of the other two when it is missing and both are given. It arrives
+where a provider's would: on the chat completion, read by the OpenAI-dialect
+parser into L<Langertha::Response/usage> (a L<Langertha::Usage>), and on a
+stream only when the request asks for it with
+C<< stream_options => { include_usage => 1 } >>, as a last chunk with an
+empty C<choices> list (see L</STREAMING>). L<Langertha::Virtual::Server>
+serves the same block over HTTP.
+
+    my $engine = Langertha::Engine::Virtual->new(
+      rules => [ 'Hello' => answer( 'Hi', usage => { prompt_tokens => 3, completion_tokens => 1 } ) ],
+    );
+    $engine->simple_chat('Hello')->usage->total_tokens;   # 4
+
+=head1 STREAMING
+
+The engine streams like an OpenAI-dialect server: a request built by
+C<chat_stream_request> (L<Langertha::Role::Chat/chat_stream_realtime_f>,
+C<simple_chat_stream>, C<simple_chat_stream_iterator>, ...) is answered with
+C<text/event-stream> C<chat.completion.chunk> events, parsed by the same
+C<parse_stream_chunk> that reads OpenAI. The reaction is chosen as for any
+request, then cut into events (L</virtual_stream_chunks>): the text in pieces
+of L</stream_chunk_size> characters, each tool call as an opening fragment
+(C<index>, C<id>, C<type>, C<function.name>, empty C<arguments>) followed by
+its arguments in pieces of the same size, then an event with the
+C<finish_reason>, and with C<include_usage> the usage event. The stream gives
+the same text and the same L<Langertha::ToolCall>s as the non-streaming reply.
+An C<error> reaction, or a request no rule answers, fails the stream like an
+error status from a server.
+
+The in-process transport hands the whole event stream over at once: the chunk
+callback runs once per event, but all of them after the reply is complete, so
+time to first token is not meaningful here.
 
 =head1 PRESETS
 
@@ -389,6 +451,46 @@ L</Rules files>), read when the engine is built.
 
 =cut
 
+has default_usage => (
+  is        => 'ro',
+  isa       => 'HashRef|CodeRef',
+  predicate => 'has_default_usage',
+);
+
+=attr default_usage
+
+    default_usage => { prompt_tokens => 10, completion_tokens => 5 }
+    default_usage => sub {
+      my ( $request, $reaction ) = @_;
+      return { prompt_tokens => length $request->{last_user_text},
+               completion_tokens => length( $reaction->{answer} // '' ) };
+    }
+
+The usage of every reply whose reaction gives none (see L</USAGE>): a HashRef,
+or a sub called with the request (see L</The request>) and the reaction as
+data (C<< { answer => $text_or_undef, tool_calls => [ [ $name, \%arguments ], ... ] } >>)
+that returns the usage HashRef, or C<undef> for none. A sub that dies or
+returns anything else fails the request with C<500 Reaction Failed>. Not set
+by default: replies then carry no usage.
+
+=cut
+
+has stream_chunk_size => (
+  is      => 'ro',
+  isa     => 'Int',
+  default => 8,
+);
+
+=attr stream_chunk_size
+
+    stream_chunk_size => 1   # one character per event
+
+The number of characters per event when a reply is streamed (see
+L</STREAMING>), for the text and for each tool call's arguments. Default
+C<8>; at least C<1>.
+
+=cut
+
 has requests => (
   is       => 'ro',
   isa      => 'ArrayRef',
@@ -441,7 +543,7 @@ has _script_position => (
 );
 
 my %RULES_FILE_KEYS = map { $_ => 1 } qw( rules after fallback script );
-my %REACTION_KEYS   = map { $_ => 1 } qw( answer text tool_calls error );
+my %REACTION_KEYS   = map { $_ => 1 } qw( answer text tool_calls error usage );
 my %PRESETS         = (
   echo  => '_preset_echo',
   files => '_preset_files',
@@ -466,6 +568,7 @@ sub BUILD {
   my @rules = @{ $self->rules };
   croak $class.': rules must be a list of TRIGGER => REACTION pairs (odd number of elements)' if @rules % 2;
   croak $class.': rules and script cannot be combined' if @rules && $self->has_script;
+  croak $class.': stream_chunk_size must be at least 1' if $self->stream_chunk_size < 1;
   my $number = 0;
   while ( my ( $trigger, $reaction ) = splice @rules, 0, 2 ) {
     $number++;
@@ -496,7 +599,8 @@ sub _check_reaction {
   return;
 }
 
-# A reaction as data: { answer => Maybe[Str], tool_calls => [ [ $name, \%arguments ], ... ] }.
+# A reaction as data: { answer => Maybe[Str], tool_calls => [ [ $name, \%arguments ], ... ] },
+# plus usage => \%usage when it gives one.
 sub _normalize_reaction {
   my ( $self, $reaction, $where ) = @_;
   my $class = ref $self;
@@ -504,17 +608,19 @@ sub _normalize_reaction {
   croak $class.": $where must be a text, a HashRef or a sub, not ".( defined $reaction ? ref $reaction : 'undef' )
     unless ref $reaction eq 'HASH';
   my @unknown = grep { !$REACTION_KEYS{$_} } sort keys %$reaction;
-  croak $class.": $where has unknown keys: @unknown (known: answer, text, tool_calls, error)" if @unknown;
+  croak $class.": $where has unknown keys: @unknown (known: answer, text, tool_calls, usage, error)" if @unknown;
   croak $class.": $where has both answer and text" if exists $reaction->{answer} && exists $reaction->{text};
   if ( exists $reaction->{error} ) {
     my $error = $reaction->{error};
     croak $class.": the error of $where must be { status => ..., message => ... }"
       unless ref $error eq 'HASH' && defined $error->{status} && $error->{status} =~ /\A[45]\d\d\z/
         && defined $error->{message} && !ref $error->{message};
-    croak $class.": $where has an error together with an answer or tool calls"
-      if grep { exists $reaction->{$_} } qw( answer text tool_calls );
+    croak $class.": $where has an error together with an answer, tool calls or usage"
+      if grep { exists $reaction->{$_} } qw( answer text tool_calls usage );
     return { error => { status => 0 + $error->{status}, message => $error->{message} } };
   }
+  croak $class.": the usage of $where must be a HashRef"
+    if exists $reaction->{usage} && ref $reaction->{usage} ne 'HASH';
   my $answer = exists $reaction->{answer} ? $reaction->{answer} : $reaction->{text};
   croak $class.": the answer of $where must be a text" if ref $answer;
   my $calls = $reaction->{tool_calls} // [];
@@ -528,7 +634,8 @@ sub _normalize_reaction {
     push @tool_calls, [ $call->[0], $call->[1] // {} ];
   }
   croak $class.": $where has neither an answer nor tool calls" unless defined $answer || @tool_calls;
-  return { answer => $answer, tool_calls => \@tool_calls };
+  return { answer => $answer, tool_calls => \@tool_calls,
+    exists $reaction->{usage} ? ( usage => $reaction->{usage} ) : () };
 }
 
 sub _load_rules_file {
@@ -653,7 +760,23 @@ around format_tool_results => sub {
 sub _virtual_response {
   my ( $self, $request ) = @_;
   my $reply = $self->virtual_reply( $request->method, $request->uri->path, $request->content );
+  if ( $reply->{code} == 200 ) {
+    my $body = $self->json->decode( $request->content );
+    return $self->_virtual_stream_response( $request, $body, $reply->{content} ) if $body->{stream};
+  }
   return $self->_virtual_http_response( $request, @{$reply}{qw( code message content )} );
+}
+
+# A stream request's reply as the server-sent events an OpenAI server sends.
+sub _virtual_stream_response {
+  my ( $self, $request, $body, $completion ) = @_;
+  my $chunks = $self->virtual_stream_chunks( $completion,
+    include_usage => ref $body->{stream_options} eq 'HASH' && $body->{stream_options}{include_usage} ? 1 : 0 );
+  my $events = join( '', map { 'data: '.$self->json->encode($_)."\n\n" } @$chunks )."data: [DONE]\n\n";
+  my $response = HTTP::Response->new( 200, 'OK',
+    [ 'Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache' ], $events );
+  $response->request($request);
+  return $response;
 }
 
 sub virtual_reply {
@@ -664,8 +787,12 @@ sub virtual_reply {
   }
   my $view = $self->_request_view( $self->json->decode($content) );
   push @{ $self->requests }, $view;
-  my ( $reaction, $error );
-  eval { $reaction = $self->_reaction_for($view); 1 } or $error = $@ || 'unknown error';
+  my ( $reaction, $usage, $error );
+  eval {
+    $reaction = $self->_reaction_for($view);
+    $usage    = $self->_usage_for( $view, $reaction ) if $reaction && !$reaction->{error};
+    1;
+  } or $error = $@ || 'unknown error';
   if ( defined $error ) {
     $error =~ s/\s+\z//;
     return { code => 500, message => 'Reaction Failed', content => $error };
@@ -676,7 +803,7 @@ sub virtual_reply {
     return { code => $failure->{status}, message => HTTP::Status::status_message( $failure->{status} ) // 'Error',
       content => $failure->{message} };
   }
-  return { code => 200, message => 'OK', content => $self->_completion( $view, $reaction ) };
+  return { code => 200, message => 'OK', content => $self->_completion( $view, $reaction, $usage ) };
 }
 
 =method virtual_reply
@@ -689,9 +816,94 @@ C<message>, and the C<content>, which is the chat completion (a HashRef) on
 success and an error text otherwise. The in-process transport and
 L<Langertha::Virtual::Server> both answer through it; it records the request
 like any other. A path other than C<.../chat/completions> or a method other
-than C<POST> is a C<404>. The body must be the JSON of a chat request.
+than C<POST> is a C<404>. The body must be the JSON of a chat request. The
+completion is the same for a request with C<< "stream": true >>; the
+transports cut it into events with L</virtual_stream_chunks>. It carries
+C<usage> when the reaction or L</default_usage> gives one (see L</USAGE>).
 
 =cut
+
+sub virtual_stream_chunks {
+  my ( $self, $completion, %opts ) = @_;
+  my $choice  = $completion->{choices}[0];
+  my $message = $choice->{message};
+  my %base = (
+    id      => $completion->{id},
+    object  => 'chat.completion.chunk',
+    created => $completion->{created},
+    model   => $completion->{model},
+  );
+  my @deltas = map { { content => $_ } } $self->_stream_pieces( $message->{content} );
+  my $tool_calls = $message->{tool_calls} // [];
+  for my $index ( 0 .. $#$tool_calls ) {
+    my $call = $tool_calls->[$index];
+    push @deltas, { tool_calls => [ {
+      index    => $index,
+      id       => $call->{id},
+      type     => $call->{type},
+      function => { name => $call->{function}{name}, arguments => '' },
+    } ] };
+    push @deltas, map { { tool_calls => [ { index => $index, function => { arguments => $_ } } ] } }
+      $self->_stream_pieces( $call->{function}{arguments} );
+  }
+  push @deltas, { content => '' } unless @deltas;
+  $deltas[0] = { role => 'assistant', %{ $deltas[0] } };
+  my @chunks = map { { %base, choices => [ { index => 0, delta => $_ } ] } } @deltas;
+  push @chunks, { %base, choices => [ { index => 0, delta => {}, finish_reason => $choice->{finish_reason} } ] };
+  push @chunks, { %base, choices => [], usage => $completion->{usage} }
+    if $opts{include_usage} && $completion->{usage};
+  return \@chunks;
+}
+
+=method virtual_stream_chunks
+
+    my $chunks = $engine->virtual_stream_chunks( $completion, include_usage => 1 );
+
+Cuts a chat completion (the C<content> of a successful L</virtual_reply>) into
+the C<chat.completion.chunk> events an OpenAI server streams, as an ArrayRef
+of HashRefs, without the closing C<[DONE]>: the text in pieces of
+L</stream_chunk_size> characters (the first event carries
+C<< role => 'assistant' >>), each tool call as an opening fragment with
+C<index>, C<id>, C<type>, its C<function.name> and empty C<arguments>, then
+its arguments in pieces, then an event with an empty C<delta> and the
+C<finish_reason>. With C<include_usage> and a completion that carries
+C<usage>, a last event with an empty C<choices> list carries it, as
+C<< stream_options => { include_usage => 1 } >> asks of OpenAI. The
+in-process transport and L<Langertha::Virtual::Server> both stream through
+it.
+
+=cut
+
+# The text in pieces of stream_chunk_size characters; none for an empty text.
+sub _stream_pieces {
+  my ( $self, $text ) = @_;
+  return () unless defined $text && length $text;
+  my $size = $self->stream_chunk_size;
+  return $text =~ /(.{1,$size})/gs;
+}
+
+# The reply's usage block (see USAGE): the reaction's, else default_usage's,
+# else none. total_tokens is added when the wire would carry it.
+sub _usage_for {
+  my ( $self, $view, $reaction ) = @_;
+  my $usage = $reaction->{usage};
+  if ( !$usage && $self->has_default_usage ) {
+    $usage = $self->default_usage;
+    if ( ref $usage eq 'CODE' ) {
+      my %data = ( answer => $reaction->{answer}, tool_calls => $reaction->{tool_calls} );
+      $usage = $usage->( $view, \%data );
+      return unless defined $usage;
+      croak ref($self).': default_usage returned '.( ref $usage || 'a non-reference' ).', not a HashRef or undef'
+        unless ref $usage eq 'HASH';
+    }
+  }
+  return unless $usage;
+  my %usage = %$usage;
+  $usage{total_tokens} = $usage{prompt_tokens} + $usage{completion_tokens}
+    if !defined $usage{total_tokens}
+      && looks_like_number( $usage{prompt_tokens} ) && looks_like_number( $usage{completion_tokens} );
+  return \%usage;
+}
 
 # $content is a completion body (JSON) or an error text (text/plain).
 sub _virtual_http_response {
@@ -814,7 +1026,7 @@ sub _resolve_reaction {
 
 # The reaction as an OpenAI chat completion body.
 sub _completion {
-  my ( $self, $view, $reaction ) = @_;
+  my ( $self, $view, $reaction, $usage ) = @_;
   my @tool_calls = map {
     my ( $name, $arguments ) = @$_;
     push @{ $self->calls }, [ $name, $arguments ];
@@ -838,6 +1050,7 @@ sub _completion {
       },
       finish_reason => @tool_calls ? 'tool_calls' : 'stop',
     } ],
+    $usage ? ( usage => $usage ) : (),
   };
 }
 

@@ -128,7 +128,10 @@ subtest 'stream: true is served as server-sent events' => sub {
     messages => [ { role => 'user', content => 'Add 2 and 3' } ] } );
   my $answer = raw( $server, POST => '/v1/chat/completions', $body );
   like( $answer->content_type, qr{\Atext/event-stream}, 'event-stream content type' );
-  like( $answer->content, qr/"tool_calls":\[\{"function":\{"arguments":"\{\\"a\\":2,\\"b\\":3\}","name":"add"\}/, 'the tool call is a delta' );
+  like( $answer->content, qr/"tool_calls":\[\{"function":\{"arguments":"","name":"add"\},"id":"call_virtual_\d+","index":0,"type":"function"\}\]/,
+    'the tool call opens with a delta fragment (name, id, empty arguments)' );
+  like( $answer->content, qr/"tool_calls":\[\{"function":\{"arguments":"\{\\"a\\":2,\\""\},"index":0\}\].*"tool_calls":\[\{"function":\{"arguments":"b\\":3\}"\},"index":0\}\]/s,
+    '... and its arguments follow in pieces' );
   like( $answer->content, qr/"finish_reason":"tool_calls".*data: \[DONE\]\n\n\z/s, 'finish reason, then [DONE]' );
   $server->stop;
 };

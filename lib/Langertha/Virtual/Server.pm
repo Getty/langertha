@@ -49,15 +49,22 @@ Endpoints:
 =over
 
 =item * C<POST /v1/chat/completions> - an OpenAI chat completion with
-C<tool_calls>; with C<< "stream": true >> the same reply as server-sent
-events (C<chat.completion.chunk> events, then C<data: [DONE]>). The reply is
-computed whole and then cut into events: the text is one chunk, each tool call
-one chunk.
+C<tool_calls>, and C<usage> when the engine's reaction or
+L<Langertha::Engine::Virtual/default_usage> gives one; with
+C<< "stream": true >> the same reply as server-sent events
+(C<chat.completion.chunk> events, then C<data: [DONE]>). The reply is
+computed whole and then cut into events by
+L<Langertha::Engine::Virtual/virtual_stream_chunks>: the text in pieces of
+the engine's L<Langertha::Engine::Virtual/stream_chunk_size> characters, each
+tool call as an opening fragment followed by its arguments in pieces, the
+C<finish_reason>, and with C<< "stream_options": { "include_usage": true } >>
+a last event with an empty C<choices> list and the C<usage>. All events go
+out in one write.
 
 =item * C<GET /v1/models> - the engine's model, in the OpenAI list format.
 
 =item * C<GET /_virtual/requests> - only with L</debug>: C<< { requests =>
-[...], calls => [...] } > as the engine recorded them, which is how a test
+[...], calls => [...] } >> as the engine recorded them, which is how a test
 reads them when the server runs in another process.
 
 =item * anything else - C<404> with an OpenAI-style JSON error body.
@@ -399,23 +406,14 @@ sub _chat {
   return $self->_error_response( 400, 'the request body is not a JSON object' ) unless ref $body eq 'HASH';
   my $reply = $self->engine->virtual_reply( $request->{method}, $request->{path}, $request->{body} );
   return $self->_error_response( $reply->{code}, $reply->{content} ) unless $reply->{code} == 200;
-  return $body->{stream} ? $self->_sse_response( $reply->{content} ) : $self->_json_response( 200, $reply->{content} );
+  return $body->{stream} ? $self->_sse_response( $reply->{content}, $body ) : $self->_json_response( 200, $reply->{content} );
 }
 
 sub _sse_response {
-  my ( $self, $completion ) = @_;
-  my $choice = $completion->{choices}[0];
-  my $message = $choice->{message};
-  my %base = ( id => $completion->{id}, object => 'chat.completion.chunk',
-    created => $completion->{created}, model => $completion->{model} );
-  my @deltas;
-  push @deltas, { role => 'assistant', content => $message->{content} } if defined $message->{content};
-  my $index = 0;
-  push @deltas, { tool_calls => [ { index => $index++, %$_ } ] } for @{ $message->{tool_calls} // [] };
-  @deltas = ( { role => 'assistant', content => '' } ) unless @deltas;
-  my @chunks = map { 'data: '.$self->_json->encode( { %base, choices => [ { index => 0, delta => $_ } ] } )."\n\n" } @deltas;
-  push @chunks, 'data: '.$self->_json->encode( { %base,
-    choices => [ { index => 0, delta => {}, finish_reason => $choice->{finish_reason} } ] } )."\n\n";
+  my ( $self, $completion, $body ) = @_;
+  my $events = $self->engine->virtual_stream_chunks( $completion,
+    include_usage => ref $body->{stream_options} eq 'HASH' && $body->{stream_options}{include_usage} ? 1 : 0 );
+  my @chunks = map { 'data: '.$self->_json->encode($_)."\n\n" } @$events;
   push @chunks, "data: [DONE]\n\n";
   return [ 200, [ 'Content-Type' => 'text/event-stream', 'Cache-Control' => 'no-cache' ], undef, \@chunks ];
 }

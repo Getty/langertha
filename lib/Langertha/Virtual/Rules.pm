@@ -39,63 +39,84 @@ C<Langertha::Virtual::Rules::after(...)>.
 
 =cut
 
+# The optional arguments of a reaction helper: only usage, a HashRef.
+sub _reaction_options {
+  my ( $helper, @options ) = @_;
+  croak __PACKAGE__."::$helper takes usage => \\%usage after its arguments" if @options % 2;
+  my %options = @options;
+  my @unknown = grep { $_ ne 'usage' } sort keys %options;
+  croak __PACKAGE__."::$helper has unknown options: @unknown (known: usage)" if @unknown;
+  return () unless exists $options{usage};
+  croak __PACKAGE__."::$helper usage must be a HashRef" unless ref $options{usage} eq 'HASH';
+  return ( usage => $options{usage} );
+}
+
 sub answer {
-  my ( $text ) = @_;
+  my ( $text, @options ) = @_;
   croak __PACKAGE__.'::answer needs a text' unless defined $text && !ref $text;
-  return { answer => $text };
+  return { answer => $text, _reaction_options( answer => @options ) };
 }
 
 =func answer
 
     answer('The answer is 42.')
+    answer( 'The answer is 42.', usage => { prompt_tokens => 12, completion_tokens => 5 } )
 
-The reaction "reply with this text": C<< { answer => $text } >>.
+The reaction "reply with this text": C<< { answer => $text } >>. With
+C<usage>, the reply carries that token usage (see
+L<Langertha::Engine::Virtual/USAGE>): C<< { answer => $text, usage => \%usage } >>.
 
 =cut
 
 sub tool {
-  my ( $name, $arguments ) = @_;
+  my ( $name, $arguments, @options ) = @_;
   croak __PACKAGE__.'::tool needs a tool name' unless defined $name && !ref $name && length $name;
   $arguments //= {};
   croak __PACKAGE__.'::tool arguments must be a HashRef' unless ref $arguments eq 'HASH';
-  return { tool_calls => [ [ $name, $arguments ] ] };
+  return { tool_calls => [ [ $name, $arguments ] ], _reaction_options( tool => @options ) };
 }
 
 =func tool
 
     tool( read_file => { path => 'a.txt' } )
+    tool( read_file => { path => 'a.txt' }, usage => { prompt_tokens => 30, completion_tokens => 9 } )
 
 The reaction "call this tool with these arguments":
 C<< { tool_calls => [ [ $name, \%arguments ] ] } >>. The arguments default to
-C<{}>.
+C<{}>; to give C<usage>, pass them, even as C<{}>.
 
 =cut
 
 sub tools {
-  my ( $calls ) = @_;
+  my ( $calls, @options ) = @_;
   croak __PACKAGE__.'::tools needs an ArrayRef of calls' unless ref $calls eq 'ARRAY' && @$calls;
   my @tool_calls;
   for my $call (@$calls) {
-    if ( ref $call eq 'ARRAY' ) {
+    if ( ref $call eq 'ARRAY' && @$call <= 2 ) {
       push @tool_calls, @{ tool(@$call)->{tool_calls} };
     }
     elsif ( ref $call eq 'HASH' && ref $call->{tool_calls} eq 'ARRAY' ) {
+      croak __PACKAGE__.'::tools takes the usage of the whole turn: give it to tools(...), not to a tool(...) in it'
+        if exists $call->{usage};
       push @tool_calls, @{ $call->{tool_calls} };
     }
     else {
       croak __PACKAGE__.'::tools takes [ $name, \%arguments ] pairs or tool(...) reactions';
     }
   }
-  return { tool_calls => \@tool_calls };
+  return { tool_calls => \@tool_calls, _reaction_options( tools => @options ) };
 }
 
 =func tools
 
     tools( [ [ read_file => { path => 'a.txt' } ], [ bash => { command => 'ls' } ] ] )
     tools( [ tool( read_file => { path => 'a.txt' } ), tool( bash => { command => 'ls' } ) ] )
+    tools( [ [ read_file => { path => 'a.txt' } ] ], usage => { prompt_tokens => 30, completion_tokens => 18 } )
 
 The reaction "call these tools in one turn", in order. Each element is a
-C<[ $name, \%arguments ]> pair or a L</tool> reaction.
+C<[ $name, \%arguments ]> pair or a L</tool> reaction. C<usage> belongs to the
+turn, so it is given to C<tools>; a L</tool> in the list that carries one
+croaks.
 
 =cut
 

@@ -359,11 +359,9 @@ subtest 'what the engine claims and what it refuses' => sub {
   my $engine = Langertha::Engine::Virtual->new;
   ok( $engine->isa('Langertha::Engine::Remote'), 'a Remote engine' );
   ok( !$engine->isa('Langertha::Engine::OpenAIBase'), 'not an OpenAIBase: it composes only what it serves' );
-  ok( $engine->supports($_), "supports $_" ) for qw( chat tools_native tool_choice_named system_prompt );
+  ok( $engine->supports($_), "supports $_" ) for qw( chat tools_native tool_choice_named system_prompt streaming );
   ok( !$engine->supports($_), "does not support $_" )
-    for qw( streaming embedding transcription image_generation temperature response_format_json_schema image_input );
-  ok( !eval { $engine->simple_chat_stream( sub {}, 'x' ); 1 }, 'streaming croaks' );
-  like( $@, qr/requires Langertha::Role::Streaming/, '... saying so' );
+    for qw( embedding transcription image_generation temperature response_format_json_schema image_input );
   is( Langertha::Engine::Virtual->api_key_env, undef, 'reads no API key' );
   is( Langertha::Engine::Virtual->api_key_required, 0, 'needs no API key' );
   is_deeply( $engine->list_models, ['virtual'], 'list_models without a request' );
