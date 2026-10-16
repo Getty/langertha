@@ -8,7 +8,9 @@ Revision history for Langertha
       handing them what response_call returns lost the tool calls and the text
       without an error (0.502 died loudly). A Response is read through its raw
       body; any other object, and a Response without a raw body, croaks.
-      Found by citiai-core#58.
+      Found by citiai-core#58. extract_tool_call likewise answered (undef,
+      undef) for a Langertha::ToolCall, the element of Response->tool_calls; it
+      now returns its name and arguments, and croaks on any other object.
 
     - New engine Langertha::Engine::Virtual (also under the name Mock,
       Langertha::Engine::Mock): answers without network, key or model, by

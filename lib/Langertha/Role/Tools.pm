@@ -441,6 +441,12 @@ token limit are still returned; L</tool_loop_calls> drops them.
 
 sub extract_tool_call {
   my ( $self, $tc ) = @_;
+  # A Langertha::ToolCall (what Response->tool_calls holds) is already parsed;
+  # any other object is no wire structure -- it used to answer (undef, undef).
+  if ( blessed $tc ) {
+    return ( $tc->name, $tc->arguments ) if $tc->isa('Langertha::ToolCall');
+    croak ref($self)."->extract_tool_call: expects a raw tool-call structure or a Langertha::ToolCall, got a ".ref($tc);
+  }
   my $fmt = $self->tool_wire_format;
   return ( $tc->{name}, $tc->{arguments} ) if $fmt eq 'hermes';
   my $call = Langertha::ToolCall->from_fmt( $fmt, $tc );
@@ -452,7 +458,9 @@ sub extract_tool_call {
     my ($name, $args) = $engine->extract_tool_call($tool_call);
 
 Extracts the tool name and decoded argument HashRef from a single raw tool-call
-structure, via L<Langertha::ToolCall/from_fmt>.
+structure, via L<Langertha::ToolCall/from_fmt>. A L<Langertha::ToolCall> (an
+element of C<< $response->tool_calls >>) is accepted as it is; any other object
+croaks.
 
 =cut
 

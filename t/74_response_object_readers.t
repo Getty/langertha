@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: response_tool_calls and response_text_content read a Langertha::Response through its raw body and croak on other objects
+# ABSTRACT: response_tool_calls, response_text_content and extract_tool_call read a Langertha::Response through its raw body and croak on other objects
 use strict;
 use warnings;
 use Test2::V0;
@@ -48,5 +48,14 @@ like( dies { $engine->response_tool_calls($rawless) }, qr/carries no raw body/, 
 
 is( $engine->response_tool_calls(undef), [], 'undef stays empty' );
 is( Langertha::Engine::OpenAI->new( api_key => 'x', langfuse_enabled => 0 )->response_tool_calls({}), [], 'an empty body stays empty' );
+
+# extract_tool_call took a raw wire structure only and answered (undef, undef)
+# for a Langertha::ToolCall, the element type of Response->tool_calls.
+is( [ $engine->extract_tool_call( $reply->tool_calls->[0] ) ], [ 'add', { a => 1 } ],
+  'extract_tool_call accepts a Langertha::ToolCall' );
+like( dies { $engine->extract_tool_call( bless {}, 'Some::Thing' ) },
+  qr/extract_tool_call: expects a raw tool-call structure or a Langertha::ToolCall, got a Some::Thing/,
+  'extract_tool_call croaks on another object' );
+is( [ $engine->extract_tool_call( {} ) ], [ undef, undef ], 'a raw structure that does not parse is still (undef, undef)' );
 
 done_testing;
