@@ -374,8 +374,22 @@ this engine's L</tool_wire_format> via L<Langertha::Tool/format_list>.
 
 =cut
 
+# The parsed response body response_tool_calls and response_text_content read.
+# A Langertha::Response (what response_call returns for most engines) is read
+# through its raw body; any other blessed value is no body and croaks instead of
+# answering empty -- since 0.503 (k341) both went through ToolCall->locate,
+# which silently answered [] / '' for everything but a plain HASH.
+sub _body_data {
+  my ( $self, $data, $method ) = @_;
+  return $data unless blessed $data;
+  return $data->raw if $data->isa('Langertha::Response') && $data->has_raw;
+  croak ref($self)."->$method: expects the parsed response body (a plain HASH)"
+    . ( $data->isa('Langertha::Response') ? ', this Langertha::Response carries no raw body' : ', got a '.ref($data) );
+}
+
 sub response_tool_calls {
   my ( $self, $data ) = @_;
+  $data = $self->_body_data( $data, 'response_tool_calls' );
   my $fmt = $self->tool_wire_format;
   # The calls tool_loop_response would run, as raw structures -- karr k341.
   # Hermes: the calls of chat_response's reply (native ones, else the lift),
@@ -444,6 +458,7 @@ structure, via L<Langertha::ToolCall/from_fmt>.
 
 sub response_text_content {
   my ( $self, $data ) = @_;
+  $data = $self->_body_data( $data, 'response_text_content' );
   # The text chat_f and the tool loops answer (Gemini thought parts out,
   # content-chunk lists joined, think tags filtered), read by the engine's
   # chat_response. A body chat_response rejects falls back to the plain

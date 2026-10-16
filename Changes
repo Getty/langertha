@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - response_tool_calls and response_text_content no longer answer empty for
+      a Langertha::Response: since 0.503 (k341) both went through
+      ToolCall->locate, which answers [] / '' for anything but a plain HASH, so
+      handing them what response_call returns lost the tool calls and the text
+      without an error (0.502 died loudly). A Response is read through its raw
+      body; any other object, and a Response without a raw body, croaks.
+      Found by citiai-core#58.
+
     - New engine Langertha::Engine::Virtual (also under the name Mock,
       Langertha::Engine::Mock): answers without network, key or model, by
       rules -- exact text, Regexp with captures, predicate subs, and after()
