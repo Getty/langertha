@@ -48,6 +48,13 @@ sub run_cli {
 my $transcript = $data->child('speaches_transcription_text.txt')->slurp_raw;
 my $server = Test::LocalHTTPDaemon->start( sub {
   my ( $request ) = @_;
+  # Like speaches started with API_KEY: any other bearer key is refused with
+  # 403. The engine's placeholder key 'whisper' stands in for a server that
+  # checks none.
+  my $auth = $request->header('Authorization') // '';
+  return HTTP::Response->new( 403, 'Forbidden', [ 'Content-Type' => 'application/json' ],
+    '{"detail":"Invalid API key"}' )
+    unless $auth eq 'Bearer whisper' || $auth eq 'Bearer secret-key';
   my ( $model ) = $request->content =~ /name="model"\r\n\r\n([^\r]*)\r\n/;
   return HTTP::Response->new( 422, 'Unprocessable Entity', [ 'Content-Type' => 'application/json' ],
     $data->child('speaches_transcription_error_no_model.json')->slurp_raw )
@@ -79,5 +86,28 @@ $run = run_cli(
 );
 isnt( $run->{exit}, 0, 'without a model the server error fails the CLI' );
 like( $run->{stderr}, qr/422 Unprocessable Entity.*"msg":"Field required"/, 'and shows the server detail' );
+
+# LANGERTHA_WHISPER_WHISPER_API_KEY reaches the Authorization header: the
+# right key passes, a wrong one is refused by the server.
+$run = run_cli(
+  environment => {
+    LANGERTHA_WHISPER_WHISPER_URL     => $server->url . '/v1',
+    LANGERTHA_WHISPER_WHISPER_MODEL   => 'Systran/faster-whisper-tiny.en',
+    LANGERTHA_WHISPER_WHISPER_API_KEY => 'secret-key',
+  },
+  arguments => [ "$audio" ],
+);
+is( $run->{exit}, 0, 'LANGERTHA_WHISPER_WHISPER_API_KEY: the right key passes' ) or diag( $run->{stderr} );
+
+$run = run_cli(
+  environment => {
+    LANGERTHA_WHISPER_WHISPER_URL     => $server->url . '/v1',
+    LANGERTHA_WHISPER_WHISPER_MODEL   => 'Systran/faster-whisper-tiny.en',
+    LANGERTHA_WHISPER_WHISPER_API_KEY => 'wrong-key',
+  },
+  arguments => [ "$audio" ],
+);
+isnt( $run->{exit}, 0, 'a wrong LANGERTHA_WHISPER_WHISPER_API_KEY is sent and refused' );
+like( $run->{stderr}, qr/403/, 'with the server status' );
 
 done_testing;

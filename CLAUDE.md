@@ -172,7 +172,7 @@ Engine::Remote              url required, JSON + HTTP
   │     └── LMStudioOpenAI  LM Studio's OpenAI-compatible endpoint
   │
   ├── Engine::TranscriptionBase  Transcription-only OpenAI-shape base (no chat/tools)
-  │     └── Whisper         self-hosted faster-whisper-server etc.
+  │     └── Whisper         self-hosted speaches (ex faster-whisper-server) etc.
   │
   ├── Virtual               rule-driven in-process engine (no network, no key) for tests and hand use; OpenAI-shaped, composes OpenAICompatible directly, not OpenAIBase
   │     └── Mock            thin alias of Virtual

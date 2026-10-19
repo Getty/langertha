@@ -17,6 +17,10 @@ Revision history for Langertha
       speaches every call failed with 422. It now sets transcription_model
       (k370).
 
+    - langertha_whisper: new LANGERTHA_WHISPER_WHISPER_API_KEY, the bearer key
+      for a Whisper server that checks one (speaches with API_KEY answers 403
+      to the placeholder key) (k370).
+
     - response_tool_calls and response_text_content no longer answer empty for
       a Langertha::Response: since 0.503 (k341) both went through
       ToolCall->locate, which answers [] / '' for anything but a plain HASH, so
