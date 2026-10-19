@@ -2,6 +2,21 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Langertha::Engine::Whisper documents speaches (the successor of
+      faster-whisper-server, which its links named) and how its answers
+      differ from OpenAI's: model is required (the empty default answers
+      422), a wrong key answers 403, errors are FastAPI's detail objects,
+      verbose_json gives language as a code (en), words / usage / logprobs
+      come as null when not asked for, words keep a leading space, and vtt
+      is served as text/vtt. The transcription tests now replay real
+      speaches 0.8.3 answers (json, verbose_json with and without words,
+      text, srt, vtt, the 422) next to the OpenAI documentation fixtures
+      (k370).
+    - langertha_whisper: LANGERTHA_WHISPER_WHISPER_MODEL had no effect -- it
+      set the engine's model, which transcription never reads -- so against
+      speaches every call failed with 422. It now sets transcription_model
+      (k370).
+
     - response_tool_calls and response_text_content no longer answer empty for
       a Langertha::Response: since 0.503 (k341) both went through
       ToolCall->locate, which answers [] / '' for anything but a plain HASH, so

@@ -56,7 +56,7 @@
 | [AKI.IO](https://aki.io/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | | :white_check_mark: |
 | [T-Systems AIFS](https://docs.llmhub.t-systems.net/) :de: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | :white_check_mark: | :white_check_mark: |
 | [Scaleway](https://www.scaleway.com/en/generative-apis/) :eu: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | | | :white_check_mark: |
-| [Whisper](https://github.com/fedirz/faster-whisper-server) | | | | | | :white_check_mark: | |
+| [Whisper](https://github.com/speaches-ai/speaches) | | | | | | :white_check_mark: | |
 
 ## Quick Start
 

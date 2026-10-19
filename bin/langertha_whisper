@@ -27,7 +27,7 @@ if ($ENV{LANGERTHA_WHISPER_OPENAI_API_KEY}) {
 } elsif ($ENV{LANGERTHA_WHISPER_WHISPER_URL}) {
   $engine = Langertha::Engine::Whisper->new(
     url => $ENV{LANGERTHA_WHISPER_WHISPER_URL},
-    $ENV{LANGERTHA_WHISPER_WHISPER_MODEL} ? ( model => $ENV{LANGERTHA_WHISPER_WHISPER_MODEL} ) : (),
+    $ENV{LANGERTHA_WHISPER_WHISPER_MODEL} ? ( transcription_model => $ENV{LANGERTHA_WHISPER_WHISPER_MODEL} ) : (),
   );
 } else {
   die "Requires LANGERTHA_WHISPER_WHISPER_URL or LANGERTHA_WHISPER_OPENAI_API_KEY or LANGERTHA_WHISPER_GROQ_API_KEY";
@@ -40,7 +40,8 @@ printf("\n -- %.3f seconds (%s)\n", ($end - $start), (ref $engine)) unless $ENV{
 
 =head1 SYNOPSIS
 
-  $ LANGERTHA_WHISPER_WHISPER_URL=http://10.0.0.8:8000/v1 langertha_whisper sample.ogg
+  $ LANGERTHA_WHISPER_WHISPER_URL=http://10.0.0.8:8000/v1 \
+    LANGERTHA_WHISPER_WHISPER_MODEL=Systran/faster-whisper-small langertha_whisper sample.ogg
   This is an example sound file in AugVorbis format from Wikipedia, the free encyclopedia.
    -- 13 seconds
 
@@ -56,9 +57,13 @@ printf("\n -- %.3f seconds (%s)\n", ($end - $start), (ref $engine)) unless $ENV{
 
 Simple transcription with a Whisper compatible server, Groq or OpenAI.
 
+C<LANGERTHA_WHISPER_WHISPER_MODEL> names the transcription model; speaches
+requires one (see L<Langertha::Engine::Whisper>).
+
 =head1 HOW TO INSTALL FASTER WHISPER
 
-L<https://github.com/fedirz/faster-whisper-server>
+L<https://github.com/speaches-ai/speaches> (speaches, formerly
+faster-whisper-server)
 
 =head1 SUPPORT
 
