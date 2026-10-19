@@ -1,0 +1,31 @@
+---
+block_reason: 'Nur OpenAI-Teil offen: Account ohne Guthaben (429 credit_balance_exhausted,
+  2026-09-30). speaches-Teil erledigt 2026-10-19 (Commit e3e3d4b auf k370-speaches).'
+blocked: true
+claimed_at: 2026-10-19T03:58:02Z
+claimed_by: k370-speaches
+class: standard
+created: 2026-09-30T06:03:40Z
+id: 370
+priority: low
+started: 2026-10-19T03:56:20Z
+status: todo
+tags:
+- transcription
+- tests
+- fixtures
+title: 'Transkription: OpenAI- und faster-whisper-Fixtures durch echte Captures ersetzen'
+updated: 2026-10-19T03:58:02Z
+---
+
+Rest aus k310. Groq + Mistral sind seit 2026-09-30 echte Captures. OpenAI (whisper-1, json/verbose_json/text/srt/vtt, v.a. echter Content-Type von srt/vtt) blieb doku-abgeleitet: der OpenAI-Account antwortete 429 insufficient_quota / credit_balance_exhausted (kein Guthaben). faster-whisper/speaches: kein Server verfuegbar. Blockiert bis OpenAI-Guthaben da ist; Audio ex/sample.ogg, ~5 Requests, Kosten < 1 Cent.
+
+2026-10-14 Abbau: unveraendert blockiert (OpenAI-Guthaben/kein whisper-Server); nichts zu tun ohne Zugang.
+
+2026-10-15 01:31 Getty 2026-10-15: keine Entscheidung, bleibt blockiert.
+
+2026-10-19 03:45 k370-speaches (nur faster-whisper/speaches-Teil, OpenAI unangetastet): Captures gegen speaches auf crag (OpenAPI info.version 0.8.3, Quelle speaches-ai/speaches master @993994f vom 2026-04-17, faster-whisper 1.1.1, ctranslate2 4.5.0, kein Docker; Modell Systran/faster-whisper-tiny.en, ex/sample.ogg) fuer json/verbose_json(+words)/text/srt/vtt + 422-Fehler in t/data/speaches_transcription_*. Befunde: model ist Pflichtfeld (Whisper-Default '' -> 422 detail loc body.model), vtt kommt als text/vtt, language als Code 'en', words:null/usage:null/logprobs:null statt fehlend, words mit fuehrendem Leerzeichen, Fehler im FastAPI-Format {detail}, falscher Key -> 403 (nicht 401). fedirz/faster-whisper-server leitet auf speaches-ai/speaches um.
+
+2026-10-19 03:56 Auch gefunden (nicht umgesetzt, Scope): bin/langertha_whisper hat keine Env-Var fuer den api_key des Whisper-Servers -- gegen speaches mit API_KEY geht es nur mit 403 (sendet Bearer 'whisper'). Vorschlag LANGERTHA_WHISPER_WHISPER_API_KEY. Ausserdem: t/22-Label 'Whisper server keeps its empty default (server picks the model)' stimmt fuer speaches nicht mehr (speaches waehlt nicht); CLAUDE.md-Engine-Baum nennt noch 'faster-whisper-server'. OpenAI-Teil (openai_transcription_*) unveraendert doku-abgeleitet -> Karte bleibt fuer diesen Rest offen.
+
+2026-10-19 03:56 speaches-Teil fertig: 7 Captures t/data/speaches_transcription_* (json, verbose_json, verbose_json_words, text, srt, vtt, error_no_model 422), Subtests in t/70 + Request-Shape in t/22, Regressionstest t/95_whisper_cli.t (CLI-Bug LANGERTHA_WHISPER_WHISPER_MODEL wirkungslos -> transcription_model, rot vorher mit 422), Whisper-POD dokumentiert speaches-Abweichungen, Links fedirz -> speaches-ai/speaches (POD, CLI, README), Changes. prove -lr -j4 t gruen (235 Dateien, t/8x live geskippt), dzil build ok, perlcritic sauber. OpenAI-Rest weiter offen (Guthaben).
