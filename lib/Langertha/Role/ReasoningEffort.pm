@@ -34,10 +34,11 @@ has thinking_budget => (
 
 Optional integer thinking budget, currently consumed only by Gemini 2.5 models
 (L<Langertha::Engine::Gemini>): on C<gemini-2.5-*> the value is emitted as
-C<generationConfig.thinkingConfig.thinkingBudget>. On Gemini 3 models
-C<thinking_budget> is rejected — Gemini 3 takes C<thinkingLevel>, not the
-integer budget; setting both L</reasoning_effort> and C<thinking_budget> on a
-Gemini 3 model croaks at construction (L<Langertha::Reasoning/BUILD>). When
+C<generationConfig.thinkingConfig.thinkingBudget>. On Gemini 3 and Gemini 4
+models C<thinking_budget> is rejected — they take C<thinkingLevel>, not the
+integer budget (Gemini 4 on Vertex answers a budget with HTTP 400); a
+C<thinking_budget> on such a model croaks before the request is built
+(L<Langertha::Reasoning/BUILD>), and is never sent. When
 unset, no budget field is emitted. (Anthropic legacy C<budget_tokens> is
 deliberately not modeled: it 400s on current Claude families.)
 

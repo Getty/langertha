@@ -2,6 +2,18 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Gemini 4 (gemini-4-argon, any gemini-4* id) gets its own request
+      controls (k381). reasoning_effort=medium went out as
+      thinkingLevel=low, because no reasoning profile matched gemini-4;
+      Gemini 4 now takes low, medium and high, and none/minimal are sent
+      as low. thinking_budget croaks and is never sent. temperature is not
+      sent (the model ignores it), and a value other than 1 carps;
+      supports('temperature') is false. Gemini 4 has no explicit context
+      caching: supports('cached_content') is false, and a bound
+      cached_content or a create_cached_content(_f) for a Gemini 4 model
+      croaks before the request. Gemini 3, 2.5 and older are unchanged.
+      Taken from the Gemini API and Vertex AI documentation, not tested
+      against the live API.
     - New capabilities tool_result_images and tool_result_pdf
       (Langertha::Role::ToolResultImages / ToolResultPDF): supports() now
       says whether an image or a PDF a tool returns reaches the selected model

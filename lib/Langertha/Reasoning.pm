@@ -46,8 +46,8 @@ C<minimal>; the legacy gpt-5 generation accepts C<minimal> but not
 C<none>/C<xhigh>/C<max> — so no single wire-level clamp is correct. Unlisted
 model ids keep the full vocabulary. See L</to_openai>.
 
-Gemini splits its reasoning knob by model generation: Gemini 3 accepts a
-C<thinkingLevel> emitted from C<effort> (vocabulary
+Gemini splits its reasoning knob by model generation: Gemini 3 and Gemini 4
+accept a C<thinkingLevel> emitted from C<effort> (vocabulary
 C<minimal>|C<low>|C<medium>|C<high>, clamped to the subset the configured
 model family accepts — see L</to_gemini_level>); Gemini 2.5 takes a
 C<thinkingBudget> integer instead. Exactly one of the two fields is
@@ -73,7 +73,7 @@ has effort => (
 
 The normalized reasoning effort, one of C<none|minimal|low|medium|high|xhigh|max>.
 Optional (must not coexist with C<thinking_budget> on any Gemini generation;
-see L</BUILD>). On Gemini 3, C<effort> is the only knob and emits
+see L</BUILD>). On Gemini 3 and Gemini 4, C<effort> is the only knob and emits
 C<thinkingConfig.thinkingLevel>, model-gated clamped to the level subset the
 configured model family accepts (L</to_gemini_level>). Setting C<effort> on a
 Gemini 2.5 model is rejected — Gemini 2.5 takes the integer budget, not the
@@ -128,7 +128,7 @@ format. Only takes effect together with a thinking block, i.e. on the adaptive
 Optional integer thinking budget for Gemini 2.5 models. When set on a Gemini
 2.5 model (model id starting with C<gemini-2.5>), L</to_gemini> emits
 C<thinkingConfig.thinkingBudget> as the integer. Setting C<thinking_budget>
-on a Gemini 3 model, or setting it together with C<effort> on any model, is
+on a Gemini 3 or Gemini 4 model, or setting it together with C<effort> on any model, is
 rejected at construction time (L</BUILD>) — the two fields speak different
 units (binary level vs integer tokens) and a combined or wrong-generation wire
 form would be ambiguous.
@@ -230,7 +230,10 @@ C<high>/C<xhigh>/C<max> become C<high>, C<low> and C<medium> pass through.
 The result is then clamped down to the subset the configured L</model> family
 accepts: C<gemini-3.7-flash>, C<gemini-3.8-flash> and C<gemini-3.1-pro-*> drop
 C<minimal> to C<low> (no C<minimal> support), C<gemini-3-pro-*> accepts only
-C<low>|C<high> and drops C<minimal> and C<medium> to C<low>. Models outside the Gemini 3 line (or no
+C<low>|C<high> and drops C<minimal> and C<medium> to C<low>. Gemini 4
+(C<gemini-4-argon> and the rest of C<gemini-4*>, not C<gemini-40>) accepts
+C<low>|C<medium>|C<high> and raises C<minimal> to C<low>, as 3.7/3.8-flash do.
+Models outside the Gemini 3 and 4 lines (or no
 model) keep the universally-accepted binary C<low>|C<high> collapse, splitting
 at C<high>.
 
