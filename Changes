@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - An engine now takes the Net::Async::HTTP client it built off its event
+      loop when the engine is destroyed, which also closes the client's
+      keep-alive connections. Before, every engine object left its client
+      and connections on the loop (the process-wide one by default) for the
+      rest of the process, so programs creating many short-lived engines
+      (langertha-raider: one per subagent) grew without bound. An injected
+      _async_http client is the caller's and stays where it is (k379).
+
     - Langertha::Engine::Whisper documents speaches (the successor of
       faster-whisper-server, which its links named) and how its answers
       differ from OpenAI's: model is required (the empty default answers
