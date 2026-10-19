@@ -29,6 +29,7 @@ with map { 'Langertha::Role::'.$_ } qw(
   Streaming
   Chat
   Tools
+  StreamUsage
 );
 
 =head1 SYNOPSIS
@@ -81,9 +82,9 @@ with map { 'Langertha::Role::'.$_ } qw(
     $counted->simple_chat('Hello')->usage->total_tokens;   # 5
     my ( $content, $chunks ) = await $counted->chat_stream_realtime_f(
       messages       => [ { role => 'user', content => 'Hello' } ],
-      stream_options => { include_usage => 1 },              # the usage as a last chunk
       chunk_callback => sub { print $_[0]->content },        # Hi t, here, !
     );
+    $counted->aggregate_usage($chunks)->{total_tokens};      # 5, from the last chunk
 
     # What happened
     $engine->requests;   # every request the engine answered, as seen by the rules
@@ -113,7 +114,8 @@ over it); passing either to the constructor replaces it.
 
 The engine supports chat, tool calling and streaming (C<chat>,
 C<tools_native>, the C<tool_choice_*> flags, C<parallel_tool_use>,
-C<response_size>, C<system_prompt>, C<streaming>; see L</STREAMING>). There is
+C<response_size>, C<system_prompt>, C<streaming>, C<stream_usage>; see
+L</STREAMING>). There is
 no embedding, no transcription and no image generation. Request parameters it
 has no use for (C<tool_choice>, a C<response_format>, C<max_tokens>, ...) are
 accepted and visible in L</requests>, but do not change the reaction. A reply
@@ -290,7 +292,9 @@ where a provider's would: on the chat completion, read by the OpenAI-dialect
 parser into L<Langertha::Response/usage> (a L<Langertha::Usage>), and on a
 stream only when the request asks for it with
 C<< stream_options => { include_usage => 1 } >>, as a last chunk with an
-empty C<choices> list (see L</STREAMING>). L<Langertha::Virtual::Server>
+empty C<choices> list (see L</STREAMING>). The engine's own stream request
+asks for it (it claims C<stream_usage>, see L<Langertha::Role::StreamUsage>);
+pass C<< stream_options => { include_usage => 0 } >> to leave it out. L<Langertha::Virtual::Server>
 serves the same block over HTTP.
 
     my $engine = Langertha::Engine::Virtual->new(

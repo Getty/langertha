@@ -454,6 +454,9 @@ C<E<lt>tool_callE<gt>> XML tags for models without native API tool support
 
 =item * L<Langertha::Role::ParallelToolUse> - Parallel tool calling control
 
+=item * L<Langertha::Role::StreamUsage> - The stream request asks for the
+token usage (C<stream_usage> capability)
+
 =item * L<Langertha::Role::ServerTools> - Provider-native server-side tools
 (C<server_tools> capability and per-engine defaults)
 

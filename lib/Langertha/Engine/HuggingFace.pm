@@ -7,7 +7,9 @@ use URI;
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Tools';
+# StreamUsage: the chat-completion task specification lists
+# stream_options.include_usage (ADR 0038).
+with 'Langertha::Role::Tools', 'Langertha::Role::StreamUsage';
 
 =head1 SYNOPSIS
 

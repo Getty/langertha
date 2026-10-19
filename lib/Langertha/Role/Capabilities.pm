@@ -81,6 +81,7 @@ my %ROLE_TO_CAPS = (
   'Langertha::Role::RuntimeKnobs'    => [qw( prefix_caching )],
   'Langertha::Role::ServerTools'      => [qw( server_tools )],
   'Langertha::Role::ImageInput'       => [qw( image_input )],
+  'Langertha::Role::StreamUsage'      => [qw( stream_usage )],
 );
 
 sub engine_capabilities {
@@ -490,6 +491,14 @@ wire-only contract: it means B<the selected model sees an image part>
 resolved per model; engines whose model is unknown to the client (gateways,
 self-hosted servers, shims) make no claim. The flag is advisory: nothing
 blocks an image on an engine or model without it.
+
+C<stream_usage> (from C<Langertha::Role::StreamUsage>) means B<the engine's
+stream request asks the provider for the stream's token usage>, which then
+arrives as the stream's last chunk: on the OpenAI chat wire
+C<chat_stream_request> sends C<< stream_options => { include_usage => true } >>.
+Engines claim it only where the provider documents the option (ADR 0038);
+without the flag no C<stream_options> is sent, and a stream may still report
+usage on its own (DeepSeek, OpenRouter, Groq's C<x_groq.usage>).
 
 =cut
 

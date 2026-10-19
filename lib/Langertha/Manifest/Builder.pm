@@ -132,7 +132,10 @@ HashRef passed into the manifest's C<extensions> (deep-copied there).
 #     cache knobs, keep_alive Ollama's model residency, cached_content
 #     Gemini's cache-resource lifecycle, context_size Ollama's server-side
 #     num_ctx allocation) are not provider claims about a model either, and
-#     would be wrong behind a proxy's public URL.
+#     would be wrong behind a proxy's public URL;
+#   - stream_usage says Langertha's own stream request asks for the usage
+#     (stream_options.include_usage, ADR 0038): a request-builder fact, and
+#     behind a proxy whether a stream reports usage is the proxy's behavior.
 # A capability added to %ROLE_TO_CAPS later is NOT published until it is
 # added here (t/96_manifest_builder.t forces that decision).
 my @MODEL_CAPABILITIES = qw(
@@ -173,7 +176,9 @@ model-scoped, see L<Langertha::Role::ImageInput>).
 Engine-level and client-side flags are never published on a model:
 C<embedding>, C<transcription>, C<image_generation>, C<runtime_metrics>,
 C<prefix_caching>, C<keep_alive>, C<cached_content>, C<context_size> (Ollama's
-server-side C<num_ctx> allocation, like C<keep_alive>).
+server-side C<num_ctx> allocation, like C<keep_alive>), C<stream_usage> (that
+Langertha's own stream request asks for the token usage; behind a proxy that
+is the proxy's behavior).
 
 This filters only what the Builder B<emits>. A parsed manifest accepts any
 capability name (L<Langertha::Manifest::Model/supports>).

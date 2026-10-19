@@ -6,7 +6,10 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Tools';
+# StreamUsage: stream_options.include_usage is in the create-chat-completion
+# reference; the last chunk carries the usage either way (ADR 0038).
+with 'Langertha::Role::Tools',
+     'Langertha::Role::StreamUsage';
 
 =head1 SYNOPSIS
 

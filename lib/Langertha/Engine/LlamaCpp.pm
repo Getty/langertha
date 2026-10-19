@@ -6,10 +6,14 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
+# StreamUsage: the server's request schema has stream_options.include_usage
+# (tools/server/server-schema.cpp; the README does not list it). Older builds
+# ignore the unknown key (ADR 0038).
 with 'Langertha::Role::Embedding',
      'Langertha::Role::Tools',
      'Langertha::Role::Runtime::MetricsPoll',
-     'Langertha::Role::RuntimeKnobs';
+     'Langertha::Role::RuntimeKnobs',
+     'Langertha::Role::StreamUsage';
 
 # llama.cpp's per-request runtime knobs: cache_prompt, n_cache_reuse, id_slot.
 # Speculative decoding is a server-launch flag (--spec-draft-*), not a request

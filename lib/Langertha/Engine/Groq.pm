@@ -6,9 +6,12 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
+# StreamUsage: stream_options.include_usage is in the chat completion API
+# reference; x_groq.usage comes on the last chunk either way (ADR 0038).
 with map { 'Langertha::Role::'.$_ } qw(
   Transcription
   Tools
+  StreamUsage
 );
 
 =head1 SYNOPSIS

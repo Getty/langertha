@@ -6,9 +6,12 @@ use Carp qw( carp croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
+# StreamUsage: ChatRequest.stream_options.include_usage is in the OpenAPI spec
+# (docs.x.ai/openapi.json, ADR 0038).
 with map { 'Langertha::Role::'.$_ } qw(
   ImageGeneration
   Tools
+  StreamUsage
 );
 
 =head1 SYNOPSIS

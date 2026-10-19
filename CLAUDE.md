@@ -87,6 +87,7 @@ refactors:
 - **0035** — a bound Gemini `cachedContent` owns `systemInstruction` / `tools` / `toolConfig`: `generateContent` drops them (both spellings, body and `%extra`) and carps once per engine, rather than croaking or merging into the cache; evidence is the observed server 400, not the docs (k340)
 - **0036** — one Langertha-owned redirect policy (`Langertha::HTTP::Redirect`) on both transports: same origin unchanged, cross-origin keeps only representation headers and strips chain credentials from the URL, GET/HEAD only, no https→http; default `user_agent` is `Langertha::HTTP::UserAgent`, injected clients keep their own (k374, amends 0027)
 - **0037** — `connect_address` pins an engine's TCP connection to a caller-checked IP (DNS-rebinding defence); Host, SNI and the certificate check keep the host name; async `on_ready` / sync request-scoped `_extra_sock_opts` + `_check_sock` wraps verify every connection before writing; cross-host redirects and unpinnable setups refuse (k375, amends 0036)
+- **0038** — `stream_usage` capability (`Role::StreamUsage`): `OpenAICompatible::chat_stream_request` sends `stream_options.include_usage` itself (before `%extra`, the caller's value wins) on engines whose provider docs name the field; composed per engine, off when in doubt; `OpenAIResponses` clears it; not published in the manifest
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
@@ -219,7 +220,9 @@ delete the inapplicable flag for their family. → **ADR 0015**.
 - **Tools** — MCP tool-calling loop (`chat_with_tools_f`, `mcp_servers`); thin tag-driven
   orchestration over the value objects. → **ADR 0001**.
 - **HermesTools** — `<tool_call>` XML tag names + prompt template for the `hermes` wire format.
-- **Streaming** — SSE / NDJSON streaming. **Embedding**, **Transcription**, **ImageGeneration**.
+- **Streaming** — SSE / NDJSON streaming. **StreamUsage** (`stream_usage`) — the OpenAI-wire stream
+  request asks for the token usage (`stream_options.include_usage`), per provider docs → **ADR 0038**.
+  **Embedding**, **Transcription**, **ImageGeneration**.
 - **HTTP** (sync + async; backend selection in **AsyncHTTP**, ADR 0027) · **JSON** (`$self->json`) · **OpenAICompatible** ·
   **AnthropicCompatible** (`/v1/messages` envelope, parallel to `OpenAICompatible`) ·
   **ResponsesCompatible** (Open-Responses `/v1/responses` + `/v1/agent` envelope, shared by

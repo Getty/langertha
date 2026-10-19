@@ -6,7 +6,9 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Embedding', 'Langertha::Role::Tools';
+# StreamUsage: the Generative APIs OpenAPI schema has
+# ChatCompletionStreamOptions.include_usage (ADR 0038).
+with 'Langertha::Role::Embedding', 'Langertha::Role::Tools', 'Langertha::Role::StreamUsage';
 
 =head1 SYNOPSIS
 

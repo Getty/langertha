@@ -6,7 +6,9 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Embedding', 'Langertha::Role::Tools';
+# StreamUsage: the OpenAI-compatibility page lists stream_options.include_usage
+# for /v1/chat/completions; without it the stream has no usage (ADR 0038).
+with 'Langertha::Role::Embedding', 'Langertha::Role::Tools', 'Langertha::Role::StreamUsage';
 
 =head1 SYNOPSIS
 

@@ -6,7 +6,10 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
-with 'Langertha::Role::Embedding', 'Langertha::Role::Tools';
+# StreamUsage: the LLM Server OpenAPI and the streaming guide name
+# stream_options.include_usage (documentation-derived, not live-verified;
+# ADR 0038).
+with 'Langertha::Role::Embedding', 'Langertha::Role::Tools', 'Langertha::Role::StreamUsage';
 
 # NOTE (karr #184 / ADR 0024): the project has no available developer key for AIFS (the
 # LANGERTHA_TSYSTEMS_API_KEY / test key is empty and none is obtainable), so this engine's wire

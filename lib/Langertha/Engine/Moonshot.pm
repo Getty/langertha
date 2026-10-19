@@ -6,9 +6,12 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
+# StreamUsage: the chat API reference names stream_options.include_usage
+# (platform.kimi.ai/docs/api/chat, ADR 0038).
 with map { 'Langertha::Role::'.$_ } qw(
   StaticModels
   Tools
+  StreamUsage
 );
 
 =head1 SYNOPSIS

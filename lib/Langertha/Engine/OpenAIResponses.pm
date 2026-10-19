@@ -95,10 +95,17 @@ sub api_key_env { 'LANGERTHA_OPENAI_API_KEY' }
 # (ADR 0002 escape hatch). Both together keep supports('streaming') honest.
 sub stream_format { return undef }
 
+#
+# stream_usage comes along from Engine::OpenAI as well. It names the chat wire's
+# stream_options.include_usage, which the Responses envelope never sends (its
+# chat_stream_request is Role::ResponsesCompatible's, and a Responses stream
+# reports usage in response.completed unasked); without streaming it would
+# claim a request field this engine has no stream to put on (ADR 0038).
 around engine_capabilities => sub {
     my ( $orig, $self, @rest ) = @_;
     my $caps = $self->$orig(@rest);
     delete $caps->{streaming};
+    delete $caps->{stream_usage};
     return $caps;
 };
 

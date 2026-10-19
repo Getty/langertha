@@ -8,11 +8,14 @@ use Langertha::Reasoning::Profile;
 
 extends 'Langertha::Engine::OpenAIBase';
 
+# StreamUsage: stream_options.include_usage is in the chat completions API
+# reference (ADR 0038).
 with map { 'Langertha::Role::'.$_ } qw(
   Embedding
   Transcription
   ImageGeneration
   Tools
+  StreamUsage
 );
 
 =head1 SYNOPSIS

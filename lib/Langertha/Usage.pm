@@ -562,7 +562,9 @@ Responses, image and video generation) as the integer C<cost_in_usd_ticks>
 C<cost_in_usd_ticks> first as the finer unit; the integers stay verbatim in
 L</raw>, so C<< $usage->{cost_in_usd_ticks} >> still gives exact integer
 accounting. A stream carries it only in its usage frame, which comes when the
-request asks for it (C<stream_options =E<gt> { include_usage =E<gt> 1 }>).
+request asks for it (C<stream_options =E<gt> { include_usage =E<gt> 1 }>, sent
+by every engine that supports C<stream_usage>, see
+L<Langertha::Role::StreamUsage>).
 
 The Perplexity Agent API sends C<usage.cost> as an object that names its
 currency (C<currency>, C<total_cost>, and the parts such as C<input_cost> and

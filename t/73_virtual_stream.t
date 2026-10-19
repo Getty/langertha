@@ -57,13 +57,16 @@ subtest 'in process: text in pieces of stream_chunk_size characters' => sub {
   ok( $engine->supports('streaming'), 'the engine claims streaming' );
   is( $engine->stream_format, 'sse', 'as server-sent events' );
 
-  my ( $content, $chunks, $seen ) = stream( $engine, 'Hello' );
+  # The engine asks for the usage itself (stream_usage, ADR 0038); turned off
+  # here, the stream ends with the finish chunk.
+  my ( $content, $chunks, $seen ) = stream( $engine, 'Hello',
+    stream_options => { include_usage => JSON::MaybeXS::false } );
   is( $content, 'Hi there, how are you?', 'the streamed text is the answer' );
   is_deeply( texts($seen), [ 'Hi there', ', how ar', 'e you?' ], 'the callback gets it in pieces of 8 characters' );
   is( scalar @$seen, scalar @$chunks, 'the callback sees every chunk' );
   ok( $chunks->[-1]->is_final, 'the last chunk is final' );
   is( $chunks->[-1]->finish_reason, 'stop', '... with finish_reason stop' );
-  ok( !( grep { $_->has_usage } @$chunks ), 'no usage without stream_options.include_usage' );
+  ok( !( grep { $_->has_usage } @$chunks ), 'no usage with stream_options.include_usage false' );
   ok( $engine->requests->[-1]{body}{stream}, 'the request was a stream request' );
 
   my $small = engine( stream_chunk_size => 3 );

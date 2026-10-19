@@ -6,9 +6,12 @@ use Carp qw( croak );
 
 extends 'Langertha::Engine::OpenAIBase';
 
+# StreamUsage: the ChatCompletionReq schema has stream_options.include_usage
+# (platform.minimax.io text-chat-openai reference, ADR 0038).
 with map { 'Langertha::Role::'.$_ } qw(
   StaticModels
   Tools
+  StreamUsage
 );
 
 =head1 SYNOPSIS

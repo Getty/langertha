@@ -21,6 +21,18 @@ Revision history for Langertha
       for a Whisper server that checks one (speaches with API_KEY answers 403
       to the placeholder key) (k370).
 
+    - Streamed answers on OpenAI-wire engines carry their token usage: new
+      capability stream_usage (Langertha::Role::StreamUsage), and
+      chat_stream_request sends stream_options.include_usage itself where the
+      engine claims it, so the usage arrives as the stream's last chunk
+      (aggregate_usage). Claimed per provider documentation by OpenAI, vLLM,
+      SGLang, Virtual, DeepSeek, XAI, Groq, OllamaOpenAI, LlamaCpp, Moonshot,
+      MiniMax, Scaleway, TSystems and HuggingFace; not by Mistral (its schema
+      rejects unknown fields), Cerebras, OpenRouter (always sends usage),
+      LMStudioOpenAI, NousResearch, Hetzner, AKIOpenAI, Replicate or
+      OpenAIResponses. A stream_options the caller passes replaces the
+      engine's; { include_usage => 0 } turns it off.
+
     - response_tool_calls and response_text_content no longer answer empty for
       a Langertha::Response: since 0.503 (k341) both went through
       ToolCall->locate, which answers [] / '' for anything but a plain HASH, so
