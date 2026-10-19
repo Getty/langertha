@@ -1,0 +1,33 @@
+---
+claimed_at: 2026-10-19T11:59:56Z
+claimed_by: claude-k380
+class: standard
+completed: 2026-10-19T11:59:55Z
+created: 2026-10-19T10:34:33Z
+id: 380
+priority: medium
+started: 2026-10-19T10:37:54Z
+status: done
+title: Public capability for images in tool results
+updated: 2026-10-19T11:59:56Z
+---
+
+Fund aus langertha-raider #159 (Strom D, 2026-10-19): raider schickt Bilder/PDF aus read_file als Content in Tool-Ergebnissen nur, wenn die Engine image_input kann UND der Wire-Name anthropic/responses/gemini ist — eine Annahme außerhalb von Langertha. Nötig: öffentliche Fähigkeit (z. B. supports('tool_result_images') / Rolle) je Engine nach Provider-Doku, Formatierung von Bild-Content in Tool-Ergebnissen je Wire im Kern, Doku/ADR; danach raider darauf umstellen (Notiz).
+
+2026-10-19 10:40 Entwurf (claude-k380, Branch k380-tool-result-images, Worktree .claude/worktrees/k380-tool-result-images): Formatierung je Wire existiert schon in ToolResult (k344/k359/k361/k364). Neu: zwei öffentliche Fähigkeiten aus code-losen Rollen Role::ToolResultImages (tool_result_images) und Role::ToolResultPDF (tool_result_pdf); die Registry wird einzige Wahrheit: format_tool_results liest supports() statt der privaten Hooks _tool_result_images_on_wire/_tool_result_pdf_on_wire (entfallen). Generische Abhängigkeit im Basis-engine_capabilities nach dem Learned-Layer: images => image_input; beide => tool_wire_format hat native Form (ToolResult-Klassenmethode). Anthropic-PDF leitet sich aus _tool_result_source_blocks_on_wire ab (nicht vision-gated, k371); Responses-/Gemini-PDF vision-gated (k361) im Engine-around. Nicht im Manifest veröffentlicht (wie stream_usage). Zwei Flags statt einem, weil Bild und PDF je Wire verschieden ausfallen (Perplexity: Bild ja/PDF nein; MiniMax-M2: PDF ja/Bild nein). ADR 0039.
+
+2026-10-19 10:55 Baseline suite green (237 files). Implementing per orchestrator decision: Role::ToolResultImages/ToolResultPDF, ToolResult->carries_native, generic dependency in engine_capabilities.
+
+2026-10-19 10:55 llm-advisor (Doku, 2026-10-19): alle bestehenden Entscheidungen bestätigt. In Scope geändert: Gemini-Regel auf 'Gemini 3 und später' (gemini-4-argon GA; Vertex: 'For Gemini 3 and later models ... images and PDFs in functionResponse'). FOLGEPUNKTE (keine neuen Karten lt. Auftrag): (1) openai-Wire-Form für Bilder in role:tool-Nachrichten (image_url-Parts) — xAI-OpenAPI erlaubt es explizit, Mistral ToolMessage ContentChunk[] inkl. image_url (Tokenizer v13+ kodiert Bilder in Tool-Ergebnissen), DeepSeek widersprüchlich (Referenz ja, Vision-Guide 'nur user'); Ollama native 'images' auf Tool-Nachricht im Code, undokumentiert. ToolResult hat dafür keine Form; je Provider Live-Probe nötig. (2) Gemini 4 Argon Request-Controls weichen ab (Vertex-Migrationsguide: thinking_budget -> 400, thinking_level MINIMAL nicht unterstützt, explizites Caching nicht unterstützt) — Langertha hat kein gemini-4-Handling.
+
+2026-10-19 11:12 Implemented per decision + Gemini 3-and-later amendment (qr/\Agemini-(?:[3-9]|[1-9]\d+)(?!\d)/). Ported t/92 gemini-30-future from 'no parts' to 'parts' (amendment reverses that pin) and the Perplexity _tool_result_pdf_on_wire pin to does(ToolResultPDF)/supports. Full suite green 238 files/10991 tests; 14 live t/8x skipped (no keys). perlcritic clean, dzil build clean. Also found (for orchestrator): ADR 0001 (lines ~407/440/488) and ADR 0019 (~396/412) Updates still name the removed _tool_result_*_on_wire hooks — history text, may want a pointer to 0039. Follow-up for langertha-raider board: replace _engine_sees_images with supports('tool_result_images') / supports('tool_result_pdf') once released.
+
+2026-10-19 11:12 Done: tool_result_images/tool_result_pdf capability roles, ToolResult->carries_native, generic dependency in engine_capabilities, format_tool_results reads supports(); per-engine table pinned in t/78_tool_result_media_capability.t. Verified: prove -lr t (238 files, 10991 tests, live skipped), perlcritic, dzil build.
+
+2026-10-19 11:14 RAIDER-UMSTELLUNG (nur Notiz, nicht umgesetzt): langertha-raider lib/Langertha/Raider/Application.pm _engine_sees_images (~Z. 2126, %IMAGE_WIRE anthropic/responses/gemini + supports('image_input')) ersetzen durch zwei Fragen an den Kern: Bilder -> $engine->supports('tool_result_images'), PDFs -> $engine->supports('tool_result_pdf'). FileTools bekommt dafür statt des einen sees_images zwei Callbacks (sees_images für _read_image/Notebook-Bilder, reads_pdf für _read_pdf); Subagent.pm:920 und Application.pm:2063 entsprechend. requires 'Langertha' auf die Version mit k380 anheben. Wirkung: AKIAnthropic/Gemini<3 verweigern Bilder statt Platzhalter zu schicken; MiniMax-M2.x liest PDFs (bisher verweigert); Perplexity/Moonshot-/LMStudio-Anthropic verweigern PDFs; gemini-4 bekommt beides.
+
+2026-10-19 11:34 Review fixes done: (1) tool_result_* in Chat %CAP_CONSULTED_BY => ['tools'] + override-warning test; (2a) anthropic PDF document block gated on supports('tool_result_pdf') via ToolResult native_pdf option (default 1 on anthropic, bare to() unchanged); (2b) PDF vision gate moved to base via ToolResult->native_needs_vision, removed from OpenAIResponses/Gemini arounds; forced-wire tests both directions (red on old code). (3) role POD Gemini 3 and later. (4) Changes amended, dzil build ok. Suite 238 files/10996 tests green, 14 live t/8x skipped, perlcritic clean. Card not moved.
+
+2026-10-19 11:53 Final squashed commit 13446c7 on k380-tool-result-images; awaiting merge.
+
+Koordinator 2026-10-19: geprüft (10996 grün, t/78 rot gegen alten Code; Worker-Suiten knarr/skeid/raider grün), gemerged (13446c7). raider-Umstellung als eigene raider-Karte.
