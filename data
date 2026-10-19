@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-10-19T09:57:57Z
+claimed_by: claude-k379
+class: standard
+completed: 2026-10-19T09:57:57Z
+created: 2026-10-19T09:26:09Z
+id: 379
+priority: medium
+started: 2026-10-19T09:27:08Z
+status: done
+title: Role::AsyncHTTP never removes its Net::Async::HTTP client from the loop
+updated: 2026-10-19T09:57:57Z
+---
+
+Fund aus langertha-raider #160 (Strom B, 2026-10-19): Role::AsyncHTTP fügt den Net::Async::HTTP-Client dem Loop hinzu, nimmt ihn aber nie wieder heraus -> ein Client-Leck je Engine-Objekt (raider erzeugt je Subagent eine Engine). Nötig: Client beim Abbau der Engine (DEMOLISH) vom Loop entfernen; Test mit vielen kurzlebigen Engines.
+
+2026-10-19 09:32 Red: new t/45_async_http_loop_lifecycle.t — 50 engines leave 50 notifiers on the process-wide loop (got 50, want 0); 20 engines with a keep-alive request leave 42 (clients + connections); own _async_loop keeps 1. Plan: role DEMOLISH removes only the builder-made client (ownership flag set by _build__async_http), skips global destruction.
+
+2026-10-19 09:48 Done: Role::AsyncHTTP builder sets _async_http_owned; role DEMOLISH -> _release_async_http removes only that client from its loop (closes its keep-alive conns), skipped in global destruction; injected client untouched. Red->green t/45_async_http_loop_lifecycle.t (50 engines left 50 notifiers -> 0; keep-alive case 42 -> 0; own _async_loop 1 -> 0); removing the global-destruction guard makes the exit subtest fail with '(in cleanup) Can't call method loop on undefined'. Full suite PASS 237 files/10948 tests, 14 live files skipped. dzil build OK. POD (=attr _async_http lifecycle), Changes, ADR 0027 Update k379. Other sites checked: Role::Tools loop->add is SYNOPSIS only; Virtual::Server already removes its handle in stop/DEMOLISH; MetricsPoll/Streaming/Content::Image/Langfuse use the engine's client, build none. Caveat: a class composing the role directly with its own DEMOLISH shadows the role's (none today).
+
+Fix + Test (t/45) + Suite 237 Dateien/10948 Tests gruen, 14 Live geskippt. Commit 5e646ad. Sibling-Suiten gegen Branch: knarr 82 Dateien/5010, skeid 105/6182, raider 159/1434 - alle PASS. Folgepunkt: Klasse mit eigenem DEMOLISH muss _release_async_http selbst rufen.
+
+Koordinator 2026-10-19: geprüft (t/45 rot gegen alten Code; Worker-Suiten langertha/knarr/skeid/raider grün), gemerged (5e646ad).
