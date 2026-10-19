@@ -5,7 +5,8 @@ use Moose;
 
 extends 'Langertha::Engine::OpenAI';
 
-with 'Langertha::Role::ResponsesCompatible', 'Langertha::Role::ServerTools';
+with 'Langertha::Role::ResponsesCompatible', 'Langertha::Role::ServerTools',
+  'Langertha::Role::ToolResultImages', 'Langertha::Role::ToolResultPDF';
 
 =head1 SYNOPSIS
 
@@ -115,10 +116,11 @@ around engine_capabilities => sub {
 # ResponseInputFileContent", developers.openai.com/api/reference/resources/
 # responses/methods/create; data: URL + filename per the PDF-files guide,
 # developers.openai.com/api/docs/guides/pdf-files; fetched 2026-09-30).
-# Docs-derived, not live-verified. Role::Tools still requires image_input
-# (the guide names vision models for PDF input). Perplexity shares the
-# envelope but not this part, so the flag sits here, not on the role.
-sub _tool_result_pdf_on_wire { 1 }
+# Docs-derived, not live-verified. The guide names vision models for PDF
+# input, so tool_result_pdf needs image_input on this wire
+# (ToolResult->native_needs_vision, applied by Role::Capabilities). Perplexity
+# shares the envelope but not this part, so Role::ToolResultPDF is composed
+# here, not on Role::ResponsesCompatible (ADR 0039).
 
 __PACKAGE__->meta->make_immutable;
 

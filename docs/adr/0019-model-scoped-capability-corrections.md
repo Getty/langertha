@@ -410,3 +410,11 @@ both providers document PDF reading as a vision feature, so no new flag was made
 cost widens accordingly — an over-broad claim on OpenAIResponses or Gemini 3 can now also put a
 PDF part into a tool-loop turn for a model that cannot take it. Perplexity is unaffected (its
 Agent API has no `input_file`; the engine's `_tool_result_pdf_on_wire` is 0).
+
+## Update (k380 — the tool-result form is chosen by public capabilities, ADR 0039)
+
+The `_tool_result_images_on_wire` / `_tool_result_pdf_on_wire` hooks named in the k344, k359 and
+k361 Updates are gone: `format_tool_results` reads `supports('tool_result_images')` /
+`supports('tool_result_pdf')` (ADR 0039; details in the ADR 0001 k380 Update). `image_input` still
+decides indirectly, because `tool_result_images` requires it, so the k344 cost of an over-broad
+claim stands. Gemini's tool-result rows now cover Gemini 3 and later (`gemini-4-argon`).

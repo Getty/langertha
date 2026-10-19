@@ -972,6 +972,9 @@ my %CAP_CONSULTED_BY = (
   # Gemini's per-generation flag: consulted only with a bound cachedContent
   cached_content              => ['cached_content'],
   image_input                 => [],
+  # the tool-result form (ADR 0039): only a tool loop sends tool results
+  tool_result_images          => ['tools'],
+  tool_result_pdf             => ['tools'],
 );
 
 # The request features that decide which model-scoped decisions a request

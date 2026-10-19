@@ -88,6 +88,7 @@ refactors:
 - **0036** — one Langertha-owned redirect policy (`Langertha::HTTP::Redirect`) on both transports: same origin unchanged, cross-origin keeps only representation headers and strips chain credentials from the URL, GET/HEAD only, no https→http; default `user_agent` is `Langertha::HTTP::UserAgent`, injected clients keep their own (k374, amends 0027)
 - **0037** — `connect_address` pins an engine's TCP connection to a caller-checked IP (DNS-rebinding defence); Host, SNI and the certificate check keep the host name; async `on_ready` / sync request-scoped `_extra_sock_opts` + `_check_sock` wraps verify every connection before writing; cross-host redirects and unpinnable setups refuse (k375, amends 0036)
 - **0038** — `stream_usage` capability (`Role::StreamUsage`): `OpenAICompatible::chat_stream_request` sends `stream_options.include_usage` itself (before `%extra`, the caller's value wins) on engines whose provider docs name the field; composed per engine, off when in doubt; `OpenAIResponses` clears it; not published in the manifest
+- **0039** — images / PDFs in tool results are public capabilities `tool_result_images` / `tool_result_pdf` (`Role::ToolResultImages` / `Role::ToolResultPDF`); the registry is the single source `format_tool_results` reads (private `_tool_result_*_on_wire` hooks gone); base dependencies after the learned layer: both need a native form on the current `tool_wire_format` (`ToolResult->carries_native`), vision-needing forms (images; PDFs on responses/gemini, `ToolResult->native_needs_vision`) need `image_input`; anthropic PDF follows `_tool_result_source_blocks_on_wire` (not vision-gated); Gemini 3 and later; not published in the manifest (k380)
 
 Format + when-to-write: skill `langertha-adr`; backfill new ones via the `langertha-adr-auditor`
 agent. `CONTEXT.md` is the domain language for the tools lane (canonical terms, not a decision
@@ -236,9 +237,10 @@ delete the inapplicable flag for their family. → **ADR 0015**.
   `OpenAIResponses` (the `_server_tool_wire_check` hook carries provider divergence). → **ADR 0030**.
 - **ImageInput** — `image_input` capability, model-scoped ("the model sees the image", not just
   "the wire carries it"); family defaults + allowlists per engine, gateways/self-hosted don't claim;
-  never blocks; its one reader picks the tool-result image form on the `responses` / Gemini 3 /
-  `anthropic` wires (image part vs text placeholder, k344, k359) and the PDF form on OpenAIResponses /
-  Gemini 3 (k361). → **ADR 0019** (k266, k344, k359, k361 Updates).
+  never blocks; `tool_result_images` depends on it. → **ADR 0019** (k266, k344, k359, k361 Updates).
+- **ToolResultImages** / **ToolResultPDF** — `tool_result_images` / `tool_result_pdf`: a tool's image /
+  PDF reaches the model natively (else the k336 placeholder); `format_tool_results` reads the flags;
+  composed by AnthropicBase, OpenAIResponses, Gemini (both), Perplexity (images only). → **ADR 0039**.
 - **SystemPrompt**, **Temperature**, **ResponseSize**, **ContextSize**, **Seed**,
   **ResponseFormat** (`decode_loose_json`), **Models**, **ParallelToolUse**.
 - **ReasoningEffort** (`reasoning_effort`) · **PromptCache** (`prompt_cache` / `prompt_cache_key`)

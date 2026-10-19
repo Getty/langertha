@@ -2,6 +2,26 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New capabilities tool_result_images and tool_result_pdf
+      (Langertha::Role::ToolResultImages / ToolResultPDF): supports() now
+      says whether an image or a PDF a tool returns reaches the selected model
+      natively, or goes out as a text placeholder. format_tool_results reads
+      the same flags, so the answer and the wire agree. Images need
+      image_input; Anthropic sends PDFs where the endpoint takes document
+      blocks, also to text-only models; OpenAI Responses and Gemini need a
+      vision model for PDFs; Perplexity takes images only; AKIAnthropic
+      neither. Gemini now sends images and PDFs natively for Gemini 3 and
+      later (gemini-4-argon, any gemini-<N> with N >= 3), not only gemini-3.
+      The flags follow a tool_wire_format forced in the constructor:
+      an engine without the new roles forced onto the anthropic, responses
+      or gemini wire now sends the placeholder (before, a vision model there
+      got the native image, and on anthropic every engine the PDF document
+      block), and on the responses and gemini wires a PDF needs a vision
+      model whichever engine is forced there. New
+      Langertha::ToolResult->carries_native and ->native_needs_vision, and
+      a native_pdf option on to('anthropic') (default on). The flags are not
+      published in manifests (k380, ADR 0039).
+
     - An engine now takes the Net::Async::HTTP client it built off its event
       loop when the engine is destroyed, which also closes the client's
       keep-alive connections. Before, every engine object left its client

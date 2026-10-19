@@ -23,6 +23,8 @@ with map { 'Langertha::Role::'.$_ } qw(
   Tools
   CachedContent
   ImageInput
+  ToolResultImages
+  ToolResultPDF
   Embedding
 );
 
@@ -77,32 +79,33 @@ around engine_capabilities => sub {
 # multimodal and keep the flag; Gemma 1/2 and the text-only gemma-3-1b clear
 # it (decision k266: restrict the exclusion to the text-only sizes rather than
 # the whole family).
+#
+# tool_result_images / tool_result_pdf (ADR 0039, k380; k344 images, k361
+# PDFs): an image or PDF in functionResponse.parts[].inlineData is documented
+# for Gemini 3 and later only -- default-deny, then the Gemini 3+ row grants
+# both. Sources: the Vertex function-calling page ("For Gemini 3 and later
+# models, you can include multimodal content (images and PDFs) in
+# functionResponse", docs.cloud.google.com/gemini-enterprise-agent-platform/
+# models/tools/function-calling) and the AI Studio guide (ai.google.dev/
+# gemini-api/docs/generate-content/function-calling: "available for Gemini 3
+# series models", MIME list "Documents: application/pdf, text/plain" beside
+# the image types; a text/plain blob is already decoded into the result
+# string). Fetched 2026-09-29/30 and 2026-10-19; docs-derived, not
+# live-verified. The row matches gemini-<major> with major >= 3 (gemini-3*,
+# gemini-4-argon, a future gemini-10), never 1.x / 2.x; (?!\d) makes it read
+# the whole major number (ADR 0023 k196). Images and PDFs on this wire also
+# need image_input (Gemini reads documents through its vision;
+# ToolResult->native_needs_vision, applied by Role::Capabilities).
 sub model_capability_corrections {
   return (
+    qr/\A/                                                => { tool_result_images => 0, tool_result_pdf => 0 },
+    qr/\Agemini-(?:[3-9]|[1-9]\d+)(?!\d)/                 => { tool_result_images => 1, tool_result_pdf => 1 },
     qr/(?:-tts|-live|native-audio|transcribe|embedding)/ => { image_input => 0 },
     qr/\A(?:lyria|imagen|veo|aqa)/                        => { image_input => 0 },
     qr/\Agemini-(?:1\.0-)?pro(?:-\d+)?\z/                => { image_input => 0 },
     qr/\Agemma-(?:[12](?!\d)|3-1b)/                      => { image_input => 0 },
   );
 }
-
-# Tool-result images (karr k344): functionResponse.parts[].inlineData is
-# documented for the Gemini 3 series only (function-calling guide, v1beta;
-# docs-derived, not live-verified, 2026-09-29). Other models keep the k336
-# placeholder string; a later generation joins when its docs say so. The
-# (?!\d) guard keeps a hypothetical gemini-30 out (ADR 0023 k196).
-sub _tool_result_images_on_wire {
-  my ($self) = @_;
-  return ( $self->chat_model // '' ) =~ /\Agemini-3(?!\d)/ ? 1 : 0;
-}
-
-# Tool-result PDFs (karr k361): the same guide section lists "Documents:
-# application/pdf, text/plain" beside the image types for Gemini 3
-# multimodal function responses (ai.google.dev/gemini-api/docs/
-# generate-content/function-calling, fetched 2026-09-30; docs-derived, not
-# live-verified), so a PDF follows the image predicate. (A text/plain blob is
-# already decoded into the result string.)
-sub _tool_result_pdf_on_wire { shift->_tool_result_images_on_wire }
 
 =head1 SYNOPSIS
 

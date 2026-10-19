@@ -464,6 +464,12 @@ token usage (C<stream_usage> capability)
 
 =item * L<Langertha::Role::ImageInput> - Image input (vision), claimed per model
 
+=item * L<Langertha::Role::ToolResultImages> - Images a tool returns reach the
+model as images (C<tool_result_images> capability, claimed per model)
+
+=item * L<Langertha::Role::ToolResultPDF> - PDFs a tool returns reach the model
+as documents (C<tool_result_pdf> capability, claimed per model)
+
 =item * L<Langertha::Role::KeepAlive> - Keep-alive duration for local models
 
 =item * L<Langertha::Role::RuntimeKnobs> - Per-request prefix-cache runtime knobs

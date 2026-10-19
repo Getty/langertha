@@ -135,7 +135,10 @@ HashRef passed into the manifest's C<extensions> (deep-copied there).
 #     would be wrong behind a proxy's public URL;
 #   - stream_usage says Langertha's own stream request asks for the usage
 #     (stream_options.include_usage, ADR 0038): a request-builder fact, and
-#     behind a proxy whether a stream reports usage is the proxy's behavior.
+#     behind a proxy whether a stream reports usage is the proxy's behavior;
+#   - tool_result_images / tool_result_pdf say how Langertha serializes a
+#     tool's image or PDF on the engine's own wire (ADR 0039): behind a
+#     proxy's public URL that is the proxy's behavior too.
 # A capability added to %ROLE_TO_CAPS later is NOT published until it is
 # added here (t/96_manifest_builder.t forces that decision).
 my @MODEL_CAPABILITIES = qw(
@@ -178,7 +181,9 @@ C<embedding>, C<transcription>, C<image_generation>, C<runtime_metrics>,
 C<prefix_caching>, C<keep_alive>, C<cached_content>, C<context_size> (Ollama's
 server-side C<num_ctx> allocation, like C<keep_alive>), C<stream_usage> (that
 Langertha's own stream request asks for the token usage; behind a proxy that
-is the proxy's behavior).
+is the proxy's behavior), C<tool_result_images> and C<tool_result_pdf> (how
+Langertha serializes a tool's image or PDF on the engine's own wire; behind a
+proxy that is the proxy's behavior too).
 
 This filters only what the Builder B<emits>. A parsed manifest accepts any
 capability name (L<Langertha::Manifest::Model/supports>).
