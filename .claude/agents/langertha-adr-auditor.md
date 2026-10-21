@@ -6,6 +6,7 @@ briefing:
   skills:
     - langertha-adr
     - perl-ai-langertha
+    - langertha-core
     - langertha-internals
     - kanban-issues-karr-ticket
 ---

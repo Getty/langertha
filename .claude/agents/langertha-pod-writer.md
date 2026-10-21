@@ -5,6 +5,7 @@ model: sonnet
 briefing:
   skills:
     - perl-ai-langertha
+    - langertha-core
     - kanban-issues-karr-ticket
     - getty-perl-pod
 ---

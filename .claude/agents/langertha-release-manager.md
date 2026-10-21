@@ -4,6 +4,7 @@ description: "Owns langertha's commits and release readiness — cuts commits fr
 model: sonnet
 briefing:
   skills:
+    - langertha-core
     - getty-git-commit-style
     - getty-git-usage
     - getty-perl-release-author-getty

@@ -6,6 +6,7 @@ disallowedTools: Edit, Write, NotebookEdit
 briefing:
   skills:
     - perl-ai-langertha
+    - langertha-core
     - langertha-internals
     - langertha-testing
     - getty-perl-moose

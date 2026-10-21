@@ -5,6 +5,7 @@ model: sonnet
 briefing:
   skills:
     - perl-ai-langertha
+    - langertha-core
     - langertha-internals
     - langertha-testing
     - perl-io-async-future

@@ -6,6 +6,7 @@ briefing:
   skills:
     - perl-io-async-future
     - perl-ai-langertha
+    - langertha-core
     - langertha-internals
     - langertha-testing
     - getty-perl-moose
