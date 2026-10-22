@@ -1,6 +1,6 @@
 package Langertha::Reasoning;
 # ABSTRACT: Immutable normalized reasoning-effort control with cross-provider conversion
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS;

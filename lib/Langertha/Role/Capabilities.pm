@@ -1,6 +1,6 @@
 package Langertha::Role::Capabilities;
 # ABSTRACT: Engine-capability registry derived from composed roles
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose::Role;
 use Carp qw( croak );
 use Scalar::Util qw( blessed );

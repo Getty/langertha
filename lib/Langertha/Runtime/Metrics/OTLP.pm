@@ -1,6 +1,6 @@
 package Langertha::Runtime::Metrics::OTLP;
 # ABSTRACT: Convert parsed Prometheus records to an OTLP/HTTP (JSON) metrics payload
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use Carp qw( croak );
 use Time::HiRes qw( time );

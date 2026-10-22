@@ -1,6 +1,6 @@
 package Langertha::ToolChoice;
 # ABSTRACT: Immutable canonical tool-selection policy with cross-provider conversion
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use Carp qw( croak );
 use Scalar::Util qw( blessed );

@@ -1,6 +1,6 @@
 package Langertha::Request::SyncHTTP;
 # ABSTRACT: Synchronous LWP-backed HTTP client satisfying the async do_request contract
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use Future;
 

@@ -1,6 +1,6 @@
 package Langertha::HTTP::BoundedDecode;
 # ABSTRACT: Bounded Content-Encoding inflate shared by the response-body decoders
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use strict;
 use warnings;
 

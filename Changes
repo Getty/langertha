@@ -1,5 +1,7 @@
 Revision history for Langertha
 
+{{$NEXT}}
+
 0.504     2026-10-22 21:00:18Z
 
     - Gemini 4 (gemini-4-argon, any gemini-4* id) gets its own request

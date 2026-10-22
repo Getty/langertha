@@ -1,6 +1,6 @@
 package Langertha::HTTP::Redirect;
 # ABSTRACT: The redirect policy both HTTP backends follow: credentials stay on their origin
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use strict;
 use warnings;
 use HTTP::Request;

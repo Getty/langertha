@@ -1,6 +1,6 @@
 package Langertha::Engine::Hetzner;
 # ABSTRACT: Hetzner Inference API (OpenAI-compatible)
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use Carp qw( croak );
 

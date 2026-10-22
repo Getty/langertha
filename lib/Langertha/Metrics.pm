@@ -1,5 +1,5 @@
 package Langertha::Metrics;
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 our $DEPRECATED = 1;
 # ABSTRACT: DEPRECATED back-compat facade over Langertha::Usage / Pricing / Cost / UsageRecord - use the value objects directly
 use strict;

@@ -1,5 +1,5 @@
 package Langertha::Output::Tools;
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 # ABSTRACT: Backwards-compat facade over Langertha::ToolCall
 use strict;
 use warnings;

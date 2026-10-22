@@ -1,6 +1,6 @@
 package Langertha::Role::Runtime::MetricsPoll;
 # ABSTRACT: Async Prometheus /metrics scraper for self-hosted engines
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose::Role;
 use Future::AsyncAwait;
 use Log::Any qw( $log );

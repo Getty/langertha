@@ -1,6 +1,6 @@
 package Langertha::Engine::AnthropicBase;
 # ABSTRACT: Base class for Anthropic-compatible engines
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use Carp qw( croak );
 

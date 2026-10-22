@@ -1,6 +1,6 @@
 package Langertha::Engine::VLLMHook;
 # ABSTRACT: vLLM inference server with vLLM-Hook probe capture
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use JSON::MaybeXS ();
 

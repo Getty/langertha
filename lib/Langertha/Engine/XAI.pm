@@ -1,6 +1,6 @@
 package Langertha::Engine::XAI;
 # ABSTRACT: xAI Grok API
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use Carp qw( carp croak );
 

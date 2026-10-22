@@ -1,6 +1,6 @@
 package Langertha::Manifest::Endpoint;
 # ABSTRACT: One endpoint of a provider manifest: wire dialect, base URL, auth reference
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 with 'Langertha::Manifest::Validation';
 

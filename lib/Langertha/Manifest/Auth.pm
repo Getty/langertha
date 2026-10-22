@@ -1,6 +1,6 @@
 package Langertha::Manifest::Auth;
 # ABSTRACT: One auth mechanism of a provider manifest (type only, never a secret)
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 with 'Langertha::Manifest::Validation';
 

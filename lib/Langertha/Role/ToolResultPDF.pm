@@ -1,6 +1,6 @@
 package Langertha::Role::ToolResultPDF;
 # ABSTRACT: Role for an engine whose tool results carry PDFs the model reads
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose::Role;
 
 =head1 SYNOPSIS

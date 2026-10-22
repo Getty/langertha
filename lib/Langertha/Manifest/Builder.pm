@@ -1,6 +1,6 @@
 package Langertha::Manifest::Builder;
 # ABSTRACT: Build a provider manifest from configured engines (offline, never copies a secret)
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose;
 use Carp qw( carp croak );
 use Scalar::Util qw( blessed );

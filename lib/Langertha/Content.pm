@@ -1,6 +1,6 @@
 package Langertha::Content;
 # ABSTRACT: Base role for canonical multimodal content blocks with cross-provider serialization
-our $VERSION = '0.504';
+our $VERSION = '0.505';
 use Moose::Role;
 
 use Carp qw( croak );
