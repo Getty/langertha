@@ -7,8 +7,10 @@ sibling distribution langertha-raider (`Langertha::Raider`, `requires 'Langertha
 
 This distribution ships its own agent skills (`.claude/skills/`), agents (`.claude/agents/`),
 and house rules (`.claude/rules/`). The engineering discipline, delegation, coordination,
-public-issue and release rules live in `.claude/rules/langertha-rules.md` — imported here so
-they load for the main agent and every subagent.
+publish and release rules are shared house rules (skilletor bundle `getty-cpan-dist@getty`);
+what is true only here (public issues, live-test spend) lives in
+`.claude/rules/langertha-rules.md` — imported here so it loads for the main agent and every
+subagent.
 
 @.claude/rules/langertha-rules.md
 
