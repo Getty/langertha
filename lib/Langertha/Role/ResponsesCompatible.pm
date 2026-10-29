@@ -487,7 +487,7 @@ sub chat_response {
     my %extra = $self->_responses_extra_fields($data);
     my $citations = $self->_responses_merge_citations( delete $extra{citations}, $out{citations} );
 
-    # Normalize usage to chat-style keys (Langertha::Usage / Goldmine read
+    # Normalize usage to chat-style keys (Langertha::Usage / consumers read
     # prompt_tokens/completion_tokens off the %{} overload), while carrying the
     # Responses-native detail blocks through verbatim: input_tokens_details holds
     # the automatic prompt-cache read/write counts, and Langertha::Usage->from_hash

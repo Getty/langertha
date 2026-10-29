@@ -37,7 +37,7 @@ OpenAI's Bearer auth, API key and model list from L<Langertha::Engine::OpenAI>,
 composes the Responses envelope on top, and opts out of streaming.
 
 This engine returns a L<Langertha::Response> that is shape-compatible with
-the chat path, so existing consumers (including Goldmine's C<complete>
+the chat path, so existing consumers (e.g. a C<complete>
 method) work without modification. Reasoning tokens are normalized to
 C<completion_tokens_details.reasoning_tokens> for cost lookup compatibility.
 

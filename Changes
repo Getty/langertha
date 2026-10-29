@@ -1829,7 +1829,7 @@ Revision history for Langertha
       contract that Langertha::Response expects.
       Normalises input_tokens/output_tokens and
       output_tokens_details.reasoning_tokens to the chat-style names
-      Goldmine's cost lookup expects. Streaming not supported.
+      downstream cost lookups expect. Streaming not supported.
 
     - Langertha::ToolCall gained from_responses() constructor for
       extracting tool calls from Responses API
