@@ -2,6 +2,8 @@
 # ABSTRACT: Simple chat with Ollama
 # PODNAME: langertha_chat_ollama
 
+our $VERSION = '0.505';
+
 use strict;
 use warnings;
 use Langertha::Engine::Ollama;

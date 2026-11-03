@@ -2,6 +2,8 @@
 # ABSTRACT: Simple script to check the model list on an OpenAI compatible API
 # PODNAME: langertha_list_models
 
+our $VERSION = '0.505';
+
 use strict;
 use warnings;
 use Langertha::Engine::OpenAI;
