@@ -11,6 +11,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # The image build needs a container engine; CI tests the distribution.
+      DZIL_DOCKER_API_SKIP: 1
     strategy:
       fail-fast: false
       matrix:
