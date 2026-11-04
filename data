@@ -1,0 +1,62 @@
+---
+class: standard
+completed: 2026-11-04T22:52:58Z
+created: 2026-11-04T20:40:35Z
+id: 382
+priority: high
+started: 2026-11-04T20:48:33Z
+status: done
+tags:
+- reasoning
+- wire
+- llamacpp
+- sglang
+title: 'Denken an/aus für llama.cpp, SGLang und generische OpenAI-kompatible Server:
+  reasoning_effort → chat_template_kwargs.enable_thinking'
+updated: 2026-11-04T22:53:01Z
+---
+
+Anlass (cai-admin für Langertha-Holmgang, 2026-11-04): Holmgang misst Modelle mit Varianten „Denken an/aus“. Bei Qwen3.x/3.8, Kolibri, Nemotron, Gemma unter llama.cpp schaltet das heute nur chat_template_kwargs.enable_thinking (Request-Body, top-level, OpenAI-Chat-Wire). Langertha kann das nicht senden: vLLM bildet reasoning_effort serverseitig auf enable_thinking ab (Engine::vLLM POD), aber llama.cpp (Engine::LlamaCpp, knob_wire_format llamacpp), SGLang und generische OpenAI-kompatible Endpunkte (tensorfold, Skeid-Gateways) haben keinen Weg. ADR 0004 verbietet einen extra_body-Seitenkanal – also als modellierte Abbildung.
+
+Gemessen bei uns (llama.cpp b12004, --jinja): chat_template_kwargs {"enable_thinking": false} schaltet Qwen3.8-Flash-Next/27B aus; Kolibri-1 kennt enable_thinking und reasoning_effort (llama-server meldet reasoning_effort_levels [low, medium]); Step-3.7-Flash ignoriert enable_thinking (Denken fest an), reasoning_effort=low kürzt. tensorfold-native (cortex, OpenAI-kompatibel) nimmt chat_template_kwargs ebenfalls.
+
+Ziel:
+- Langertha::Reasoning bekommt einen Wire-Weg für die Self-Hosted-OpenAI-Engines (llama.cpp, SGLang; generisch abschaltbar/zuschaltbar für OpenAI-kompatible Base-URLs): effort none → chat_template_kwargs.enable_thinking=false; low|medium|high → enable_thinking=true (+ reasoning_effort mitsenden, wo der Server es kennt, z. B. llama.cpp neuere Builds); unset → nichts senden. Platzierung wie reasoning_kwargs_for / Runtime::Knobs (top-level Body-Felder), keine extra_body-Tür.
+- Eine explizite Steuerung „thinking an/aus“ ohne Effort-Stufe ist ebenfalls nötig (Holmgang-Variante enable_thinking=on/off) – Abbildung auf dasselbe Feld; Konflikt mit effort klar regeln (croak oder Vorrang dokumentieren).
+- Mit bestehendem chat_template_kwargs anderer Herkunft zusammenführen statt überschreiben, falls es so etwas gibt.
+- Tests ohne Netz (Request-Body prüfen) für LlamaCpp, SGLang, vLLM (unverändert), OpenAI-generisch; POD in den Engines und in Langertha::Reasoning; ADR, falls die Wire-Entscheidung neu ist (langertha-adr-auditor).
+Fertig, wenn: Tests grün (prove -lr t/), POD aktualisiert, Changes-Eintrag, Commit auf main; kein Release (macht der Mensch).
+Grenzen: keine Live-Tests mit Kosten; GitHub-Issues nicht anfassen; nicht pushen ohne Wort – cai-admin pusht nach Abnahme auf Wunsch des Menschen.
+
+Orchestrator (langertha) übernimmt: Plan → llm-advisor zur Prüfung.
+
+llm-advisor: Plan tragfähig mit Änderungen — Tag chat_template_kwargs, Toggle thinking_enabled (Bool, dreiwertig), JSON-Booleans, none→nur enable_thinking=false, Layer-Konflikt nur innerhalb einer Ebene croaken, Merge mit Caller-chat_template_kwargs (Caller-Keys gewinnen) in chat_request+chat_stream_request; LlamaCpp+SGLang Default, vLLM unverändert, sonst Opt-in.
+
+wire-worker: Implementierung in lib/ fertig (Reasoning to_chat_template_kwargs, thinking_enabled, Merge-Helper, LlamaCpp/SGLang Default, OpenAI-Temperature-Gate auf aufgelösten Effort, DeepSeek auf gemeinsamen Resolver). test-writer: t/48_reasoning_chat_template_kwargs.t 89/89 grün. Offene Pins t/47 capability gate + t/48 toggle scope (beabsichtigte Wire-Änderung) werden nachgezogen. Arbeit im Worktree .claude/worktrees/k382-chat-template-kwargs (Isolations-Guard).
+
+Pins nachgezogen (Golden nur 36 LlamaCpp/SGLang-Zeilen). HTTP::Daemon+Perl::Critic lokal installiert (cpanfile test-requires) → prove -lr t/ PASS 240 Dateien/11282 Tests, perlcritic sauber. reviewer: 'with fixes' — I1 Gemini2.5 croak bei Aus, I2 DeepSeek V3 Aus→enabled, I3 undef-Control verwirft Engine-Effort, Minors (Ollama, BUILD-Check, POD). wire-worker fixt.
+
+Fix-Runden durch: Gemini2.5 carp-drop, DeepSeek V3 none→thinking disabled (Doku-belegt) + same-layer croak, defined-Layering, Ollama native thinking_enabled, Konstruktor-Croak (inkl. Anthropic effort-Alias), POD. Tests: t/48_reasoning_chat_template_kwargs.t, t/48_reasoning_thinking_enabled_layers.t (72), Golden 38 Zeilen (36 LlamaCpp/SGLang + 2 DeepSeek v3.2 effort_none). ADR 0040 + Update in 0009, CONTEXT.md, CLAUDE.md, Skill-Area-Map. Re-Review: Code hält, Doku-Punkte erledigt. prove -lr -j4 t/: 241 Dateien, 11354 Tests PASS, 14 t/8x live skipped. Folgekarten k383–k388. → release-manager.
+
+
+=== BERICHT k382 (Orchestrator langertha, 2026-11-04) ===
+Commit auf main: 98104b8 "Switch thinking on and off through chat_template_kwargs on llama.cpp and SGLang (k382)" (Fast-Forward von 0639fac). NICHT gepusht, kein Release, kein Tag.
+
+Was es tut:
+- Neues reasoning_wire_format chat_template_kwargs (Langertha::Reasoning->to_chat_template_kwargs). effort none -> nur chat_template_kwargs {enable_thinking: false} (kein reasoning_effort: älteres SGLang, gpt-oss und MiniMax-M3 antworten auf none mit 400). low|medium|high|… -> enable_thinking: true + top-level reasoning_effort, ungeclampt. Unset -> nichts. Echte JSON-Booleans (llama.cpp reagiert nur auf true/false).
+- Default auf LlamaCpp und SGLang. vLLM unverändert (openai). Generisch: OpenAI-kompatible Engine->new(..., reasoning_wire_format => 'chat_template_kwargs') (explizites Opt-in, api.openai.com lehnt unbekannte Felder ab).
+- Expliziter Schalter thinking_enabled (0/1/unset): Engine-Attribut und chat_f-Control. Mit reasoning_effort ein Belang: ein gesetzter Per-Request-Wert ersetzt beide Engine-Werte (Engine high + Request thinking_enabled=>0 -> aus). Widerspruch innerhalb einer Ebene croakt (Engine schon bei new). Aus wirkt auf allen Wires wie effort none. An ohne Stufe wird gesendet, wo es eine stufenlose Form gibt (chat_template_kwargs, MiniMax/Kimi-Toggle, DeepSeek V3, Ollama think); sonst einmal carp, nie croak (Matrix-tauglich).
+- Caller-chat_template_kwargs in %extra werden eine Ebene tief gemergt, Caller-Keys gewinnen (z.B. {thinking => false} für DeepSeek-V3.x-/Kimi-Templates). Bewusst anders als ADR 0038.
+- Mitgefixt (aus dem Review): DeepSeek V3.x effort none sendete thinking {type: enabled} -> jetzt disabled (laut api-docs.deepseek.com). Gemini 2.5: Aus-Schalter wird verworfen und carpt (kein Croak; budget bleibt). OpenAI-Temperature-Gate (ADR 0025) liest den aufgelösten Effort. Ollama native beachtet thinking_enabled.
+- Holmgang-Hinweis: Auf llama.cpp ≥ ~b10121 schaltet laut Quellcode schon reasoning_effort=none das Denken aus (nicht gemessen). Der neue Wire funktioniert ab ~b5780. Step-3.7-Flash ignoriert enable_thinking, bekommt bei Stufen aber reasoning_effort mit.
+
+Team-Kette: llm-advisor (Plan geprüft gegen llama.cpp-/SGLang-Quellcode) -> wire-worker -> test-writer -> reviewer (2 Runden, 'with fixes' -> abgearbeitet) -> adr-auditor (ADR 0040, Update in 0009, CONTEXT.md, CLAUDE.md, Skill-Area-Map) -> release-manager (Changes unter {{$NEXT}}, Commit).
+
+Verifikation: prove -lr -j4 t/ -> 241 Dateien, 11354 Tests, PASS. Die 14 env-gated t/8x-Live-Tests sind ohne Keys geskippt. Keine Live-Calls, keine Kosten. perlcritic sauber. Neue Tests: t/48_reasoning_chat_template_kwargs.t, t/48_reasoning_thinking_enabled_layers.t (72). Golden t/data/reasoning_capability_gate_bodies.json: 38 Zeilen bewusst geändert (36 LlamaCpp/SGLang, 2 DeepSeek v3.2 effort_none).
+Umgebung: HTTP::Daemon, Perl::Critic und Test::Perl::Critic (cpanfile test-requires) per cpanm --notest in ~/perl5 installiert. Vorher konnten ~27 Testdateien hier nicht laufen.
+Ablauf-Hinweis: Der Isolations-Guard der Hintergrund-Session blockte Edits im geteilten Checkout. Die Arbeit lief deshalb im Worktree; danach ff-only auf main, Worktree und Branch entfernt.
+
+Offen / Folgekarten: k383 llama.cpp-Effort-Clamp über /props; k384 Gemini 2.5 Aus -> thinkingBudget 0; k385 Skeid/tensorfold-Passthrough prüfen (Skeid-Hälfte gehört aufs Skeid-Board); k386 DeepSeek V4 bloßes An senden; k387 Role::Langfuse-BUILDARGS-Bug bei ->new({hashref}) (älter, nicht von k382); k388 t/72_virtual_server.t flaky unter -j4.
+Nächster Schritt (Mensch/cai-admin): Abnahme, danach git push.
+
+Fertig: Commit 98104b8 auf main (nicht gepusht). Bericht im Body.
