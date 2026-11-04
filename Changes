@@ -8,7 +8,7 @@ Revision history for Langertha
       It is the default on LlamaCpp and SGLang, and any OpenAI-compatible
       engine takes it through the constructor. A chat_template_kwargs hash
       the caller passes in %extra is merged one level deep; the caller's
-      keys win (k382, ADR 0040).
+      keys win (ADR 0040).
     - New tri-state thinking_enabled control (engine attribute and chat_f
       control) next to reasoning_effort: on, off, or unset. A per-request
       value replaces both engine values; a contradiction inside one layer
