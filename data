@@ -1,0 +1,17 @@
+---
+class: standard
+created: 2026-11-04T21:49:42Z
+id: 384
+priority: low
+status: backlog
+tags:
+- llm
+- risk
+- reasoning
+- gemini
+title: 'Gemini 2.5: thinking_enabled => 0 auf thinkingBudget 0 abbilden, wo das Modell
+  abschalten kann'
+updated: 2026-11-04T21:49:42Z
+---
+
+Folge von k382 / ADR 0040: auf Budget-Profilen (Gemini 2.5) wird der Aus-Schalter derzeit mit carp verworfen. Provider-Wahrheit klären (welche 2.5-Modelle nehmen thinkingBudget 0 an — Flash ja?, Pro nein?), dann abbilden; Pro weiter carp-drop.
