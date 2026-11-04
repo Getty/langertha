@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-11-04T21:49:50Z
+id: 386
+priority: low
+status: backlog
+tags:
+- llm
+- reasoning
+- deepseek
+title: 'DeepSeek V4: bloßes thinking_enabled => 1 als thinking {type: enabled} senden
+  statt verwerfen'
+updated: 2026-11-04T21:49:50Z
+---
+
+Folge von k382: api-docs.deepseek.com/api/create-chat-completion listet thinking {type: enabled|disabled} auch für V4. Aktuell: V4 + thinking_enabled=>1 ohne Effort → carp + nichts. Prüfen und ggf. senden.
