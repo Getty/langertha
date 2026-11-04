@@ -1,0 +1,22 @@
+---
+class: standard
+created: 2026-11-04T21:57:13Z
+id: 389
+priority: medium
+status: backlog
+tags:
+- errors
+- holmgang
+title: Strukturierte Anfragefehler und einheitliches context_exceeded/no_vision-Signal
+  (für Langertha-Holmgang)
+updated: 2026-11-04T21:57:13Z
+---
+
+Von langertha-holmgang k16 (cai-holmgang, 2026-11-04). Holmgang::Target klassifiziert heute den croak-Text per Regex (Signaturen aus cai-platform af7561a5). Wünsche an Langertha:
+1. Strukturierte Fehler-Exception bei HTTP-Fehlern (Status, voller Body, Provider-Code/-Typ) statt croak-String.
+2. Einheitliche Klassifikation context_exceeded / no_vision je Engine (OpenAI context_length_exceeded, vLLM maximum context length/max_model_len, llama.cpp exceed_context_size_error, SGLang, TGI, LiteLLM ContextWindowExceededError, Ollama, Anthropic "prompt is too long"; Bild: "image input is not supported … mmproj", vLLM "not a multimodal model").
+3. Ungekürzter Fehler-Body: $Langertha::Role::HTTP::error_body_max_length = 500 schneidet; ein local im Aufrufer wirkt nicht über ein await (Net::Async::HTTP).
+4. ModelProbe: Kontextfenster als Modell-Fakt (llama.cpp /props n_ctx, vLLM /v1/models max_model_len, Ollama /api/show context_length, OpenRouter context_length).
+5. Engine::Virtual: Kontextfenster emulieren (Token schätzen, oberhalb Grenze 400) und Fehler-Body als JSON in Provider-Form ({error:{code,type,message}}).
+6. Fehlertext ohne " at FILE line N."-Anhang; Helfer zum Schrubben von Fehlertexten (Keys).
+7. Virtual verwirft temperature aus der Anfrage (beobachtet in Holmgang-Tests).
