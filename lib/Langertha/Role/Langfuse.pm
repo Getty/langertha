@@ -166,13 +166,15 @@ sub _build_langfuse_enabled {
 }
 
 around BUILDARGS => sub {
-  my ( $orig, $class, %args ) = @_;
+  my ( $orig, $class, @args ) = @_;
+  # Let Moose normalize first: new() also takes one HashRef.
+  my $args = $class->$orig(@args);
   # Auto-populate from env vars if not passed
-  $args{langfuse_public_key} //= $ENV{LANGFUSE_PUBLIC_KEY}
+  $args->{langfuse_public_key} //= $ENV{LANGFUSE_PUBLIC_KEY}
     if $ENV{LANGFUSE_PUBLIC_KEY};
-  $args{langfuse_secret_key} //= $ENV{LANGFUSE_SECRET_KEY}
+  $args->{langfuse_secret_key} //= $ENV{LANGFUSE_SECRET_KEY}
     if $ENV{LANGFUSE_SECRET_KEY};
-  return $class->$orig(%args);
+  return $args;
 };
 
 has _langfuse_batch => (

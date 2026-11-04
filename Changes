@@ -17,6 +17,12 @@ Revision history for Langertha
     - DeepSeek V3.x with reasoning effort none or thinking off sends
       thinking {type: disabled}; it sent enabled before. The OpenAI
       temperature gate reads the resolved effort.
+    - Fix constructing an engine or a plugin from one hash reference:
+      new({ ... }) now takes every argument, the same as new( ... ), and
+      warns nothing. This covers every chat engine (through
+      Langertha::Role::Langfuse) and Langertha::Plugin; the LANGFUSE_PUBLIC_KEY
+      / LANGFUSE_SECRET_KEY defaults and the raider alias for host apply to
+      both forms.
 
 0.504     2026-10-22 21:00:18Z
 

@@ -130,11 +130,13 @@ this plugin belongs to. Weakened to avoid circular references.
 =cut
 
 around BUILDARGS => sub {
-  my ( $orig, $class, %args ) = @_;
-  if ($args{raider} && !$args{host}) {
-    $args{host} = delete $args{raider};
+  my ( $orig, $class, @args ) = @_;
+  # Let Moose normalize first: new() also takes one HashRef.
+  my $args = $class->$orig(@args);
+  if ($args->{raider} && !$args->{host}) {
+    $args->{host} = delete $args->{raider};
   }
-  return $class->$orig(%args);
+  return $args;
 };
 
 sub raider {
