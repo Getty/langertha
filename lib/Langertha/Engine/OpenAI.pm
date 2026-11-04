@@ -168,9 +168,10 @@ sub _temperature_rejected_by_reasoning {
   return 0 unless $profile->is_reasoning_model;
   # Resolved reasoning effort: a per-request control (chat_f, karr #46) beats the
   # engine attribute; neither set means the model's server-side default applies.
-  my $effort = exists $controls->{reasoning_effort} ? $controls->{reasoning_effort}
-             : $self->has_reasoning_effort          ? $self->reasoning_effort
-             :                                         undef;
+  # Resolved by the same layering the serializer uses, so an off switch
+  # (thinking_enabled => 0, karr k382) reads as effort 'none' here too.
+  my %reasoning = $self->_reasoning_controls_for( %{ $controls // {} } );
+  my $effort = $reasoning{effort};
   # No explicit effort: the model's server-side default effort applies. For most
   # reasoning models that default is a reasoning level (temperature rejected), but
   # the gpt-5.1/5.2/5.4 line defaults to reasoning-OFF, so a non-default

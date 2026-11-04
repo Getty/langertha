@@ -20,6 +20,10 @@ with 'Langertha::Role::Embedding',
 # knob — see Langertha::Runtime::Knobs.
 sub _build_knob_wire_format { 'llamacpp' }
 
+# Thinking on/off goes through the chat template on this server:
+# chat_template_kwargs.enable_thinking (+ reasoning_effort when on), karr k382.
+sub _build_reasoning_wire_format { 'chat_template_kwargs' }
+
 =head1 SYNOPSIS
 
     use Langertha::Engine::LlamaCpp;
@@ -50,6 +54,41 @@ silently and returns the full vector.
 
 See L<https://github.com/ggml-org/llama.cpp/blob/master/examples/server/README.md>
 for server setup.
+
+=head1 REASONING
+
+L<Langertha::Role::ReasoningEffort/reasoning_wire_format> defaults to
+C<chat_template_kwargs>
+(L<Langertha::Reasoning/to_chat_template_kwargs>). What goes on the wire:
+
+    reasoning_effort none             ->  chat_template_kwargs => { enable_thinking => false }
+    reasoning_effort low .. max       ->  chat_template_kwargs => { enable_thinking => true },
+                                          reasoning_effort     => $effort
+    thinking_enabled => 0             ->  same as reasoning_effort none
+    thinking_enabled => 1 (no effort) ->  chat_template_kwargs => { enable_thinking => true }
+    (unset)                           ->  nothing; the template's default applies
+
+    my $llama = Langertha::Engine::LlamaCpp->new(
+        url              => 'http://localhost:8080/v1',
+        thinking_enabled => 0,          # Qwen3 & co: no thinking
+    );
+
+The server must run with C<--jinja> for the template to see the kwargs.
+llama.cpp honors C<chat_template_kwargs> since about build b5780 and a
+top-level C<reasoning_effort> since about b10121/b10434 (those build numbers
+are not validated); older builds ignore the field, and a template that does
+not read C<enable_thinking> ignores the switch. The effort is sent as given,
+not clamped to a per-model ladder; C<none> sends no C<reasoning_effort>.
+
+Only C<enable_thinking> is sent. Templates that read C<thinking> instead
+(DeepSeek-V3.x, Kimi) need it passed per request, which is merged with the
+reasoning switch, the caller's keys winning:
+
+    my $response = await $llama->chat_f(
+        messages             => \@messages,
+        reasoning_effort     => 'none',
+        chat_template_kwargs => { thinking => JSON->false },
+    );
 
 B<THIS API IS WORK IN PROGRESS>
 

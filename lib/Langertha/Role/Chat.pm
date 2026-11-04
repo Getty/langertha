@@ -672,6 +672,7 @@ my %CANONICAL_CONTROLS = map { $_ => 1 } qw(
   seed
   parallel_tool_use
   reasoning_effort
+  thinking_enabled
   thinking_budget
   thinking_display
   prompt_cache
@@ -991,7 +992,7 @@ sub _chat_request_features {
   $features{response_format} = 1 if defined $self->_chat_effective_response_format($opts);
   $features{temperature} = 1 if exists $opts->{temperature} || $attr_set->('temperature');
   $features{reasoning} = 1
-    if grep { exists $opts->{$_} || $attr_set->($_) } qw( reasoning_effort thinking_budget thinking_display );
+    if grep { exists $opts->{$_} || $attr_set->($_) } qw( reasoning_effort thinking_enabled thinking_budget thinking_display );
   $features{parallel_tool_use} = 1 if exists $opts->{parallel_tool_use} || $attr_set->('parallel_tool_use');
   $features{max_tokens} = 1 if exists $opts->{max_tokens};
   $features{streaming} = 1 if $streaming;
@@ -1335,14 +1336,17 @@ C<chat_model> is that model.
 The canonical per-request controls (karr #46) are normalized like
 C<messages>/C<tools> instead of being spread as raw target-wire kwargs:
 C<temperature>, C<max_tokens>, C<response_format>, C<seed>,
-C<parallel_tool_use>, C<reasoning_effort>, C<thinking_budget>,
-C<prompt_cache>, C<prompt_cache_ttl> and C<prompt_cache_key>. Each engine's
+C<parallel_tool_use>, C<reasoning_effort>, C<thinking_enabled>,
+C<thinking_budget>, C<prompt_cache>, C<prompt_cache_ttl> and
+C<prompt_cache_key>. Each engine's
 C<chat_request> places them on its own wire (Ollama C<options>, Gemini
 C<generationConfig>, Anthropic C<output_config>+C<thinking>, ...) via the same
 value objects the engine attributes use, so the same call is correct across
 engine families. A per-request control beats the configured engine attribute
-on a per-key basis. Any other key still passes straight through to the wire as
-before.
+on a per-key basis -- except C<reasoning_effort> and C<thinking_enabled>,
+which are one concern: a per-request value for either replaces both engine
+attributes (L<Langertha::Role::ReasoningEffort/thinking_enabled>). Any other
+key still passes straight through to the wire as before.
 
 When the caller asks for a forced named tool on an engine that cannot
 do native named-tool-forcing but supports C<json_schema>
@@ -1844,7 +1848,8 @@ required (ArrayRef or a single message); C<chunk_callback> is called with each
 L<Langertha::Stream::Chunk> as it arrives from the server. The canonical
 per-request controls (karr #46) — C<temperature>, C<max_tokens>,
 C<response_format>, C<seed>, C<parallel_tool_use>, C<reasoning_effort>,
-C<thinking_budget>, C<prompt_cache>, C<prompt_cache_ttl>, C<prompt_cache_key> —
+C<thinking_enabled>, C<thinking_budget>, C<prompt_cache>, C<prompt_cache_ttl>,
+C<prompt_cache_key> —
 are extracted and handed to L</chat_stream_request> under C<controls>, exactly
 as in L</chat_f>. C<tools> is shaped for the engine's C<tool_wire_format> item
 by item, exactly as in L</chat_f> (L<Langertha::Tool/request_list>):

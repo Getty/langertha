@@ -150,6 +150,11 @@ vLLM translates the value into C<enable_thinking> via the chat template:
     reasoning_effort none              ->  enable_thinking = false
     (unset)                            ->  enable_thinking not injected
 
+vLLM stays on the C<openai> reasoning wire, because it does that mapping
+itself. A vLLM whose template needs the switch sent explicitly opts in with
+C<< reasoning_wire_format =E<gt> 'chat_template_kwargs' >>
+(L<Langertha::Reasoning/to_chat_template_kwargs>).
+
 The thought itself comes back in the C<reasoning> response field — mainline
 vLLM renamed it from C<reasoning_content> to C<reasoning> in v0.16.0, and
 both spellings are read — surfaced on C<< $response->thinking >>. It is only

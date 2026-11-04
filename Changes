@@ -2,6 +2,22 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New reasoning_wire_format chat_template_kwargs: sends
+      chat_template_kwargs.enable_thinking (a JSON boolean) plus
+      reasoning_effort, and only enable_thinking false for effort none.
+      It is the default on LlamaCpp and SGLang, and any OpenAI-compatible
+      engine takes it through the constructor. A chat_template_kwargs hash
+      the caller passes in %extra is merged one level deep; the caller's
+      keys win (k382, ADR 0040).
+    - New tri-state thinking_enabled control (engine attribute and chat_f
+      control) next to reasoning_effort: on, off, or unset. A per-request
+      value replaces both engine values; a contradiction inside one layer
+      croaks, at construction too. Ollama native honors a per-request
+      thinking_enabled.
+    - DeepSeek V3.x with reasoning effort none or thinking off sends
+      thinking {type: disabled}; it sent enabled before. The OpenAI
+      temperature gate reads the resolved effort.
+
 0.504     2026-10-22 21:00:18Z
 
     - Gemini 4 (gemini-4-argon, any gemini-4* id) gets its own request

@@ -244,6 +244,34 @@ sub embedding_response {
   return $embeddings->[0];
 }
 
+# The per-request reasoning_effort / thinking_enabled controls (chat_f, karr
+# #46 / k382) -> top-level `think` via Langertha::Reasoning->to_ollama, for both
+# request builders. Ollama does not compose Role::ReasoningEffort, so there are
+# no engine attributes to layer. thinking_enabled => 0 is effort none (think
+# false; the GPT-OSS floor 'low'); a bare 1 is think true, except on GPT-OSS,
+# which takes only levels: dropped with a carp once per engine. An undef
+# control counts as not set. A contradicting pair croaks (Reasoning BUILD).
+sub _ollama_reasoning_kwargs {
+  my ( $self, $controls ) = @_;
+  my $effort  = $controls->{reasoning_effort};
+  my $enabled = $controls->{thinking_enabled};
+  return () unless defined $effort || defined $enabled;
+  my $reasoning = Langertha::Reasoning->new(
+    ( defined $effort  ? ( effort => $effort ) : () ),
+    ( defined $enabled ? ( thinking_enabled => $enabled ) : () ),
+    ( defined $self->chat_model ? ( model => $self->chat_model ) : () ),
+  );
+  if ( $reasoning->drops_thinking_enabled_on('ollama') ) {
+    my $value = $reasoning->thinking_enabled ? 1 : 0;
+    my $model = $self->chat_model // '';
+    $self->_langertha_carp( ( ref $self ) . ": dropping thinking_enabled => " . $value
+      . " -- model '" . $model . "' has no level-free think form for it; "
+      . "set reasoning_effort instead",
+      'thinking_enabled=' . $value . ' wire=ollama model=' . $model );
+  }
+  return $reasoning->to('ollama');
+}
+
 sub chat_request {
   my ( $self, $messages, %extra ) = @_;
 
@@ -291,12 +319,7 @@ sub chat_request {
   # grades cleanly (low ~25-47, max ~207-402). Ollama does not compose
   # ReasoningEffort, so serialize directly via the value object rather than
   # advertising the capability; to_ollama emits (think => <boolean|level>).
-  my @reasoning = exists $controls->{reasoning_effort}
-    ? Langertha::Reasoning->new(
-        effort => $controls->{reasoning_effort},
-        ( $self->can('chat_model') ? ( model => $self->chat_model ) : () ),
-      )->to('ollama')
-    : ();
+  my @reasoning = $self->_ollama_reasoning_kwargs($controls);
 
   return $self->generate_request( chat => sub { $self->chat_response(shift) },
     model => $self->chat_model,
@@ -537,12 +560,7 @@ sub chat_stream_request {
   # chat_request: a sibling of model/messages/stream, never under options
   # (Ollama silently ignores options.think). Live-probed 2026-09-17 via
   # ollama.com gpt-oss:20b (k175).
-  my @reasoning = exists $controls->{reasoning_effort}
-    ? Langertha::Reasoning->new(
-        effort => $controls->{reasoning_effort},
-        ( $self->can('chat_model') ? ( model => $self->chat_model ) : () ),
-      )->to('ollama')
-    : ();
+  my @reasoning = $self->_ollama_reasoning_kwargs($controls);
 
   return $self->generate_request( chat => sub {},
     model => $self->chat_model,
