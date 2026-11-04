@@ -1,0 +1,17 @@
+---
+class: standard
+completed: 2026-11-04T23:24:57Z
+created: 2026-11-04T21:49:54Z
+id: 387
+priority: medium
+started: 2026-11-04T23:24:57Z
+status: done
+tags:
+- bug
+title: Role::Langfuse BUILDARGS verliert Argumente bei ->new({hashref})
+updated: 2026-11-04T23:25:17Z
+---
+
+Beim k382-Review gefunden (nicht durch k382 verursacht): Engine->new({ ... }) warnt 'Reference found where even-sized list expected' in lib/Langertha/Role/Langfuse.pm:169 und verliert danach url. Langfuse-BUILDARGS sollte zuerst $orig aufrufen (bzw. Hashref-Form normalisieren). Regressionstest dazu.
+
+2026-11-04 23:25 Erledigt in 826d94e (Role::Langfuse und Plugin normalisieren über $orig, Regressionstest t/91_constructor_hashref.t, gegen 98104b8 rot). Gemergt und gepusht.
