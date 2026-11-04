@@ -1,0 +1,14 @@
+---
+class: standard
+created: 2026-11-04T21:49:58Z
+id: 388
+priority: low
+status: backlog
+tags:
+- test
+- flaky
+title: t/72_virtual_server.t flaky unter prove -j4
+updated: 2026-11-04T21:49:58Z
+---
+
+Bei k382 einmal 1/6 rot unter prove -lr -j4 t/, allein 8/8 grün. Test spawnt Kindprozess, prüft Port und Reaping — vermutlich Timing unter Last. Datei und Virtual.pm von k382 unberührt.
