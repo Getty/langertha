@@ -1,0 +1,18 @@
+---
+class: standard
+created: 2026-11-05T00:47:01Z
+id: 390
+priority: low
+status: backlog
+tags:
+- docker
+- release
+title: 'Dockerfile: cpm deprecated flags + unpinned cpm from GitHub main'
+updated: 2026-11-05T00:47:01Z
+---
+
+Found while debugging the 0.505 Docker build failure (root cause was .dockerignore excluding META.*, fixed separately).
+
+- The Dockerfile fetches cpm from https://raw.githubusercontent.com/skaji/cpm/main/cpm, unpinned. Since 2026-10-22 that is the self-contained cpm v1.1.6; a future change on main can break the image build without any change here. Consider pinning a tag (e.g. .../skaji/cpm/v1.1.6/cpm) or verifying it.
+- cpm 1.1.6 reports --with-recommends and --without-test as deprecated ("use --top-level-phase and/or --top-level-relationship instead"). Still working today. Replacement: --top-level-relationship requires,recommends --top-level-phase configure,build,runtime.
+- langertha-raider has the same Dockerfile block (cross-repo: its own board).
