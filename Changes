@@ -23,6 +23,8 @@ Revision history for Langertha
       Langertha::Role::Langfuse) and Langertha::Plugin; the LANGFUSE_PUBLIC_KEY
       / LANGFUSE_SECRET_KEY defaults and the raider alias for host apply to
       both forms.
+    - ex/raider_rag.pl defaults to a local Ollama at
+      http://localhost:11434, like the other examples.
 
 0.504     2026-10-22 21:00:18Z
 
