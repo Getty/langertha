@@ -1,6 +1,6 @@
 package Langertha::Engine::Virtual;
 # ABSTRACT: Rule-driven engine that answers without network, key or model
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 use Carp qw( croak );
 use Encode ();

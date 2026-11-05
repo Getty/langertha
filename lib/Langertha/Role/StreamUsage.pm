@@ -1,6 +1,6 @@
 package Langertha::Role::StreamUsage;
 # ABSTRACT: Role for an engine whose stream request asks for the token usage
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose::Role;
 
 =head1 SYNOPSIS

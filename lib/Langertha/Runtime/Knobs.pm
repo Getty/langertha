@@ -1,6 +1,6 @@
 package Langertha::Runtime::Knobs;
 # ABSTRACT: Immutable self-hosted runtime knobs with per-server conversion
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS qw( JSON );

@@ -1,6 +1,6 @@
 package Langertha::Manifest;
 # ABSTRACT: Provider manifest (/.well-known/langertha.json) value object, parser and validator
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 use Carp qw( croak );
 use Scalar::Util qw( blessed );

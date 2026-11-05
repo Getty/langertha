@@ -1,6 +1,6 @@
 package Langertha::Virtual::Rules;
 # ABSTRACT: Helpers that build the rules of Langertha::Engine::Virtual
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use strict;
 use warnings;
 use Carp qw( croak );

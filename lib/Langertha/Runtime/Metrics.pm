@@ -1,6 +1,6 @@
 package Langertha::Runtime::Metrics;
 # ABSTRACT: Prometheus text exposition format parser with prefix filter
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 use Carp qw( croak );
 use Scalar::Util qw( blessed );

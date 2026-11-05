@@ -1,6 +1,6 @@
 package Langertha::Role::ToolResultImages;
 # ABSTRACT: Role for an engine whose tool results carry images the model sees
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose::Role;
 
 =head1 SYNOPSIS

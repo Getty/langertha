@@ -1,6 +1,6 @@
 package Langertha::Manifest::Validation;
 # ABSTRACT: Internal validation rules shared by the provider manifest value objects
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose::Role;
 use B ();
 use Scalar::Util qw( blessed );

@@ -1,6 +1,6 @@
 package Langertha::CallResult;
 # ABSTRACT: Result of an embedding, transcription or image call, with usage, rate limit and timing
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 use Langertha::Usage;
 

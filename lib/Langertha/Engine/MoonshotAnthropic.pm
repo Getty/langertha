@@ -1,6 +1,6 @@
 package Langertha::Engine::MoonshotAnthropic;
 # ABSTRACT: Moonshot AI Kimi API via Anthropic-compatible endpoint
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 use Carp qw( croak );
 

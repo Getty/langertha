@@ -1,6 +1,6 @@
 package Langertha::Role::ImageGeneration;
 # ABSTRACT: Role for engines that support image generation
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );

@@ -1,6 +1,6 @@
 package Langertha::Role::CachedContent;
 # ABSTRACT: Role for the explicit cachedContent resource lifecycle (create/get/list/update/delete)
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose::Role;
 use Future::AsyncAwait;
 use Carp qw( croak );

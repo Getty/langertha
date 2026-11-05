@@ -2,7 +2,7 @@
 # ABSTRACT: Simple transcription with a Whisper compatible server or OpenAI
 # PODNAME: langertha_whisper
 
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 
 use strict;
 use warnings;

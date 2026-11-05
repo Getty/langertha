@@ -1,6 +1,6 @@
 package Langertha::Role::ReasoningEffort;
 # ABSTRACT: Role for an engine with a request-side reasoning-effort control
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose::Role;
 use Carp qw( carp );
 use Langertha::Reasoning;

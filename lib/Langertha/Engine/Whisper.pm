@@ -1,6 +1,6 @@
 package Langertha::Engine::Whisper;
 # ABSTRACT: Whisper compatible transcription server
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 
 extends 'Langertha::Engine::TranscriptionBase';

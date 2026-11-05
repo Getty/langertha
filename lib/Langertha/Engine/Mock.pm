@@ -1,6 +1,6 @@
 package Langertha::Engine::Mock;
 # ABSTRACT: Langertha::Engine::Virtual under the engine name Mock
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 
 extends 'Langertha::Engine::Virtual';

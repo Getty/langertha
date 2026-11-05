@@ -2,7 +2,7 @@
 # ABSTRACT: Simple chat with OpenAI
 # PODNAME: langertha_chat_openai
 
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 
 use strict;
 use warnings;

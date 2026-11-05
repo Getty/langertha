@@ -1,6 +1,6 @@
 package Langertha::Content::Image;
 # ABSTRACT: Canonical image content block with cross-provider conversion
-our $VERSION = '0.505';
+our $VERSION = '0.506';
 use Moose;
 use Moose::Util::TypeConstraints qw( subtype as where message );
 use Carp qw( croak );
