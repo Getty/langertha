@@ -1,0 +1,17 @@
+---
+class: standard
+created: 2026-11-06T04:57:53Z
+id: 392
+priority: high
+status: backlog
+tags:
+- llm
+- risk
+- reasoning
+title: 'gpt-6-luna/sol: Profile-Zeile muss explizites none erlauben; Chat-Completions-Tools
+  brauchen effort=none (luna/sol) bzw. Responses (6.1-sol)'
+updated: 2026-11-06T04:57:53Z
+---
+
+Die gpt-6-Zeile in Reasoning::Profile ist von gpt-6-astra abgeleitet (kein none, none = Feld weglassen). gpt-6-luna und gpt-6-sol akzeptieren none und machen auf Chat Completions Function Calling nur bei reasoning_effort=none; gpt-6.1-sol: Tool Calling nur über die Responses API. Heute erreicht Engine::OpenAI auf diesen drei Modellen keinen funktionierenden Tool-Call.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
