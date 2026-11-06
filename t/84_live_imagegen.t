@@ -6,6 +6,18 @@ use warnings;
 
 use Test2::Bundle::More;
 
+plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+  unless $ENV{TEST_LANGERTHA_LIVE};
+
+# Cost gate: image generation is very expensive (3 images per run, ~43 USD once),
+# so images need ALL FOUR switches on purpose, checked in order, and the key last.
+plan skip_all => 'set TEST_LANGERTHA_LIVE_EXPENSIVE=1 to run image generation (very expensive)'
+  unless $ENV{TEST_LANGERTHA_LIVE_EXPENSIVE};
+plan skip_all => 'set TEST_LANGERTHA_LIVE_ULTRALARGE=1 to run image generation (very expensive)'
+  unless $ENV{TEST_LANGERTHA_LIVE_ULTRALARGE};
+plan skip_all => 'set TEST_LANGERTHA_LIVE_IMAGES=1 to run the image generation test (3 paid images per run)'
+  unless $ENV{TEST_LANGERTHA_LIVE_IMAGES};
+
 plan skip_all => 'Set TEST_LANGERTHA_OPENAI_API_KEY to run this test'
   unless $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
 
@@ -17,7 +29,7 @@ my $engine = Langertha::Engine::OpenAI->new(
 );
 
 subtest 'OpenAI image generation via engine' => sub {
-  my $images = $engine->simple_image('A small red circle on a white background');
+  my $images = $engine->simple_image('A small red circle on a white background', quality => 'low');
   ok($images, 'got result');
   ok(ref $images eq 'ARRAY', 'result is array');
   ok(scalar @$images >= 1, 'at least one image');
@@ -30,8 +42,9 @@ subtest 'OpenAI image generation via engine' => sub {
 subtest 'ImageGen wrapper with model override' => sub {
   my $ig = Langertha::ImageGen->new(
     engine => $engine,
-    model  => 'gpt-image-2.5-flare',
-    size   => '1024x1024',
+    model   => 'gpt-image-2.6-flare',
+    size    => '1024x1024',
+    quality => 'low',
   );
 
   my $images = $ig->simple_image('A tiny blue square');
@@ -55,6 +68,7 @@ subtest 'ImageGen with Langfuse plugin' => sub {
 
   my $ig = Langertha::ImageGen->new(
     engine  => $engine,
+    quality => 'low',
     plugins => [$lf],
   );
 

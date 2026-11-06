@@ -13,6 +13,8 @@ use Test2::Bundle::More;
 # (reasoning_effort on the request body) is covered offline by
 # t/65c_vllm_reasoning.t - this file only exercises the round trip.
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   unless ($ENV{TEST_LANGERTHA_VLLM_URL} && $ENV{TEST_LANGERTHA_VLLM_REASONING_MODEL}) {
     plan skip_all => 'TEST_LANGERTHA_VLLM_URL and TEST_LANGERTHA_VLLM_REASONING_MODEL not set';
   }

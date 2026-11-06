@@ -7,6 +7,8 @@ use warnings;
 use Test2::Bundle::More;
 
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   my @available;
   push @available, 'openai'       if $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
   push @available, 'anthropic'    if $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY};
@@ -84,7 +86,7 @@ if ($ENV{TEST_LANGERTHA_GEMINI_API_KEY}) {
   require Langertha::Engine::Gemini;
   test_chat('Gemini', Langertha::Engine::Gemini->new(
     api_key => $ENV{TEST_LANGERTHA_GEMINI_API_KEY},
-    model => 'gemini-3.5-flash',
+    model => 'gemini-3.1-flash-lite',
   ));
 }
 
@@ -93,7 +95,7 @@ if ($ENV{TEST_LANGERTHA_GROQ_API_KEY}) {
   require Langertha::Engine::Groq;
   test_chat('Groq', Langertha::Engine::Groq->new(
     api_key => $ENV{TEST_LANGERTHA_GROQ_API_KEY},
-    model => 'llama-3.3-70b-versatile',
+    model => 'openai/gpt-oss-20b',
   ));
 }
 

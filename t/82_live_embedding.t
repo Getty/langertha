@@ -7,6 +7,8 @@ use warnings;
 use Test2::Bundle::More;
 
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   my @available;
   push @available, 'openai'  if $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
   push @available, 'mistral' if $ENV{TEST_LANGERTHA_MISTRAL_API_KEY};

@@ -1,14 +1,16 @@
 #!/usr/bin/env perl
 # ABSTRACT: Live integration test for request-side prompt caching (karr #16, slice 2)
 #
-# COSTS REAL MONEY. Gated on the matching TEST_LANGERTHA_<ENGINE>_API_KEY;
-# subtests without a key are skipped. Spend is kept tiny (small response_size).
+# COSTS REAL MONEY. Needs TEST_LANGERTHA_LIVE=1 plus the matching
+# TEST_LANGERTHA_<ENGINE>_API_KEY (the Anthropic Opus subtest also needs
+# TEST_LANGERTHA_LIVE_EXPENSIVE=1); subtests without a key are skipped. Spend is kept tiny (small response_size).
 #
 # Anthropic: two identical requests with a long cacheable prefix and
 # prompt_cache => 1, asserting the second request reads from the cache
 # (usage.cache_read_input_tokens > 0). The prefix is built deliberately above
-# Anthropic's minimum cacheable size (~4096 tokens on claude-opus-4-8; ~2048 on
-# Sonnet) so caching engages reliably.
+# Anthropic's minimum cacheable size (512 tokens on claude-opus-5-5, 1024 on
+# claude-opus-4-8; 4096 only applied to Opus 4.5/4.6 and Haiku 4.5) so caching
+# engages reliably.
 #
 # OpenAI: caching is automatic with no per-request enable, so we only confirm
 # the prompt_cache_key routing hint is ACCEPTED on the wire (HTTP 200) — there
@@ -20,17 +22,20 @@ use warnings;
 use Test2::Bundle::More;
 
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   my @available;
-  push @available, 'anthropic' if $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY};
+  # Cost gate: the Anthropic block pins claude-opus-5-5 and sends ~6k-token prefixes twice, opt-in via TEST_LANGERTHA_LIVE_EXPENSIVE.
+  push @available, 'anthropic' if $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY} && $ENV{TEST_LANGERTHA_LIVE_EXPENSIVE};
   push @available, 'openai'    if $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
   unless (@available) {
-    plan skip_all => 'No TEST_LANGERTHA_{ANTHROPIC,OPENAI}_API_KEY set (live prompt cache test)';
+    plan skip_all => 'no usable provider for the live prompt cache test: set TEST_LANGERTHA_{ANTHROPIC,OPENAI}_API_KEY (Anthropic also needs TEST_LANGERTHA_LIVE_EXPENSIVE=1)';
   }
 }
 
 # A long, deterministic, byte-stable prefix. No timestamps/UUIDs — any volatile
 # byte in the prefix would silently prevent a cache hit. ~100 repeats of a
-# ~60-token paragraph lands comfortably above the ~4096-token Opus minimum.
+# ~60-token paragraph lands far above the 512-token minimum of Opus 5.5.
 my $PARAGRAPH = join(' ',
   'Langertha is a Perl framework for talking to large language model engines.',
   'It composes capabilities from Moose roles and routes tool calls through value',
@@ -44,10 +49,13 @@ my $BIG_PREFIX = $PARAGRAPH x 100;
 SKIP: {
   skip 'no TEST_LANGERTHA_ANTHROPIC_API_KEY', 1
     unless $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY};
+  # Cost gate: claude-opus-5-5 with ~6k-token prefixes sent twice, opt-in only.
+  skip 'set TEST_LANGERTHA_LIVE_EXPENSIVE=1 to run the claude-opus-5-5 Anthropic test (premium model, costs money)', 1
+    unless $ENV{TEST_LANGERTHA_LIVE_EXPENSIVE};
   require Langertha::Engine::Anthropic;
   my $e = Langertha::Engine::Anthropic->new(
     api_key       => $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY},
-    model         => 'claude-opus-4-8',
+    model         => 'claude-opus-5-5',
     system_prompt => $BIG_PREFIX,
     prompt_cache  => 1,
     response_size => 16,
@@ -86,7 +94,8 @@ SKIP: {
   require Langertha::Engine::OpenAI;
   my $e = Langertha::Engine::OpenAI->new(
     api_key          => $ENV{TEST_LANGERTHA_OPENAI_API_KEY},
-    model            => 'gpt-4o-mini',
+    model            => 'gpt-5.6-luna',
+    reasoning_effort => 'none',   # explicit none: no thinking eats the 16-token budget
     prompt_cache_key => 'langertha-prompt-cache-test',
     response_size    => 16,
   );

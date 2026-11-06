@@ -7,6 +7,8 @@ use warnings;
 use Test2::Bundle::More;
 
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   unless ($ENV{TEST_LANGERTHA_AKI_API_KEY}) {
     plan skip_all => 'Set TEST_LANGERTHA_AKI_API_KEY to run this test';
   }
@@ -43,12 +45,12 @@ diag "First endpoint details: name=$details->{name} title=" . ($details->{title}
 
 # --- simple_chat ---
 
-# Pick a chat endpoint (prefer llama3_8b_chat specifically, then any *_chat)
+# Pick a chat endpoint (prefer gpt_oss_chat specifically, then any *_chat)
 my $chat_model = $ENV{TEST_LANGERTHA_AKI_MODEL};
 unless ($chat_model) {
   my @chat_endpoints = grep { /_chat$/ } @$endpoints;
-  # Prefer llama3_8b_chat as it's known to work with our v2 API format
-  ($chat_model) = grep { $_ eq 'llama3_8b_chat' } @chat_endpoints;
+  # Prefer gpt_oss_chat as it's known to work with our v2 API format
+  ($chat_model) = grep { $_ eq 'gpt_oss_chat' } @chat_endpoints;
   $chat_model ||= $chat_endpoints[0] || $endpoints->[0];
 }
 diag "Using chat model: $chat_model";
@@ -76,8 +78,8 @@ diag "AKI chat response: $response";
 
 # --- openai() with explicit model ---
 
-my $aki_openai = $chat_aki->openai(model => 'llama3-chat-8b');
-is($aki_openai->model, 'llama3-chat-8b', 'openai(model => ...) uses given model');
+my $aki_openai = $chat_aki->openai(model => 'gpt-oss-120b');
+is($aki_openai->model, 'gpt-oss-120b', 'openai(model => ...) uses given model');
 
 # --- openai simple_chat ---
 

@@ -77,8 +77,11 @@ checklist live in skill `langertha-internals`; the public API in `perl-ai-langer
 `83_live_chat`, `83_live_minimax`, `84_live_imagegen`, `85_live_perplexity`,
 `85_live_responses`, `86_live_prompt_cache`, `86_live_reasoning_effort`,
 `87_live_vllm_hook`, `88_live_hetzner`, `88_live_vllm_reasoning`, `89_runtime_metrics_live`.
-Without a key each of them skips; with a key every one of them talks to a real provider and
-costs money. Image generation costs the most.
+Every one of them skips unless the master switch `TEST_LANGERTHA_LIVE=1` is set; with the master
+switch plus a key (or server URL) it talks to a real provider and costs money. The premium tier
+additionally needs `TEST_LANGERTHA_LIVE_EXPENSIVE=1`, and image generation (the most expensive)
+needs all four of `TEST_LANGERTHA_LIVE`, `_LIVE_EXPENSIVE`, `_LIVE_ULTRALARGE` and `_LIVE_IMAGES`,
+as listed in `langertha-testing`.
 
 **The incident.** One shell command — `set -a && . ./.env && … && prove -lr t/` — sourced
 every provider key into the run and fired the whole live suite at once: ~16 providers, image

@@ -8,6 +8,8 @@ use Test2::Bundle::More;
 use JSON::MaybeXS;
 
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   my @available;
   push @available, 'anthropic' if $ENV{TEST_LANGERTHA_ANTHROPIC_API_KEY};
   push @available, 'openai'    if $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
@@ -129,7 +131,7 @@ async sub run_tests {
     eval {
       await test_engine('OpenAI', Langertha::Engine::OpenAI->new(
         api_key => $ENV{TEST_LANGERTHA_OPENAI_API_KEY},
-        model => 'gpt-4o-mini', mcp_servers => [$mcp],
+        model => 'gpt-5.6-luna', mcp_servers => [$mcp],
       ));
     };
     engine_fail('OpenAI');
@@ -141,7 +143,7 @@ async sub run_tests {
     eval {
       await test_engine('Gemini', Langertha::Engine::Gemini->new(
         api_key => $ENV{TEST_LANGERTHA_GEMINI_API_KEY},
-        model => 'gemini-2.5-flash', mcp_servers => [$mcp],
+        model => 'gemini-3.1-flash-lite', mcp_servers => [$mcp],
       ));
     };
     engine_fail('Gemini');
@@ -153,7 +155,7 @@ async sub run_tests {
     eval {
       await test_engine('Groq', Langertha::Engine::Groq->new(
         api_key => $ENV{TEST_LANGERTHA_GROQ_API_KEY},
-        model => 'llama-3.3-70b-versatile', mcp_servers => [$mcp],
+        model => 'openai/gpt-oss-20b', mcp_servers => [$mcp],
       ));
     };
     engine_fail('Groq');
@@ -257,7 +259,7 @@ async sub run_tests {
   # --- HuggingFace ---
   if ($ENV{TEST_LANGERTHA_HUGGINGFACE_API_KEY}) {
     require Langertha::Engine::HuggingFace;
-    my $hf_model = $ENV{TEST_LANGERTHA_HUGGINGFACE_MODEL} || 'Qwen/Qwen2.5-7B-Instruct';
+    my $hf_model = $ENV{TEST_LANGERTHA_HUGGINGFACE_MODEL} || 'Qwen/Qwen3.5-9B:deepinfra';
     eval {
       await test_engine("HuggingFace/$hf_model", Langertha::Engine::HuggingFace->new(
         api_key => $ENV{TEST_LANGERTHA_HUGGINGFACE_API_KEY},
@@ -302,7 +304,7 @@ async sub run_tests {
     eval {
       await test_engine('Scaleway', Langertha::Engine::Scaleway->new(
         api_key => $ENV{TEST_LANGERTHA_SCALEWAY_API_KEY},
-        model => 'llama-3.1-8b-instruct', mcp_servers => [$mcp],
+        mcp_servers => [$mcp],
       ));
     };
     engine_fail('Scaleway');
@@ -311,11 +313,10 @@ async sub run_tests {
   # --- AKI.IO (via OpenAI-compatible API, native tool_calls) ---
   if ($ENV{TEST_LANGERTHA_AKI_API_KEY}) {
     require Langertha::Engine::AKIOpenAI;
-    # qwen3-chat is retired (500 even with a larger response_size); the current
-    # Qwen chat model is qwen3.6-chat-35b. Qwen models spend tokens thinking
-    # first, so an explicit response_size (max_tokens) is required or the call
-    # dies with "Response finished before thinking was completed!".
-    my $aki_model = $ENV{TEST_LANGERTHA_AKI_OPENAI_MODEL} || 'qwen3.6-chat-35b';
+    # gpt-oss-120b is pinned (not the engine default) so a default change cannot swap the live model. Reasoning models spend tokens
+    # thinking first, so an explicit response_size (max_tokens) is required or
+    # the call dies with "Response finished before thinking was completed!".
+    my $aki_model = $ENV{TEST_LANGERTHA_AKI_OPENAI_MODEL} || 'gpt-oss-120b';
     eval {
       await test_engine_secret("AKIOpenAI/$aki_model", Langertha::Engine::AKIOpenAI->new(
         api_key => $ENV{TEST_LANGERTHA_AKI_API_KEY},
@@ -328,11 +329,11 @@ async sub run_tests {
   # --- AKI.IO (native API, HermesTools) ---
   if ($ENV{TEST_LANGERTHA_AKI_API_KEY}) {
     require Langertha::Engine::AKI;
-    # qwen3_chat does not exist in GET /api/endpoints; kimi_k2 is the strongest
-    # tool-calling endpoint in the live catalog (verified 2026-08-13). The
+    # qwen3_chat does not exist in GET /api/endpoints; gpt_oss_chat is the current
+    # tool-calling endpoint in the live catalog (llm-advisor, 2026-11-06). The
     # native wire (key + chat_context + wait_for_result) is unchanged — a raw
     # messages/max_tokens-shaped POST is what the API rejects.
-    my $aki_model = $ENV{TEST_LANGERTHA_AKI_NATIVE_MODEL} || 'kimi_k2';
+    my $aki_model = $ENV{TEST_LANGERTHA_AKI_NATIVE_MODEL} || 'gpt_oss_chat';
     eval {
       await test_engine_secret("AKI-native/$aki_model", Langertha::Engine::AKI->new(
         api_key => $ENV{TEST_LANGERTHA_AKI_API_KEY},

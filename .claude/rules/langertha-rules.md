@@ -46,6 +46,10 @@ The env-gated live tests (`t/8x`) spend the maintainer's real money at every key
   run and fires the *whole* live suite against *every* keyed provider — real spend, no
   approval. It has happened: a single `set -a && . ./.env && … && prove -lr t/` ran the whole
   suite across ~16 providers, image generation included (write-up: `langertha-core`).
+- **A key alone arms nothing.** Every live test also needs `TEST_LANGERTHA_LIVE=1`; pro / Opus
+  pins add `TEST_LANGERTHA_LIVE_EXPENSIVE=1`; image generation needs all four of `TEST_LANGERTHA_LIVE`,
+  `_EXPENSIVE`, `_ULTRALARGE` and `_IMAGES` (it cost ~43 USD on 2026-11-06). These switches are set
+  by hand for one run, after approval — never put them in `.env`, and never set them for a worker.
 - Key or fixture checks that need `.env` run in their **own** command — a subshell that ends
   before any `prove`. Before a suite run, assert the environment is clean:
   `[ "$(env | grep -c TEST_LANGERTHA)" = 0 ]`, or isolate it:
@@ -54,5 +58,5 @@ The env-gated live tests (`t/8x`) spend the maintainer's real money at every key
   carries the provider keys. Count, never list: `env | grep -c TEST_LANGERTHA`.
 - Live calls otherwise need explicit approval (AKI.IO is the standing exception). When you
   dispatch a worker or subagent, pass this hard rule on — it inherits your keys, not your care.
-- **"Tests pass" must name the skips** — the env-gated live tests `t/8x` skip without keys;
-  say so.
+- **"Tests pass" must name the skips** — the env-gated live tests `t/8x` skip without
+  `TEST_LANGERTHA_LIVE=1` or their keys; say so.

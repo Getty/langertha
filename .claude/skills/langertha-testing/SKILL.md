@@ -40,6 +40,13 @@ Live files are the ones gated on an env var, not a number range:
   `82_live_embedding`, `83_live_chat`, `83_live_minimax`, `84_live_imagegen`,
   `85_live_perplexity`, `85_live_responses`, `86_live_prompt_cache`,
   `86_live_reasoning_effort`, `88_live_hetzner`.
+- Cost switches (a key or URL alone never arms a live file): `TEST_LANGERTHA_LIVE=1` is the master
+  switch, required first by every live `t/8x` file. On top of it, `TEST_LANGERTHA_LIVE_EXPENSIVE=1`
+  gates the pro/premium tier (the Anthropic opus blocks of `86_live_reasoning_effort` and
+  `86_live_prompt_cache`; selects `gpt-5.5-pro` instead of `gpt-6-luna` in `85_live_responses`).
+  Image generation (`84_live_imagegen`, very expensive) needs **all four**: `TEST_LANGERTHA_LIVE=1`,
+  `TEST_LANGERTHA_LIVE_EXPENSIVE=1`, `TEST_LANGERTHA_LIVE_ULTRALARGE=1` (the tier only images use
+  for now) and `TEST_LANGERTHA_LIVE_IMAGES=1`. Rule: images = all four.
 - Server-URL gated (self-hosted, `TEST_LANGERTHA_*_URL`): `87_live_vllm_hook`,
   `88_live_vllm_reasoning`, `89_runtime_metrics_live`.
 - `89_langertha_sugar.t` is **not** live.

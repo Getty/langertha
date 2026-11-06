@@ -2,6 +2,12 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - The live tests (t/8x) no longer run on a provider key alone: they
+      need TEST_LANGERTHA_LIVE=1 as well. Pro and Opus model pins also
+      need TEST_LANGERTHA_LIVE_EXPENSIVE=1, and image generation needs
+      TEST_LANGERTHA_LIVE, _EXPENSIVE, _ULTRALARGE and _IMAGES. Several
+      stale model pins in them were updated.
+
 0.505     2026-11-05 15:50:14Z
 
     - New reasoning_wire_format chat_template_kwargs: sends

@@ -8,6 +8,8 @@ use Test2::Bundle::More;
 use JSON::MaybeXS;
 
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   unless ($ENV{TEST_LANGERTHA_VLLMHOOK_URL}) {
     plan skip_all => 'TEST_LANGERTHA_VLLMHOOK_URL not set';
   }

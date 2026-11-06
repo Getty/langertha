@@ -109,8 +109,11 @@ prove -lv t/60_tool_calling.t   # Single test, verbose
 
 **Verify recursively.** `prove -l t/` is NOT recursive and silently skips `t/` subdir tests.
 Use `prove -lr t/` or `dzil test`. Live tests (the `t/8x` files gated in `BEGIN` — list in skill
-`langertha-testing`) are gated on `TEST_LANGERTHA_<ENGINE>_API_KEY` (self-hosted ones on a server
-URL) and skip without keys (and cost real money — be selective).
+`langertha-testing`) cost real money — be selective. A key alone arms nothing: each needs the master
+switch `TEST_LANGERTHA_LIVE=1` plus `TEST_LANGERTHA_<ENGINE>_API_KEY` (self-hosted ones a server
+URL). Pro / Opus pins also need `TEST_LANGERTHA_LIVE_EXPENSIVE=1`; image generation (`t/84`) needs
+all four of `TEST_LANGERTHA_LIVE`, `_EXPENSIVE`, `_ULTRALARGE` and `_IMAGES`. The switches never go
+into `.env`.
 **TSystems is not live-testable** — no developer key is available to the project (the `.env`
 key is empty and none is obtainable), so its wire behavior is **documentation-derived, not
 live-verified**; treat `docs.llmhub.t-systems.net` as the source of truth for it

@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# ABSTRACT: Live integration test for OpenAI Responses API (gpt-5.5-pro)
+# ABSTRACT: Live integration test for OpenAI Responses API (gpt-6-luna; gpt-5.5-pro with TEST_LANGERTHA_LIVE_EXPENSIVE=1)
 
 use strict;
 use warnings;
@@ -8,6 +8,8 @@ use Test2::Bundle::More;
 use Future::AsyncAwait;
 
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   plan skip_all => 'TEST_LANGERTHA_OPENAI_API_KEY not set'
     unless $ENV{TEST_LANGERTHA_OPENAI_API_KEY};
   eval {
@@ -22,9 +24,13 @@ use Future::AsyncAwait;
 
 use Langertha::Engine::OpenAIResponses;
 
+# Cost gate: the pro model bills heavily, so it is only chosen with
+# TEST_LANGERTHA_LIVE_EXPENSIVE=1; otherwise the cheap gpt-6-luna runs. An
+# explicit TEST_LANGERTHA_RESPONSES_MODEL always wins.
 my $engine = Langertha::Engine::OpenAIResponses->new(
   api_key => $ENV{TEST_LANGERTHA_OPENAI_API_KEY},
-  model   => $ENV{TEST_LANGERTHA_RESPONSES_MODEL} // 'gpt-5.5-pro',
+  model   => $ENV{TEST_LANGERTHA_RESPONSES_MODEL}
+    // ( $ENV{TEST_LANGERTHA_LIVE_EXPENSIVE} ? 'gpt-5.5-pro' : 'gpt-6-luna' ),
 );
 
 subtest 'simple_chat text response' => sub {
@@ -55,7 +61,7 @@ subtest 'simple_chat text response' => sub {
 };
 
 subtest 'simple_chat with reasoning' => sub {
-  # gpt-5.5-pro is a reasoning model - check that thinking is captured
+  # the Responses models are reasoning models - check that thinking is captured
   my $resp = eval {
     $engine->simple_chat('What is 2+2? Just give the number.')
   };

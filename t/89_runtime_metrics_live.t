@@ -18,6 +18,8 @@ use Test2::Bundle::More;
 # documented payload (ArrayRef / HTTP::Response) rather than masking a
 # Future-leak regression (karr k164).
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   my %engines = (
     vllm     => $ENV{TEST_LANGERTHA_VLLM_URL},
     sglang   => $ENV{TEST_LANGERTHA_SGLANG_URL},

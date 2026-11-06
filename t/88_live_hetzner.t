@@ -7,6 +7,8 @@ use warnings;
 use Test2::Bundle::More;
 
 BEGIN {
+  plan skip_all => 'set TEST_LANGERTHA_LIVE=1 to run live tests (they spend real money)'
+    unless $ENV{TEST_LANGERTHA_LIVE};
   unless ($ENV{TEST_LANGERTHA_HETZNER_API_KEY}) {
     plan skip_all => 'live skipped: set TEST_LANGERTHA_HETZNER_API_KEY to run';
   }
