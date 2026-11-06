@@ -1,0 +1,20 @@
+{"action":"move","agent":"Torsten Raudssus","detail":"done","task_id":387,"ts":"2026-11-04T23:24:57Z"}
+{"action":"edit","agent":"Torsten Raudssus","detail":"done","task_id":387,"ts":"2026-11-04T23:25:17Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":390,"ts":"2026-11-05T00:47:01Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":391,"ts":"2026-11-06T04:40:30Z"}
+{"action":"move","agent":"langertha-test-writer","detail":"in-progress","task_id":391,"ts":"2026-11-06T04:40:37Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":392,"ts":"2026-11-06T04:57:53Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":393,"ts":"2026-11-06T04:57:58Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":394,"ts":"2026-11-06T04:58:03Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":395,"ts":"2026-11-06T04:58:08Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":396,"ts":"2026-11-06T04:58:14Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":397,"ts":"2026-11-06T04:58:19Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":398,"ts":"2026-11-06T04:58:24Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":399,"ts":"2026-11-06T04:58:29Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":400,"ts":"2026-11-06T04:58:34Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":401,"ts":"2026-11-06T04:58:40Z"}
+{"action":"edit","agent":"langertha-test-writer","detail":"in-progress","task_id":391,"ts":"2026-11-06T05:17:34Z"}
+{"action":"handoff","agent":"langertha-test-writer","detail":"review","task_id":391,"ts":"2026-11-06T05:17:39Z"}
+{"action":"create","agent":"Torsten Raudssus","detail":"backlog","task_id":402,"ts":"2026-11-06T05:43:03Z"}
+{"action":"move","agent":"langertha-test-writer","detail":"done","task_id":391,"ts":"2026-11-06T05:44:43Z"}
+{"action":"edit","agent":"langertha-test-writer","detail":"done","task_id":391,"ts":"2026-11-06T05:44:48Z"}
