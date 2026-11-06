@@ -1,0 +1,17 @@
+---
+class: standard
+created: 2026-11-06T04:58:08Z
+id: 395
+priority: medium
+status: backlog
+tags:
+- llm
+- risk
+- nous
+title: 'NousResearch: Default Hermes-4-70B nicht mehr im Katalog, hermes-Wire ohne
+  Live-Ziel'
+updated: 2026-11-06T04:58:08Z
+---
+
+inference-api.nousresearch.com/v1/models führt kein Hermes-Modell mehr. Damit hat der hermes-XML-Toolpfad (ADR 0033) kein Live-Ziel; Default und t/80:208, t/83:187 klären.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
