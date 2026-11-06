@@ -1,0 +1,17 @@
+---
+class: standard
+created: 2026-11-06T04:57:58Z
+id: 393
+priority: high
+status: backlog
+tags:
+- llm
+- risk
+- anthropic
+title: 'Anthropic 5.5: haiku-5-5 Temperature-Clear; tool_choice named/any auf opus/sonnet-5-5
+  aus; always-on/between_tools Profile-Zeilen'
+updated: 2026-11-06T04:57:58Z
+---
+
+claude-haiku-5-5 fehlt im Temperature-Clear. Erzwungenes tool_choice gibt 400 auf opus-5-5 und sonnet-5-5. thinking:disabled gibt 400 auf opus-5-5, sonnet-5-5 will between_tools, haiku-5-5 nur bis effort high. Vor dem Fix keinen Engine-Default auf ein 5.5-Modell ziehen.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
