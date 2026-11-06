@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-11-06T04:58:03Z
+id: 394
+priority: medium
+status: backlog
+tags:
+- llm
+- risk
+- perplexity
+title: 'Perplexity: Agent-API-Feld preset→effort umbenannt, sonar-Mapping gedriftet'
+updated: 2026-11-06T04:58:03Z
+---
+
+preset ist nur noch deprecated Alias für effort. Die Doku-Zuordnung hat sich verschoben (sonar-pro→fast, sonar-reasoning-pro→low), %MODEL_TO_PRESET hat noch die alte.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
