@@ -1,0 +1,14 @@
+---
+class: standard
+created: 2026-11-06T05:43:03Z
+id: 402
+priority: low
+status: backlog
+tags:
+- tests
+- flaky
+title: 'Flake: t/72_virtual_server.t Subtest 6 stirbt am /proc-Poll'
+updated: 2026-11-06T05:43:03Z
+---
+
+Subtest "a spawned server ends when its parent is gone" stirbt sporadisch: `Error open (<) on /proc/<pid>/stat: No such file or directory at t/72_virtual_server.t line 186`. Der /proc-Poll des Tests liest stat eines Prozesses, der gerade endet. Ein voller clean-env-Lauf am 2026-11-06 (k391-Worktree, lib/ und t/72 identisch mit main 46f12d0) schlug fehl; einzeln 8/8 grün. Fix: fehlende /proc-Datei als "Prozess weg" werten statt zu sterben.
