@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-06T04:58:28Z
+id: 399
+priority: low
+status: backlog
+tags:
+- llm
+- cerebras
+title: Cerebras.pm nennt zurückgezogene Modelle (zai-glm-4.7, gemma-4-31b)
+updated: 2026-11-06T04:58:28Z
+---
+
+Laut inference-docs.cerebras.ai models/deprecation zurückgezogen; Doku und Listen bereinigen.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
