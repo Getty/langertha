@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-11-06T04:58:24Z
+id: 398
+priority: low
+status: backlog
+tags:
+- llm
+- openai
+- image
+title: 'OpenAI: default_image_model gpt-image-2 → gpt-image-2.6-flare'
+updated: 2026-11-06T04:58:24Z
+---
+
+gpt-image-2 ist aktuell, wird im Image-Guide aber nicht mehr genannt. 2.6-flare kostet gleich (30 USD/1M Bild-Output), hat neu complexity mit Default high.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
