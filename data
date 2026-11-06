@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-11-06T04:58:14Z
+id: 396
+priority: medium
+status: backlog
+tags:
+- llm
+- risk
+- aki
+title: 'AKI native: Default minimax_m3 fehlt in der öffentlichen Endpoint-Liste'
+updated: 2026-11-06T04:58:14Z
+---
+
+aki.io/docs available-models listet minimax_m3 nicht. Default prüfen (AKI ist live-testbar, stehende Ausnahme).
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
