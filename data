@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-06T04:58:40Z
+id: 401
+priority: low
+status: backlog
+tags:
+- llm
+- deepseek
+title: 'DeepSeek: none vs thinking:{type:disabled} prüfen'
+updated: 2026-11-06T04:58:40Z
+---
+
+DeepSeek.pm sagt, none wird akzeptiert; der DeepSeek-Thinking-Guide sagt, aus = thinking:{type:disabled}.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
