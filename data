@@ -1,0 +1,30 @@
+---
+claimed_at: 2026-11-06T05:44:48Z
+claimed_by: langertha-test-writer
+class: standard
+completed: 2026-11-06T05:44:43Z
+created: 2026-11-06T04:40:30Z
+id: 391
+priority: high
+started: 2026-11-06T04:40:37Z
+status: done
+tags:
+- tests
+- live
+- spend
+title: 'Live-Tests: Extra-Schalter für alte/Pro-Modelle und Bildgenerierung'
+updated: 2026-11-06T05:44:48Z
+---
+
+Vorfall 2026-11-06: ~110 USD OpenAI-Spend im Projekt "langertha" (Key …eKYA aus .env). Der Key allein schaltet heute die teuren Live-Tests scharf.
+
+Ziel: Key allein reicht nicht mehr. Zusätzliche Opt-in-Schalter:
+- TEST_LANGERTHA_LIVE_OLD_MODELS=1 — Tests/Subtests mit fest gepinnten alten bzw. Pro-OpenAI-Modellen: t/85_live_responses.t (gpt-5.5-pro, ganze Datei), OpenAI-Block in t/86_live_reasoning_effort.t (gpt-5.1), OpenAI-Block in t/80_live_tool_calling.t (gpt-4o-mini), OpenAI-Block in t/86_live_prompt_cache.t (gpt-4o-mini).
+- TEST_LANGERTHA_LIVE_IMAGES=1 — t/84_live_imagegen.t (ganze Datei).
+Skip-Meldungen nennen den fehlenden Schalter. Schalter nie in .env.
+
+Gating + model swaps done in 14 live t/8x files and langertha-testing SKILL.md; not committed. Master LIVE, LIVE_EXPENSIVE (opus-5-5 blocks, gpt-5.5-pro via t/85), t/84 needs LIVE+EXPENSIVE+ULTRALARGE+IMAGES then key. prove -lr t/ clean env: 242 files, 11357 tests PASS, 14 live files skipped.
+
+Commit-ready in worktree-agent-a7708ebdb4dbf7bf0; no live calls made.
+
+Committed as 6e5a651 on local main (ff-merged, not pushed)
