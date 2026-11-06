@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-06T04:58:19Z
+id: 397
+priority: medium
+status: backlog
+tags:
+- llm
+- gemini
+title: 'Gemini: Default gemini-3-flash-preview → gemini-3.8-flash'
+updated: 2026-11-06T04:58:19Z
+---
+
+Preview-IDs fallen kurzfristig weg. gemini-3.8-flash ist stabil; die 3.[78]-flash-Zeile lässt minimal schon weg. Preis 0.75/3.75 bis 2026-12-31, danach 1.50/7.50.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
