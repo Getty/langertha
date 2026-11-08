@@ -1,0 +1,17 @@
+---
+class: standard
+created: 2026-11-08T05:39:58Z
+id: 412
+priority: medium
+status: backlog
+tags:
+- observability
+- usage
+- langfuse
+title: 'Langfuse export: unreported token counts sent as 0 (and priced)'
+updated: 2026-11-08T06:47:49Z
+---
+
+Follow-up to k411: Plugin::Langfuse::_usage_hash and Role::Langfuse (~line 769, total => $response->total_tokens) still send input/output/total = 0 when the provider reported none, and Pricing then computes inputCost/outputCost from those 0s. Usage now has has_input_tokens / has_output_tokens / has_total_tokens. Decide: leave the keys out and skip (or partial) cost when a count is unreported.
+
+Also (from acceptance of k411): in Trace::OTLP usage_attributes a reported cache count of 0 is dropped by the truthiness check ($cached ?), unlike input/output where a reported 0 is sent. Harmless, but inconsistent; align when touching this.
