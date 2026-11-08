@@ -677,6 +677,7 @@ my %FINISH = (
   tool_calls => 'tool_call', tool_use => 'tool_call', function_call => 'tool_call',
   content_filter => 'content_filter', SAFETY => 'content_filter', refusal => 'content_filter',
   RECITATION => 'content_filter', PROHIBITED_CONTENT => 'content_filter', BLOCKLIST => 'content_filter',
+  IMAGE_SAFETY => 'content_filter',
   error => 'error',
 );
 

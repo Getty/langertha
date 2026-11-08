@@ -48,6 +48,11 @@ Revision history for Langertha
       end by it, so a call another plugin skips or renames no longer
       gives the next call a wrong start or call id.
 
+    - Plugin::OTel: a Gemini IMAGE_SAFETY finish or block reason is
+      reported as content_filter in gen_ai.output.messages; a regression
+      test pins that a synthetic structured-output tool call keeps the
+      provider's finish_reason.
+
 0.505     2026-11-05 15:50:14Z
 
     - New reasoning_wire_format chat_template_kwargs: sends
