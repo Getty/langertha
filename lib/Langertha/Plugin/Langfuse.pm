@@ -65,6 +65,12 @@ snapshot taken before the call: a L<Langertha::Content::Image> appears as its
 compact description, and inline image data (a C<data:> URL or a long bare
 base64 string) is replaced by its size, so traces never carry image bytes.
 
+A streamed call through L<Langertha::Chat> is a generation too, recorded when
+the stream has ended from what it delivered (with C<completionStartTime> from
+L<Langertha::Chat/simple_chat_stream_realtime_f>). A failed call (see
+L<Langertha::Chat/FAILED CALLS>) is a generation at level C<ERROR> whose
+status message is the first line of the error.
+
 Embeddings (L<Langertha::Embedder>) and image generations
 (L<Langertha::ImageGen>) become generations too. Called through
 C<simple_embedding_result> / C<simple_image_result> (or their C<_f>), they
@@ -403,6 +409,8 @@ sub create_generation {
       $opts{metadata}             ? ( metadata           => $opts{metadata} )           : (),
       defined $opts{completion_start_time}
         ? ( completionStartTime => $opts{completion_start_time} ) : (),
+      $opts{level}                ? ( level              => $opts{level} )              : (),
+      $opts{status_message}       ? ( statusMessage      => $opts{status_message} )     : (),
     },
   });
   return $id;
@@ -412,7 +420,9 @@ sub create_generation {
 
     $plugin->create_generation(trace_id => $id, model => 'gpt-4o', ...);
 
-Creates a generation event linked to a trace.
+Creates a generation event linked to a trace. Optional C<level>
+(C<DEBUG>, C<DEFAULT>, C<WARNING>, C<ERROR>) and C<status_message> set the
+observation's level and status message.
 
 =cut
 
@@ -728,6 +738,33 @@ async sub plugin_after_llm_response {
   $self->_auto_flush if $self->auto_flush;
 
   return $data;
+}
+
+# A failed call is a generation at level ERROR whose status message is the
+# first line of the error. The generation already holds the conversation, so
+# the message (which may quote it) adds nothing Langfuse does not keep.
+async sub plugin_llm_call_failed {
+  my ( $self, $error, $iteration, $call ) = @_;
+  return unless $self->enabled && $self->_trace_id;
+  my $engine = $self->_host_engine;
+  my $model  = $engine && $engine->can('chat_model') ? $engine->chat_model : undef;
+  my $line   = ( split /\n/, ( defined $error ? "$error" : '' ) )[0];
+  $line = 'LLM call failed' unless defined $line && length $line;
+  $line = substr( $line, 0, 1000 ) . '...' if length $line > 1000;
+
+  $self->create_generation(
+    trace_id       => $self->_trace_id,
+    name           => "generation-$iteration",
+    start_time     => $self->_iter_start,
+    end_time       => _timestamp(),
+    input          => $self->_iter_input,
+    defined $model ? ( model => $model ) : (),
+    level          => 'ERROR',
+    status_message => $line,
+  );
+
+  $self->_auto_flush if $self->auto_flush;
+  return;
 }
 
 async sub plugin_after_tool_call {

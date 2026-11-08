@@ -99,6 +99,23 @@ and, when known, C<gen_ai.response.time_to_first_chunk>
 the provider's raw reply; it is read with the engine's
 C<tool_loop_response>, as the loop itself reads it.
 
+=item * A streamed call (L<Langertha::Chat/simple_chat_stream>,
+L<Langertha::Chat/simple_chat_stream_realtime_f>) is the same span, ended when
+the stream has: it also carries C<gen_ai.request.stream> C<true> and, from
+the realtime method, C<gen_ai.response.time_to_first_chunk> (seconds). The
+response attributes come from what the stream delivered: model, finish
+reason, and the token usage when the provider sent it in the stream (some
+send it only on request). A stream carries no C<gen_ai.response.id>.
+
+=item * A failed call (see L<Langertha::Chat/FAILED CALLS>) ends its span
+with status C<ERROR> and C<error.type>: the provider's error code when its
+error answer names one (OpenAI's C<error.code> or C<error.type>, Anthropic's
+C<error.type>, Google's C<error.status>), else the class of an exception
+object, else the HTTP status of an error answer (C<429>), else C<_OTHER>.
+The error message becomes the status message only with
+L</capture_content>: it often quotes the provider's answer, and with it parts
+of the prompt.
+
 =item * Each tool call of a tool loop is an C<INTERNAL> span
 C<execute_tool {name}>, a child of the LLM call that asked for it, with
 C<gen_ai.tool.name>, C<gen_ai.tool.type> C<function> and
@@ -123,10 +140,10 @@ B<Content.> By default no content leaves the process: no prompt, answer,
 system prompt, tool argument or tool result appears anywhere in the payload,
 only the metadata above. L</capture_content> opts in.
 
-B<Not recorded.> A call that fails (the host dies before
-C<plugin_after_llm_response>) leaves no span, because no hook reports the
-failure; its open span is dropped by the next call. The streaming chat methods
-fire no after-hook either and are not recorded.
+B<Not recorded.> A failure on a host that does not fire
+C<plugin_llm_call_failed> leaves no span: its open span is dropped by the next
+call. The engines' own chat methods fire no plugin hooks, so only calls made
+through a host are recorded.
 
 =cut
 
@@ -293,7 +310,8 @@ has auto_flush => (
 =attr auto_flush
 
 When true, the spans are sent after each C<plugin_after_llm_response>,
-C<plugin_after_embedding> and C<plugin_after_image_gen>. Default false.
+C<plugin_llm_call_failed>, C<plugin_after_embedding> and
+C<plugin_after_image_gen>. Default false.
 
 The hook does not wait for the endpoint. With the L<Net::Async::HTTP> backend
 the flush runs in the background on the host engine's event loop, bounded by
@@ -860,12 +878,13 @@ async sub plugin_before_llm_call {
 }
 
 async sub plugin_after_llm_response {
-  my ( $self, $data, $iteration ) = @_;
+  my ( $self, $data, $iteration, $call ) = @_;
   return $data unless $self->enabled;
   my $span = $self->_llm_span or return $data;
   $self->_llm_span(undef);
   $span->{end} = _now();
   my $attr = $span->{attributes};
+  $attr->{'gen_ai.request.stream'} = 1 if _streamed($call);
 
   my $response = $self->_as_response($data);
   %$attr = ( %$attr, Langertha::Trace::OTLP->response_attributes($response) ) if $response;
@@ -886,6 +905,72 @@ async sub plugin_after_llm_response {
   $self->_parent_id( $span->{span_id} );
   $self->_auto_flush if $self->auto_flush;
   return $data;
+}
+
+async sub plugin_llm_call_failed {
+  my ( $self, $error, $iteration, $call ) = @_;
+  return unless $self->enabled;
+  my $span = $self->_llm_span or return;
+  $self->_llm_span(undef);
+  $self->_tool_ids([]);
+  $span->{end} = _now();
+  my $attr = $span->{attributes};
+  $attr->{'gen_ai.request.stream'} = 1 if _streamed($call);
+  $attr->{'error.type'} = _error_type( $error, $call );
+  # The message can quote the provider's answer, and with it the prompt.
+  my $message = $self->capture_content ? _error_summary($error) : undef;
+  $span->{status} = { code => 'error', defined $message ? ( message => $message ) : () };
+  $self->_push($span);
+  $self->_auto_flush if $self->auto_flush;
+  return;
+}
+
+sub _streamed {
+  my ( $call ) = @_;
+  return ref $call eq 'HASH' && $call->{stream} ? 1 : 0;
+}
+
+# A provider error code is an identifier; anything else (a message, a
+# number) is not taken as one.
+my $ERROR_CODE = qr/\A[A-Za-z][A-Za-z0-9_.:\-]{0,99}\z/;
+
+# error.type: the provider's own error code when its answer names one, else
+# the exception class, else the HTTP status of an error answer, else _OTHER.
+sub _error_type {
+  my ( $error, $call ) = @_;
+  my $response = ref $call eq 'HASH' ? $call->{http_response} : undef;
+  undef $response unless blessed($response) && $response->isa('HTTP::Response');
+  my $code = $response ? _provider_error_code($response) : undef;
+  return $code if defined $code;
+  return ref $error if blessed($error);
+  return '' . $response->code if $response && !$response->is_success && $response->code;
+  return '_OTHER';
+}
+
+# The code of an OpenAI-style ({error:{code,type}}), Anthropic-style
+# ({type:"error",error:{type}}) or Google-style ({error:{code,status}}) error
+# body. Only a small, uncompressed JSON body is read.
+sub _provider_error_code {
+  my ( $response ) = @_;
+  return undef if $response->header('Content-Encoding');
+  my $body = $response->content;
+  return undef unless defined $body && length $body && length $body <= 65536;
+  my $data = eval { JSON::MaybeXS->new( utf8 => 1 )->decode($body) };
+  $data = $data->[0] if ref $data eq 'ARRAY';
+  return undef unless ref $data eq 'HASH' && ref $data->{error} eq 'HASH';
+  my $error = $data->{error};
+  for my $key (qw( code status type )) {
+    my $value = $error->{$key};
+    return $value if defined $value && !ref $value && $value =~ $ERROR_CODE;
+  }
+  return undef;
+}
+
+sub _error_summary {
+  my ( $error ) = @_;
+  my $line = ( split /\n/, ( defined $error ? "$error" : '' ) )[0];
+  return undef unless defined $line && length $line;
+  return length $line > 1000 ? substr( $line, 0, 1000 ) . '...' : $line;
 }
 
 async sub plugin_before_tool_call {

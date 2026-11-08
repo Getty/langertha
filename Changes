@@ -2,6 +2,17 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Langertha::Chat fires plugin_after_llm_response after a stream (the
+      whole stream as one Langertha::Response, { stream => 1 } as third
+      argument) and the new plugin_llm_call_failed when an LLM call fails;
+      the caller's error is unchanged. New
+      Langertha::Chat::simple_chat_stream_realtime_f.
+      Langertha::Chat::simple_chat_stream no longer dies with 'Not an
+      ARRAY reference'. Plugin::OTel records streamed calls
+      (gen_ai.request.stream, time_to_first_chunk) and failed calls
+      (status ERROR, error.type). Plugin::Langfuse records streamed
+      generations and failed ones at level ERROR.
+
     - Langertha::Usage gains has_input_tokens / has_output_tokens /
       has_total_tokens, true only when the provider (or the caller)
       reported the count; the parsers no longer turn a missing count into

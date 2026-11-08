@@ -2,8 +2,10 @@ package Langertha::Chat;
 # ABSTRACT: Chat abstraction wrapping an engine with optional overrides
 our $VERSION = '0.506';
 use Moose;
+use Future;
 use Future::AsyncAwait;
 use Carp qw( croak );
+use Scalar::Util qw( blessed );
 use JSON::MaybeXS;
 use Log::Any qw( $log );
 use Langertha::Role::Tools ();
@@ -203,11 +205,82 @@ async sub _run_plugin_before_llm_call {
 }
 
 async sub _run_plugin_after_llm_response {
-  my ( $self, $data, $iteration ) = @_;
+  my ( $self, $data, $iteration, $call ) = @_;
   for my $plugin (@{$self->_plugin_instances}) {
-    $data = await $plugin->plugin_after_llm_response($data, $iteration);
+    $data = await $plugin->plugin_after_llm_response($data, $iteration, $call);
   }
   return $data;
+}
+
+# Every plugin hears of the failure, even when one of them dies on it: that
+# one is warned about and the next asked. Never fails, so the caller's error
+# is the one that propagates.
+async sub _run_plugin_llm_call_failed {
+  my ( $self, $error, $iteration, $call ) = @_;
+  for my $plugin (@{$self->_plugin_instances}) {
+    my $future = eval { $plugin->plugin_llm_call_failed($error, $iteration, $call) };
+    if ( !defined $future && $@ ) {
+      _warn_failed_hook( $plugin, $@ );
+      next;
+    }
+    next unless blessed($future) && $future->isa('Future');
+    await $future->else( sub {
+      _warn_failed_hook( $plugin, $_[0] );
+      Future->done;
+    } );
+  }
+  return;
+}
+
+sub _warn_failed_hook {
+  my ( $plugin, $error ) = @_;
+  my $line = ( split /\n/, ( defined $error ? "$error" : '' ) )[0] // 'unknown error';
+  warn ref($plugin) . " died in plugin_llm_call_failed: $line\n";
+  return;
+}
+
+# One LLM call: $call_f is its Future, from the request to the end of the
+# plugin_after_llm_response hooks. When it fails, plugin_llm_call_failed runs
+# on every plugin, then the failure propagates unchanged (all of it, a
+# Future's category and details included). A cancel is not a failure.
+sub _llm_call_f {
+  my ( $self, $iteration, $call, $call_f ) = @_;
+  return $call_f->else( sub {
+    my @failure = @_;
+    return $self->_run_plugin_llm_call_failed( $failure[0], $iteration, $call )
+      ->then( sub { Future->fail(@failure) } );
+  } );
+}
+
+# The synchronous counterpart: $code runs the call and returns its result.
+sub _llm_call {
+  my ( $self, $iteration, $call, $code ) = @_;
+  my $result;
+  return $result if eval { $result = $code->(); 1 };
+  my $error = $@;
+  $self->_run_plugin_llm_call_failed( $error, $iteration, $call )->get;
+  die $error;
+}
+
+# What a streamed call hands plugin_after_llm_response: the stream as one
+# Langertha::Response. Observability must never fail the call, so a stream
+# that cannot be read into one (a chunk the Response refuses) is passed as
+# its text alone.
+sub _stream_response {
+  my ( $self, $engine, $chunks, $timing ) = @_;
+  my $response = eval { $engine->_stream_response( $chunks, $timing ) };
+  return $response if $response;
+  require Langertha::Response;
+  return Langertha::Response->new( content => join( '', map { $_->content } @$chunks ) );
+}
+
+# The text a streaming method returns: the content of what the hooks
+# returned, so a hook that rewrites the answer rewrites it here too.
+sub _stream_text {
+  my ( $data, $fallback ) = @_;
+  return $data->content if blessed($data) && $data->can('content');
+  return $data if defined $data && !ref $data;
+  return $fallback;
 }
 
 async sub _run_plugin_after_tool_call {
@@ -229,13 +302,14 @@ sub simple_chat {
 
   $conversation = $self->_run_plugin_before_llm_call($conversation, 1)->get;
 
-  my $request = $engine->chat_request($conversation, $self->_extra);
-  my $response = $engine->user_agent->request($request);
-  my $data = $request->response_call->($response);
-
-  $data = $self->_run_plugin_after_llm_response($data, 1)->get;
-
-  return $data;
+  my $call = { stream => 0 };
+  return $self->_llm_call( 1, $call, sub {
+    my $request = $engine->chat_request($conversation, $self->_extra);
+    my $response = $engine->user_agent->request($request);
+    $call->{http_response} = $response;
+    my $data = $request->response_call->($response);
+    return $self->_run_plugin_after_llm_response($data, 1, $call)->get;
+  } );
 }
 
 =method simple_chat
@@ -243,7 +317,8 @@ sub simple_chat {
     my $response = $chat->simple_chat('Hello!');
 
 Sends a synchronous chat request. Fires C<plugin_before_llm_call> and
-C<plugin_after_llm_response> hooks.
+C<plugin_after_llm_response> hooks (see L</PLUGIN HOOKS>), and
+C<plugin_llm_call_failed> when the call fails (see L</FAILED CALLS>).
 
 =cut
 
@@ -266,18 +341,23 @@ async sub simple_chat_f {
 
   $conversation = await $self->_run_plugin_before_llm_call($conversation, 1);
 
+  my $call = { stream => 0 };
+  return await $self->_llm_call_f( 1, $call,
+    $self->_simple_chat_call_f( $engine, $conversation, $call ) );
+}
+
+async sub _simple_chat_call_f {
+  my ( $self, $engine, $conversation, $call ) = @_;
   my $request = $engine->chat_request($conversation, $self->_extra);
   my $response = await $engine->_async_do_request_f(
     request => $request,
   );
+  $call->{http_response} = $response;
   unless ($response->is_success) {
     die $self->_failed_message( $engine, $response, 'request' );
   }
   my $data = $request->response_call->($response);
-
-  $data = await $self->_run_plugin_after_llm_response($data, 1);
-
-  return $data;
+  return await $self->_run_plugin_after_llm_response($data, 1, $call);
 }
 
 =method simple_chat_f
@@ -300,16 +380,83 @@ sub simple_chat_stream {
 
   $conversation = $self->_run_plugin_before_llm_call($conversation, 1)->get;
 
-  my $request = $engine->chat_stream_request($conversation, $self->_extra);
-  my $chunks = $engine->execute_streaming_request($request, $callback);
-  return join('', map { $_->content } @$chunks);
+  my $call = { stream => 1 };
+  return $self->_llm_call( 1, $call, sub {
+    my $request = $engine->chat_stream_request($conversation, $self->_extra);
+    my ( $chunks, $timing ) = $engine->_execute_streaming_request( $request, $callback,
+      on_response => sub { $call->{http_response} = $_[0] } );
+    my $response = $self->_stream_response( $engine, $chunks, $timing );
+    my $data = $self->_run_plugin_after_llm_response($response, 1, $call)->get;
+    return _stream_text( $data, $response->content );
+  } );
 }
 
 =method simple_chat_stream
 
     my $content = $chat->simple_chat_stream(sub { print shift->content }, 'Hi');
 
-Synchronous streaming chat. Calls C<$callback> with each chunk.
+Synchronous streaming chat. Calls C<$callback> with each
+L<Langertha::Stream::Chunk> as it is parsed and returns the text of the
+answer.
+
+Fires C<plugin_before_llm_call> before the request and, once the stream has
+ended, C<plugin_after_llm_response> with the whole stream as one
+L<Langertha::Response> (its text, thinking and tool calls, the model and
+finish reason the stream named, its usage when the provider sent one, and its
+timing) and C<< { stream => 1 } >> as the third argument. The text returned
+is the C<content> of what the hooks return, so a hook that rewrites the
+answer changes the returned text; the chunks have already gone to
+C<$callback>. This method reads the whole response before it parses it, so
+the Response carries no C<ttft_seconds>; L</simple_chat_stream_realtime_f>
+measures it. A failed call fires C<plugin_llm_call_failed>, see
+L</FAILED CALLS>.
+
+=cut
+
+async sub simple_chat_stream_realtime_f {
+  my ( $self, $callback, @messages ) = @_;
+  my $engine = $self->_assert_chat_engine;
+  croak ref($engine) . " does not support streaming"
+    unless $engine->can('chat_stream_request');
+  croak "simple_chat_stream_realtime_f takes a callback or undef as first argument"
+    if defined $callback && ref $callback ne 'CODE';
+  $self->_warn_model_override( 'simple_chat_stream_realtime_f', 1 );
+  my $conversation = await $self->_build_messages_f(@messages);
+
+  $conversation = await $self->_run_plugin_before_llm_call($conversation, 1);
+
+  my $call = { stream => 1 };
+  return await $self->_llm_call_f( 1, $call,
+    $self->_stream_call_f( $engine, $conversation, $callback, $call ) );
+}
+
+async sub _stream_call_f {
+  my ( $self, $engine, $conversation, $callback, $call ) = @_;
+  my $request = $engine->chat_stream_request($conversation, $self->_extra);
+  my ( $content, $chunks, $timing, $thinking ) = await $engine->_stream_request_realtime_f( $request,
+    chunk_callback => $callback,
+    on_response    => sub { $call->{http_response} = $_[0] },
+  );
+  my $response = $self->_stream_response( $engine, $chunks, $timing );
+  my $data = await $self->_run_plugin_after_llm_response($response, 1, $call);
+  return ( _stream_text( $data, $content ), $chunks, $timing, $thinking );
+}
+
+=method simple_chat_stream_realtime_f
+
+    my ( $content, $chunks, $timing, $thinking ) = await $chat->simple_chat_stream_realtime_f(
+        sub { print shift->content },
+        'Tell me a story',
+    );
+
+Async streaming chat: calls C<$callback> (nothing, when it is C<undef>) with
+each L<Langertha::Stream::Chunk> as it arrives, and resolves to the same
+C<($content, \@chunks, \%timing, $thinking)> as
+L<Langertha::Role::Chat/simple_chat_stream_realtime_f>, with C<ttft_seconds>
+and C<total_seconds> in C<%timing>. The hooks fire as for
+L</simple_chat_stream>; the Response C<plugin_after_llm_response> gets carries
+the measured C<ttft_seconds>. C<$content> is the C<content> of what the hooks
+return.
 
 =cut
 
@@ -331,15 +478,19 @@ sub _tool_loop_iteration {
   # Plugin hook: before LLM call
   $conversation = $self->_run_plugin_before_llm_call($conversation, $iteration)->get;
 
-  # Build and send the request
-  my $request = $engine->build_tool_chat_request($conversation, $formatted_tools, $self->_extra);
+  my $call = { stream => 0 };
+  my $reply = $self->_llm_call( $iteration, $call, sub {
+    # Build and send the request
+    my $request = $engine->build_tool_chat_request($conversation, $formatted_tools, $self->_extra);
 
-  my $response = $engine->user_agent->request($request);
-  # The same failure text and rate-limit update as the async loop (karr k312).
-  die $self->_failed_message( $engine, $response, 'tool chat request' )
-    unless $response->is_success;
+    my $response = $engine->user_agent->request($request);
+    $call->{http_response} = $response;
+    # The same failure text and rate-limit update as the async loop (karr k312).
+    die $self->_failed_message( $engine, $response, 'tool chat request' )
+      unless $response->is_success;
 
-  my $reply = $self->_tool_loop_reply_f( $engine, $response, $iteration )->get;
+    return $self->_tool_loop_reply_f( $engine, $response, $iteration, $call )->get;
+  } );
 
   return ($conversation, $reply->raw, $reply);
 }
@@ -353,10 +504,26 @@ sub _tool_loop_iteration {
 # drops a call, changes its arguments or rewrites the text is honoured by all
 # three, and every echoed call gets exactly one result -- karr k347.
 async sub _tool_loop_reply_f {
-  my ( $self, $engine, $response, $iteration ) = @_;
+  my ( $self, $engine, $response, $iteration, $call ) = @_;
   my $data = $engine->parse_response($response);
-  $data = await $self->_run_plugin_after_llm_response($data, $iteration);
+  $data = await $self->_run_plugin_after_llm_response($data, $iteration, $call);
   return $engine->tool_loop_response($data);
+}
+
+# One async tool-loop LLM call: the request, the failure check and the reply.
+async sub _tool_loop_call_f {
+  my ( $self, $engine, $conversation, $formatted_tools, $iteration, $call ) = @_;
+  my $request = $engine->build_tool_chat_request($conversation, $formatted_tools, $self->_extra);
+
+  my $response = await $engine->_async_do_request_f(request => $request);
+  $call->{http_response} = $response;
+  unless ($response->is_success) {
+    die $self->_failed_message( $engine, $response, 'tool chat request' );
+  }
+
+  # As the sync loop: the raw body to the hook, chat_f's parser on what it
+  # returns, calls, text and echo from that one reply (k321, k322, k347).
+  return await $self->_tool_loop_reply_f( $engine, $response, $iteration, $call );
 }
 
 sub simple_chat_with_tools {
@@ -480,16 +647,9 @@ async sub simple_chat_with_tools_f {
   for my $iteration (1..$self->tool_max_iterations) {
     $conversation = await $self->_run_plugin_before_llm_call($conversation, $iteration);
 
-    my $request = $engine->build_tool_chat_request($conversation, $formatted_tools, $self->_extra);
-
-    my $response = await $engine->_async_do_request_f(request => $request);
-    unless ($response->is_success) {
-      die $self->_failed_message( $engine, $response, 'tool chat request' );
-    }
-
-    # As the sync loop: the raw body to the hook, chat_f's parser on what it
-    # returns, calls, text and echo from that one reply (k321, k322, k347).
-    my $reply = await $self->_tool_loop_reply_f( $engine, $response, $iteration );
+    my $call = { stream => 0 };
+    my $reply = await $self->_llm_call_f( $iteration, $call,
+      $self->_tool_loop_call_f( $engine, $conversation, $formatted_tools, $iteration, $call ) );
 
     my ( $calls, $data ) = $engine->tool_loop_calls( $reply, $reply->raw );
     my @tool_calls = @$calls;
@@ -550,6 +710,28 @@ async sub simple_chat_with_tools_f {
 Async version of L</simple_chat_with_tools>.
 
 =cut
+
+=head1 PLUGIN HOOKS
+
+Every chat method passes C<plugin_after_llm_response> a third argument, a
+HashRef describing the call: C<stream> is true for L</simple_chat_stream> and
+L</simple_chat_stream_realtime_f>, false otherwise, and C<http_response> is
+the L<HTTP::Response> the server answered with (on
+L</simple_chat_stream_realtime_f> without the streamed body).
+
+=head1 FAILED CALLS
+
+When an LLM call fails -- the request cannot be sent, the server answers
+with an error status, the answer cannot be read or reports an error, the
+stream breaks or a C<$callback> dies, or a C<plugin_after_llm_response> hook
+dies -- every plugin's C<plugin_llm_call_failed> runs with the error, the
+iteration and the same HashRef as above (with C<http_response> when the
+server answered), before the error reaches the caller. The caller gets the
+error unchanged: the same exception, and on the C<_f> methods the same failed
+Future, category and details included. A plugin that dies in
+C<plugin_llm_call_failed> is warned about and does not replace the error;
+the other plugins still run. A plugin that dies in C<plugin_before_llm_call>
+or in a tool hook is not a failed LLM call.
 
 =seealso
 

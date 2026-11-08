@@ -1437,6 +1437,21 @@ async sub chat_stream_realtime_f {
   my $request = $self->chat_stream_request( $conversation,
     ( %$controls ? ( controls => $controls ) : () ),
     %opts );
+  return await $self->_stream_request_realtime_f( $request,
+    chunk_callback  => $chunk_callback,
+    hermes_prompted => $hermes_prompted,
+  );
+}
+
+# Runs a built stream request: chunks to chunk_callback as they arrive, the
+# ($content, \@chunks, \%timing, $thinking) tuple when it ends. Shared by
+# chat_stream_realtime_f and Langertha::Chat's streaming method, whose
+# on_response sees the server's HTTP::Response (a non-2xx one with its body)
+# before the call can fail on it.
+async sub _stream_request_realtime_f {
+  my ( $self, $request, %args ) = @_;
+  my $chunk_callback  = $args{chunk_callback};
+  my $hermes_prompted = $args{hermes_prompted};
   my @all_chunks;
   my $buffer = '';
   my %stream_state;   # this stream's parse state (tool-call fragments, karr k221)
@@ -1532,16 +1547,21 @@ async sub chat_stream_realtime_f {
   # on_header, which may run inside the event loop's read handler.
   $self->_update_rate_limit($response_status)
     if $response_status && $self->can('_update_rate_limit');
+  # A non-2xx response with the error body it came with.
+  my $failed;
+  if ( $response_status && !$response_status->is_success ) {
+    $failed = $response_status->clone;
+    $failed->content($error_content) if defined $error_content;
+  }
+  $args{on_response}->( $failed // $response_status )
+    if $args{on_response} && $response_status;
   # The exception that stopped the stream wins over any transport failure
   # seen afterwards (from the cancel, a drain, or the connection itself).
   await Future->fail(@$stream_error) if $stream_error;
   await $request_f if $request_f->is_failed;
 
-  unless ($response_status->is_success) {
-    my $failed = $response_status->clone;
-    $failed->content($error_content) if defined $error_content;
-    die $self->_request_failed_message( $failed, 'streaming request' );
-  }
+  die $self->_request_failed_message( $failed, 'streaming request' )
+    unless $response_status->is_success;
 
   # Process remaining buffer
   if ($buffer ne '') {
@@ -1798,6 +1818,38 @@ requested with C<stream_options =E<gt> { include_usage =E<gt> 1 }> reports
 its usage on a content-less chunk after the final one.
 
 =cut
+
+# The Langertha::Response of a finished stream, for the plugin hooks of
+# Langertha::Chat: the text, thinking and tool calls of the chunks, the last
+# model and finish reason they named, the stream's usage and timing, and the
+# engine's rate limit. No id: a chunk does not carry the provider's
+# response id.
+sub _stream_response {
+  my ( $self, $chunks, $timing ) = @_;
+  my ( $model, $finish_reason );
+  for my $chunk (@$chunks) {
+    $model = $chunk->model if $chunk->has_model && defined $chunk->model;
+    $finish_reason = $chunk->finish_reason
+      if $chunk->has_finish_reason && defined $chunk->finish_reason;
+  }
+  my $usage    = $self->aggregate_usage($chunks);
+  my $thinking = $self->aggregate_thinking($chunks);
+  my $calls    = $self->aggregate_tool_calls($chunks);
+  my %timing   = map { defined $timing->{$_} ? ( $_ => $timing->{$_} ) : () }
+    keys %{ ref $timing eq 'HASH' ? $timing : {} };
+  require Langertha::Response;
+  return Langertha::Response->new(
+    content => join( '', map { $_->content } @$chunks ),
+    defined $model         ? ( model         => $model )         : (),
+    defined $finish_reason ? ( finish_reason => $finish_reason ) : (),
+    $usage                 ? ( usage         => $usage )         : (),
+    defined $thinking      ? ( thinking      => $thinking )      : (),
+    @$calls                ? ( tool_calls    => $calls )         : (),
+    %timing                ? ( timing        => \%timing )       : (),
+    ( $self->can('has_rate_limit') && $self->has_rate_limit )
+      ? ( rate_limit => $self->rate_limit ) : (),
+  );
+}
 
 =method simple_chat_stream_realtime_f
 

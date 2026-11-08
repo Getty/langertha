@@ -161,13 +161,16 @@ subtest 'isError tool result: error status and error.type' => sub {
   is_deeply( attrs_of($tool)->{'error.type'}, { stringValue => '_OTHER' }, 'error.type _OTHER' );
 };
 
-subtest 'a failed LLM call leaves no span and does not disturb the next one (documented)' => sub {
+subtest 'a failed LLM call is an error span and does not disturb the next one' => sub {
   my ( $chat, $otel ) = chat_with_otel();
   ok( !eval { $chat->simple_chat('boom'); 1 }, 'the failing call still dies for the caller' );
-  is_deeply( scalar @{ $otel->_batch }, 0, 'no span for the failed call' );
+  is_deeply( scalar @{ $otel->_batch }, 1, 'one span for the failed call' );
   my $text = eval { $chat->simple_chat('fine') };
   is_deeply( $text, $SENTINEL{answer}, 'next call works' );
-  is_deeply( scalar @{ spans_of($otel) }, 1, 'exactly one span (the failed call left none behind)' );
+  my @spans = @{ spans_of($otel) };
+  is_deeply( scalar @spans, 2, 'two spans: the failed call and the next one' );
+  is_deeply( $spans[0]{status}, { code => 2 }, 'the failed call has status ERROR' );
+  ok( !exists $spans[1]{status}, 'the next one is unset' );
 };
 
 subtest 'plain chat, Chat overrides, provider_name override' => sub {

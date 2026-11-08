@@ -71,9 +71,31 @@ Transform the assembled conversation (mission + history + messages).
 
 Transform the conversation before each LLM request.
 
-=item B<plugin_after_llm_response>($data, $iteration) -> $data
+=item B<plugin_after_llm_response>($data, $iteration, $call?) -> $data
 
-Inspect or transform the parsed LLM response.
+Inspect or transform the parsed LLM response. C<$call> is a HashRef about the
+call, passed by L<Langertha::Chat> (see L<Langertha::Chat/PLUGIN HOOKS>): its
+C<stream> is true when the answer was streamed. A streamed answer reaches this
+hook once the stream has ended, as one L<Langertha::Response> built from the
+chunks (text, thinking, tool calls, model, finish reason, usage when the
+provider sent one, and timing, with C<ttft_seconds> when the host measured
+it); its chunks have already gone to the caller's callback, so a change made
+here only reaches the text the streaming method returns. A host that passes
+no C<$call> (such as L<Langertha::Raider>) means a call that was not
+streamed.
+
+=item B<plugin_llm_call_failed>($error, $iteration, $call?)
+
+Observe an LLM call that failed between C<plugin_before_llm_call> and the end
+of C<plugin_after_llm_response>, which then is not called (or did not
+finish). C<$error> is the exception, as the caller will get it: usually an
+error message, which can quote the provider's answer and with it parts of the
+prompt. C<$call> is the HashRef described above; its C<http_response> is the
+L<HTTP::Response> when the server answered. The return value is ignored, and
+the error reaches the caller unchanged after every plugin has run this hook:
+a plugin that dies here is warned about, never replaces the error. The
+default does nothing. Fired by L<Langertha::Chat> (see
+L<Langertha::Chat/FAILED CALLS>).
 
 =item B<plugin_before_tool_call>($name, $input) -> ($name, $input) or ()
 
@@ -171,8 +193,13 @@ async sub plugin_before_llm_call {
 }
 
 async sub plugin_after_llm_response {
-  my ( $self, $data, $iteration ) = @_;
+  my ( $self, $data, $iteration, $call ) = @_;
   return $data;
+}
+
+async sub plugin_llm_call_failed {
+  my ( $self, $error, $iteration, $call ) = @_;
+  return;
 }
 
 async sub plugin_before_tool_call {

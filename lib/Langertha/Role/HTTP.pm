@@ -633,12 +633,20 @@ agent passed in must carry the same pin, or construction croaks.
 
 sub execute_streaming_request {
   my ($self, $request, $chunk_callback) = @_;
+  return $self->_execute_streaming_request($request, $chunk_callback);
+}
+
+# on_response sees the HTTP::Response before anything can fail on it, so a
+# caller (Langertha::Chat's failure hook) can tell what the server answered.
+sub _execute_streaming_request {
+  my ($self, $request, $chunk_callback, %opts) = @_;
 
   croak "execute_streaming_request requires Langertha::Role::Streaming"
     unless $self->does('Langertha::Role::Streaming');
 
   my $t0 = [gettimeofday];
   my $response = $self->user_agent->request($request);
+  $opts{on_response}->($response) if $opts{on_response};
 
   $self->_update_rate_limit($response) if $self->can('_update_rate_limit');
   unless ($response->is_success) {
