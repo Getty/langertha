@@ -1,0 +1,14 @@
+---
+class: standard
+created: 2026-11-08T06:30:16Z
+id: 415
+priority: low
+status: backlog
+tags:
+- otel
+- observability
+title: 'Plugin::OTel: a tool-loop error in a 200 body closes the span as success'
+updated: 2026-11-08T06:30:16Z
+---
+
+From the k407 review: in the tool loop, tool_loop_response croaks on an {error:{...}} 200 body only after all after-hooks ran, so no plugin gets plugin_llm_call_failed; OTel closes the span without error status and Langfuse records a normal generation while the caller gets an exception. Option: OTel after-hook sets status ERROR itself from a raw {error} body or $call->{http_response} via _provider_error_code.
