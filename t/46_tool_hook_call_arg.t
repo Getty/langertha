@@ -21,16 +21,16 @@ use Langertha::Virtual::Rules qw( answer tools );
   use Moose;
   use Future::AsyncAwait;
   extends 'Langertha::Plugin';
-  has before => ( is => 'ro', default => sub { [] } );
-  has after  => ( is => 'ro', default => sub { [] } );
+  has before_calls => ( is => 'ro', default => sub { [] } );
+  has after_calls  => ( is => 'ro', default => sub { [] } );
   async sub plugin_before_tool_call {
     my ( $self, @args ) = @_;
-    push @{ $self->before }, [@args];
+    push @{ $self->before_calls }, [@args];
     return @args[ 0, 1 ];
   }
   async sub plugin_after_tool_call {
     my ( $self, @args ) = @_;
-    push @{ $self->after }, [@args];
+    push @{ $self->after_calls }, [@args];
     return $args[2];
   }
   __PACKAGE__->meta->make_immutable;
@@ -78,19 +78,19 @@ for my $loop ( sort keys %LOOP ) {
     my $chat = chat();
     is( $LOOP{$loop}->($chat), 'done', 'the loop answered' );
     my ( $first, undef, $last ) = @{ $chat->plugin_instances };
-    is( scalar @{ $first->before }, 2, 'two calls reached the before hook' );
+    is( scalar @{ $first->before_calls }, 2, 'two calls reached the before hook' );
     for my $i ( 0, 1 ) {
-      my $before = $first->before->[$i];
+      my $before = $first->before_calls->[$i];
       is( scalar @$before, 3, 'before hook: name, input, call' );
       is( $before->[0], 'lookup', 'the name' );
       is_deeply( $before->[1], { query => 'x' }, 'the input' );
       is_deeply( $before->[2], { id => 'call_virtual_' . ( $i + 1 ) }, 'the call HashRef carries the tool call id' );
       my $call = $before->[2];
-      is( refaddr( $last->before->[$i][2] ), refaddr($call), 'a later plugin (after a two-argument one) gets the same HashRef' );
-      is( scalar @{ $first->after->[$i] }, 4, 'after hook: name, input, result, call' );
-      is( refaddr( $_->after->[$i][3] ), refaddr($call), 'the after hook gets the same HashRef' ) for $first, $last;
+      is( refaddr( $last->before_calls->[$i][2] ), refaddr($call), 'a later plugin (after a two-argument one) gets the same HashRef' );
+      is( scalar @{ $first->after_calls->[$i] }, 4, 'after hook: name, input, result, call' );
+      is( refaddr( $_->after_calls->[$i][3] ), refaddr($call), 'the after hook gets the same HashRef' ) for $first, $last;
     }
-    isnt( refaddr( $first->before->[0][2] ), refaddr( $first->before->[1][2] ), 'one HashRef per call' );
+    isnt( refaddr( $first->before_calls->[0][2] ), refaddr( $first->before_calls->[1][2] ), 'one HashRef per call' );
   };
 }
 
@@ -98,7 +98,7 @@ subtest 'plugin_pipeline_tool_call_f with two arguments: plugins see two argumen
   my $chat = chat();
   my @result = $chat->plugin_pipeline_tool_call_f( 'lookup', { query => 'x' } )->get;
   is_deeply( \@result, [ 'lookup', { query => 'x' } ], 'returns the name and input' );
-  is_deeply( $chat->plugin_instances->[0]->before, [ [ 'lookup', { query => 'x' } ] ], 'no call argument added' );
+  is_deeply( $chat->plugin_instances->[0]->before_calls, [ [ 'lookup', { query => 'x' } ] ], 'no call argument added' );
 };
 
 subtest 'plugin_pipeline_tool_call_f with the call HashRef: passed on, never returned' => sub {
@@ -106,7 +106,7 @@ subtest 'plugin_pipeline_tool_call_f with the call HashRef: passed on, never ret
   my $call = { id => 'c1' };
   my @result = $chat->plugin_pipeline_tool_call_f( 'lookup', { query => 'x' }, $call )->get;
   is_deeply( \@result, [ 'lookup', { query => 'x' } ], 'returns only the name and input' );
-  is( refaddr( $_->before->[0][2] ), refaddr($call), 'each recording plugin got it' )
+  is( refaddr( $_->before_calls->[0][2] ), refaddr($call), 'each recording plugin got it' )
     for @{ $chat->plugin_instances }[ 0, 2 ];
 };
 
