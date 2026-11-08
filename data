@@ -1,0 +1,14 @@
+---
+class: standard
+created: 2026-11-08T04:59:09Z
+id: 409
+priority: low
+status: backlog
+tags:
+- observability
+- plugins
+title: Move the generic trace sender out of Role::Langfuse into a neutral place
+updated: 2026-11-08T04:59:09Z
+---
+
+Found in the k403 review: Plugin::OTel calls Langertha::Role::Langfuse->_langfuse_send_f (generic transport, private, Langfuse-named) and _send_chunks_f in OTel.pm is a near-copy of _langfuse_send_chunks_f. Move the sender into Role::TracePlugin (or a neutral helper) and have Role::Langfuse call it, so a Langfuse-only change cannot leak into OTLP. Side note: on the Net::Async::HTTP path the request carries the engine client user agent, not the plugin one.
