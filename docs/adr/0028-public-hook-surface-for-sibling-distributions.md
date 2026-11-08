@@ -175,3 +175,87 @@ call the private `_raw_text_content` / `_raw_tool_calls`, so the readers cannot 
 
 The contract is pinned in `t/46_public_tool_loop_hooks.t` and `t/60_response_text_content.t`.
 The raider-side migration is ticket 85 on the langertha-raider karr board.
+
+## Update (k407, k410 — plugin hooks for streamed and failed calls, and the tool call on the tool hooks)
+
+Until k407, `Langertha::Chat` fired `plugin_after_llm_response` only for the non-streaming
+methods, and nothing told a plugin that a call failed. A tracing plugin (ADR 0041, and
+`Plugin::Langfuse`) left no record of a streamed call or of a failure. The tool hooks got only
+the name and arguments, so a plugin could not pair `plugin_before_tool_call` with
+`plugin_after_tool_call` when two calls shared a name or another plugin renamed or skipped one.
+
+The plugin hook surface grows by one hook and three optional trailing arguments:
+
+1. **`plugin_llm_call_failed($error, $iteration, $call)`** (`Langertha::Plugin`, default does
+   nothing). `Langertha::Chat` fires it when an LLM call fails between `plugin_before_llm_call`
+   and the end of the `plugin_after_llm_response` hooks: the request cannot be sent, the server
+   answers with an error status, the answer cannot be read or reports an error, the stream
+   breaks, the caller's stream callback dies, or an after-hook dies. The rules:
+   - **Each plugin hears of a call once.** The hook runs only on plugins whose
+     `plugin_after_llm_response` has not finished for that call. When the second plugin's
+     after-hook dies, the first plugin (already told how the call ended) is not told again; the
+     second and those after it are. The bookkeeping is keyed by the `$call` HashRef itself
+     (a field hash, dropped with it), so it needs no call id.
+   - **The caller's error propagates unchanged:** the same exception, and on the `_f` methods
+     the same failed Future, category and details included.
+   - **A hook never masks it.** A plugin that dies or returns a failed Future is warned about and
+     the next plugin still runs; a returned Future is waited for, and a cancelled one counts as
+     finished. A cancel of the call itself is not a failure. A plugin that dies in
+     `plugin_before_llm_call` or in a tool hook is not a failed LLM call.
+2. **`plugin_after_llm_response($data, $iteration, $call)`** gets an optional `$call` HashRef:
+   `stream` (true for the streaming methods) and `http_response` (the `HTTP::Response`, without
+   the streamed body on the realtime method). A stream fires the hook **once, after it ended**,
+   with one `Langertha::Response` aggregated from the chunks (text, thinking, tool calls, model,
+   finish reason, usage when sent, timing). The chunks have already gone to the caller's
+   callback, so a hook's rewrite reaches only the text the method returns. A stream that cannot
+   be read into a `Response` is passed as its text alone: observability never fails the call.
+   With no plugins composed, the stream is not aggregated at all.
+3. **`plugin_before_tool_call($name, $input, $call)` / `plugin_after_tool_call($name, $input,
+   $result, $call)`** get an optional `$call` HashRef `{ id }` (the tool call id the model sent,
+   an empty string when the provider sends none). It is **one HashRef per tool call, the same for
+   every plugin and both hooks**, and not part of the pipeline's return value, so whatever an
+   earlier plugin returns, a later one can still pair its two hooks by it.
+4. **`Langertha::Chat::simple_chat_stream_realtime_f`** is public: the async streaming method on
+   the plugin-hosting chat wrapper, mirroring `Role::Chat::simple_chat_stream_realtime_f`, and the
+   one that measures `ttft_seconds`.
+
+Why trailing and optional: a host that passes no `$call` (langertha-raider today) calls the hooks
+with the two or three arguments they always had, and a plugin written for those keeps working; a
+missing `$call` means "not streamed" and "pair by name". The new hook defaults to a no-op, so
+existing plugins need no change. "Once per call" was chosen over "every plugin on every failure"
+because a tracing plugin whose after-hook finished has already closed its span as a success;
+telling it again would make it record one call twice.
+
+Accepted trade-off: an error the tool loops detect in a 200 body *after* all after-hooks
+finished (the croak of `tool_loop_response`, k341 Update above) reaches no
+failure hook, since every plugin has already heard of the call. A trace then shows that call as a
+success; k415 tracks it. langertha-raider fires neither the failure hook nor the `$call`
+arguments yet; k414 is that sibling's migration.
+
+The contract is pinned in `t/45_chat_stream_hooks_transport.t`, `t/46_chat_llm_call_failed_hook.t`
+and `t/46_tool_hook_call_arg.t`.
+
+## Update (k411 — `Usage` records which counts were reported)
+
+`from_raw` returning `undef` (above) tells "no usage reported" from "zero tokens" for a whole
+body, but a body can report some counts and not others, and the numeric accessors returned `0`
+for both. An exporter (ADR 0041's `usage_attributes`) then sent a measured-looking `0`.
+
+`Langertha::Usage` gains **`has_input_tokens`**, **`has_output_tokens`** and
+**`has_total_tokens`**: true when the count was given (found on the wire by `from_hash` /
+`from_raw`, or passed to `new`), false when it is the default. A reported zero is reported.
+`has_total_tokens` is also true when the total is the sum of two reported counts, not when one
+half of the sum is missing. The parsers no longer turn a missing count into a reported `0`. The
+numeric accessors are unchanged and still return `0`, so callers that only add up see no
+difference.
+
+Gemini is the one exception, at the universal door (ADR 0018 tier 1) and in `Engine::Gemini`
+alike: its proto3 JSON leaves out a count that is zero, so **inside a present `usageMetadata`
+block a missing count is a reported `0`** (a blocked prompt has `totalTokenCount` but no
+`candidatesTokenCount`: output is a reported `0`). Only a missing block leaves Gemini's counts
+unreported. `from_raw` marks a block found under `usageMetadata` as Gemini's; `from_hash` treats a
+block with any Gemini camelCase key the same way.
+
+This stays here rather than on ADR 0031: 0031 decides what `input_tokens` *means* (with or
+without the cache); this decides whether the count was *reported*, the distinction this ADR
+introduced with `from_raw`. Pinned in `t/91_usage_reported.t`.

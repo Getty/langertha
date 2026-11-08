@@ -159,3 +159,23 @@ never by an engine, and not a capability (listed as such in `t/78_capability_reg
   core overwrites to `tool_calls` when `chat_f` synthesizes a `ToolCall` for structured output
   (ADR 0005), so a trace reports a tool call the model never made; decide whether the response
   keeps the provider's raw value.
+
+## Update (k407, k410, k411 — streamed and failed calls traced, tool spans paired by call id, unreported counts left out)
+
+The hooks the plugin was missing now exist (ADR 0028, k407/k410 Update), and `Plugin::OTel` uses
+them. The consequence above that failed and streamed calls leave no span, and the k407 item under
+Future work, are resolved:
+
+- A **streamed call** gets its `CLIENT` span from the single after-hook a stream fires, with
+  `gen_ai.request.stream` and the time to first chunk when the host measured it.
+- A **failed call** closes its span from `plugin_llm_call_failed` with status `ERROR` and
+  `error.type`. A tool-loop error found in a 200 body after the after-hooks finished still closes
+  the span as a success (the trade-off recorded in ADR 0028; k415).
+- **Tool spans** are keyed by the tool call HashRef's `id` and take the call id from it, so a
+  call another plugin skips or renames no longer gives the next call a wrong start or call id.
+  A host that passes no call keeps the by-name pairing.
+
+Decision 3 is refined by `Usage`'s new predicates (ADR 0028, k411 Update): `usage_attributes`
+leaves `gen_ai.usage.input_tokens` / `output_tokens` out when the count was not reported, instead
+of sending `0`; a reported `0` is still sent. Pinned in `t/94_plugin_otel_stream_failure.t`,
+`t/94_plugin_otel_tool_call_ids.t` and `t/91_usage_reported.t`.
