@@ -37,6 +37,7 @@ my %NOT_A_CAPABILITY = (
   'Langertha::Role::PluginHost'          => 'host-side plugin pipeline, also composed by non-engines (Chat, Embedder, ImageGen)',
   'Langertha::Role::Langfuse'            => 'engine-level observability composed by Role::Chat — constant-true for chat engines, so it carries no capability information',
   'Langertha::Role::Runnable'            => 'generic run_f execution contract, a dependency-free core primitive — not a provider capability',
+  'Langertha::Role::TracePlugin'         => 'internals shared by the tracing plugins (Plugin::Langfuse, Plugin::OTel), composed by plugins, never by an engine',
 );
 
 # Read the registry out of the module source: %ROLE_TO_CAPS is lexical by

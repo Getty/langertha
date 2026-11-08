@@ -488,6 +488,11 @@ langertha-raider distribution)
 =item * L<Langertha::Role::Langfuse> - Engine-level Langfuse observability,
 composed by L<Langertha::Role::Chat>
 
+=item * L<Langertha::Role::TracePlugin> - Internal plumbing shared by
+L<Langertha::Plugin::Langfuse> and L<Langertha::Plugin::OTel> (JSON-safe
+snapshots without image bytes, non-blocking flushes); not public API, not for
+use outside those plugins
+
 =item * L<Langertha::Role::OpenAPI> - OpenAPI spec support
 
 =back

@@ -10,7 +10,7 @@ use Future;
 use Langertha::Role::Langfuse ();
 use Langertha::ToolCall;
 use Langertha::Usage;
-use Scalar::Util qw( blessed refaddr weaken );
+use Scalar::Util qw( blessed );
 
 extends 'Langertha::Plugin';
 
@@ -247,11 +247,6 @@ The most events sent in one ingestion request. Default C<100>; a larger batch
 goes out as several requests, one after another.
 
 =cut
-
-has _pending_flushes => (
-  is      => 'ro',
-  default => sub { {} },
-);
 
 # --- Internal state ---
 
@@ -497,49 +492,15 @@ sub _flush_args {
   );
 }
 
-# The engine whose async backend carries a flush: the host when it is an
-# engine itself, else the host's engine (Chat, Embedder, ImageGen, Raider).
-# None (a host without one, or a host already gone: it is a weak ref) means
-# the dedicated LWP agent with flush_timeout.
-sub _flush_engine {
-  my ( $self ) = @_;
-  my $host = $self->host or return;
-  return $host if $host->can('_async_do_request_f');
-  return unless $host->can('engine');
-  my $engine = $host->engine;
-  return blessed($engine) && $engine->can('_async_do_request_f') ? $engine : undef;
-}
-
 sub _send_f {
   my ( $self, %args ) = @_;
   return Langertha::Role::Langfuse->_langfuse_send_chunks_f( %args, engine => scalar $self->_flush_engine );
 }
 
-# auto_flush from inside an async hook: start the flush and return at once.
-# The future is held on the object until it is ready (flush_timeout bounds
-# that), so it is not lost to garbage collection; flush / flush_f wait for it.
-sub _auto_flush {
-  my ( $self ) = @_;
-  my %args = $self->_flush_args or return;
-  my $future = $self->_send_f(%args);
-  return if $future->is_ready;
-  my $pending = $self->_pending_flushes;
-  my $key     = refaddr $future;
-  $pending->{$key} = $future;
-  weaken( my $weak = $pending );
-  $future->on_ready( sub { delete $weak->{$key} if $weak } );
-  return;
-}
-
 sub flush {
   my ( $self ) = @_;
   return unless $self->enabled;
-  if ( my @pending = values %{ $self->_pending_flushes } ) {
-    # Only the Net::Async::HTTP path leaves a flush pending, so there is a loop.
-    my $engine = $self->_flush_engine;
-    my $loop   = $engine ? $engine->async_loop : undef;
-    $loop->await_all(@pending) if $loop;
-  }
+  $self->_await_pending_flushes;
   my %args = $self->_flush_args or return;
   my @responses = Langertha::Role::Langfuse->_langfuse_send_chunks_f(%args)->get;
   return $responses[-1];
@@ -586,44 +547,6 @@ warned about as in L</flush>. Without an engine on the host, or on the
 synchronous fallback, it runs like L</flush>.
 
 =cut
-
-# Deep copy through the encoder: JSON-safe, and a Langertha::Content::Image
-# becomes its compact TO_JSON description (never the image data). A Chat
-# hands the hooks messages already in the engine's wire shape, where an image
-# is a data: URL or a bare base64 string; those are shortened too, or every
-# trace would carry every image once per iteration (as karr k273 for TO_JSON).
-sub _json_safe {
-  my ( $self, $data ) = @_;
-  return $data unless ref $data;
-  my $copy = eval { $self->_json->decode( $self->_json->encode($data) ) };
-  return $data unless defined $copy;
-  my $walk;
-  $walk = sub {
-    my ($node) = @_;
-    my @slots = ref $node eq 'HASH' ? ( map { \$node->{$_} } keys %$node )
-              : ref $node eq 'ARRAY' ? ( map { \$_ } @$node ) : ();
-    for my $slot (@slots) {
-      if ( ref $$slot ) { $walk->($$slot); next }
-      next unless defined $$slot;
-      if ( $$slot =~ m{\A(data:[^;,]+;base64,)(.*)\z}s ) {
-        $$slot = $1 . '[' . _base64_bytes($2) . ' bytes omitted]';
-      }
-      elsif ( length $$slot >= 512 && $$slot =~ m{\A[A-Za-z0-9+/]+={0,2}\z} ) {
-        $$slot = '[base64: ' . _base64_bytes($$slot) . ' bytes omitted]';
-      }
-    }
-  };
-  $walk->($copy);
-  undef $walk;
-  return $copy;
-}
-
-sub _base64_bytes {
-  my ($b64) = @_;
-  $b64 =~ s/\s+//g;
-  my $pad = $b64 =~ /(=+)\z/ ? length $1 : 0;
-  return int( length($b64) * 3 / 4 ) - $pad;
-}
 
 sub _host_engine {
   my ( $self ) = @_;
@@ -912,6 +835,10 @@ async sub plugin_after_embedding {
 
   return $vector;
 }
+
+# JSON-safe snapshots and the non-blocking auto_flush, shared with
+# Plugin::OTel (k403).
+with 'Langertha::Role::TracePlugin';
 
 __PACKAGE__->meta->make_immutable;
 
