@@ -1,0 +1,24 @@
+---
+claimed_at: 2026-11-08T06:50:02Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-11-08T06:49:39Z
+created: 2026-11-08T05:32:09Z
+id: 411
+priority: high
+started: 2026-11-08T05:32:18Z
+status: done
+tags:
+- otel
+- observability
+- usage
+title: 'OTel export: omit gen_ai.usage token attributes the provider did not report,
+  never send 0'
+updated: 2026-11-08T06:50:02Z
+---
+
+From the k403 review and maintainer-side acceptance: Langertha::Usage turns a missing input/output count into 0 at construction, so Trace::OTLP usage_attributes sends gen_ai.usage.input_tokens / output_tokens = 0 when the provider reported nothing, which falsifies analytics. Goal: when the provider reported no count, the attribute is left out. Must not change the existing numeric accessors of Usage for current callers (Pricing, Plugin::Langfuse) unless reviewed; prefer predicates / a reported flag. Priority ahead of k404-k410 except k407 (parallel).
+
+Branch trace-followups-k407: ae1f258 (Usage has_*_tokens predicates; OTLP omits unreported counts), 8d5aafe (Gemini: missing count inside present usageMetadata = reported 0, incl. streamed empty block). Suite PASS. Follow-up k412 (Langfuse still sends/prices 0).
+
+Merged to main by fast-forward b54ed90..c34da4e (merge hash c34da4e), no CPAN release.
