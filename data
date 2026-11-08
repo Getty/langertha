@@ -1,0 +1,25 @@
+---
+claimed_at: 2026-11-08T06:49:58Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-11-08T06:49:35Z
+created: 2026-11-08T04:59:13Z
+id: 410
+priority: low
+started: 2026-11-08T05:53:27Z
+status: done
+tags:
+- observability
+- plugins
+title: 'Plugin::OTel: tool start time can pair with the wrong call after another plugin
+  skips or renames it'
+updated: 2026-11-08T06:49:58Z
+---
+
+Found in the k403 review: OTel records the tool start in plugin_before_tool_call keyed by name+args; if a later plugin skips or renames the call, the queued start stays and the next same-named call pops it. Limited to one iteration (_tool_starts resets per LLM call). Proper fix needs the tool call id in the hooks.
+
+Tool hooks get optional trailing $call {id}; Plugin::OTel pairs tool spans by it via Hash::Util::FieldHash (stale starts vanish when the call is dropped). Tests t/94_plugin_otel_tool_call_ids.t, t/46_tool_hook_call_arg.t.
+
+Branch trace-followups-k407: a0ef8e2 (tool hooks get optional trailing $call {id}; OTel pairs tool spans by it), 9b1e914 (test warning cleanup). Suite PASS.
+
+Merged to main by fast-forward b54ed90..c34da4e (merge hash c34da4e), no CPAN release.
