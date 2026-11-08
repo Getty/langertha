@@ -601,13 +601,19 @@ sub usage_attributes {
   return () unless blessed($usage) && $usage->isa('Langertha::Usage');
   my $cached = $usage->cached_tokens;
   my $write  = $usage->cache_write_tokens;
-  my $input  = $usage->input_tokens // 0;
-  my $includes = $usage->input_includes_cache;
-  $input += ( $cached // 0 ) + ( $write // 0 ) if defined $includes && !$includes;
+  # An unreported count is left out, never sent as 0. Without a reported input
+  # the cache counts are not folded into one either: they are only part of
+  # the prompt.
+  my $input;
+  if ( $usage->has_input_tokens ) {
+    $input = $usage->input_tokens;
+    my $includes = $usage->input_includes_cache;
+    $input += ( $cached // 0 ) + ( $write // 0 ) if defined $includes && !$includes;
+  }
   my $reasoning = $usage->reasoning_tokens;
   return (
-    'gen_ai.usage.input_tokens'  => $input,
-    'gen_ai.usage.output_tokens' => $usage->output_tokens // 0,
+    defined $input ? ( 'gen_ai.usage.input_tokens' => $input ) : (),
+    $usage->has_output_tokens ? ( 'gen_ai.usage.output_tokens' => $usage->output_tokens ) : (),
     $cached    ? ( 'gen_ai.usage.cache_read.input_tokens'     => $cached )    : (),
     $write     ? ( 'gen_ai.usage.cache_creation.input_tokens' => $write )     : (),
     $reasoning ? ( 'gen_ai.usage.reasoning.output_tokens'     => $reasoning ) : (),
@@ -624,9 +630,10 @@ C<gen_ai.usage.cache_creation.input_tokens> and
 C<gen_ai.usage.reasoning.output_tokens> when the provider reported a non-zero
 count. Nothing for anything but a L<Langertha::Usage>.
 
-The input and output counts are always sent, C<0> when the provider reported
-none: a L<Langertha::Usage> keeps an unreported count as C<0> and cannot tell
-it from a reported zero.
+The input and output counts are sent when the provider reported them
+(L<Langertha::Usage/has_input_tokens>, L<Langertha::Usage/has_output_tokens>),
+a reported C<0> included, and left out when it did not: an unreported count is
+never sent as C<0>.
 
 The conventions count cache reads and writes B<in>
 C<gen_ai.usage.input_tokens>, while L<Langertha::Usage/input_tokens> keeps
@@ -634,7 +641,9 @@ the provider's own meaning. When the usage says its input excludes the cache
 (C<input_includes_cache> false, as Anthropic reports it), the cache reads and
 writes are added; when it says it includes them, or does not say (C<undef>,
 most providers, which do not report a cache split), the input count is sent as
-the provider gave it.
+the provider gave it. Without a reported input count, nothing is sent for it,
+not even the cache reads and writes as a stand-in: they are only part of the
+prompt, so their sum would read as a too-small input count.
 
 =cut
 

@@ -65,8 +65,48 @@ sub BUILD {
     input_includes_cache => $args->{input_includes_cache},
     cost_usd           => $args->{cost_usd},
     raw                => $args->{raw},
+    # Whether the count was given (from the wire or by the caller) or is the
+    # default 0. The accessors keep returning a number either way; the
+    # predicates below tell an unreported count from a reported zero.
+    input_reported     => defined $args->{input_tokens}  ? 1 : 0,
+    output_reported    => defined $args->{output_tokens} ? 1 : 0,
   };
 }
+
+sub has_input_tokens  { $DATA{ $_[0] }{input_reported}  ? 1 : 0 }
+sub has_output_tokens { $DATA{ $_[0] }{output_reported} ? 1 : 0 }
+
+# A total is reported when the wire gave one, or when it is the sum of two
+# reported counts; a sum with an unreported half is not.
+sub has_total_tokens {
+  my ($self) = @_;
+  my $d = $DATA{$self} || {};
+  return 1 if defined $d->{total_tokens};
+  return ( $d->{input_reported} && $d->{output_reported} ) ? 1 : 0;
+}
+
+=method has_input_tokens
+
+=method has_output_tokens
+
+    if ( $usage->has_input_tokens ) {
+      printf "%d prompt tokens\n", $usage->input_tokens;
+    }
+
+True when the count was reported: found on the wire by L</from_hash> /
+L</from_raw>, or passed to C<new>. False when it was not; C<input_tokens> /
+C<output_tokens> then still return C<0> for callers that only add up, but that
+C<0> is no measurement. A reported zero is reported: the predicate is true and
+the count is C<0>.
+
+=method has_total_tokens
+
+True when C<total_tokens> was reported (a total on the wire or passed to
+C<new>), or when it is the sum of a reported C<input_tokens> and a reported
+C<output_tokens>. False when C<total_tokens> falls back to a sum with an
+unreported half.
+
+=cut
 
 # input_tokens without the cache reads and writes that are counted in it.
 sub uncached_input_tokens {
@@ -114,8 +154,8 @@ sub from_hash {
   }
   $total  = $hash->{totalTokenCount}      if !defined $total  && defined $hash->{totalTokenCount};
 
-  $input  = 0 + ($input  // 0);
-  $output = 0 + ($output // 0);
+  # A count missing from the wire stays undef and is not passed to new, so
+  # has_input_tokens / has_output_tokens tell it from a reported zero.
 
   # Prompt-cache read/write counts each carry several wire spellings. OpenAI's
   # Chat wire nests both under prompt_tokens_details (cached_tokens /
@@ -211,7 +251,9 @@ sub from_hash {
     $cost_usd = 0 + $cost->{total_cost};
   }
 
-  my %args = ( input_tokens => $input, output_tokens => $output );
+  my %args;
+  $args{input_tokens}       = 0 + $input        if defined $input;
+  $args{output_tokens}      = 0 + $output       if defined $output;
   $args{total_tokens}       = 0 + $total       if defined $total;
   $args{cached_tokens}      = 0 + $cached       if defined $cached;
   $args{cache_write_tokens} = 0 + $cache_write  if defined $cache_write;
@@ -261,8 +303,8 @@ sub from_raw {
     qw( prompt_length num_generated_tokens num_cached_tokens );
   if (%aki) {
     return $class->new(
-      input_tokens  => 0 + ( $aki{prompt_length}        // 0 ),
-      output_tokens => 0 + ( $aki{num_generated_tokens} // 0 ),
+      exists $aki{prompt_length}        ? ( input_tokens  => 0 + $aki{prompt_length} )        : (),
+      exists $aki{num_generated_tokens} ? ( output_tokens => 0 + $aki{num_generated_tokens} ) : (),
       exists $aki{num_cached_tokens}
         ? ( cached_tokens => 0 + $aki{num_cached_tokens}, input_includes_cache => 1 ) : (),
       raw           => \%aki,
@@ -291,6 +333,9 @@ counts are then read by L</from_hash>, so every spelling it knows applies.
 Returns C<undef> when the body reports no usage (or is not a HashRef), so a
 caller can tell "not reported" from "zero tokens". As in
 L<Langertha::Engine::Ollama>, an Ollama count of zero counts as not reported.
+A body that reports some counts but not others (only a total, only the input)
+gives a Usage whose L</has_input_tokens> / L</has_output_tokens> say which
+counts are real.
 
 =method from_response
 
@@ -298,7 +343,8 @@ L<Langertha::Engine::Ollama>, an Ollama count of zero counts as not reported.
 
 Class method. Builds a Usage from a L<Langertha::Response> (its C<usage>), or
 from a raw body HashRef via L</from_raw>. Always returns a Usage: all-zero
-when nothing is reported.
+when nothing is reported, with L</has_input_tokens> and L</has_output_tokens>
+false.
 
 =method from_hash
 
@@ -318,6 +364,12 @@ C<output_tokens> is C<candidatesTokenCount> plus C<thoughtsTokenCount> and
 C<input_tokens> is C<promptTokenCount> plus C<toolUsePromptTokenCount>.
 Thinking is billed at the output rate; C<output_tokens> then means what
 OpenAI's C<completion_tokens> means, reasoning included.
+
+A count none of whose spellings is in the block is not reported: it reads
+C<0>, and L</has_input_tokens> / L</has_output_tokens> are false. This holds
+for Gemini too, although its proto3 JSON leaves out a count that is zero (a
+blocked prompt has no C<candidatesTokenCount>): a missing key is not read as
+a zero.
 
 =cut
 
@@ -355,9 +407,13 @@ sub merge {
   # A cost is only known for the sum when both sides report one: a partial
   # sum would read as the whole bill.
   my @costs = grep { defined } $self->cost_usd, $other->cost_usd;
+  # A count is reported for the sum when either side reported it, as for the
+  # cache counts: a side that did not report one adds nothing.
+  my $in_reported  = $self->has_input_tokens  || $other->has_input_tokens;
+  my $out_reported = $self->has_output_tokens || $other->has_output_tokens;
   return ref($self)->new(
-    input_tokens  => $input,
-    output_tokens => $self->output_tokens + $other->output_tokens,
+    $in_reported  ? ( input_tokens  => $input ) : (),
+    $out_reported ? ( output_tokens => $self->output_tokens + $other->output_tokens ) : (),
     %cache,
     @costs == 2 ? ( cost_usd => $costs[0] + $costs[1] ) : (),
     defined $includes ? ( input_includes_cache => $includes ) : (),
@@ -368,7 +424,8 @@ sub merge {
 
     my $sum = $usage->merge($other);
 
-Returns a new Usage holding the sum of both: C<input_tokens>, C<output_tokens>,
+Returns a new Usage holding the sum of both: C<input_tokens>, C<output_tokens>
+(each reported for the sum, see L</has_input_tokens>, when either side reported it),
 and L</cached_tokens> / L</cache_write_tokens> / L</reasoning_tokens> (a side that did not report a
 count adds nothing; the sum stays C<undef> when neither did). L</input_includes_cache>
 comes from the sides that reported a cache count. When both count it beside

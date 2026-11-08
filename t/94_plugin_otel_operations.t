@@ -106,7 +106,8 @@ subtest 'embedding via simple_embedding_result: model and usage from the CallRes
   my $a = attrs_of($span);
   is_deeply( $a->{'gen_ai.response.model'}, { stringValue => '20240101' }, 'numeric-looking model stays a string' );
   is_deeply( $a->{'gen_ai.usage.input_tokens'}, { intValue => '7' }, 'input tokens from the CallResult usage' );
-  ok( exists $a->{'gen_ai.usage.output_tokens'}, 'output tokens present' );
+  ok( !exists $a->{'gen_ai.usage.output_tokens'},
+    'no output tokens: the embeddings wire reports none, so none is sent (not 0)' );
   ok( $span->{endTimeUnixNano} >= $span->{startTimeUnixNano}, 'end >= start' );
 };
 

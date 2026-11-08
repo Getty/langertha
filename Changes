@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Langertha::Usage gains has_input_tokens / has_output_tokens /
+      has_total_tokens, true only when the provider (or the caller)
+      reported the count; the parsers no longer turn a missing count into
+      a reported 0 (the numeric accessors still return 0).
+      Langertha::Trace::OTLP->usage_attributes leaves
+      gen_ai.usage.input_tokens / output_tokens out when the count was not
+      reported, instead of sending 0; a reported 0 is still sent.
+
     - New Langertha::Plugin::OTel exports LLM calls, tool calls,
       embeddings and image generations as OpenTelemetry traces (OTLP/HTTP
       JSON, GenAI semantic conventions v1.41.1) to any OTLP receiver,
