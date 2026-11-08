@@ -558,7 +558,7 @@ B<provider> ran itself during this request (a C<web_search_call>, an
 C<mcp_call>, ...), in wire order, when there were any. They are deliberately
 B<not> on L</tool_calls>, which lists only calls the client must execute, so
 C<chat_with_tools_f> and C<chat_f> callers never try to run a web search
-themselves (ADR 0003 Update k206, ADR 0030). Each record carries the item
+themselves (ADR 0003, ADR 0030). Each record carries the item
 verbatim in C<data>. Set by the Responses wire
 (L<Langertha::Engine::OpenAIResponses>); C<undef> elsewhere. Survives
 L</clone_with>. Not part of L</to_hash> / C<TO_JSON> (the bounded shape, like

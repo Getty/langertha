@@ -15,7 +15,7 @@ use Carp qw( croak );
 
 Immutable value object holding what a reasoning model's wire literally accepts —
 the linchpin datatype behind L<Langertha::Reasoning>. It carries the two
-non-overridable categories from karr k173's three-category taxonomy: the
+non-overridable categories of the three-category reasoning taxonomy: the
 B<accepted vocabulary + native control type> (which levels the wire takes,
 effort/budget/boolean) and the B<provider-enforced numeric bounds & magic
 values> (Gemini 2.5's budget floor/ceiling, C<0>=off, C<-1>=dynamic). The
@@ -129,10 +129,10 @@ has levels_by_wire => (
 =attr levels_by_wire
 
 Per-wire refinement of L</levels> for a family whose accepted set differs
-between the wires it speaks (the OpenAI C<openai> vs C<responses> axis, karr
-k176). The gpt-6 and gpt-5.6 generations drop C<max> on the C<openai> (Chat
+between the wires it speaks (the OpenAI C<openai> vs C<responses> axis).
+The gpt-6 and gpt-5.6 generations drop C<max> on the C<openai> (Chat
 Completions) wire while keeping it on C<responses> — C<max> is Responses-only
-(live-confirmed 2026-09-16, karr k176). A family whose wires agree populates
+(live-confirmed 2026-09-16). A family whose wires agree populates
 both keys with the same set; the unlisted-id default leaves it empty (no
 per-wire restriction).
 
@@ -149,7 +149,7 @@ has ollama_levels => (
 The graded level strings this model accepts on Ollama's C<options.think> knob,
 in place of the model-agnostic boolean. Set only on the GPT-OSS family, which
 ignores C<think:true>/C<think:false> and instead takes C<low|medium|high|max>
-(live-probed 2026-09-17 via ollama.com gpt-oss:20b, k175). C<has_ollama_levels>
+(live-probed 2026-09-17 via ollama.com gpt-oss:20b). C<has_ollama_levels>
 gates L<Langertha::Reasoning/to_ollama> between the level-string and boolean
 serializations; unset for every other model (they take the boolean).
 
@@ -202,11 +202,11 @@ non-default C<temperature> while reasoning is active. C<1> is set explicitly on
 the o-series, the gpt-5 line (non-chat), the single-digit gpt-5.N lines
 (non-chat) and gpt-6 (with its single-digit gpt-6.N point releases). A
 multi-digit id such as C<gpt-5.10> or C<gpt-6.10> matches no family and is an
-unknown id (karr k196, k201).
+unknown id.
 The explicit non-reasoning entries (gpt-4o / gpt-4.1 and every C<gpt-5-chat> /
 C<gpt-5.N-chat> id) carry C<0>, and so does the unlisted-id default: an unknown
 model never classifies as reasoning, because wrongly dropping a caller's
-temperature is the worse error (karr k186). Only the OpenAI families are
+temperature is the worse error. Only the OpenAI families are
 curated; a C<0> on another family (Claude, Gemini, Qwen, GPT-OSS) means "not
 classified", not "known non-reasoning". Consumed read-only by
 L<Langertha::Engine::OpenAI/_temperature_rejected_by_reasoning>.
@@ -239,7 +239,7 @@ has thinking_on => (
 
 Set only on a B<thinking-toggle> model: one whose wire takes a C<thinking>
 object with an on/off C<type> and no effort level (MiniMax-M3 / M2.x, Kimi
-K2.x; karr k209, k215). Its value is the "on" type the model takes:
+K2.x). Its value is the "on" type the model takes:
 C<adaptive> (MiniMax) or C<enabled> (Kimi). When set, L<Langertha::Reasoning>
 serializes the effort onto that toggle on the C<openai> and C<anthropic> wires
 instead of an effort field (see L</thinking_toggle_for>); the level ladder
@@ -383,7 +383,7 @@ Whether the effort maps onto this model's C<output_config.effort> vocabulary.
 Per-model, checking membership in the resolved profile's own L</levels> rather
 than a uniform Anthropic set: Claude 4.6 (opus/sonnet) accepts
 C<low|medium|high|max> but B<not> C<xhigh>, while Claude 4.7+/5 accept the full
-C<low|medium|high|xhigh|max> (karr k177). The normalized C<none>/C<minimal> have
+C<low|medium|high|xhigh|max>. The normalized C<none>/C<minimal> have
 no Anthropic equivalent and are absent from every Claude profile's C<levels>.
 
 =cut

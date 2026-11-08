@@ -24,7 +24,7 @@ takes the same constructor arguments as L<LWP::UserAgent> and differs only in
 how it follows redirects: through L<Langertha::HTTP::Redirect>, the policy the
 L<Net::Async::HTTP> backend follows as well. A redirect to another origin
 carries no credential header (of any name) and no credential in the URL; a
-redirect from C<https> to C<http> is not followed (karr k374).
+redirect from C<https> to C<http> is not followed.
 
 Pass one as C<user_agent> when you bring your own agent and want that policy;
 a plain L<LWP::UserAgent> keeps LWP's own redirect behaviour.
@@ -32,7 +32,7 @@ a plain L<LWP::UserAgent> keeps LWP's own redirect behaviour.
 Built with L</connect_host> and L</connect_address> it also B<pins> the
 connection: a request to that host connects to that address instead of
 resolving the name, while the C<Host> header, TLS SNI and the certificate's
-name check still use the host name (karr k375). An engine builds its agent
+name check still use the host name. An engine builds its agent
 this way when it has a L<Langertha::Role::HTTP/connect_address>.
 
 =cut

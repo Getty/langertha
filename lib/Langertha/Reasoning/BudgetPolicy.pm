@@ -24,7 +24,7 @@ use Langertha::Reasoning::Profile;
 
 =head1 DESCRIPTION
 
-Category (c) of karr k173's three-category reasoning taxonomy (ADR 0023): the
+Category (c) of the three-category reasoning taxonomy (ADR 0023): the
 B<invented> level-to-token-budget interpolation and its inbound inverse. B<No
 provider publishes an official reasoning-level to token-budget mapping> — OpenAI
 and Anthropic effort is adaptive and undocumented, and the only numeric
@@ -38,7 +38,7 @@ L<Langertha::Reasoning::Profile>'s category-(b) enforced bounds>
 (L<Langertha::Reasoning::Profile/budget_min> / L<Langertha::Reasoning::Profile/budget_max>). This is the
 firewall rule: convention (c) may B<read> the profile's enforced bounds (b) but
 can never B<cross> them. Putting those bounds inside this convention layer — as
-the original karr k173 ticket proposed — would let an override silently violate a
+the original design proposed — would let an override silently violate a
 hard API bound; keeping them in the Profile and clamping against them here is the
 single most important correction of the design.
 
@@ -99,8 +99,7 @@ has curve => (
 =attr curve
 
 For C<form =E<gt> 'range'>: C<linear> (even spacing) or C<log> (geometric
-spacing, finer at the low end). Ignored for C<explicit>. Default C<linear>; per
-karr k173 q3 the curve is convention, so C<log> is offered but not asserted as
+spacing, finer at the low end). Ignored for C<explicit>. Default C<linear>; the curve is convention, so C<log> is offered but not asserted as
 truth.
 
 =cut

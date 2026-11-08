@@ -68,7 +68,7 @@ around BUILDARGS => sub {
 
 =attr thinking_enabled
 
-Optional explicit thinking on/off switch without an effort level (karr k382),
+Optional explicit thinking on/off switch without an effort level,
 for servers whose chat template takes a boolean (C<enable_thinking> on
 llama.cpp, SGLang and other C<chat_template_kwargs> endpoints). Tri-state: unset
 (the default, nothing sent), C<0> or C<1>.

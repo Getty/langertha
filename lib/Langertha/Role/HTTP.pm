@@ -58,7 +58,7 @@ be without the pin. This is for a caller that resolved the host and checked
 its addresses against a policy (no loopback, private or cloud-metadata
 address, say): without the pin the name is resolved again at connect time,
 and a DNS answer that changed in between (DNS rebinding) would send the
-request somewhere that was never checked (karr k375).
+request somewhere that was never checked.
 
 It covers every request core sends to that host, on every backend core
 builds: the synchronous methods and the synchronous fallback of the C<_f>

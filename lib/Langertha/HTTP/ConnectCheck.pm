@@ -27,7 +27,7 @@ every later request to that host waits forever, even once the module loads
 (C<max_connections_per_host> is one by default). Core asks this module before
 it hands a request to a L<Net::Async::HTTP> client
 (L<Langertha::Role::AsyncHTTP>, L<Langertha::Content::Image>), so a broken
-install is an error that names the module instead of a hang (karr k353).
+install is an error that names the module instead of a hang.
 
 =func connect_error
 

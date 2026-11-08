@@ -691,7 +691,7 @@ True when the native form of a media kind on the given wire reaches only a
 model that sees images (C<image_input>): an image on every wire that has a
 form, a PDF on C<responses> and C<gemini> (both providers read PDFs through
 the model's vision). False for a PDF on C<anthropic>, which a text-only model
-reads as extracted text (k371), and on a wire without a native form (see
+reads as extracted text, and on a wire without a native form (see
 L</carries_native>). Croaks on an unknown kind. The capability registry clears
 C<tool_result_images> / C<tool_result_pdf> by it (ADR 0039).
 

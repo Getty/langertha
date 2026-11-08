@@ -136,7 +136,7 @@ their own clients. Inject a client configured otherwise to change either.
 The engine owns the L<Net::Async::HTTP> client it built: when the engine is
 destroyed it removes that client from its loop, which also closes the client's
 keep-alive connections, so short-lived engines (one per subagent, per job, per
-test) do not pile up on the process-wide loop (karr k379). An engine with a
+test) do not pile up on the process-wide loop. An engine with a
 C<_f> call still running is not destroyed, the pending call holds it. Nothing
 is done during global destruction. An injected client belongs to the caller
 and is never removed: put it on a loop and take it off again yourself. A
@@ -490,7 +490,7 @@ with C<< <engine class>: cannot connect to <scheme>://<host>:<port>: <module>
 failed to load (<reason>); ... >> and the category C<connect>. Without the check
 L<Net::Async::HTTP> 0.50 would keep the host's connection slot taken by the
 connection that never opened, and every later request to that host would wait
-forever (karr k353). Inline image fetches through such a client
+forever. Inline image fetches through such a client
 (L<Langertha::Content::Image/ensure_base64_f>) are checked the same way.
 
 Redirects follow L<Langertha::HTTP::Redirect> on every backend core builds:
@@ -509,7 +509,7 @@ the 3xx response, with a C<Client-Warning> header naming the reason
 limit ran out). The hop limit is a C<max_redirects> option if given, else the
 client's own (3 by default); the C<timeout> applies per hop. With
 C<on_header> the callback sees only the response the chain ends on, a
-redirect that was not followed included (karr k374). A request passed as
+redirect that was not followed included. A request passed as
 C<< uri => >> instead of C<< request => >> is not followed at all. An injected
 client of another class follows redirects on its own terms.
 
@@ -525,7 +525,7 @@ redirect from the pinned host to another host is not followed. A client that
 cannot pin (an injected client of another class, the shim over an agent
 without the same pin, a L<Net::Async::HTTP> with a proxy, a C<< uri => >>
 request) fails the future with category C<connect_address> instead of
-sending the request (karr k375).
+sending the request.
 
 Any extra named options (such as C<on_header> for streaming) are passed to
 C<do_request> unchanged. The backend object itself is not exposed; see
@@ -536,8 +536,8 @@ has its decoded response body bounded by
 L<Langertha::Role::HTTP/response_max_bytes>: the client inflates a
 C<Content-Encoding> as it streams, so the decoded bytes are counted and the
 request is aborted past the ceiling, failing the future with C<< <engine class>
-response body exceeds response_max_bytes (<n>) >> (a decompression-bomb guard,
-karr k346). A streaming request (with C<on_header>) is not bounded. Set
+response body exceeds response_max_bytes (<n>) >> (a decompression-bomb guard).
+A streaming request (with C<on_header>) is not bounded. Set
 C<response_max_bytes> to C<0> to disable.
 
 =cut

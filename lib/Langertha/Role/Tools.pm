@@ -843,7 +843,7 @@ L<Langertha::Engine::MoonshotAnthropic> and (conservatively, not live-verified)
 L<Langertha::Engine::LMStudioAnthropic>, whose C</anthropic> endpoints take no
 C<document> or C<search_result> in a C<tool_result>: there the text goes out as
 a C<text> block and a PDF as a placeholder, and C<tool_result_pdf> is false. The
-PDF C<document> block elsewhere does not depend on C<image_input> (k371), but it
+PDF C<document> block elsewhere does not depend on C<image_input>, but it
 does follow C<tool_result_pdf>: an engine forced onto the C<anthropic> wire
 with C<tool_wire_format> that does not claim it sends the placeholder. An
 Anthropic-native C<document> or C<search_result> block in a tool's output
@@ -959,8 +959,7 @@ sub _tool_loop_calls { shift->tool_loop_calls(@_) }
 
 The calls one tool-loop turn runs, and the wire body to build its assistant
 echo (L</format_tool_results>) from, for a C<$reply> from
-L</tool_loop_response>. C<$data> defaults to C<< $reply->raw >>. Public since
-k341 for sibling distributions that run their own tool loop, such as
+L</tool_loop_response>. C<$data> defaults to C<< $reply->raw >>. Public for sibling distributions that run their own tool loop, such as
 langertha-raider.
 
 C<$calls> is an ArrayRef of L<Langertha::ToolCall>. When the reply hit its

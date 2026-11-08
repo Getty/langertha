@@ -24,7 +24,7 @@ for it, so it is kept apart from L<Langertha::ToolCall>, which means "a call
 the client must act on": these records land on
 L<Langertha::Response/server_tool_calls>, never on
 L<Langertha::Response/tool_calls>, and C<chat_with_tools_f> never executes
-them (ADR 0003 Update k206, ADR 0030).
+them (ADR 0003, ADR 0030).
 
 The record is deliberately thin: the wire item type, its id and status, and
 the item itself verbatim under L</data>. Inputs and results are not

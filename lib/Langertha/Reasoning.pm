@@ -149,8 +149,8 @@ has thinking_enabled => (
 
 =attr thinking_enabled
 
-Optional explicit thinking on/off switch, without an effort level (karr
-k382). Tri-state: unset (C<has_thinking_enabled> false, the default), C<0> or
+Optional explicit thinking on/off switch, without an effort level.
+Tri-state: unset (C<has_thinking_enabled> false, the default), C<0> or
 C<1>. It is the same concern as L</effort>, so the two must agree:
 C<thinking_enabled =E<gt> 0> together with any effort other than C<none>, or
 C<thinking_enabled =E<gt> 1> together with effort C<none>, croaks at
@@ -178,7 +178,7 @@ has thinking_toggle => (
 =attr thinking_toggle
 
 Whether the target endpoint speaks the C<thinking> on/off toggle (MiniMax's
-cloud API, Kimi's Messages and chat/completions faces; karr k209/k215/k219). Set by
+cloud API, Kimi's Messages and chat/completions faces). Set by
 L<Langertha::Role::ReasoningEffort/reasoning_kwargs_for> from the engine's
 opt-in. Only when it is true does a thinking-toggle profile
 (L<Langertha::Reasoning::Profile/thinking_on>) serialize as the toggle; when
@@ -491,7 +491,7 @@ Serializes to Ollama's C<options.think> knob. For the GPT-OSS family (whose
 resolved L<Langertha::Reasoning::Profile> carries C<ollama_levels>) it emits a
 graded level B<string> — C<low>/C<medium>/C<high>/C<max> — because GPT-OSS
 ignores the boolean and always reasons (C<none> maps to the floor C<low>;
-live-probed 2026-09-17 via ollama.com gpt-oss:20b, k175). For every other model
+live-probed 2026-09-17 via ollama.com gpt-oss:20b). For every other model
 it emits the C<options.think> B<boolean>: any effort level other than C<none>
 turns thinking on, C<none> turns it off, and so do L</thinking_enabled> C<1> and
 C<0>. A bare C<thinking_enabled =E<gt> 1> sends nothing on GPT-OSS. Empty list

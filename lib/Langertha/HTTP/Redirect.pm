@@ -28,7 +28,7 @@ HTTP client keeps it there on a redirect. L<LWP::UserAgent> clones the request
 with every header (it drops only C<Authorization>, and only since 6.83), so an
 C<x-api-key> reached whatever host the server named; L<Net::Async::HTTP> keeps
 the Location's query, so a server echoing the request URI (C<return 301
-https://new.example$request_uri>) sent Gemini's C<?key=> along (karr k374).
+https://new.example$request_uri>) sent Gemini's C<?key=> along.
 
 This module is the one policy both backends follow
 (L<Langertha::HTTP::UserAgent> for LWP, L<Langertha::Role::AsyncHTTP> for

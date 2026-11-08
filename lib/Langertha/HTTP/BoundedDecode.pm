@@ -29,8 +29,8 @@ endpoint. This module inflates in bounded blocks and refuses a body once its
 decoded size passes C<$max>, so the memory is capped.
 
 It carries no error text of its own: each caller passes the three croak points,
-so L<Langertha::Content::Image> (image fetches, karr k342) and
-L<Langertha::Role::HTTP> (provider/metrics response bodies, karr k346) keep
+so L<Langertha::Content::Image> (image fetches) and
+L<Langertha::Role::HTTP> (provider/metrics response bodies) keep
 their own messages while sharing one inflate path. It returns the decoded
 B<bytes>; charset decoding is the caller's concern.
 
@@ -136,9 +136,9 @@ sub _bunzip_capped {
 
 =over
 
-=item * L<Langertha::Content::Image> - Bounds inline image fetches (karr k342)
+=item * L<Langertha::Content::Image> - Bounds inline image fetches
 
-=item * L<Langertha::Role::HTTP> - Bounds provider/metrics response bodies (karr k346)
+=item * L<Langertha::Role::HTTP> - Bounds provider/metrics response bodies
 
 =back
 

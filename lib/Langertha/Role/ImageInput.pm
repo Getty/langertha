@@ -23,7 +23,7 @@ endpoint accepts. Composing it contributes the C<image_input> flag to
 L<Langertha::Role::Capabilities/engine_capabilities>.
 
 C<image_input> is B<model-scoped> and means B<the model sees the image>, not
-merely that the wire accepts the part (ADR 0019, k266 Update). Most providers
+merely that the wire accepts the part (ADR 0019). Most providers
 serve text-only and vision models side by side, so an engine that composes
 this role refines the flag per model:
 
