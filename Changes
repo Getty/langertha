@@ -5,8 +5,12 @@ Revision history for Langertha
     - Langertha::Chat fires plugin_after_llm_response after a stream (the
       whole stream as one Langertha::Response, { stream => 1 } as third
       argument) and the new plugin_llm_call_failed when an LLM call fails;
-      the caller's error is unchanged. New
-      Langertha::Chat::simple_chat_stream_realtime_f.
+      each plugin hears of a failed call once (not when its own
+      plugin_after_llm_response already finished for that call), and the
+      caller's error is unchanged. A plugin that dies in
+      plugin_llm_call_failed is warned about; on the synchronous methods a
+      Future it returns that is not ready yet is warned about and not
+      waited for. New Langertha::Chat::simple_chat_stream_realtime_f.
       Langertha::Chat::simple_chat_stream no longer dies with 'Not an
       ARRAY reference'. Plugin::OTel records streamed calls
       (gen_ai.request.stream, time_to_first_chunk) and failed calls

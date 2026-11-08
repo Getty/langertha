@@ -736,9 +736,19 @@ async sub plugin_after_llm_response {
     output => $data,
   );
 
+  # This call is recorded: a later failure report for it has nothing to add.
+  $self->_end_iteration;
   $self->_auto_flush if $self->auto_flush;
 
   return $data;
+}
+
+sub _end_iteration {
+  my ( $self ) = @_;
+  $self->_iter_start(undef);
+  $self->_iter_start_hires(undef);
+  $self->_iter_input(undef);
+  return;
 }
 
 # A failed call is a generation at level ERROR whose status message is the
@@ -746,7 +756,7 @@ async sub plugin_after_llm_response {
 # the message (which may quote it) adds nothing Langfuse does not keep.
 async sub plugin_llm_call_failed {
   my ( $self, $error, $iteration, $call ) = @_;
-  return unless $self->enabled && $self->_trace_id;
+  return unless $self->enabled && $self->_trace_id && defined $self->_iter_start;
   my $engine = $self->_host_engine;
   my $model  = $engine && $engine->can('chat_model') ? $engine->chat_model : undef;
   my $line   = ( split /\n/, ( defined $error ? "$error" : '' ) )[0];
@@ -764,6 +774,7 @@ async sub plugin_llm_call_failed {
     status_message => $line,
   );
 
+  $self->_end_iteration;
   $self->_auto_flush if $self->auto_flush;
   return;
 }

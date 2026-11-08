@@ -5,7 +5,8 @@ use Moose;
 use Future;
 use Future::AsyncAwait;
 use Carp qw( croak );
-use Scalar::Util qw( blessed );
+use Scalar::Util qw( blessed refaddr );
+use Hash::Util::FieldHash qw( fieldhash );
 use JSON::MaybeXS;
 use Log::Any qw( $log );
 use Langertha::Role::Tools ();
@@ -204,30 +205,49 @@ async sub _run_plugin_before_llm_call {
   return $conversation;
 }
 
+# The plugins whose plugin_after_llm_response finished, per call HashRef
+# (keyed by the HashRef itself, dropped with it): a later failure of the same
+# call is not theirs to hear, they have already been told how it ended.
+fieldhash my %after_done;
+
 async sub _run_plugin_after_llm_response {
   my ( $self, $data, $iteration, $call ) = @_;
   for my $plugin (@{$self->_plugin_instances}) {
     $data = await $plugin->plugin_after_llm_response($data, $iteration, $call);
+    $after_done{$call}{ refaddr $plugin } = 1 if ref $call;
   }
   return $data;
 }
 
-# Every plugin hears of the failure, even when one of them dies on it: that
-# one is warned about and the next asked. Never fails, so the caller's error
-# is the one that propagates.
+# Every plugin whose after-hook has not finished for this call hears of the
+# failure, even when one of them dies on it: that one is warned about and the
+# next asked. Never fails and never hangs (a hook's cancelled Future counts
+# as finished), so the caller's error is the one that propagates. With $sync
+# (the synchronous methods) a hook's Future that is not ready yet is warned
+# about and not waited for: a plain Future cannot be waited for without an
+# event loop, and ->get on it would die in place of the caller's error.
 async sub _run_plugin_llm_call_failed {
-  my ( $self, $error, $iteration, $call ) = @_;
+  my ( $self, $error, $iteration, $call, $sync ) = @_;
+  my $done = ref $call ? delete $after_done{$call} // {} : {};
   for my $plugin (@{$self->_plugin_instances}) {
+    next if $done->{ refaddr $plugin };
     my $future = eval { $plugin->plugin_llm_call_failed($error, $iteration, $call) };
     if ( !defined $future && $@ ) {
       _warn_failed_hook( $plugin, $@ );
       next;
     }
     next unless blessed($future) && $future->isa('Future');
-    await $future->else( sub {
-      _warn_failed_hook( $plugin, $_[0] );
-      Future->done;
-    } );
+    if ( $sync && !$future->is_ready ) {
+      warn ref($plugin) . " returned a pending Future from plugin_llm_call_failed"
+        . " on a synchronous call, not waited for\n";
+      next;
+    }
+    unless ( $future->is_ready ) {
+      my $settled = Future->new;
+      $future->on_ready( sub { $settled->done } );
+      await $settled;
+    }
+    _warn_failed_hook( $plugin, ( $future->failure )[0] ) if $future->is_failed;
   }
   return;
 }
@@ -258,7 +278,7 @@ sub _llm_call {
   my $result;
   return $result if eval { $result = $code->(); 1 };
   my $error = $@;
-  $self->_run_plugin_llm_call_failed( $error, $iteration, $call )->get;
+  $self->_run_plugin_llm_call_failed( $error, $iteration, $call, 1 )->get;
   die $error;
 }
 
@@ -270,6 +290,8 @@ sub _stream_response {
   my ( $self, $engine, $chunks, $timing ) = @_;
   my $response = eval { $engine->_stream_response( $chunks, $timing ) };
   return $response if $response;
+  $log->debugf( "[Chat] stream not read into a Response, passing its text: %s",
+    length $@ ? $@ : 'the engine built no Response' );
   require Langertha::Response;
   return Langertha::Response->new( content => join( '', map { $_->content } @$chunks ) );
 }
@@ -385,6 +407,7 @@ sub simple_chat_stream {
     my $request = $engine->chat_stream_request($conversation, $self->_extra);
     my ( $chunks, $timing ) = $engine->_execute_streaming_request( $request, $callback,
       on_response => sub { $call->{http_response} = $_[0] } );
+    return join( '', map { $_->content } @$chunks ) unless @{$self->_plugin_instances};
     my $response = $self->_stream_response( $engine, $chunks, $timing );
     my $data = $self->_run_plugin_after_llm_response($response, 1, $call)->get;
     return _stream_text( $data, $response->content );
@@ -437,6 +460,8 @@ async sub _stream_call_f {
     chunk_callback => $callback,
     on_response    => sub { $call->{http_response} = $_[0] },
   );
+  return ( join( '', map { $_->content } @$chunks ), $chunks, $timing, $thinking )
+    unless @{$self->_plugin_instances};
   my $response = $self->_stream_response( $engine, $chunks, $timing );
   my $data = await $self->_run_plugin_after_llm_response($response, 1, $call);
   return ( _stream_text( $data, $content ), $chunks, $timing, $thinking );
@@ -733,14 +758,24 @@ plugin and both hooks.
 When an LLM call fails -- the request cannot be sent, the server answers
 with an error status, the answer cannot be read or reports an error, the
 stream breaks or a C<$callback> dies, or a C<plugin_after_llm_response> hook
-dies -- every plugin's C<plugin_llm_call_failed> runs with the error, the
-iteration and the same HashRef as above (with C<http_response> when the
-server answered), before the error reaches the caller. The caller gets the
+dies -- C<plugin_llm_call_failed> runs with the error, the iteration and the
+same HashRef as above (with C<http_response> when the server answered),
+before the error reaches the caller. It runs on every plugin whose
+C<plugin_after_llm_response> has not finished for this call: a plugin hears
+of each call once, so when the second plugin's after-hook dies, the first
+plugin (whose after-hook finished) is not told, the second and those after it
+are. The same holds when the after-hooks all finished and what they returned
+then cannot be read (the tool loops croak on an error reported in the body):
+no plugin gets C<plugin_llm_call_failed> for that call. The caller gets the
 error unchanged: the same exception, and on the C<_f> methods the same failed
 Future, category and details included. A plugin that dies in
 C<plugin_llm_call_failed> is warned about and does not replace the error;
-the other plugins still run. A plugin that dies in C<plugin_before_llm_call>
-or in a tool hook is not a failed LLM call.
+the other plugins still run. A plugin whose C<plugin_llm_call_failed>
+returns a Future is waited for; a cancelled one counts as finished. On the
+synchronous methods a Future that is not yet ready when the hook returns is
+not waited for: it is warned about and the other plugins still run. A plugin
+that dies in C<plugin_before_llm_call> or in a tool hook is not a failed LLM
+call.
 
 =seealso
 

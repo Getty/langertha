@@ -86,15 +86,19 @@ streamed.
 
 =item B<plugin_llm_call_failed>($error, $iteration, $call?)
 
-Observe an LLM call that failed between C<plugin_before_llm_call> and the end
-of C<plugin_after_llm_response>, which then is not called (or did not
-finish). C<$error> is the exception, as the caller will get it: usually an
-error message, which can quote the provider's answer and with it parts of the
-prompt. C<$call> is the HashRef described above; its C<http_response> is the
-L<HTTP::Response> when the server answered. The return value is ignored, and
-the error reaches the caller unchanged after every plugin has run this hook:
-a plugin that dies here is warned about, never replaces the error. The
-default does nothing. Fired by L<Langertha::Chat> (see
+Observe an LLM call that failed after C<plugin_before_llm_call> and before
+this plugin's own C<plugin_after_llm_response> finished for it: that hook is
+then not called, or did not finish. Each plugin hears of a call once, from
+one of the two hooks: a plugin whose C<plugin_after_llm_response> already
+finished is not called here, even when a later plugin's after-hook then dies
+and fails the call for the caller. C<$error> is the exception, as the caller
+will get it: usually an error message, which can quote the provider's answer
+and with it parts of the prompt. C<$call> is the HashRef described above; its
+C<http_response> is the L<HTTP::Response> when the server answered. The
+return value is ignored (a Future is waited for, a cancelled one counts as
+finished), and the error reaches the caller unchanged after the plugins have
+run this hook: a plugin that dies here is warned about, never replaces the
+error. The default does nothing. Fired by L<Langertha::Chat> (see
 L<Langertha::Chat/FAILED CALLS>).
 
 =item B<plugin_before_tool_call>($name, $input, $call?) -> ($name, $input) or ()

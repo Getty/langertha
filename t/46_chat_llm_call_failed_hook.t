@@ -68,6 +68,34 @@ use Langertha::Virtual::Rules qw( answer tool after error );
   __PACKAGE__->meta->make_immutable;
 }
 
+# Dies in the after-hook; records the failure hooks it gets.
+{
+  package Test::Bomb;
+  use Moose;
+  use Future::AsyncAwait;
+  extends 'Test::Recorder';
+  async sub plugin_after_llm_response { die "after-hook bomb\n" }
+  __PACKAGE__->meta->make_immutable;
+}
+
+# Its failure hook returns a cancelled Future, or a pending one the test
+# cancels later.
+{
+  package Test::Cancelled;
+  use Moose;
+  extends 'Langertha::Plugin';
+  has pending => ( is => 'rw', default => 0 );
+  has futures => ( is => 'ro', default => sub { [] } );
+  sub plugin_llm_call_failed {
+    my ( $self ) = @_;
+    my $future = Future->new;
+    push @{ $self->futures }, $future;
+    $future->cancel unless $self->pending;
+    return $future;
+  }
+  __PACKAGE__->meta->make_immutable;
+}
+
 {
   package Test::DieObject;
   sub new { bless { what => $_[1] }, $_[0] }
@@ -234,7 +262,7 @@ subtest 'a plugin dying in the failure hook does not mask the error' => sub {
     my @warnings;
     local $SIG{__WARN__} = sub { push @warnings, @_ };
     ok( !eval { $chat->simple_chat('boom'); 1 }, "$dier: still dies" );
-    is( $@, error_without_plugins( simple_chat => 'boom' ), "$dier: with the original error" );
+    is( "$@", error_without_plugins( simple_chat => 'boom' ), "$dier: with the original error" );
     is( scalar @{ $rec->failed }, 1, "$dier: the next plugin still heard of it" );
     is( scalar @warnings, 1, "$dier: one warning" );
     like( $warnings[0], qr/died in plugin_llm_call_failed: (?:a?sync) hook exploded/, "$dier: names the hook" );
@@ -245,10 +273,134 @@ subtest 'a plugin dying in the failure hook does not mask the error' => sub {
   }
 };
 
+# A plugin hears of each call once: an earlier plugin whose after-hook
+# finished is not told of a failure a later plugin's after-hook causes.
+subtest 'a dying after-hook: only plugins whose after-hook did not finish hear of it' => sub {
+  my %run = (
+    simple_chat                   => sub { $_[0]->simple_chat('hi') },
+    simple_chat_f                 => sub { $_[0]->simple_chat_f('hi')->get },
+    simple_chat_stream            => sub { $_[0]->simple_chat_stream( sub { }, 'hi' ) },
+    simple_chat_stream_realtime_f => sub { $_[0]->simple_chat_stream_realtime_f( undef, 'hi' )->get },
+    simple_chat_with_tools        => sub { $_[0]->simple_chat_with_tools('hi') },
+    simple_chat_with_tools_f      => sub { $_[0]->simple_chat_with_tools_f('hi')->get },
+  );
+  for my $method ( sort keys %run ) {
+    my ( $chat, $before, $bomb, $after ) =
+      chat( '+Test::Recorder', '+Test::Bomb', '+Test::Recorder' );
+    ok( !eval { $run{$method}->($chat); 1 }, "$method: dies" );
+    like( $@, qr/\Aafter-hook bomb/, "$method: with the after-hook's error" );
+    is( scalar @{ $before->afters }, 1, "$method: the earlier plugin's after-hook ran" );
+    is( scalar @{ $before->failed }, 0, "$method: ... and it is not told of a failure" );
+    is( scalar @{ $bomb->failed }, 1, "$method: the dying plugin hears of it" );
+    is( scalar @{ $after->failed }, 1, "$method: the later plugin hears of it" );
+    is( scalar @{ $after->afters }, 0, "$method: ... and got no after-hook" );
+  }
+};
+
+subtest 'Langfuse before a dying after-hook records one generation' => sub {
+  require Langertha::Plugin::Langfuse;
+  my $chat = Langertha::Chat->new( engine => engine(),
+    plugins => [ Langfuse => { public_key => 'pk', secret_key => 'sk' }, '+Test::Bomb' ] );
+  my ($lf) = @{ $chat->plugin_instances };
+  ok( !eval { $chat->simple_chat('hi'); 1 }, 'dies' );
+  my @generations = grep { $_->{type} eq 'generation-create' } @{ $lf->_batch };
+  is( scalar @generations, 1, 'one generation for the one call' );
+  ok( !defined $generations[0]{body}{level} || $generations[0]{body}{level} ne 'ERROR',
+    '... the one its after-hook recorded' );
+
+  # Called directly, without the host's bookkeeping: a failure report for
+  # a call already recorded adds nothing.
+  $lf->_batch([]);
+  $lf->plugin_before_llm_call( [ { role => 'user', content => 'hi' } ], 1 )->get;
+  $lf->plugin_after_llm_response( Langertha::Response->new( content => 'x' ), 1 )->get;
+  $lf->plugin_llm_call_failed( "late\n", 1, {} )->get;
+  @generations = grep { $_->{type} eq 'generation-create' } @{ $lf->_batch };
+  is( scalar @generations, 1, 'a failure after the after-hook adds no generation' );
+};
+
+subtest 'a failure hook returning a cancelled Future does not hang the error' => sub {
+  my ( $chat, $cancel, $rec ) = chat( '+Test::Cancelled', '+Test::Recorder' );
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  ok( !eval { $chat->simple_chat('boom'); 1 }, 'sync: dies' );
+  is( "$@", error_without_plugins( simple_chat => 'boom' ), 'sync: with the original error' );
+  is( scalar @{ $rec->failed }, 1, 'sync: the next plugin still heard of it' );
+
+  my $f = $chat->simple_chat_f('boom');
+  ok( $f->is_ready, 'async: settled' );
+  ok( $f->is_failed, 'async: failed, not cancelled' );
+  like( ( $f->failure )[0], qr/request failed: 500/, 'async: the original failure' );
+  is( scalar @{ $rec->failed }, 2, 'async: the next plugin still heard of it' );
+
+  $cancel->pending(1);
+  my $g = $chat->simple_chat_f('boom');
+  ok( !$g->is_ready, 'async: waits for the pending failure hook' );
+  $cancel->futures->[-1]->cancel;
+  ok( $g->is_ready, 'async: settled once that hook was cancelled' );
+  ok( $g->is_failed, '... failed, not cancelled' );
+  like( ( $g->failure )[0], qr/request failed: 500/, '... with the original failure' );
+  is( scalar @{ $rec->failed }, 3, '... after the next plugin heard of it' );
+  is( scalar @warnings, 0, 'a cancel is not warned about' );
+};
+
+subtest 'sync: a failure hook returning a pending plain Future is not waited for' => sub {
+  my ( $chat, $cancel, $rec ) = chat( '+Test::Cancelled', '+Test::Recorder' );
+  $cancel->pending(1);
+  my @warnings;
+  local $SIG{__WARN__} = sub { push @warnings, @_ };
+  ok( !eval { $chat->simple_chat('boom'); 1 }, 'dies' );
+  is( "$@", error_without_plugins( simple_chat => 'boom' ), 'with the original error, not the Future\'s' );
+  is( scalar @{ $rec->failed }, 1, 'the next plugin still heard of it' );
+  ok( !$cancel->futures->[-1]->is_ready, 'the hook\'s Future is left pending' );
+  is( scalar @warnings, 1, 'one warning' );
+  like( $warnings[0], qr/\ATest::Cancelled returned a pending Future from plugin_llm_call_failed on a synchronous call/,
+    'naming the plugin and the hook' );
+};
+
+# A 200 whose body reports an error, in the tool loops: the after-hooks get
+# the body and finish, then the loop croaks reading it. That croak is not
+# reported to any plugin as a failed call.
+{
+  package Test::BodyErrorEngine;
+  use Moose;
+  extends 'Langertha::Engine::Virtual';
+  around virtual_reply => sub {
+    my ( $orig, $self, $method, $path, $content ) = @_;
+    my $reply = $self->$orig( $method, $path, $content );
+    return $reply unless $reply->{code} == 200 && $content =~ /body error/;
+    return { code => 200, message => 'OK',
+      content => { error => { message => 'upstream overloaded', code => 502 } } };
+  };
+  __PACKAGE__->meta->make_immutable;
+}
+
+subtest 'tool loops: an error in a 200 body is not a failed call for the plugins' => sub {
+  my %run = (
+    simple_chat_with_tools   => sub { $_[0]->simple_chat_with_tools('body error') },
+    simple_chat_with_tools_f => sub { $_[0]->simple_chat_with_tools_f('body error')->get },
+  );
+  for my $method ( sort keys %run ) {
+    my $chat = Langertha::Chat->new(
+      engine      => Test::BodyErrorEngine->new( langfuse_enabled => 0, fallback => answer('unused') ),
+      mcp_servers => [$mcp],
+      plugins     => [ '+Test::Recorder', '+Test::Recorder' ],
+    );
+    my @rec = @{ $chat->plugin_instances };
+    ok( !eval { $run{$method}->($chat); 1 }, "$method: dies" );
+    like( $@, qr/response carried an error: upstream overloaded/, "$method: with the body's error" );
+    for my $i ( 0 .. $#rec ) {
+      is( scalar @{ $rec[$i]->afters }, 1, "$method: plugin $i: the after-hook ran" );
+      is_deeply( $rec[$i]->afters->[0][0], { error => { message => 'upstream overloaded', code => 502 } },
+        "$method: plugin $i: ... on the error body" );
+      is( scalar @{ $rec[$i]->failed }, 0, "$method: plugin $i: no plugin_llm_call_failed" );
+    }
+  }
+};
+
 subtest 'a plugin without the hook (the base class default) changes nothing' => sub {
   my ($chat) = chat('+Langertha::Plugin');
   ok( !eval { $chat->simple_chat('boom'); 1 }, 'dies' );
-  is( $@, error_without_plugins( simple_chat => 'boom' ), 'unchanged' );
+  is( "$@", error_without_plugins( simple_chat => 'boom' ), 'unchanged' );
 };
 
 done_testing;

@@ -243,8 +243,8 @@ Langertha can set up your package as a Raider subclass or Plugin role:
     use Langertha qw( Plugin );
 
     around plugin_before_tool_call => async sub {
-        my ($orig, $self, $name, $input) = @_;
-        my @result = await $self->$orig($name, $input);
+        my ($orig, $self, $name, $input, @rest) = @_;
+        my @result = await $self->$orig($name, $input, @rest);
         return unless @result;
         return if $name eq 'dangerous_tool';
         return @result;
