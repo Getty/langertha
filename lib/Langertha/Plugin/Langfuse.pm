@@ -17,30 +17,31 @@ extends 'Langertha::Plugin';
 =head1 SYNOPSIS
 
     use Langertha::Chat;
-    use Langertha::Plugin::Langfuse;
-
-    my $langfuse = Langertha::Plugin::Langfuse->new(
-        public_key => 'pk-lf-...',
-        secret_key => 'sk-lf-...',
-    );
 
     my $chat = Langertha::Chat->new(
         engine  => $engine,
-        plugins => [$langfuse],
+        plugins => [ Langfuse => {
+            public_key => 'pk-lf-...',
+            secret_key => 'sk-lf-...',
+            trace_name => 'my-chat',
+        } ],
     );
 
     $chat->simple_chat('Hello!');
+
+    my ($langfuse) = grep { $_->isa('Langertha::Plugin::Langfuse') }
+      @{ $chat->plugin_instances };
     $langfuse->flush;
 
-Or with sugar:
+Or let the plugin send each trace as soon as the call ends:
 
     my $chat = Langertha::Chat->new(
         engine  => $engine,
-        plugins => [Langfuse => {
-            trace_name => 'my-chat',
-            auto_flush => 1,
-        }],
+        plugins => [ Langfuse => { auto_flush => 1 } ],
     );
+
+The plugin is built by its host, which passes itself in as C<host>; a bare
+C<< Langertha::Plugin::Langfuse->new(...) >> without a C<host> does not work.
 
 Environment variables C<LANGFUSE_PUBLIC_KEY>, C<LANGFUSE_SECRET_KEY>, and
 C<LANGFUSE_URL> are auto-populated when not explicitly set.

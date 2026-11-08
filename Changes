@@ -38,6 +38,10 @@ Revision history for Langertha
     - The source of each reasoning profile (Langertha::Reasoning::Profile)
       names its origin in words and a date.
 
+    - Fix the Langertha::Plugin::Langfuse SYNOPSIS, which showed a
+      constructor call that dies without a host; it now uses the
+      plugins => [ Langfuse => {...} ] form.
+
 0.505     2026-11-05 15:50:14Z
 
     - New reasoning_wire_format chat_template_kwargs: sends
