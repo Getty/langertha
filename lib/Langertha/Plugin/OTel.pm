@@ -5,6 +5,7 @@ use Moose;
 use Future::AsyncAwait;
 use JSON::MaybeXS ();
 use Future;
+use Hash::Util::FieldHash ();
 use Scalar::Util qw( blessed );
 use Time::HiRes ();
 use Langertha::Role::Langfuse ();
@@ -119,8 +120,13 @@ of the prompt.
 =item * Each tool call of a tool loop is an C<INTERNAL> span
 C<execute_tool {name}>, a child of the LLM call that asked for it, with
 C<gen_ai.tool.name>, C<gen_ai.tool.type> C<function> and
-C<gen_ai.tool.call.id> when the call can be matched to the model's request. It
-runs from C<plugin_before_tool_call> to C<plugin_after_tool_call>. A result
+C<gen_ai.tool.call.id>. It runs from C<plugin_before_tool_call> to
+C<plugin_after_tool_call>, paired by the call HashRef the host passes both
+hooks (see L<Langertha::Plugin/HOOK METHODS>), whose C<id> is the call id: a
+call another plugin renames keeps its span, and one it skips leaves no start
+behind. A host that passes no call HashRef (such as L<Langertha::Raider>)
+gets the start of the oldest open call of that name and the call id of the
+requested call with the same name and arguments. A result
 marked C<isError> sets the span status to error with C<error.type>
 C<_OTHER>.
 
@@ -377,6 +383,15 @@ has _parent_id    => ( is => 'rw', isa => 'Maybe[Str]' );
 has _op_start     => ( is => 'rw', isa => 'Maybe[Num]' );
 has _tool_starts  => ( is => 'rw', isa => 'HashRef', default => sub { {} } );
 has _tool_ids     => ( is => 'rw', isa => 'ArrayRef', default => sub { [] } );
+
+# Tool starts keyed by the hooks' call HashRef. A field hash drops an entry
+# when its HashRef is freed, so a call that never reaches
+# plugin_after_tool_call (skipped, or no such tool) leaves nothing behind.
+has _call_starts => (
+  is      => 'ro',
+  isa     => 'HashRef',
+  default => sub { Hash::Util::FieldHash::fieldhash( my %starts ); return \%starts },
+);
 
 has _resource => (
   is      => 'ro',
@@ -973,17 +988,29 @@ sub _error_summary {
   return length $line > 1000 ? substr( $line, 0, 1000 ) . '...' : $line;
 }
 
+# With the host's call HashRef the start is kept by that HashRef; a host
+# that passes none gets the start of the oldest open call of that name.
 async sub plugin_before_tool_call {
-  my ( $self, $name, $input ) = @_;
-  push @{ $self->_tool_starts->{$name} }, _now() if $self->enabled && defined $name;
+  my ( $self, $name, $input, $call ) = @_;
+  return ( $name, $input ) unless $self->enabled;
+  if ( ref $call eq 'HASH' ) {
+    $self->_call_starts->{$call} = _now();
+  }
+  elsif ( defined $name ) {
+    push @{ $self->_tool_starts->{$name} }, _now();
+  }
   return ( $name, $input );
 }
 
 async sub plugin_after_tool_call {
-  my ( $self, $name, $input, $result ) = @_;
+  my ( $self, $name, $input, $result, $call ) = @_;
   return $result unless $self->enabled;
-  my $end   = _now();
-  my $start = ( defined $name ? shift( @{ $self->_tool_starts->{$name} // [] } ) : undef ) // $end;
+  my $end = _now();
+  my $by_call = ref $call eq 'HASH';
+  my $start = $by_call ? delete $self->_call_starts->{$call}
+    : defined $name    ? shift( @{ $self->_tool_starts->{$name} // [] } )
+    :                    undef;
+  $start //= $end;
 
   my %attr = (
     'gen_ai.operation.name' => 'execute_tool',
@@ -991,13 +1018,19 @@ async sub plugin_after_tool_call {
     'gen_ai.tool.type'      => 'function',
     $self->_session_attributes,
   );
-  my $arguments = $self->_arguments_key($input);
-  my $ids = $self->_tool_ids;
-  for my $i ( 0 .. $#$ids ) {
-    next unless defined $name && $ids->[$i]{name} eq $name && $ids->[$i]{arguments} eq $arguments;
-    my ($match) = splice @$ids, $i, 1;
-    $attr{'gen_ai.tool.call.id'} = $match->{id} if length $match->{id};
-    last;
+  if ($by_call) {
+    my $id = $call->{id};
+    $attr{'gen_ai.tool.call.id'} = "$id" if defined $id && !ref $id && length $id;
+  }
+  else {
+    my $arguments = $self->_arguments_key($input);
+    my $ids = $self->_tool_ids;
+    for my $i ( 0 .. $#$ids ) {
+      next unless defined $name && $ids->[$i]{name} eq $name && $ids->[$i]{arguments} eq $arguments;
+      my ($match) = splice @$ids, $i, 1;
+      $attr{'gen_ai.tool.call.id'} = $match->{id} if length $match->{id};
+      last;
+    }
   }
   if ( $self->capture_content ) {
     my $args_text   = $self->_json_string( $self->_json_safe($input) );

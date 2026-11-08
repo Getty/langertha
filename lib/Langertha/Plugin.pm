@@ -97,14 +97,23 @@ a plugin that dies here is warned about, never replaces the error. The
 default does nothing. Fired by L<Langertha::Chat> (see
 L<Langertha::Chat/FAILED CALLS>).
 
-=item B<plugin_before_tool_call>($name, $input) -> ($name, $input) or ()
+=item B<plugin_before_tool_call>($name, $input, $call?) -> ($name, $input) or ()
 
 Inspect or transform before each tool execution. Return an empty list
-to skip the tool call.
+to skip the tool call. C<$call> is a HashRef about the tool call, passed by
+L<Langertha::Chat>: its C<id> is the tool call id the model sent (an empty
+string when the provider sends none). Every plugin gets the same HashRef,
+whatever the plugins before it returned; it is not part of the return value.
+A host that passes no C<$call> (such as L<Langertha::Raider>) calls the hook
+with two arguments.
 
-=item B<plugin_after_tool_call>($name, $input, $result) -> $result
+=item B<plugin_after_tool_call>($name, $input, $result, $call?) -> $result
 
-Transform the tool result after execution.
+Transform the tool result after execution. C<$call> is the same HashRef
+C<plugin_before_tool_call> got for this tool call, so a plugin can pair the
+two hooks by it even when a later plugin renamed the call or skipped another
+one with the same name and arguments. A skipped call never reaches this
+hook.
 
 =item B<plugin_after_raid>($result) -> $result
 
@@ -203,12 +212,12 @@ async sub plugin_llm_call_failed {
 }
 
 async sub plugin_before_tool_call {
-  my ( $self, $name, $input ) = @_;
+  my ( $self, $name, $input, $call ) = @_;
   return ($name, $input);
 }
 
 async sub plugin_after_tool_call {
-  my ( $self, $name, $input, $result ) = @_;
+  my ( $self, $name, $input, $result, $call ) = @_;
   return $result;
 }
 

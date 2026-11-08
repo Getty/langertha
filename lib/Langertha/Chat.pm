@@ -284,9 +284,9 @@ sub _stream_text {
 }
 
 async sub _run_plugin_after_tool_call {
-  my ( $self, $name, $input, $result ) = @_;
+  my ( $self, $name, $input, $result, $call ) = @_;
   for my $plugin (@{$self->_plugin_instances}) {
-    $result = await $plugin->plugin_after_tool_call($name, $input, $result);
+    $result = await $plugin->plugin_after_tool_call($name, $input, $result, $call);
   }
   return $result;
 }
@@ -563,8 +563,10 @@ sub simple_chat_with_tools {
 
       $log->debugf("[Chat] Calling tool: %s", $name);
 
-      # Plugin hook: before tool call (can skip)
-      my @plugin_tc = $self->_plugin_pipeline_tool_call($name, $input)->get;
+      # Plugin hook: before tool call (can skip). The call HashRef is the
+      # same for both hooks, so plugins can pair them.
+      my $hook_call = { id => $tc->id };
+      my @plugin_tc = $self->_plugin_pipeline_tool_call($name, $input, $hook_call)->get;
       unless (@plugin_tc) {
         push @results, { tool_call => $tc, result => {
           content => [{ type => 'text', text => "Tool call '$name' was skipped by plugin." }],
@@ -593,7 +595,7 @@ sub simple_chat_with_tools {
       })->get;
 
       # Plugin hook: after tool call
-      $result = $self->_run_plugin_after_tool_call($name, $input, $result)->get;
+      $result = $self->_run_plugin_after_tool_call($name, $input, $result, $hook_call)->get;
 
       push @results, { tool_call => $tc, result => $result };
     }
@@ -666,7 +668,8 @@ async sub simple_chat_with_tools_f {
         next;
       }
 
-      my @plugin_tc = await $self->_plugin_pipeline_tool_call($name, $input);
+      my $hook_call = { id => $tc->id };
+      my @plugin_tc = await $self->_plugin_pipeline_tool_call($name, $input, $hook_call);
       unless (@plugin_tc) {
         push @results, { tool_call => $tc, result => {
           content => [{ type => 'text', text => "Tool call '$name' was skipped by plugin." }],
@@ -693,7 +696,7 @@ async sub simple_chat_with_tools_f {
         });
       });
 
-      $result = await $self->_run_plugin_after_tool_call($name, $input, $result);
+      $result = await $self->_run_plugin_after_tool_call($name, $input, $result, $hook_call);
       push @results, { tool_call => $tc, result => $result };
     }
 
@@ -718,6 +721,12 @@ HashRef describing the call: C<stream> is true for L</simple_chat_stream> and
 L</simple_chat_stream_realtime_f>, false otherwise, and C<http_response> is
 the L<HTTP::Response> the server answered with (on
 L</simple_chat_stream_realtime_f> without the streamed body).
+
+The tool loops pass C<plugin_before_tool_call> a third and
+C<plugin_after_tool_call> a fourth argument, a HashRef describing the tool
+call: C<id> is the tool call id the model sent (an empty string when the
+provider sends none). It is one HashRef per tool call, the same for every
+plugin and both hooks.
 
 =head1 FAILED CALLS
 

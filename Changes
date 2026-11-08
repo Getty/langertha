@@ -42,6 +42,12 @@ Revision history for Langertha
       constructor call that dies without a host; it now uses the
       plugins => [ Langfuse => {...} ] form.
 
+    - plugin_before_tool_call / plugin_after_tool_call get an optional
+      trailing call HashRef ({ id => tool call id }), the same for every
+      plugin and both hooks; Plugin::OTel pairs a tool span's start and
+      end by it, so a call another plugin skips or renames no longer
+      gives the next call a wrong start or call id.
+
 0.505     2026-11-05 15:50:14Z
 
     - New reasoning_wire_format chat_template_kwargs: sends

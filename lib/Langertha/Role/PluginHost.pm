@@ -242,9 +242,9 @@ L<Langertha::Plugin/requires_events>.
 # --- Plugin hook dispatch ---
 
 async sub plugin_pipeline_tool_call_f {
-  my ( $self, $name, $input ) = @_;
+  my ( $self, $name, $input, @call ) = @_;
   for my $plugin (@{$self->plugin_instances}) {
-    my @result = await $plugin->plugin_before_tool_call($name, $input);
+    my @result = await $plugin->plugin_before_tool_call($name, $input, @call);
     return () unless @result;
     ( $name, $input ) = @result;
   }
@@ -253,9 +253,10 @@ async sub plugin_pipeline_tool_call_f {
 
 =method plugin_pipeline_tool_call_f
 
-    my @call = await $host->plugin_pipeline_tool_call_f($name, $input);
-    return skipped_result() unless @call;
-    my ( $tool_name, $tool_input ) = @call;
+    my $call = { id => $tool_call->id };
+    my @next = await $host->plugin_pipeline_tool_call_f($name, $input, $call);
+    return skipped_result() unless @next;
+    my ( $tool_name, $tool_input ) = @next;
 
 Runs C<plugin_before_tool_call> through every plugin in L</plugin_instances>,
 in order, as a pipeline: each plugin receives the C<($name, $input)> the
@@ -264,6 +265,12 @@ C<($name, $input)> pair, or to the empty list as soon as any plugin returns
 the empty list, meaning the tool call is skipped (later plugins are not
 asked). With no plugins it returns the arguments unchanged. A plugin's
 failure fails the returned Future.
+
+The optional third argument is the call HashRef described under
+L<Langertha::Plugin/HOOK METHODS>; every plugin gets that same HashRef as
+its third argument, whatever the previous plugin returned. A host that
+passes it passes the same HashRef to C<plugin_after_tool_call>. Without it,
+plugins are called with two arguments.
 
 C<_plugin_pipeline_tool_call> remains an alias of this method.
 
