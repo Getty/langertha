@@ -8,6 +8,9 @@ Revision history for Langertha
       TEST_LANGERTHA_LIVE, _EXPENSIVE, _ULTRALARGE and _IMAGES. Several
       stale model pins in them were updated.
 
+    - The source of each reasoning profile (Langertha::Reasoning::Profile)
+      names its origin in words and a date.
+
 0.505     2026-11-05 15:50:14Z
 
     - New reasoning_wire_format chat_template_kwargs: sends

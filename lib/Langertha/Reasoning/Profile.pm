@@ -461,23 +461,23 @@ my $DEFAULT;
 
 # developers.openai.com/api/docs/guides/reasoning + per-model pages,
 # advisor-verified 2026-09-01 (karr k140); gpt-6-astra 2026-09-14 (karr k151).
-my $OPENAI_SRC = 'developers.openai.com/api/docs/guides/reasoning; k140 2026-09-01, gpt-6 k151 2026-09-14';
+my $OPENAI_SRC = 'developers.openai.com/api/docs/guides/reasoning; checked 2026-09-01, gpt-6 2026-09-14';
 # ai.google.dev/gemini-api/docs/thinking level table, verified 2026-09-01
 # (karr k140); gemini-3.8-flash 2026-09-14 (karr k153).
-my $GEMINI3_SRC = 'ai.google.dev/gemini-api/docs/thinking; k140 2026-09-01, 3.8-flash k153 2026-09-14';
+my $GEMINI3_SRC = 'ai.google.dev/gemini-api/docs/thinking; checked 2026-09-01, 3.8-flash 2026-09-14';
 # ai.google.dev/gemini-api/docs/thinking budget table (2.5), advisor-verified
 # 2026-09-16 (karr k173).
-my $GEMINI25_SRC = 'ai.google.dev/gemini-api/docs/thinking budget table; k173 2026-09-16';
+my $GEMINI25_SRC = 'ai.google.dev/gemini-api/docs/thinking budget table; checked 2026-09-16';
 # ai.google.dev/gemini-api/docs/generate-content/latest-model + the Vertex
 # gemini-4-argon guide, fetched 2026-10-19 (karr k381) -- doc-sourced, not live.
-my $GEMINI4_SRC = 'ai.google.dev/gemini-api/docs/generate-content/latest-model + Vertex gemini-4-argon guide; k381 2026-10-19 (doc-sourced, not live)';
+my $GEMINI4_SRC = 'ai.google.dev/gemini-api/docs/generate-content/latest-model + Vertex gemini-4-argon guide; checked 2026-10-19 (doc-sourced, not live)';
 # Self-hosted Qwen3.x reasoning family: the loaded model's chat template — NOT
 # the vLLM/SGLang/llama.cpp server — fixes the accepted reasoning_effort
 # vocabulary. Live-probed 2026-09-17 on a cortex vLLM server (karr k79/k180):
 # Qwen/Qwen3.8-27B-FP8 400s on reasoning_effort=high ("Unexpected reasoning
 # effort high. Supported types are xhigh (default), medium, and low."), accepting
 # only none/low/medium/xhigh.
-my $QWEN_SELFHOSTED_SRC = 'live-probed 2026-09-17 cortex vLLM Qwen/Qwen3.8-27B-FP8: reasoning_effort high->400, accepts none/low/medium/xhigh (k79/k180)';
+my $QWEN_SELFHOSTED_SRC = 'live-probed 2026-09-17 cortex vLLM Qwen/Qwen3.8-27B-FP8: reasoning_effort high->400, accepts none/low/medium/xhigh';
 
 # karr k176: 'max' is Responses-only for the gpt-6 and gpt-5.6 generations. The
 # gpt-5.6 split is live-confirmed (2026-09-16 on gpt-5.6-terra): Chat Completions
@@ -485,28 +485,28 @@ my $QWEN_SELFHOSTED_SRC = 'live-probed 2026-09-17 cortex vLLM Qwen/Qwen3.8-27B-F
 # 'medium', 'high', and 'xhigh'."), Responses reasoning.effort=max -> HTTP 200.
 # The gpt-6 split is doc-sourced (advisor Azure mirror, same Responses-only-max
 # pattern) — not live-probed.
-my $OPENAI_K176_LIVE = "$OPENAI_SRC; k176 2026-09-16 live gpt-5.6-terra: chat reasoning_effort=max->400, responses reasoning.effort=max->200";
-my $OPENAI_K176_DOC  = "$OPENAI_SRC; k176 gpt-6 max Responses-only (advisor Azure mirror, doc-sourced, not live-probed)";
+my $OPENAI_K176_LIVE = "$OPENAI_SRC; live-probed 2026-09-16 on gpt-5.6-terra: chat reasoning_effort=max->400, responses reasoning.effort=max->200";
+my $OPENAI_K176_DOC  = "$OPENAI_SRC; gpt-6 max is Responses-only (advisor Azure mirror, doc-sourced, not live-probed)";
 # karr k174: gpt-5.1 is gated (Azure Foundry reasoning table, advisor-verified
 # 2026-09-16 — doc-sourced, NOT live-probed). Base gpt-5.1 drops minimal/xhigh/max
 # (none|low|medium|high); gpt-5.1-codex-max re-adds xhigh (still no max). Both
 # wires identical (xhigh is not Responses-only), so no openai_levels split.
-my $OPENAI_K174_DOC  = "$OPENAI_SRC; k174 gpt-5.1 gate (Azure Foundry reasoning table, advisor-verified 2026-09-16, doc-sourced not live)";
+my $OPENAI_K174_DOC  = "$OPENAI_SRC; gpt-5.1 gate (Azure Foundry reasoning table, advisor-verified 2026-09-16, doc-sourced not live)";
 # karr k177: Claude 4.6 (opus/sonnet) accepts low|medium|high|max but NOT xhigh
 # — Anthropic's effort doc lists 4.6 under `max` yet not under `xhigh`; 4.7+/5
 # take the full set. Advisor-verified 2026-09-16 (doc-sourced, NOT live-probed).
-my $ANTHROPIC_K177_DOC = 'platform.claude.com output_config.effort doc; k177 2026-09-16 claude-4.6 no xhigh (advisor-verified, doc-sourced not live)';
+my $ANTHROPIC_K177_DOC = 'platform.claude.com output_config.effort doc; 2026-09-16 claude-4.6 takes no xhigh (advisor-verified, doc-sourced not live)';
 # karr k208: xAI reasoning page (updated 2026-09-21), advisor-verified
 # 2026-09-25 — doc-sourced, NOT live-probed (the reply to an off-enum value,
 # 400 or ignored, is unverified).
-my $XAI_K208_DOC = 'docs.x.ai/developers/model-capabilities/text/reasoning; k208 2026-09-25 (advisor-verified, doc-sourced not live)';
+my $XAI_K208_DOC = 'docs.x.ai/developers/model-capabilities/text/reasoning; checked 2026-09-25 (advisor-verified, doc-sourced not live)';
 
 # karr k209: MiniMax chat/completions + /anthropic request schemas, advisor
 # 2026-09-25 — doc-sourced, NOT live-probed.
-my $MINIMAX_K209_DOC = 'platform.minimax.io openapi-chat-openai.json + openapi-chat-anthropic.json; k209 2026-09-25 (advisor-verified, doc-sourced not live)';
+my $MINIMAX_K209_DOC = 'platform.minimax.io openapi-chat-openai.json + openapi-chat-anthropic.json; checked 2026-09-25 (advisor-verified, doc-sourced not live)';
 # karr k215: Kimi Messages API + Claude Code guide, advisor 2026-09-25 —
 # doc-sourced, NOT live-probed (budget_tokens on `enabled` unverified).
-my $KIMI_K215_DOC = 'platform.kimi.ai docs/api/messages.md + docs/guide/claude-code-kimi.md; k215 2026-09-25 (advisor-verified, doc-sourced not live; budget_tokens unverified)';
+my $KIMI_K215_DOC = 'platform.kimi.ai docs/api/messages.md + docs/guide/claude-code-kimi.md; checked 2026-09-25 (advisor-verified, doc-sourced not live; budget_tokens unverified)';
 # $levels is the superset a family accepts on the `responses` (Responses API)
 # wire; $extra{openai_levels} is the narrower Chat Completions set, defaulting to
 # $levels when the two wires agree. The k176 per-wire max split is exactly this
@@ -549,7 +549,7 @@ sub _non_reasoning_like {
   return $like->meta->clone_object( $like,
     model_match        => $match,
     is_reasoning_model => 0,
-    source             => $like->source . "; k186 non-reasoning chat carve-out",
+    source             => $like->source . "; non-reasoning chat carve-out",
   );
 }
 
@@ -617,7 +617,7 @@ sub _family_profiles {
       levels       => [@ANTHROPIC_EFFORT_LEVELS],
       can_disable  => 0,
       disable_form => 'absent',
-      source       => 'Anthropic Messages API; Fable/Mythos always-on thinking, k173 2026-09-16',
+      source       => 'Anthropic Messages API; Fable/Mythos always-on thinking, checked 2026-09-16',
     ),
 
     # OpenAI generation ladders. gpt-6 (astra): no none/minimal. gpt-5.6 /
@@ -670,7 +670,7 @@ sub _family_profiles {
       levels                => [@ANTHROPIC_EFFORT_LEVELS],
       default_reasoning_off => 1,
       is_reasoning_model    => 1,
-      source                => 'k185 2026-09-19 live: gpt-5.2/5.4 no-effort default reasoning off; effort ladder uncurated (passthrough)',
+      source                => 'live-probed 2026-09-19: gpt-5.2/5.4 no-effort default reasoning off; effort ladder uncurated (passthrough)',
     ),
     _openai_profile( qr/\Agpt-5(?![.\d])/,
       [qw( minimal low medium high )], disable_form => 'absent',
@@ -684,14 +684,14 @@ sub _family_profiles {
     # all, so it is an unknown id (non-reasoning, temperature kept). The undotted
     # gpt-6 and o-series rows carry the same guard (gpt-60, o10 are unknown).
     _openai_passthrough( qr/\Agpt-5\.\d(?!\d)/, 1,
-      'k186: uncurated gpt-5.N reasoning line; effort ladder passthrough' ),
+      'uncurated gpt-5.N reasoning line; effort ladder passthrough' ),
     _openai_passthrough( qr/\Ao\d(?!\d)/, 1,
-      'k186: OpenAI o-series reasoning models; effort ladder passthrough' ),
+      'OpenAI o-series reasoning models; effort ladder passthrough' ),
     # Non-reasoning OpenAI chat models (karr k186), marked explicitly so the
     # classification never falls out of the default: gpt-4o / gpt-4.1 (and the
     # rest of gpt-4*). Same passthrough serialization as the unlisted default.
     _openai_passthrough( qr/\Agpt-4/, 0,
-      'k186: non-reasoning gpt-4 line (gpt-4o, gpt-4.1); effort ladder passthrough' ),
+      'non-reasoning gpt-4 line (gpt-4o, gpt-4.1); effort ladder passthrough' ),
 
     # xAI grok (karr k208): grok-4.6 / grok-4.7 (and later single-digit 4.N)
     # accept low|medium|high|xhigh, grok-4.5 low|medium|high; reasoning cannot
@@ -715,7 +715,7 @@ sub _family_profiles {
     # Engine::Moonshot only). (?!\d): kimi-k30 is an unknown id (k196 guard).
     _openai_profile( qr/\Akimi-k3(?!\d)/,
       [qw( low high max )],
-      source => 'platform.kimi.ai use-reasoning-effort + api/chat + api/messages; k207 2026-09-25 (advisor-verified, doc-sourced not live)',
+      source => 'platform.kimi.ai use-reasoning-effort + api/chat + api/messages; checked 2026-09-25 (advisor-verified, doc-sourced not live)',
       can_disable => 0, disable_form => 'absent' ),
 
     # Thinking-toggle families (karr k209, k215): the wire takes a `thinking`
@@ -855,7 +855,7 @@ sub _family_profiles {
       control     => 'effort',
       wire_format => 'anthropic',
       levels      => [@ANTHROPIC_EFFORT_LEVELS],
-      source      => 'Anthropic Messages API output_config.effort; k173 2026-09-16',
+      source      => 'Anthropic Messages API output_config.effort; checked 2026-09-16',
     ),
 
     # GPT-OSS on Ollama: the one family that takes graded level STRINGS on the
@@ -871,7 +871,7 @@ sub _family_profiles {
       wire_format   => 'ollama',
       levels        => [@ANTHROPIC_EFFORT_LEVELS],
       ollama_levels => [qw( low medium high max )],
-      source        => 'live-probed 2026-09-17 via ollama.com gpt-oss:20b (k175)',
+      source        => 'live-probed 2026-09-17 via ollama.com gpt-oss:20b',
     ),
   );
 }
