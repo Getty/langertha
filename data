@@ -1,0 +1,23 @@
+---
+claimed_at: 2026-11-08T06:49:50Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-11-08T06:49:27Z
+created: 2026-11-08T04:53:21Z
+id: 407
+priority: medium
+started: 2026-11-08T05:32:12Z
+status: done
+tags:
+- observability
+- plugins
+title: 'Chat: no hook on a failed LLM call or a streamed reply, so trace plugins lose
+  those spans'
+updated: 2026-11-08T06:49:50Z
+---
+
+Found during k403: Chat dies before plugin_after_llm_response on a failed call, and streaming chat fires no after-hook, so Plugin::OTel cannot emit error spans (error.type, status ERROR) nor gen_ai.request.stream / time_to_first_chunk; Plugin::Langfuse loses the same generations. Consider a plugin_llm_call_failed (or after-hook with error) and an after-hook for streams. Related: k405.
+
+Branch trace-followups-k407: 9950e25 (hooks for streamed/failed calls, simple_chat_stream fix, OTel/Langfuse spans), 69c7fee (each plugin hears once; failure hooks never mask the error). ADR 0028/0041 updates c34da4e. Suite PASS 256 files/11479 tests, live t/8x skipped. Reviewer: merge after fixes (all fixed). Follow-ups k414 (Raider), k415 (200-body error).
+
+Merged to main by fast-forward b54ed90..c34da4e (merge hash c34da4e), no CPAN release.
