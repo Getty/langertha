@@ -519,6 +519,8 @@ These classes wrap an engine with optional overrides and plugin lifecycle hooks:
 
 =item * L<Langertha::Plugin::Langfuse> - Langfuse observability (traces, generations, spans)
 
+=item * L<Langertha::Plugin::OTel> - OpenTelemetry traces (OTLP/HTTP JSON, GenAI semantic conventions); payloads built by L<Langertha::Trace::OTLP>
+
 =back
 
 =head2 Data Objects

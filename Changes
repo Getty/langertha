@@ -2,6 +2,14 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - New Langertha::Plugin::OTel exports LLM calls, tool calls,
+      embeddings and image generations as OpenTelemetry traces (OTLP/HTTP
+      JSON, GenAI semantic conventions v1.41.1) to any OTLP receiver,
+      including Langfuse's OTLP endpoint. Message content is sent only
+      with capture_content. New Langertha::Trace::OTLP builds those
+      payloads on its own. Plugin::Langfuse's snapshot and flush code
+      moved into a shared internal role, with no change in behavior.
+
     - The live tests (t/8x) no longer run on a provider key alone: they
       need TEST_LANGERTHA_LIVE=1 as well. Pro and Opus model pins also
       need TEST_LANGERTHA_LIVE_EXPENSIVE=1, and image generation needs
