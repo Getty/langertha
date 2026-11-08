@@ -1,0 +1,26 @@
+---
+claimed_at: 2026-11-08T06:49:46Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-11-08T06:49:23Z
+created: 2026-11-08T04:36:07Z
+id: 406
+priority: low
+started: 2026-11-08T05:53:24Z
+status: done
+tags:
+- observability
+- response
+title: finish_reason gets overwritten to tool_calls for synthetic structured output
+updated: 2026-11-08T06:49:46Z
+---
+
+Found during k403: Role/Chat.pm (~1191) and Role/Tools.pm (~228) replace Response.finish_reason with tool_calls when chat_f synthesizes a ToolCall for structured output, so observability (OTel gen_ai.response.finish_reasons, Langfuse) reports a tool call the model never made. Also Gemini blockReason lands in finish_reason. Decide whether to keep the raw provider value.
+
+wire-worker: premise does not hold on this tree. chat_f's synthetic structured-output ToolCall never touches finish_reason; every 'tool_calls' rewrite (Chat.pm 1191 hermes lift, Tools.pm 228/241 streamed hermes lift, OpenAICompatible _openai_finish_reason k248, ResponsesCompatible 652) fires only for calls the model really made, ->raw keeps the wire value (ADR 0018). LLM-call plugin hooks fire only from Langertha::Chat, which never runs the chat_f rewrite. No new attribute. Change: OTel output-message FinishReason map gains Gemini IMAGE_SAFETY -> content_filter; regression test t/94_finish_reason_synthetic.t. Gemini blockReason-as-finish_reason left as is (deliberate, tool loops read it).
+
+wire-worker done: no seam change needed (synthetic path never rewrites finish_reason); OTel FinishReason map + IMAGE_SAFETY; regression test t/94_finish_reason_synthetic.t (staged). prove -lr t/ green, live t/8x skipped. Uncommitted.
+
+Branch trace-followups-k407: d8c9e9f. Synthetic structured-output calls already keep the provider finish_reason (pinned by t/94_finish_reason_synthetic.t); only fix: Gemini IMAGE_SAFETY -> content_filter in OTel output messages. Suite PASS.
+
+Merged to main by fast-forward b54ed90..c34da4e (merge hash c34da4e), no CPAN release.
