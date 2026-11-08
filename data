@@ -1,0 +1,18 @@
+---
+class: standard
+created: 2026-11-08T05:48:28Z
+id: 414
+priority: low
+status: backlog
+tags:
+- plugins
+- observability
+- raider
+title: Raider should fire plugin_llm_call_failed and pass the call HashRef (cross-repo,
+  langertha-raider)
+updated: 2026-11-08T06:06:41Z
+---
+
+From k407: core Langertha::Chat now fires plugin_llm_call_failed($error,$iteration,$call) and passes $call ({stream, http_response}) as the third argument of plugin_after_llm_response. Raider calls the hooks itself, so a failed call there leaves an open trace span. Needs a ticket on the langertha-raider board (no local checkout of that repo was found when this was filed).
+
+Also from k410: tool hooks now take an optional trailing call HashRef ({ id => tool call id }); Raider (0.502, Raider.pm ~1223/1311/1346/1420/1441) should build it once per call and pass the same HashRef to plugin_before_tool_call / plugin_after_tool_call, else Plugin::OTel uses the name-based fallback.
