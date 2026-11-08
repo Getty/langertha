@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-08T04:36:02Z
+id: 405
+priority: low
+status: backlog
+tags:
+- otel
+- observability
+- plugins
+title: 'PluginHost: conversation-end hook so trace plugins can close a root span'
+updated: 2026-11-08T04:36:02Z
+---
+
+Plugin.pm has no end-of-conversation hook outside Raider (plugin_after_raid). Plugin::OTel (k403) therefore emits no synthetic root span: chat spans are top-level in the conversation trace, execute_tool spans are children of the chat span that requested them. A plugin_after_conversation (or similar) hook on Chat/tool loop would let OTel emit an exact root span. Decide whether worth it.
