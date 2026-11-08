@@ -1,0 +1,36 @@
+---
+claimed_at: 2026-11-08T05:31:23Z
+claimed_by: orchestrator
+class: standard
+completed: 2026-11-08T05:31:19Z
+created: 2026-11-08T04:30:57Z
+id: 403
+priority: high
+started: 2026-11-08T05:31:19Z
+status: done
+tags:
+- observability
+- otel
+title: 'OTLP traces with GenAI semantic conventions: Trace::OTLP payload builder +
+  Plugin::OTel (sibling of Plugin::Langfuse)'
+updated: 2026-11-08T05:31:23Z
+---
+
+Goal: export LLM calls as OpenTelemetry traces (OTLP/HTTP JSON) following the GenAI semantic conventions, so any OTLP backend can receive them (an OpenTelemetry Collector, OpenLIT, Langfuse's /api/public/otel, Phoenix, Grafana Tempo, ...). Today only Langfuse's own ingestion API is supported (Plugin::Langfuse, Role::Langfuse).
+
+Scope:
+1. Langertha::Trace::OTLP — pure payload builder, no transport (sibling of Langertha::Runtime::Metrics::OTLP). Input: neutral span records {trace_id, span_id, parent_span_id?, name, kind, start, end, status, attributes, events?}. Output: resourceSpans/scopeSpans/spans HashRef or JSON. Helpers that map a Langertha::Response / CallResult / Usage to gen_ai.* attributes:
+   gen_ai.operation.name (chat, embeddings, image generation, execute_tool), gen_ai.provider.name, gen_ai.request.model, gen_ai.response.model, gen_ai.response.id, gen_ai.response.finish_reasons, gen_ai.usage.input_tokens / output_tokens, request params (temperature, max_tokens, ...), time to first token when known.
+   Usable standalone, e.g. from a proxy that sees requests without a Langertha host.
+2. Langertha::Plugin::OTel — PluginHost plugin with the same hooks as Plugin::Langfuse (chat iterations, tool calls as execute_tool spans, embeddings, image generation). One trace per conversation, one span per LLM call, child spans per tool call.
+   Config: endpoint (default from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, else OTEL_EXPORTER_OTLP_ENDPOINT + /v1/traces), headers (OTEL_EXPORTER_OTLP_HEADERS), service_name (OTEL_SERVICE_NAME), resource_attributes, enabled, auto_flush, batch size, flush timeout.
+   capture_content: default OFF. Off => no prompt, answer or tool argument text in the payload, only metadata. On => messages as gen_ai.input.messages / gen_ai.output.messages, with the same image-byte stripping as Plugin::Langfuse.
+3. Share what is shared: the JSON-safe snapshot and image stripping of Plugin::Langfuse should not be copied — extract into a small role or helper both plugins use, if that stays small; otherwise note why not.
+
+Tests: payload shape against the OTLP JSON spec (ids hex, times in unix nanos as strings, attribute value types); mapping of usage/finish reasons; plugin with a mock engine incl. tool loop; capture_content off => no message text anywhere in the payload; flush never blocks the call (failed POST is reported, not raised into the chat).
+Docs: POD with SYNOPSIS for an OTLP collector and for Langfuse's OTLP endpoint; note which GenAI semconv version is followed (the conventions are still marked development — pin the version in POD).
+Out of scope: metrics (Runtime::Metrics::OTLP exists), protobuf encoding, a full OTel SDK dependency.
+
+Implementation in worktree branch worktree-k403-otel-traces: Trace::OTLP, Plugin::OTel, shared Role::TracePlugin (snapshot/image stripping/auto-flush moved out of Plugin::Langfuse). Pinned GenAI semconv v1.41.1. Follow-ups k404-k408.
+
+Merged to main by fast-forward (merge hash b54ed90, 687f7bf..b54ed90), no CPAN release. Commits: 4b41abe (Role::TracePlugin extracted from Plugin::Langfuse), 9541040 (Trace::OTLP + t/94_trace_otlp, t/96 fork test), e357cb8 (Plugin::OTel + tests + Changes), b54ed90 (ADR 0041). GenAI semconv pinned v1.41.1. Verified: prove -lr t/ env-clean 249 files / 11425 tests PASS; live t/8x skipped (TEST_LANGERTHA_LIVE unset); perlcritic clean; reviewer re-review: merge. Open (follow-ups): k404 re-pin semconv, k405 conversation-end hook/root span, k406 finish_reason overwrite, k407 no span for failed/streamed calls, k408 Langfuse SYNOPSIS, k409 neutral trace sender, k410 tool start pairing. Known limitation: Usage turns unreported token counts into 0.
