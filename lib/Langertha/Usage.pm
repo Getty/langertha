@@ -126,6 +126,21 @@ sub _build_total_tokens {
 # Build a Usage from any of the wire-format hashrefs we know about.
 sub from_hash {
   my ($class, $hash) = @_;
+  return $class->_from_block($hash);
+}
+
+# The camelCase keys of Gemini's usageMetadata. A block with any of them is
+# read as Gemini's, whose proto3 JSON leaves out a count that is zero.
+my @GEMINI_USAGE_KEYS = qw(
+  promptTokenCount candidatesTokenCount totalTokenCount toolUsePromptTokenCount
+  thoughtsTokenCount cachedContentTokenCount promptTokensDetails
+  candidatesTokensDetails cacheTokensDetails toolUsePromptTokensDetails
+);
+
+# %opt: gemini => 1 when the caller knows the block is a usageMetadata block
+# (from_raw found it under that key), so even an empty one is Gemini's.
+sub _from_block {
+  my ($class, $hash, %opt) = @_;
   return $class->new unless $hash && ref($hash) eq 'HASH';
 
   my $input  = $hash->{input_tokens};
@@ -143,19 +158,24 @@ sub from_hash {
   # answer: totalTokenCount = promptTokenCount + toolUsePromptTokenCount +
   # candidatesTokenCount + thoughtsTokenCount. Thinking is billed as output, so
   # it is folded into output_tokens (what OpenAI's completion_tokens already
-  # includes), the tool-use prompt into input_tokens. proto3 JSON omits zero
-  # counts, so either half of a sum may be missing (k299).
+  # includes), the tool-use prompt into input_tokens (k299).
+  # proto3 JSON omits a field whose value is zero, so inside a usageMetadata
+  # block a missing count is a reported 0 (a blocked prompt has
+  # totalTokenCount but no candidatesTokenCount: output 0). Only a missing
+  # block leaves the counts unreported.
   my $gemini_thoughts = $hash->{thoughtsTokenCount};
-  if ( !defined $input && ( defined $hash->{promptTokenCount} || defined $hash->{toolUsePromptTokenCount} ) ) {
-    $input = ( $hash->{promptTokenCount} // 0 ) + ( $hash->{toolUsePromptTokenCount} // 0 );
-  }
-  if ( !defined $output && ( defined $hash->{candidatesTokenCount} || defined $gemini_thoughts ) ) {
-    $output = ( $hash->{candidatesTokenCount} // 0 ) + ( $gemini_thoughts // 0 );
+  my $gemini = $opt{gemini} || grep { exists $hash->{$_} } @GEMINI_USAGE_KEYS;
+  if ($gemini) {
+    $input  = ( $hash->{promptTokenCount} // 0 ) + ( $hash->{toolUsePromptTokenCount} // 0 )
+      unless defined $input;
+    $output = ( $hash->{candidatesTokenCount} // 0 ) + ( $gemini_thoughts // 0 )
+      unless defined $output;
   }
   $total  = $hash->{totalTokenCount}      if !defined $total  && defined $hash->{totalTokenCount};
 
-  # A count missing from the wire stays undef and is not passed to new, so
-  # has_input_tokens / has_output_tokens tell it from a reported zero.
+  # Outside a Gemini block, a count missing from the wire stays undef and is
+  # not passed to new, so has_input_tokens / has_output_tokens tell it from a
+  # reported zero.
 
   # Prompt-cache read/write counts each carry several wire spellings. OpenAI's
   # Chat wire nests both under prompt_tokens_details (cached_tokens /
@@ -286,9 +306,9 @@ sub from_response {
 sub from_raw {
   my ($class, $data) = @_;
   return undef unless ref($data) eq 'HASH';
-  for my $key (qw( usage usageMetadata )) {
-    return $class->from_hash( $data->{$key} ) if ref( $data->{$key} ) eq 'HASH';
-  }
+  return $class->from_hash( $data->{usage} ) if ref( $data->{usage} ) eq 'HASH';
+  return $class->_from_block( $data->{usageMetadata}, gemini => 1 )
+    if ref( $data->{usageMetadata} ) eq 'HASH';
   my $envelope = $data->{response};
   if ( ref($envelope) eq 'HASH' && ref( $envelope->{usage} ) eq 'HASH' ) {
     return $class->from_hash( $envelope->{usage} );
@@ -335,7 +355,10 @@ caller can tell "not reported" from "zero tokens". As in
 L<Langertha::Engine::Ollama>, an Ollama count of zero counts as not reported.
 A body that reports some counts but not others (only a total, only the input)
 gives a Usage whose L</has_input_tokens> / L</has_output_tokens> say which
-counts are real.
+counts are real. A Gemini C<usageMetadata> block is the exception: Gemini
+leaves out a count that is zero, so a present block reports every count, a
+missing one as C<0> (see L</from_hash>); only a body without the block reports
+no usage.
 
 =method from_response
 
@@ -366,10 +389,13 @@ Thinking is billed at the output rate; C<output_tokens> then means what
 OpenAI's C<completion_tokens> means, reasoning included.
 
 A count none of whose spellings is in the block is not reported: it reads
-C<0>, and L</has_input_tokens> / L</has_output_tokens> are false. This holds
-for Gemini too, although its proto3 JSON leaves out a count that is zero (a
-blocked prompt has no C<candidatesTokenCount>): a missing key is not read as
-a zero.
+C<0>, and L</has_input_tokens> / L</has_output_tokens> are false.
+
+Gemini is the exception. Its proto3 JSON leaves out a count that is zero, so in
+a block with any Gemini key a missing count is a reported C<0>: a blocked
+prompt with C<totalTokenCount> but no C<candidatesTokenCount> reports
+C<output_tokens> C<0>, and L</has_output_tokens> is true. Gemini's counts are
+unreported only when the whole C<usageMetadata> block is missing.
 
 =cut
 

@@ -726,15 +726,17 @@ sub chat_response {
   # The snake_case keys take OpenAI's meaning: thoughtsTokenCount (billed as
   # output, not part of candidatesTokenCount) is counted in completion_tokens
   # and shown under completion_tokens_details.reasoning_tokens; the tool-use
-  # prompt (toolUsePromptTokenCount) in prompt_tokens (k299).
+  # prompt (toolUsePromptTokenCount) in prompt_tokens (k299). proto3 JSON
+  # omits zero counts, so a count missing from a present usageMetadata is 0,
+  # not unreported (a blocked prompt has no candidatesTokenCount).
   my $usage;
   if (my $um = $data->{usageMetadata}) {
     my $thoughts = $um->{thoughtsTokenCount};
     my ( $prompt, $tool_prompt, $candidates ) =
       @{$um}{qw( promptTokenCount toolUsePromptTokenCount candidatesTokenCount )};
     $usage = {
-      prompt_tokens     => defined $tool_prompt ? ( $prompt // 0 ) + $tool_prompt : $prompt,
-      completion_tokens => defined $thoughts    ? ( $candidates // 0 ) + $thoughts : $candidates,
+      prompt_tokens     => ( $prompt // 0 ) + ( $tool_prompt // 0 ),
+      completion_tokens => ( $candidates // 0 ) + ( $thoughts // 0 ),
       total_tokens      => $um->{totalTokenCount},
     };
     $usage->{completion_tokens_details} = { reasoning_tokens => $thoughts } if defined $thoughts;
@@ -902,6 +904,16 @@ sub chat_stream_request {
   );
 }
 
+# A chunk's usage: its usageMetadata as sent. proto3 JSON leaves out a count
+# that is zero, so an empty block reports every count as 0; it carries the
+# zero total so Langertha::Usage->from_hash reads it as Gemini's, as
+# from_raw and chat_response do, not as an unreported one.
+sub _stream_chunk_usage {
+  my ( $data ) = @_;
+  my $um = $data->{usageMetadata} or return ();
+  return ( usage => ( ref $um eq 'HASH' && !%$um ) ? { totalTokenCount => 0 } : $um );
+}
+
 sub parse_stream_chunk {
   my ( $self, $data, $event ) = @_;
 
@@ -927,7 +939,7 @@ sub parse_stream_chunk {
       raw           => $data,
       is_final      => 1,
       finish_reason => $block_reason,
-      $data->{usageMetadata} ? ( usage => $data->{usageMetadata} ) : (),
+      _stream_chunk_usage($data),
     );
   }
 
@@ -966,7 +978,7 @@ sub parse_stream_chunk {
     raw => $data,
     is_final => $is_final,
     $finish_reason ? (finish_reason => $finish_reason) : (),
-    $data->{usageMetadata} ? (usage => $data->{usageMetadata}) : (),
+    _stream_chunk_usage($data),
     defined $thinking ? ( thinking => $thinking ) : (),
     @tool_calls ? ( tool_calls => \@tool_calls ) : (),
   );

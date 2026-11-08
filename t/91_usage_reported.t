@@ -73,11 +73,71 @@ subtest 'from_hash: Gemini shape' => sub {
   my $u = Langertha::Usage->from_hash( { promptTokenCount => 8, candidatesTokenCount => 2, totalTokenCount => 10 } );
   is_deeply( flags($u), [ 1, 1, 1 ], 'full block' );
 
+  # proto3 JSON omits a zero count: inside a Gemini block, missing means 0.
   $u = Langertha::Usage->from_hash( { promptTokenCount => 8, totalTokenCount => 8 } );
-  is_deeply( flags($u), [ 1, 0, 1 ], 'no candidatesTokenCount: output not reported' );
+  is_deeply( flags($u), [ 1, 1, 1 ], 'no candidatesTokenCount: output reported' );
+  is( $u->output_tokens, 0, 'missing candidatesTokenCount is a reported 0' );
+
+  $u = Langertha::Usage->from_hash( { totalTokenCount => 8 } );
+  is_deeply( flags($u), [ 1, 1, 1 ], 'only totalTokenCount: both counts reported' );
+  is_deeply( [ $u->input_tokens, $u->output_tokens, $u->total_tokens ], [ 0, 0, 8 ], 'counts 0, total kept' );
 
   $u = Langertha::Usage->from_hash( { promptTokenCount => 8, thoughtsTokenCount => 5 } );
   is_deeply( [ $u->has_output_tokens, $u->output_tokens ], [ 1, 5 ], 'thoughts alone report output' );
+};
+
+subtest 'Gemini engine: zero counts omitted inside usageMetadata' => sub {
+  require Langertha::Engine::Gemini;
+  require HTTP::Response;
+  require JSON::MaybeXS;
+  my $engine = Langertha::Engine::Gemini->new( api_key => 'k', model => 'gemini-2.5-flash' );
+  my $answer = sub {
+    my (%extra) = @_;
+    my $http = HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'application/json' ],
+      JSON::MaybeXS->new( utf8 => 1 )->encode( {
+        promptFeedback => { blockReason => 'SAFETY' }, modelVersion => 'gemini-2.5-flash', %extra,
+      } ) );
+    return $engine->chat_response($http);
+  };
+
+  my $resp = $answer->( usageMetadata => { promptTokenCount => 8, totalTokenCount => 8 } );
+  is_deeply( flags( $resp->usage ), [ 1, 1, 1 ], 'blocked prompt: output reported' );
+  is( $resp->usage->output_tokens, 0, 'output 0' );
+  is( $resp->usage->{completion_tokens}, 0, 'completion_tokens key is 0' );
+
+  $resp = $answer->( usageMetadata => { totalTokenCount => 8 } );
+  is_deeply( flags( $resp->usage ), [ 1, 1, 1 ], 'only totalTokenCount: both reported' );
+  is_deeply( [ $resp->usage->input_tokens, $resp->usage->output_tokens ], [ 0, 0 ], 'both 0' );
+
+  $resp = $answer->();
+  ok( !$resp->has_usage, 'no usageMetadata: no usage on the Response' );
+  is_deeply( flags( Langertha::Usage->from_response($resp) ), [ 0, 0, 0 ], 'no usageMetadata: nothing reported' );
+};
+
+subtest 'Gemini stream: an empty usageMetadata reports zeros, as from_raw does' => sub {
+  require Langertha::Engine::Gemini;
+  my $engine = Langertha::Engine::Gemini->new( api_key => 'k', model => 'gemini-2.5-flash' );
+  my %chunk = (
+    'answer chunk'  => { candidates => [ { content => { parts => [ { text => 'hi' } ] }, finishReason => 'STOP' } ],
+                         usageMetadata => {} },
+    'blocked chunk' => { promptFeedback => { blockReason => 'SAFETY' }, usageMetadata => {} },
+  );
+  is_deeply( flags( Langertha::Usage->from_raw( { usageMetadata => {} } ) ), [ 1, 1, 1 ],
+    'from_raw: the reference' );
+  for my $name ( sort keys %chunk ) {
+    my $chunk = $engine->parse_stream_chunk( $chunk{$name} );
+    ok( $chunk->has_usage, "$name: carries usage" );
+    my $resp = $engine->_stream_response( [$chunk], {} );
+    is_deeply( flags( $resp->usage ), [ 1, 1, 1 ], "$name: every count reported" );
+    is_deeply( [ map { $resp->usage->$_ } qw( input_tokens output_tokens total_tokens ) ], [ 0, 0, 0 ],
+      "$name: all 0" );
+  }
+
+  my $um = { promptTokenCount => 4, candidatesTokenCount => 1, totalTokenCount => 5 };
+  my $chunk = $engine->parse_stream_chunk( { %{ $chunk{'answer chunk'} }, usageMetadata => $um } );
+  is( $chunk->usage, $um, 'a non-empty usageMetadata is passed as sent' );
+  ok( !$engine->parse_stream_chunk( { candidates => [ { content => { parts => [ { text => 'x' } ] } } ] } )->has_usage,
+    'no usageMetadata: no usage on the chunk' );
 };
 
 subtest 'from_raw: Ollama and AKI native' => sub {
@@ -104,7 +164,17 @@ subtest 'from_raw: usage block, usageMetadata, response envelope' => sub {
   is_deeply( flags($u), [ 0, 0, 1 ], 'usage block with only a total' );
 
   $u = Langertha::Usage->from_raw( { usageMetadata => { promptTokenCount => 4 } } );
-  is_deeply( flags($u), [ 1, 0, 0 ], 'usageMetadata with only a prompt count' );
+  is_deeply( flags($u), [ 1, 1, 1 ], 'usageMetadata with only a prompt count: output a reported 0' );
+  is( $u->output_tokens, 0, 'output 0' );
+
+  $u = Langertha::Usage->from_raw( { usageMetadata => { totalTokenCount => 8 } } );
+  is_deeply( flags($u), [ 1, 1, 1 ], 'usageMetadata with only totalTokenCount' );
+  is( $u->output_tokens, 0, 'output 0' );
+
+  $u = Langertha::Usage->from_raw( { usageMetadata => {} } );
+  is_deeply( flags($u), [ 1, 1, 1 ], 'empty usageMetadata block: every count a reported 0' );
+
+  is( Langertha::Usage->from_raw( { candidates => [] } ), undef, 'no usageMetadata: no usage' );
 
   $u = Langertha::Usage->from_raw( { response => { usage => { input_tokens => 1, output_tokens => 0 } } } );
   is_deeply( flags($u), [ 1, 1, 1 ], 'Responses envelope with a reported zero output' );
