@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-08T05:48:24Z
+id: 413
+priority: low
+status: backlog
+tags:
+- streaming
+- observability
+- wire
+title: Streamed responses carry no response id (Stream::Chunk has no id)
+updated: 2026-11-08T05:48:24Z
+---
+
+Found during k407: streamed spans (Plugin::OTel) have no gen_ai.response.id because Langertha::Stream::Chunk has no id; the dialect stream parsers would need to fill it from each provider field (OpenAI id, Anthropic message_start.message.id, Gemini responseId, ...). Wire lane.
