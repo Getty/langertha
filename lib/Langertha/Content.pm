@@ -21,7 +21,11 @@ sub to_lmstudio  { $_[0]->_no_serializer('lmstudio') }
 
 =method to_responses
 
+Serializes the content for the C<responses> wire. See L</to_lmstudio> for the default.
+
 =method to_ollama
+
+Serializes the content for the C<ollama> wire. See L</to_lmstudio> for the default.
 
 =method to_lmstudio
 

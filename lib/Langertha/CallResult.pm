@@ -58,7 +58,7 @@ transcription's C<usage>, Ollama's C<prompt_eval_count>. Not set when the body
 reports none (Gemini embeddings, Whisper servers), and not set for a
 duration-billed transcription (C<< usage => { type => 'duration', seconds => N } >>):
 it has no tokens to count, and its seconds stay in L</raw>. Check
-L</has_usage> first.
+C<has_usage> first.
 
 =cut
 

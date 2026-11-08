@@ -194,7 +194,7 @@ serialize independently.
 
 Composes L<Langertha::Role::Runtime::MetricsPoll>. vLLM serves Prometheus
 text-format metrics at C<GET <url-stripped-of-/v1>/metrics>; pass a prefix
-to L</poll_metrics_f> (e.g. C<'vllm:'> for the engine's own gauges) or
+to L<Langertha::Role::Runtime::MetricsPoll/poll_metrics_f> (e.g. C<'vllm:'> for the engine's own gauges) or
 filter downstream via L<Langertha::Runtime::Metrics/filter_prefix>.
 
 =head1 SUB-ENGINE: VLLMHook

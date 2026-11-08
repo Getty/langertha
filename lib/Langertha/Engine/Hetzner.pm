@@ -91,7 +91,7 @@ If a live test confirms the gateway honors them for the model you use,
 re-add them in the engine's C<around engine_capabilities>.
 
 B<No embeddings or transcription:> the Hetzner Inference endpoint exposes chat
-completions + image processing only. L</embedding> and L</transcription> are
+completions + image processing only. L<Langertha::Role::Embedding/embedding> and L<Langertha::Role::Transcription/transcription> are
 not composed on this engine.
 
 Get your API key at L<https://inference.hetzner.com/> and set

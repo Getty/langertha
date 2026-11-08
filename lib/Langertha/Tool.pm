@@ -617,7 +617,7 @@ C<to($fmt)> (a server tool croaks off its own wire);
 extras such as C<function.strict> and C<cache_control> included;
 
 =item * a function-tool hash in another shape (MCP C<inputSchema>, canonical
-C<input_schema>, another dialect's shape) is converted through L</from_hash>,
+C<input_schema>, another dialect's shape) is converted through C<from_hash>,
 keeping C<strict> (OpenAI and Anthropic) and C<cache_control> (Anthropic);
 
 =item * anything else -- a provider built-in, a typed item Langertha does not

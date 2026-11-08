@@ -622,7 +622,7 @@ returns the complete concatenated content string; in list context returns
 C<($content, $thinking)> where C<$thinking> is the aggregated chain-of-thought
 (C<undef> when the engine surfaced none), as L</aggregate_thinking> assembles
 it. Blocks until the stream completes. C<total_seconds> is logged; for a full
-breakdown read L</execute_streaming_request>.
+breakdown read L<Langertha::Role::HTTP/execute_streaming_request>.
 
 =cut
 
@@ -1850,7 +1850,7 @@ per-request controls (karr #46) — C<temperature>, C<max_tokens>,
 C<response_format>, C<seed>, C<parallel_tool_use>, C<reasoning_effort>,
 C<thinking_enabled>, C<thinking_budget>, C<prompt_cache>, C<prompt_cache_ttl>,
 C<prompt_cache_key> —
-are extracted and handed to L</chat_stream_request> under C<controls>, exactly
+are extracted and handed to C<chat_stream_request> under C<controls>, exactly
 as in L</chat_f>. C<tools> is shaped for the engine's C<tool_wire_format> item
 by item, exactly as in L</chat_f> (L<Langertha::Tool/request_list>):
 L<Langertha::Tool> objects are serialized, hashes already in the wire's shape

@@ -376,7 +376,7 @@ sub _responses_format_kwargs {
 
 Returns the structured-output kwargs for the body from a Chat-Completions-shaped
 C<response_format> hash. Default is OpenAI's C<< text => { format => ... } >>
-(flat json_schema, see L</_responses_text_format>). Overridden by consumers
+(flat json_schema, see C<_responses_text_format>). Overridden by consumers
 whose wire keeps the top-level Chat-Completions C<response_format> shape
 (Perplexity).
 
@@ -394,7 +394,7 @@ sub _responses_dispatch {
 =method _responses_dispatch
 
 Turns the built body into an HTTP request. Default resolves the endpoint from
-the OpenAPI spec via L</chat_operation_id> (C<createResponse> ->
+the OpenAPI spec via C<chat_operation_id> (C<createResponse> ->
 C</v1/responses>). Overridden by consumers on a non-OpenAPI parent to
 C<POST> a fixed provider path directly (Perplexity -> C</v1/agent>).
 

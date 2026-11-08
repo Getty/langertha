@@ -149,7 +149,7 @@ has ollama_levels => (
 The graded level strings this model accepts on Ollama's C<options.think> knob,
 in place of the model-agnostic boolean. Set only on the GPT-OSS family, which
 ignores C<think:true>/C<think:false> and instead takes C<low|medium|high|max>
-(live-probed 2026-09-17 via ollama.com gpt-oss:20b, k175). L</has_ollama_levels>
+(live-probed 2026-09-17 via ollama.com gpt-oss:20b, k175). C<has_ollama_levels>
 gates L<Langertha::Reasoning/to_ollama> between the level-string and boolean
 serializations; unset for every other model (they take the boolean).
 
@@ -287,6 +287,8 @@ for my $bound (qw( budget_min budget_max off_value dynamic_value )) {
 
 =attr budget_min
 
+Lower provider-enforced C<thinkingBudget> bound; see L</budget_max> for the shared description.
+
 =attr budget_max
 
 Provider-enforced integer C<thinkingBudget> bounds for a C<budget>-control
@@ -337,7 +339,7 @@ sub fable_class { return $_[0]->can_disable ? 0 : 1 }
     $profile->thinking_toggle_for('none')   # { type => 'disabled' } on MiniMax-M3
     $profile->thinking_toggle_for('high')   # { type => 'adaptive' }
 
-The C<thinking> object a thinking-toggle model (L</has_thinking_on>) takes for
+The C<thinking> object a thinking-toggle model (C<has_thinking_on>) takes for
 a normalized effort: C<none> gives C<< { type =E<gt> 'disabled' } >> when
 L</disable_form> is C<thinking_disabled>, and nothing (C<undef>) on a model
 that cannot turn thinking off — the field is omitted and the server default
@@ -441,7 +443,7 @@ Maps the normalized effort onto the GPT-OSS C<options.think> level vocabulary
 C<xhigh>/C<max> become C<max>, C<medium> and C<high> pass through. GPT-OSS
 always reasons, so C<none> collapses onto the floor C<low> rather than an off
 state (there is no off — C<think:false> is ignored). Mirrors
-L</gemini_level_for>; only meaningful when L</has_ollama_levels> is true.
+L</gemini_level_for>; only meaningful when C<has_ollama_levels> is true.
 
 =cut
 

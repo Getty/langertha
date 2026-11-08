@@ -351,7 +351,7 @@ emit a plain number either way.
 =back
 
 One smaller change: C<created> is now true in boolean context even when the
-stamp is the epoch zero, where the old C<Int> C<0> was false. L</has_created>
+stamp is the epoch zero, where the old C<Int> C<0> was false. C<has_created>
 is the predicate for "did the provider report a stamp", and it is unaffected.
 
 =cut

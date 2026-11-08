@@ -147,7 +147,7 @@ has ttl => (
 
 Optional Duration string (C<"300s">, C<"3600s">). Mutually exclusive with
 L</expire_time> — exactly one of the two is permitted per
-L</BUILD>. L<Langertha::Role::CachedContent/create_f> sends whichever was
+C<BUILD>. L<Langertha::Role::CachedContent/create_f> sends whichever was
 set.
 
 =cut

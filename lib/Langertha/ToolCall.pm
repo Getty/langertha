@@ -71,7 +71,7 @@ has arguments_undecodable => (
 
 Boolean. True when the provider sent arguments that do not decode to a JSON
 object (typically a JSON string cut off when the reply hit its token limit);
-L</arguments> is then C<{}>. The MCP tool loops do not run such a call: when
+C<arguments> is then C<{}>. The MCP tool loops do not run such a call: when
 the reply ended on its token limit they drop it, otherwise they answer it with
 an error result naming L</arguments_error>. Missing or empty arguments are not
 undecodable.

@@ -79,7 +79,7 @@ has effort => (
 
 The normalized reasoning effort, one of C<none|minimal|low|medium|high|xhigh|max>.
 Optional (must not coexist with C<thinking_budget> on any Gemini generation;
-see L</BUILD>). On Gemini 3 and Gemini 4, C<effort> is the only knob and emits
+see C<BUILD>). On Gemini 3 and Gemini 4, C<effort> is the only knob and emits
 C<thinkingConfig.thinkingLevel>, model-gated clamped to the level subset the
 configured model family accepts (L</to_gemini_level>). Setting C<effort> on a
 Gemini 2.5 model is rejected — Gemini 2.5 takes the integer budget, not the
@@ -97,7 +97,7 @@ has model => (
 
 Optional model name. Used by L</to_anthropic> to detect always-on
 "Fable-class" models (where C<thinking:{type:disabled}> 400s and the
-C<thinking> field must be omitted) and by L</to_gemini> to dispatch between
+C<thinking> field must be omitted) and by C<to_gemini> to dispatch between
 Gemini 2.5 (C<thinkingBudget>) and Gemini 3 (C<thinkingLevel>) and to clamp
 the Gemini 3 level vocabulary to the model family's supported subset.
 
@@ -132,10 +132,10 @@ format. Only takes effect together with a thinking block, i.e. on the adaptive
 =attr thinking_budget
 
 Optional integer thinking budget for Gemini 2.5 models. When set on a Gemini
-2.5 model (model id starting with C<gemini-2.5>), L</to_gemini> emits
+2.5 model (model id starting with C<gemini-2.5>), C<to_gemini> emits
 C<thinkingConfig.thinkingBudget> as the integer. Setting C<thinking_budget>
 on a Gemini 3 or Gemini 4 model, or setting it together with C<effort> on any model, is
-rejected at construction time (L</BUILD>) — the two fields speak different
+rejected at construction time (C<BUILD>) — the two fields speak different
 units (binary level vs integer tokens) and a combined or wrong-generation wire
 form would be ambiguous.
 
@@ -154,7 +154,7 @@ k382). Tri-state: unset (C<has_thinking_enabled> false, the default), C<0> or
 C<1>. It is the same concern as L</effort>, so the two must agree:
 C<thinking_enabled =E<gt> 0> together with any effort other than C<none>, or
 C<thinking_enabled =E<gt> 1> together with effort C<none>, croaks at
-construction (L</BUILD>). C<thinking_enabled =E<gt> 0> without an effort is
+construction (C<BUILD>). C<thinking_enabled =E<gt> 0> without an effort is
 normalized to effort C<none> at construction (L</normalize_off_switch>), so
 every wire sees the same off switch. Off therefore cannot disable thinking
 where effort C<none> cannot: Gemini 3/4 raise it to their floor level
@@ -273,7 +273,7 @@ sub assert_switch_agrees {
 
 Croaks when the two disagree within one layer: C<thinking_enabled =E<gt> 0>
 with an effort other than C<none>, or C<thinking_enabled =E<gt> 1> with
-C<none>. Either one undefined passes. Called from L</BUILD> and from the
+C<none>. Either one undefined passes. Called from C<BUILD> and from the
 engine constructor (L<Langertha::Role::ReasoningEffort/thinking_enabled>).
 
 =cut
@@ -381,6 +381,8 @@ sub to_responses {
 }
 
 =method to_openai
+
+Returns the OpenAI Chat Completions request fields for this reasoning setting. See L</to_responses> for the shared description.
 
 =method to_responses
 

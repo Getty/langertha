@@ -43,7 +43,7 @@ Composes onto self-hosted engines that expose a Prometheus
 C<GET /metrics> endpoint at the server's C<url> attribute. The role
 scrapes the body, parses it via L<Langertha::Runtime::Metrics>, and
 returns the parsed ArrayRef. No filtering is applied by default —
-pass a prefix to L</poll_metrics_f($prefix)> or filter with
+pass a prefix to L</poll_metrics_f> or filter with
 L<Langertha::Runtime::Metrics/filter_prefix> downstream.
 
 The parsed records can be exported to any OTLP/HTTP metrics receiver

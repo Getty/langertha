@@ -35,7 +35,7 @@ wire-truth>, and L</source> should say so honestly.
 Because the numbers are invented, they must never be able to emit a value the
 API rejects. Every numeric output of this class is B<clamped to the owning
 L<Langertha::Reasoning::Profile>'s category-(b) enforced bounds>
-(L<Langertha::Reasoning::Profile/budget_min> / L</budget_max>). This is the
+(L<Langertha::Reasoning::Profile/budget_min> / L<Langertha::Reasoning::Profile/budget_max>). This is the
 firewall rule: convention (c) may B<read> the profile's enforced bounds (b) but
 can never B<cross> them. Putting those bounds inside this convention layer — as
 the original karr k173 ticket proposed — would let an override silently violate a
@@ -67,7 +67,7 @@ has profile => (
 =attr profile
 
 The owning L<Langertha::Reasoning::Profile>. Its category-(b) bounds
-(L<Langertha::Reasoning::Profile/budget_min> / L</budget_max>) are the firewall
+(L<Langertha::Reasoning::Profile/budget_min> / L<Langertha::Reasoning::Profile/budget_max>) are the firewall
 every numeric output is clamped to. A C<range>-form policy needs both bounds
 present (there is nothing to interpolate across otherwise).
 
@@ -336,7 +336,7 @@ sub level_for {
 
 Convenience constructor mirroring L<Langertha::Reasoning::Profile/for_model>:
 resolves the id to its profile and passes the remaining convention options
-(L</form>, L</curve>, L</points>, L</levels>, L</source>) through to L</new>.
+(L</form>, L</curve>, L</points>, L</levels>, L</source>) through to C<new>.
 
 =cut
 

@@ -465,7 +465,7 @@ C<completion_tokens>, C<total_tokens> and C<cached_content_token_count> here
 in place of Gemini's camelCase C<usageMetadata> names.
 
 For a Usage constructed directly (no raw hash), the overload returns the
-canonical L</to_hash> shape (C<input_tokens> / C<output_tokens> /
+canonical C<to_hash> shape (C<input_tokens> / C<output_tokens> /
 C<total_tokens>). New code should prefer the accessors and the
 C<to_*_format> methods over hash dereferencing.
 
@@ -600,7 +600,7 @@ has a cache rate.
 
 The provider-verbatim hash the object was built from, when it was built via
 L</from_hash>. C<undef> for directly constructed objects. Read-only; the
-canonical L</to_hash> and C<TO_JSON> deliberately do B<not> include it — it
+canonical C<to_hash> and C<TO_JSON> deliberately do B<not> include it — it
 exists solely to back the C<%{}> overload.
 
 =cut
