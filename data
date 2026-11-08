@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-08T04:35:56Z
+id: 404
+priority: low
+status: backlog
+tags:
+- otel
+- observability
+title: 'OTel trace export: re-pin GenAI semconv once semantic-conventions-genai cuts
+  a release'
+updated: 2026-11-08T04:35:56Z
+---
+
+k403 pins the GenAI semantic conventions at semantic-conventions v1.41.1 (last release carrying gen_ai.*; v1.42.0 deprecated them and moved them to open-telemetry/semantic-conventions-genai, which has no release/schema URL yet). Its main already renames mistral_ai->mistral, adds moonshot_ai/ollama, cache_creation.input_tokens->cache_write.input_tokens, gen_ai.request.reasoning.level. When it releases: re-pin, update Trace::OTLP schemaUrl, provider table and POD.
