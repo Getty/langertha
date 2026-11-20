@@ -1,0 +1,19 @@
+---
+class: standard
+completed: 2026-11-20T03:34:43Z
+created: 2026-11-20T02:50:07Z
+id: 417
+priority: medium
+started: 2026-11-20T03:31:27Z
+status: done
+tags:
+- skills
+title: 'Skill perl-ai-langertha entschlacken: 11,5k auf ~6k mit references/'
+updated: 2026-11-20T03:34:43Z
+---
+
+Plan: ~/cai-admin/docs/skills-entschlacken-2026-11.md (cai-admin, 2026-11-20). Kern und Fallen in SKILL.md, Details nach references/; Description trigger-only unter 300 Zeichen; Name nicht ändern.
+
+perl-ai-langertha SKILL.md 11511 B/210 Z -> 5587 B/~100 Z; description+name unchanged (218 chars). references/: chat-f-wire-matrix.md 1575 (chat_f table + Perplexity/OpenAIResponses/Groq quirks), capabilities-and-controls.md 1570 (flag list, request controls), value-objects.md 2329 (Response fields, value-object table), mcp-and-plugins.md 2320 (MCP example, plugins, hook table), raider.md 1211 (Raider). Line-by-line check: all old lines present (only prose reflowed); code blocks moved unchanged. Fresh-session test (claude -p, Perplexity forced tool_choice question) read SKILL.md + chat-f-wire-matrix.md + value-objects.md, correct answer. Commits 4e1c879 (references), c9a7e4a (SKILL.md). Not pushed.
+
+Abgenommen von cai-admin am 2026-11-20: Diff gelesen (nur der Skill), SKILL.md 11,5k → 5,6k, references/ fünf Dateien, Testlauf laut Bericht korrekt; lokal auf main gemergt.
