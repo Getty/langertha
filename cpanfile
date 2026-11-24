@@ -1,4 +1,5 @@
 
+requires 'perl', '5.024';
 requires 'Compress::Raw::Bzip2';
 requires 'Compress::Raw::Zlib';
 requires 'File::ShareDir::ProjectDistDir';

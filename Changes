@@ -2,6 +2,10 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Requires perl 5.24: only from there on does Future::AsyncAwait pass a
+      cancel on to the future it awaits, so on an older perl a cancelled
+      stream or image prefetch kept running.
+
     - Requests no longer warn 'Argument "2/8" isn't numeric' on perl 5.24
       and older, where a hash in scalar context is its bucket ratio:
       whether a request carries a JSON body depends only on whether it
