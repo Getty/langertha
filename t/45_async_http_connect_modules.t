@@ -6,6 +6,7 @@ use Test2::Bundle::More;
 use lib 't/lib';
 
 BEGIN {
+  plan skip_all => 'fork-based HTTP::Daemon test not supported on Windows' if $^O eq 'MSWin32';
   eval { require Net::Async::HTTP; require IO::Async::Loop; 1 }
     or plan skip_all => 'Requires Net::Async::HTTP and IO::Async';
 }

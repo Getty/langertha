@@ -11,6 +11,11 @@ Revision history for Langertha
       timing no longer lose a millisecond to floating-point noise (as on
       long-double perls): the delta is rounded to the whole microsecond.
 
+    - Requires JSON::MaybeXS 1.004000, the first release with
+      JSON::MaybeXS::true and ::false: with an older one, error tool
+      results, the OTLP trace export, manifests and the vLLM-Hook probes
+      died with 'Undefined subroutine &JSON::MaybeXS::true'.
+
     - Langertha::Chat fires plugin_after_llm_response after a stream (the
       whole stream as one Langertha::Response, { stream => 1 } as third
       argument) and the new plugin_llm_call_failed when an LLM call fails;

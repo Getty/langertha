@@ -122,8 +122,9 @@ my $prom = "# HELP vllm:x running\n# TYPE vllm:x gauge\nvllm:x 3\n";
 # decoded-byte counter in _async_do_request_f when the client decodes; by
 # _bounded_decoded_content on the still-encoded body when it does not). poll_metrics_f
 # and the non-streaming chat request share the same _async_do_request_f path.
-{
-  my $prom = "# HELP vllm:x running\n# TYPE vllm:x gauge\nvllm:x 3\n";
+SKIP: {
+  skip 'fork-based HTTP::Daemon test not supported on Windows', 1 if $^O eq 'MSWin32';
+  my $prom ="# HELP vllm:x running\n# TYPE vllm:x gauge\nvllm:x 3\n";
   my $server = Test::LocalHTTPDaemon->start( sub {
     my ($req) = @_;
     my $bomb = $req->uri->path =~ m{/bomb/};

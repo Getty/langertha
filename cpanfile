@@ -8,7 +8,7 @@ requires 'HTTP::Date';
 requires 'HTTP::Message';
 requires 'Import::Into';
 requires 'IO::Socket::SSL';   # used directly by HTTP::UserAgent (connect_address TLS checks)
-requires 'JSON::MaybeXS';
+requires 'JSON::MaybeXS', '1.004000';   # first release with JSON::MaybeXS::true / false
 requires 'JSON::PP';
 requires 'JSON::Schema::Modern', '0.617';
 requires 'Log::Any';

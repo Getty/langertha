@@ -2,6 +2,7 @@
 # ABSTRACT: async subs must not require a module in their own frame while a coderef @INC hook is installed
 use strict; use warnings;
 use Test2::Bundle::More;
+use File::Temp ();
 
 BEGIN {
   eval { require Future::AsyncAwait; 1 }
@@ -54,7 +55,13 @@ my $engine = Langertha::Engine::vLLM->new(
   _async_http => $client,
 );
 PERL
-  open my $out, '-|', $^X, @inc, '-e', $preamble . $code
+  # The child code goes through a file, not -e: on Windows perl builds the
+  # child's command line without escaping the double quotes inside an
+  # argument, so the -e program arrived cut short and printed nothing.
+  my $script = File::Temp->new( SUFFIX => '.pl' );
+  print {$script} $preamble . $code;
+  close $script or die "cannot write child script: $!";
+  open my $out, '-|', $^X, @inc, $script->filename
     or die "cannot run child perl: $!";
   my @lines = <$out>;
   close $out;

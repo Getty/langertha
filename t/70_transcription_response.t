@@ -211,7 +211,8 @@ subtest 'speaches 422 without a model: the detail reaches the caller' => sub {
 };
 
 subtest 'simple_transcription_result round trip' => sub {
-  my $body = $data_dir->child('speaches_transcription_verbose_json_words.json')->slurp_raw;
+  plan skip_all => 'fork-based HTTP::Daemon test not supported on Windows' if $^O eq 'MSWin32';
+  my $body =$data_dir->child('speaches_transcription_verbose_json_words.json')->slurp_raw;
   my $server = Test::LocalHTTPDaemon->start(sub {
     my ( $request ) = @_;
     my $content = $request->content;

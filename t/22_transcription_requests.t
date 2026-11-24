@@ -88,13 +88,17 @@ my $multipart = sub {
 }
 
 {
-  my $dir = Path::Tiny->tempdir;
   my $name = "Gr\xc3\xbc\xc3\x9fe \xe2\x98\x83.wav";    # UTF-8 bytes, as readdir/ARGV give them
-  $dir->child($name)->spew_raw('abc');
-  my $req = $whisper->transcription($dir->child($name)->stringify);
-  like($req->content, qr/; filename="\Q$name\E"\r\n/, 'undecoded (byte) path: filename sent unchanged as raw UTF-8');
+  SKIP: {
+    skip 'perl on Windows names files through the ANSI code page, not as UTF-8 bytes', 1
+      if $^O eq 'MSWin32';
+    my $dir = Path::Tiny->tempdir;
+    $dir->child($name)->spew_raw('abc');
+    my $req = $whisper->transcription($dir->child($name)->stringify);
+    like($req->content, qr/; filename="\Q$name\E"\r\n/, 'undecoded (byte) path: filename sent unchanged as raw UTF-8');
+  }
 
-  my ($body) = $whisper->generate_multipart_body($req,
+  my ($body) = $whisper->generate_multipart_body($whisper->transcription($file),
     file => [ undef, "Gr\x{fc}\x{df}e \x{2603}.wav", Content => 'abc' ],
   );
   like($body, qr/; filename="\Q$name\E"\r\n/, 'decoded (character) filename is sent UTF-8 encoded');

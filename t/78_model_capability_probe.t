@@ -5,6 +5,11 @@ use strict;
 use warnings;
 
 use Test2::Bundle::More;
+
+BEGIN {
+  plan skip_all => 'fork-based HTTP::Daemon test not supported on Windows' if $^O eq 'MSWin32';
+}
+
 use lib 't/lib';
 
 use JSON::MaybeXS;

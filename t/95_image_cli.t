@@ -70,6 +70,8 @@ sub b64_item { return { b64_json => encode_base64( $_[0], '' ) } }
 # reads back, since the handler runs in the forked daemon.
 sub image_server {
   my ( $log, $images, $files ) = @_;
+  # Ends the calling subtest as skipped: the subtests without a daemon still run.
+  plan skip_all => 'fork-based HTTP::Daemon test not supported on Windows' if $^O eq 'MSWin32';
   $files //= {};
   return Test::LocalHTTPDaemon->start( sub {
     my ($req) = @_;
@@ -105,7 +107,10 @@ subtest 'help and executable contract' => sub {
   like $run->{stdout}, qr/--prompt-prefix/, 'help names --prompt-prefix';
   like $run->{stdout}, qr/LANGERTHA_IMAGE_PROXY_URL/, 'help names the proxy URL variable';
   like $run->{stdout}, qr/LANGERTHA_IMAGE_OPENAI_URL/, 'help names the Platform URL variable';
-  ok -x "$script", 'CLI is executable';
+  SKIP: {
+    skip 'Windows has no executable file mode', 1 if $^O eq 'MSWin32';
+    ok -x "$script", 'CLI is executable';
+  }
 };
 
 subtest 'prompt source validation' => sub {

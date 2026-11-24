@@ -6,6 +6,10 @@ use warnings;
 
 use Test2::Bundle::More;
 
+BEGIN {
+  plan skip_all => 'fork-based HTTP::Daemon test not supported on Windows' if $^O eq 'MSWin32';
+}
+
 # karr k370: speaches (the successor of faster-whisper-server) requires a
 # model field and answers 422 without one. bin/langertha_whisper offers
 # LANGERTHA_WHISPER_WHISPER_MODEL for that, but handed it to Whisper's `model`,

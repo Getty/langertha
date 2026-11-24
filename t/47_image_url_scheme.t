@@ -137,66 +137,70 @@ ok eval { Langertha::Content::Image->from_url('http://example.com/a.png') },  'h
   is $http2->{calls}, 0, '... before any request';
 }
 
-# --- Redirects: an http URL that redirects elsewhere is not followed ---
-my $server = Test::LocalHTTPDaemon->start( sub {
-  my ($req) = @_;
-  my $path = $req->uri->path;
-  return HTTP::Response->new( 302, 'Found', [ Location => $file_url ], '' ) if $path eq '/to-file.png';
-  return HTTP::Response->new( 302, 'Found', [ Location => "ftp://127.0.0.1:1/x.png" ], '' )
-    if $path eq '/to-ftp.png';
-  return HTTP::Response->new( 302, 'Found', [ Location => '/ok.png' ], '' ) if $path eq '/to-http.png';
-  return HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'image/png' ], $PNG ) if $path eq '/ok.png';
-  return HTTP::Response->new( 404, 'Not Found', [], 'nope' );
-} );
-my $base = $server->url;
-
-{
-  my $img = Langertha::Content::Image->from_url("$base/to-http.png");
-  is $img->ensure_base64, $B64, 'sync: an http -> http redirect is followed';
-
-  my $to_file = Langertha::Content::Image->from_url("$base/to-file.png");
-  ok !eval { $to_file->ensure_base64; 1 }, 'sync: an http -> file: redirect is not followed';
-  like $@, qr/failed to fetch \Q$base\E\/to-file\.png: 302/, '... the fetch fails on the redirect itself';
-  ok !$to_file->has_base64, '... nothing stored';
-
-  # LWP only refuses file: redirects on its own; protocols_allowed covers the rest.
-  my $to_ftp = Langertha::Content::Image->from_url("$base/to-ftp.png");
-  ok !eval { $to_ftp->ensure_base64; 1 }, 'sync: an http -> ftp: redirect is not followed';
-  like $@, qr/Access to 'ftp' URIs has been disabled/, '... refused by protocols_allowed';
-}
-
-# The async LWP fallback runs the engine's own user_agent, which allows every
-# scheme: the fetch goes through a restricted copy of it.
-{
-  my $shim = Langertha::Request::SyncHTTP->new( user_agent => LWP::UserAgent->new );
-  my $ok = Langertha::Content::Image->from_url("$base/to-http.png");
-  is $ok->ensure_base64_f($shim)->get, $B64, 'sync LWP shim: an http -> http redirect is followed';
-
-  for my $case ( [ file => qr/failed to fetch \S+: 302/ ], [ ftp => qr/Access to 'ftp' URIs has been disabled/ ] ) {
-    my ( $to, $re ) = @$case;
-    my $img = Langertha::Content::Image->from_url("$base/to-$to.png");
-    my $f = $img->ensure_base64_f($shim);
-    ok $f->is_failed, "sync LWP shim: an http -> $to: redirect is not followed";
-    like scalar $f->failure, $re, '... and the fetch fails';
-    ok !$img->has_base64, '... nothing stored';
-  }
-  ok !$shim->user_agent->protocols_allowed, "... the engine's own user_agent is left unrestricted";
-}
-
 SKIP: {
-  skip 'Net::Async::HTTP not installed', 5 unless eval { require Net::Async::HTTP; require IO::Async::Loop; 1 };
-  my $loop = IO::Async::Loop->new;
-  my $nah  = Net::Async::HTTP->new;
-  $loop->add($nah);
+  skip 'fork-based HTTP::Daemon test not supported on Windows', 1 if $^O eq 'MSWin32';
 
-  my $ok = Langertha::Content::Image->from_url("$base/to-http.png");
-  is $ok->ensure_base64_f($nah)->get, $B64, 'Net::Async::HTTP: an http -> http redirect is followed';
-  for my $to (qw( file ftp )) {
-    my $img = Langertha::Content::Image->from_url("$base/to-$to.png");
-    my $f = $img->ensure_base64_f($nah);
-    $f->await;
-    ok $f->is_failed, "Net::Async::HTTP: an http -> $to: redirect is not followed";
-    ok !$img->has_base64, '... nothing stored';
+  # --- Redirects: an http URL that redirects elsewhere is not followed ---
+  my $server = Test::LocalHTTPDaemon->start( sub {
+    my ($req) = @_;
+    my $path = $req->uri->path;
+    return HTTP::Response->new( 302, 'Found', [ Location => $file_url ], '' ) if $path eq '/to-file.png';
+    return HTTP::Response->new( 302, 'Found', [ Location => "ftp://127.0.0.1:1/x.png" ], '' )
+      if $path eq '/to-ftp.png';
+    return HTTP::Response->new( 302, 'Found', [ Location => '/ok.png' ], '' ) if $path eq '/to-http.png';
+    return HTTP::Response->new( 200, 'OK', [ 'Content-Type' => 'image/png' ], $PNG ) if $path eq '/ok.png';
+    return HTTP::Response->new( 404, 'Not Found', [], 'nope' );
+  } );
+  my $base = $server->url;
+
+  {
+    my $img = Langertha::Content::Image->from_url("$base/to-http.png");
+    is $img->ensure_base64, $B64, 'sync: an http -> http redirect is followed';
+
+    my $to_file = Langertha::Content::Image->from_url("$base/to-file.png");
+    ok !eval { $to_file->ensure_base64; 1 }, 'sync: an http -> file: redirect is not followed';
+    like $@, qr/failed to fetch \Q$base\E\/to-file\.png: 302/, '... the fetch fails on the redirect itself';
+    ok !$to_file->has_base64, '... nothing stored';
+
+    # LWP only refuses file: redirects on its own; protocols_allowed covers the rest.
+    my $to_ftp = Langertha::Content::Image->from_url("$base/to-ftp.png");
+    ok !eval { $to_ftp->ensure_base64; 1 }, 'sync: an http -> ftp: redirect is not followed';
+    like $@, qr/Access to 'ftp' URIs has been disabled/, '... refused by protocols_allowed';
+  }
+
+  # The async LWP fallback runs the engine's own user_agent, which allows every
+  # scheme: the fetch goes through a restricted copy of it.
+  {
+    my $shim = Langertha::Request::SyncHTTP->new( user_agent => LWP::UserAgent->new );
+    my $ok = Langertha::Content::Image->from_url("$base/to-http.png");
+    is $ok->ensure_base64_f($shim)->get, $B64, 'sync LWP shim: an http -> http redirect is followed';
+
+    for my $case ( [ file => qr/failed to fetch \S+: 302/ ], [ ftp => qr/Access to 'ftp' URIs has been disabled/ ] ) {
+      my ( $to, $re ) = @$case;
+      my $img = Langertha::Content::Image->from_url("$base/to-$to.png");
+      my $f = $img->ensure_base64_f($shim);
+      ok $f->is_failed, "sync LWP shim: an http -> $to: redirect is not followed";
+      like scalar $f->failure, $re, '... and the fetch fails';
+      ok !$img->has_base64, '... nothing stored';
+    }
+    ok !$shim->user_agent->protocols_allowed, "... the engine's own user_agent is left unrestricted";
+  }
+
+  SKIP: {
+    skip 'Net::Async::HTTP not installed', 5 unless eval { require Net::Async::HTTP; require IO::Async::Loop; 1 };
+    my $loop = IO::Async::Loop->new;
+    my $nah  = Net::Async::HTTP->new;
+    $loop->add($nah);
+
+    my $ok = Langertha::Content::Image->from_url("$base/to-http.png");
+    is $ok->ensure_base64_f($nah)->get, $B64, 'Net::Async::HTTP: an http -> http redirect is followed';
+    for my $to (qw( file ftp )) {
+      my $img = Langertha::Content::Image->from_url("$base/to-$to.png");
+      my $f = $img->ensure_base64_f($nah);
+      $f->await;
+      ok $f->is_failed, "Net::Async::HTTP: an http -> $to: redirect is not followed";
+      ok !$img->has_base64, '... nothing stored';
+    }
   }
 }
 

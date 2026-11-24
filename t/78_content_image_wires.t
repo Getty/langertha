@@ -183,7 +183,8 @@ for my $name (qw( OllamaOpenAI Cerebras Moonshot )) {
 }
 
 # --- URL images on inline-only wires: fetched and inlined (real LWP round trip) ---
-{
+SKIP: {
+  skip 'fork-based HTTP::Daemon test not supported on Windows', 1 if $^O eq 'MSWin32';
   my $bytes = "\x89PNG-bytes";
   my $server = Test::LocalHTTPDaemon->start( sub {
     my ($req) = @_;
