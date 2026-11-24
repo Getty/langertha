@@ -13,6 +13,12 @@ use Langertha::Chat;
 # the Raider subtests below are guarded so the core distribution stays green
 # without it. The Plugin sugar and the import-error handling are core.
 my $has_raider = eval { require Langertha::Raider; 1 };
+# A Langertha/Raider.pm left over from Langertha 0.202 or older (before the
+# extraction and before Role::PluginHost) still loads, but has no plugin API.
+my $raider_skip = !$has_raider ? 'Langertha::Raider not installed (extracted to langertha-raider)'
+  : !Langertha::Raider->can('plugins')
+    ? "the installed Langertha::Raider " . ( Langertha::Raider->VERSION // '?' ) . ' predates the plugin API'
+  : undef;
 
 # --- Helper: minimal mock engine ---
 
@@ -94,8 +100,7 @@ subtest 'invalid import argument dies' => sub {
 # --- Test: use Langertha qw( Raider ) sugar (langertha-raider) ---
 
 SKIP: {
-  skip 'Langertha::Raider not installed (extracted to langertha-raider)', 6
-    unless $has_raider;
+  skip $raider_skip, 6 if $raider_skip;
 
   # The Raider-subclass packages call `use Langertha qw( Raider )` at compile
   # time, which pulls in Langertha::Raider; define them via string eval so the

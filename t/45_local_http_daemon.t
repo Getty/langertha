@@ -106,7 +106,9 @@ subtest 'a keep-alive connection child does not hold the listening socket' => su
   # else holding the listening socket, the port is closed.
   kill 'KILL', $server->{pid};
   waitpid $server->{pid}, 0;
-  my $probe = IO::Socket::INET->new( PeerAddr => '127.0.0.1', PeerPort => $port, Timeout => 2 );
+  # A plain blocking connect: loopback answers at once either way, and the
+  # timed (non-blocking) connect reports success to a closed port on Haiku.
+  my $probe = IO::Socket::INET->new( PeerAddr => '127.0.0.1', PeerPort => $port );
   ok( !$probe, 'the port stops accepting once the daemon is gone' );
 
   close $sock;

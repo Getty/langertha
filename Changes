@@ -16,6 +16,12 @@ Revision history for Langertha
       results, the OTLP trace export, manifests and the vLLM-Hook probes
       died with 'Undefined subroutine &JSON::MaybeXS::true'.
 
+    - connect_address over https works with LWP::Protocol::https 6.10,
+      whose own _check_sock bypassed the pin's connection check: every
+      pinned https request failed with 'the connection was not checked
+      before sending', and only after it had been written. The peer and
+      certificate checks now run before the request is written there too.
+
     - Langertha::Chat fires plugin_after_llm_response after a stream (the
       whole stream as one Langertha::Response, { stream => 1 } as third
       argument) and the new plugin_llm_call_failed when an LLM call fails;

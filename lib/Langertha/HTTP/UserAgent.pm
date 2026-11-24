@@ -179,14 +179,17 @@ sub send_request {
   # object works for this agent and the host is the pinned one, so another
   # agent's request (from a content callback, say) is never touched. https
   # has its own _extra_sock_opts (calling SUPER without the host), so both
-  # are wrapped. Checked against LWP 6.83 / LWP::Protocol::https 6.17; the
+  # are wrapped; _check_sock is wrapped on https too, because
+  # LWP::Protocol::https 6.10 has its own without SUPER (6.17 dropped it).
+  # Checked against LWP 6.83 / LWP::Protocol::https 6.17 and 6.10; the
   # Client-Peer check below is the backstop if either hook stops being called.
   # LWP::Protocol::https is a hard dependency (ADR 0027).
   require LWP::Protocol::http;
   require LWP::Protocol::https;
-  my $http_opts  = \&LWP::Protocol::http::_extra_sock_opts;
-  my $https_opts = \&LWP::Protocol::https::_extra_sock_opts;
-  my $check      = \&LWP::Protocol::http::_check_sock;
+  my $http_opts   = \&LWP::Protocol::http::_extra_sock_opts;
+  my $https_opts  = \&LWP::Protocol::https::_extra_sock_opts;
+  my $check       = \&LWP::Protocol::http::_check_sock;
+  my $https_check = LWP::Protocol::https->can('_check_sock');   # its own, or the http one
   no warnings 'redefine';
   local *LWP::Protocol::http::_extra_sock_opts = sub {
     return ( $http_opts->(@_), $self->_pin_sock_opts( 'http', @_ ) );
@@ -197,6 +200,10 @@ sub send_request {
   my $checked;
   local *LWP::Protocol::http::_check_sock = sub {
     $check->(@_);
+    $checked = 1 if $self->_pin_check_sock(@_);
+  };
+  local *LWP::Protocol::https::_check_sock = sub {
+    $https_check->(@_);
     $checked = 1 if $self->_pin_check_sock(@_);
   };
   my $response = $self->SUPER::send_request( $request, @rest );

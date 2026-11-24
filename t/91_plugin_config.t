@@ -14,6 +14,12 @@ use Langertha::Plugin;
 # Langertha::Chat. Langertha::Raider (in the langertha-raider distribution) is a
 # host too; the `plugin` sugar subtest below is guarded on its presence.
 my $has_raider = eval { require Langertha::Raider; 1 };
+# A Langertha/Raider.pm left over from Langertha 0.202 or older (before the
+# extraction and before Role::PluginHost) still loads, but has no plugin API.
+my $raider_skip = !$has_raider ? 'Langertha::Raider not installed (extracted to langertha-raider)'
+  : !Langertha::Raider->can('plugins')
+    ? "the installed Langertha::Raider " . ( Langertha::Raider->VERSION // '?' ) . ' predates the plugin API'
+  : undef;
 
 # --- Helper: minimal mock engine ---
 
@@ -186,8 +192,7 @@ subtest 'empty hashref is valid (no extra args)' => sub {
 # --- Raider sugar (langertha-raider) ---
 
 SKIP: {
-  skip 'Langertha::Raider not installed (extracted to langertha-raider)', 1
-    unless $has_raider;
+  skip $raider_skip, 1 if $raider_skip;
 
   subtest 'sugar: plugin Name => { args } works' => sub {
     my $setup_ok = eval q{

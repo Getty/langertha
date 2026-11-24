@@ -132,8 +132,12 @@ my $PIN = 'pinned.invalid';
   # Sync: capture the socket options LWP will use, from a request_send handler
   # that answers in place of the network (it runs inside send_request, where
   # the pin is in force), asking the protocol object LWP would connect with.
+  # No connection is made, but LWP's https _extra_sock_opts dies without a CA
+  # to trust (no system store, no Mozilla::CA, as on Haiku): name one.
+  local $ENV{PERL_LWP_SSL_CA_FILE} = 'no-connection-is-made.pem';
   require LWP::Protocol; require LWP::Protocol::http; require LWP::Protocol::https;
   my $orig_opts = LWP::Protocol::http->can('_extra_sock_opts');
+  my $orig_check = LWP::Protocol::https->can('_check_sock');
   my $capture = sub {
     my ($ua) = @_;
     my $opts = [];
@@ -155,6 +159,7 @@ my $PIN = 'pinned.invalid';
   is $opt{SSL_hostname}, $PIN, 'sync https: SNI names the host';
   is $opt{SSL_verifycn_name}, $PIN, 'sync https: the certificate is checked against the host name';
   is( LWP::Protocol::http->can('_extra_sock_opts'), $orig_opts, 'the wrapped hook does not outlive the request' );
+  is( LWP::Protocol::https->can('_check_sock'), $orig_check, '... nor does the wrapped https _check_sock' );
 
   my %plain_opt = LWP::Protocol::create( 'https', $ua )->_extra_sock_opts( $PIN, 443 );
   ok !exists $plain_opt{PeerAddr}, 'outside a request the agent adds nothing';
@@ -569,6 +574,30 @@ SKIP: {
     is $res->code, 500, 'the strict agent refuses the unverified cached socket';
     like $res->message, qr/certificate chain is not verified/, '... by the chain check';
     is scalar @{ $tls_log->{seen}->() }, 1, 'nothing was written over it';
+  };
+
+  subtest 'sync: an LWP::Protocol::https with its own _check_sock is checked as well' => sub {
+    # LWP::Protocol::https 6.10 defines _check_sock (its If-SSL-Cert-Subject
+    # check) without calling SUPER, so for https a hook on the http one alone
+    # never ran: every pinned request failed, and only after it was written.
+    no warnings 'redefine';
+    local *LWP::Protocol::https::_check_sock = sub { };
+    my $engine = $sync_engine->($PIN);
+    my $res = $engine->user_agent->request( $engine->list_models_request );
+    ok $res->is_success, 'the certificate for the pinned name is accepted' or diag $res->status_line;
+
+    require LWP::ConnCache;
+    $tls_log->{reset}->();
+    my $cache = LWP::ConnCache->new( total_capacity => 5 );
+    my $lax = Langertha::HTTP::UserAgent->new( connect_host => 'other.invalid', connect_address => '127.0.0.1',
+      conn_cache => $cache, ssl_opts => { verify_hostname => 0, SSL_verify_mode => 1, SSL_ca_file => $ca } );
+    my $strict = Langertha::HTTP::UserAgent->new( connect_host => 'other.invalid', connect_address => '127.0.0.1',
+      conn_cache => $cache, ssl_opts => { verify_hostname => 1, SSL_ca_file => $ca } );
+    $res = $lax->get("https://other.invalid:$port/v1/models");
+    ok $res->is_success, 'the lax agent got through without a name check' or diag $res->status_line;
+    $res = $strict->get("https://other.invalid:$port/v1/models");
+    like $res->message, qr/certificate is not for other\.invalid/, 'the strict agent refuses the cached socket by the name check';
+    is scalar @{ $tls_log->{seen}->() }, 1, '... before anything was written over it';
   };
 
   subtest 'sync fallback shim over TLS' => sub {
