@@ -112,9 +112,9 @@ async sub run_tests {
   is($messages[1]{tool_calls}[0]{function}{name}, 'add', 'tool call is add');
   is($messages[2]{role}, 'tool', 'third message is tool result');
 
-  # Verify tool was actually executed (MCP called add(7, 15) = 22)
-  my $tool_content = $json->decode($messages[2]{content});
-  like($json->encode($tool_content), qr/22/, 'tool result contains 22');
+  # Verify tool was actually executed (MCP called add(7, 15) = 22). The tool
+  # message carries the tool's text as is: a plain string, not a JSON document.
+  is($messages[2]{content}, '22', 'tool result is the text 22');
 }
 
 run_tests()->get;
