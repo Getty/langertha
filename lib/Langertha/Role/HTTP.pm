@@ -343,7 +343,7 @@ sub generate_http_request {
       : ( 'Content-Type', 'application/json; charset=utf-8' )
   ];
   my $request = Langertha::Request::HTTP->new(
-    http => [ uc($method), $uri, $headers, ( scalar %args > 0 ?
+    http => [ uc($method), $uri, $headers, ( %args ?
       ( !$content_type or $content_type eq 'application/json' )
         ? $self->generate_json_body(%args)
           : ()

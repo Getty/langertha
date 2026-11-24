@@ -2,6 +2,11 @@ Revision history for Langertha
 
 {{$NEXT}}
 
+    - Requests no longer warn 'Argument "2/8" isn't numeric' on perl 5.24
+      and older, where a hash in scalar context is its bucket ratio:
+      whether a request carries a JSON body depends only on whether it
+      has arguments.
+
     - Langertha::Chat fires plugin_after_llm_response after a stream (the
       whole stream as one Langertha::Response, { stream => 1 } as third
       argument) and the new plugin_llm_call_failed when an LLM call fails;
