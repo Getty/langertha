@@ -739,9 +739,12 @@ sub _langfuse_iso_after {
   # to report a same-instant end_time than a wall-clock trip into the past.
   $delta_seconds = 0 if $delta_seconds < 0;
   my ($s, $us) = @$start_hires;
-  my $delta_us = $delta_seconds * 1_000_000;
-  $s += int( ($us + $delta_us) / 1_000_000 );
-  $us = int( ($us + $delta_us) % 1_000_000 );
+  # Round to the whole microsecond (gettimeofday's resolution) before
+  # splitting: % truncates its operands, and on long-double perls
+  # 0.001 * 1_000_000 is a hair under 1000, which lost the millisecond.
+  my $total_us = int( $us + $delta_seconds * 1_000_000 + 0.5 );
+  $s += int( $total_us / 1_000_000 );
+  $us = $total_us % 1_000_000;
   $us = 0 if $us < 0;
   my @t = gmtime($s);
   return sprintf("%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",

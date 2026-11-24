@@ -375,6 +375,16 @@ subtest '_langfuse_iso_after: sub-second positive delta adds milliseconds' => su
     '2025-01-01T00:00:00.999Z', '999ms delta renders correctly');
 };
 
+# On a long-double or quadmath perl, 0.001 * 1_000_000 comes out a hair under
+# 1000 microseconds. This input is that product on a plain-double perl: the
+# delta is a whole millisecond up to binary noise and must not lose it.
+subtest '_langfuse_iso_after: a delta a hair under a whole millisecond keeps it' => sub {
+  is($engine->_langfuse_iso_after([1735689600, 0], 0.0009999999999999998),
+    '2025-01-01T00:00:00.001Z', '1ms minus binary noise renders as 1ms');
+  is($engine->_langfuse_iso_after([1735689600, 999_999], 0.0000009),
+    '2025-01-01T00:00:01.000Z', 'rounding to the whole microsecond carries into the second');
+};
+
 subtest '_langfuse_iso_after: sub-millisecond delta rounds down to 0ms' => sub {
   is($engine->_langfuse_iso_after([1735689600, 0], 0.0001),
     '2025-01-01T00:00:00.000Z', 'sub-ms rounds to 0ms');

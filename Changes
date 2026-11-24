@@ -7,6 +7,10 @@ Revision history for Langertha
       whether a request carries a JSON body depends only on whether it
       has arguments.
 
+    - The Langfuse endTime and completionStartTime taken from a call's
+      timing no longer lose a millisecond to floating-point noise (as on
+      long-double perls): the delta is rounded to the whole microsecond.
+
     - Langertha::Chat fires plugin_after_llm_response after a stream (the
       whole stream as one Langertha::Response, { stream => 1 } as third
       argument) and the new plugin_llm_call_failed when an LLM call fails;
