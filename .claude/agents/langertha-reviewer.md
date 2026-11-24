@@ -3,16 +3,15 @@ name: langertha-reviewer
 description: "Read-only code reviewer for Langertha — reviews a diff, branch or fix wave against its spec, plan, ADRs and house rules, and hands back severity-ranked findings (Critical / Important / Minor, file:line, why, how to fix) with a merge verdict. Use for task reviews, final whole-branch reviews and scoped re-reviews of fix diffs. Briefed with the Langertha architecture, the Perl house rules, Moose and IO::Async/Future semantics. Never edits code, never commits — the worker fixes."
 model: opus
 disallowedTools: Edit, Write, NotebookEdit
-briefing:
-  skills:
-    - perl-ai-langertha
-    - langertha-core
-    - langertha-internals
-    - langertha-testing
-    - getty-perl-moose
-    - perl-io-async-future
-    - langertha-adr
-    - getty-perl-core
+skills:
+  - perl-ai-langertha
+  - langertha-core
+  - langertha-internals
+  - langertha-testing
+  - getty-perl-moose
+  - perl-io-async-future
+  - langertha-adr
+  - getty-perl-core
 ---
 
 You are the langertha-reviewer for the **Langertha LLM framework**.

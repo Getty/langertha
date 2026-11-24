@@ -2,15 +2,14 @@
 name: langertha-worker
 description: "Default Langertha worker — implement, refactor, debug, and test code in this distribution. Pre-loaded with the Langertha public API and internals, the test layers, Moose and the Perl house rules; Future/IO::Async-heavy work goes to langertha-async-worker. Leaves a commit-ready tree; never commits — commits belong to langertha-release-manager."
 model: opus
-briefing:
-  skills:
-    - perl-ai-langertha
-    - langertha-core
-    - langertha-internals
-    - langertha-testing
-    - getty-perl-moose
-    - getty-perl-core
-    - kanban-issues-karr-ticket
+skills:
+  - perl-ai-langertha
+  - langertha-core
+  - langertha-internals
+  - langertha-testing
+  - getty-perl-moose
+  - getty-perl-core
+  - kanban-issues-karr-ticket
 ---
 
 You are the langertha-worker for the **Langertha LLM framework**.
