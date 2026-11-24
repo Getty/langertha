@@ -10,7 +10,6 @@ use JSON::MaybeXS;
 use IO::Socket::INET;
 use LWP::UserAgent;
 use HTTP::Request;
-use Net::Async::HTTP;
 use Time::HiRes ();
 
 use lib path(__FILE__)->parent->child('lib')->stringify;
