@@ -23,6 +23,15 @@ Revision history for Langertha
       timing no longer lose a millisecond to floating-point noise (as on
       long-double perls): the delta is rounded to the whole microsecond.
 
+    - The OTLP trace export sends a Perl float the same way on every
+      perl: as a stringValue it is written with 15 significant digits
+      (1e+20, 0.333333333333333), where long-double and quadmath perls
+      wrote more digits (a token count of 1e20 as
+      '100000000000000000000'); under an integer attribute it is an
+      intValue only below 2**53, otherwise a stringValue such as 1e+17,
+      where long-double and quadmath perls sent an intValue. Strings and
+      Perl integers keep their spelling; doubleValue is unchanged.
+
     - Requires JSON::MaybeXS 1.004000, the first release with
       JSON::MaybeXS::true and ::false: with an older one, error tool
       results, the OTLP trace export, manifests and the vLLM-Hook probes

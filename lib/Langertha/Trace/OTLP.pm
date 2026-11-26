@@ -4,6 +4,7 @@ our $VERSION = '0.506';
 use Moose;
 use Carp qw( croak );
 use JSON::MaybeXS ();
+use B ();
 use Scalar::Util qw( blessed looks_like_number );
 use mro;
 
@@ -118,6 +119,17 @@ way to send a typed value under a key this module does not know; an
 C<intValue> is written as a decimal string, or sent as a C<stringValue> when it
 is no integer); any other
 reference is sent as its JSON text. C<undef> values are left out.
+
+A value that has only ever been a Perl floating-point number (never used as
+a string, never given an integer form) is spelled the same on double,
+long-double and quadmath perls where it falls back to a C<stringValue>: it is
+written with 15 significant digits (C<1e+20>, C<1.5>), the way a perl with
+plain doubles prints it, and under an integer attribute it is an
+C<intValue> only below 2**53 (C<1e17> is a C<stringValue> on every perl).
+Strings and Perl integers keep their spelling. A whole-number float that
+went through arithmetic or a numeric comparison can carry an integer form on
+a long-double or quadmath perl and is then taken as that integer; a C<doubleValue> is written
+by the JSON encoder at the perl's own float width.
 
 =cut
 
@@ -401,13 +413,15 @@ sub _bool {
 }
 
 # An integer as the decimal string OTLP/JSON wants for an int64, or undef
-# when the value is no integer or does not fit. Digit strings are checked
-# as text (no float on the way); other numbers only while a float holds the
-# integer exactly (below 2**53).
+# when the value is no integer or does not fit. Digit strings and Perl
+# integers are checked as text (no float on the way); a float only while it
+# holds the integer exactly (below 2**53). A float never takes the text path:
+# its text follows the NV width, so 1e17 reads as digits on a long-double
+# perl and as '1e+17' on a double perl.
 sub _int_string {
   my ($value) = @_;
   return undef if !defined $value || ref $value;
-  if ( $value =~ /\A([-+]?)0*(\d+)\z/ ) {
+  if ( !_is_float($value) && $value =~ /\A([-+]?)0*(\d+)\z/ ) {
     my ( $sign, $digits ) = ( $1, $2 );
     my $max = $sign eq '-' ? '9223372036854775808' : '9223372036854775807';
     return undef if length $digits > 19 || ( length $digits == 19 && $digits gt $max );
@@ -419,6 +433,22 @@ sub _int_string {
   return $number == 0 ? '0' : sprintf( '%.0f', $number );
 }
 
+# True for a float: a number without an integer or string form.
+sub _is_float {
+  my ($value) = @_;
+  my $flags = B::svref_2object( \$value )->FLAGS;
+  return $flags & B::SVf_NOK && !( $flags & ( B::SVf_IOK | B::SVp_POK ) );
+}
+
+# The text of a scalar for a stringValue. A float is printed with 15
+# significant digits, the spelling of a perl with plain doubles: Perl's own
+# stringification uses the width of its NV, so a long-double or quadmath perl
+# would write 1e20 as '100000000000000000000'.
+sub _text {
+  my ($value) = @_;
+  return _is_float($value) ? sprintf( '%.15g', $value ) : "$value";
+}
+
 sub _any_value {
   my ( $key, $value ) = @_;
   return undef unless defined $value;
@@ -426,7 +456,7 @@ sub _any_value {
     return $value unless exists $value->{intValue};
     my $int = _int_string( $value->{intValue} );
     return defined $int ? { intValue => $int }
-      : defined $value->{intValue} ? { stringValue => "$value->{intValue}" } : undef;
+      : defined $value->{intValue} ? { stringValue => _text( $value->{intValue} ) } : undef;
   }
   if ( _is_bool($value) || ( $BOOL_ATTR{$key} && !ref $value ) ) {
     my $bool = _bool($value);
@@ -435,7 +465,7 @@ sub _any_value {
   if ( ref $value eq 'ARRAY' ) {
     return { arrayValue => { values => [
       map { _is_bool($_) ? { boolValue => $_ ? JSON::MaybeXS::true() : JSON::MaybeXS::false() }
-          : { stringValue => ref $_ ? $JSON_TEXT->encode($_) : "$_" } }
+          : { stringValue => ref $_ ? $JSON_TEXT->encode($_) : _text($_) } }
       grep { defined } @$value
     ] } };
   }
@@ -446,7 +476,7 @@ sub _any_value {
   }
   return { doubleValue => $value + 0 }
     if $DOUBLE_ATTR{$key} && looks_like_number($value);
-  return { stringValue => "$value" };
+  return { stringValue => _text($value) };
 }
 
 # --- ids ---

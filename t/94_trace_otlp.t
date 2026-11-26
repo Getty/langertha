@@ -436,4 +436,51 @@ subtest 'typed attribute coercion: integers, booleans, caller AnyValue' => sub {
   is_deeply( $value_of->( 'custom.key', { intValue => 'x' } ), { stringValue => 'x' }, 'caller intValue "x" is sent as a string' );
 };
 
+# A float that becomes a stringValue is spelled the same on every perl: Perl's
+# own stringification follows the NV width, so a quadmath perl wrote 1e20 as
+# '100000000000000000000' and a double perl as '1e+20' (k418, CPAN Testers).
+subtest 'float stringValue does not depend on the NV width' => sub {
+  my $value_of = sub {
+    my ( $key, $value ) = @_;
+    my $p = payload_of( [ rec( attributes => { $key => $value } ) ] );
+    return attrs_of( spans_of($p)->[0] )->{$key};
+  };
+  is_deeply( $value_of->( 'custom.key', 1e20 ), { stringValue => '1e+20' }, 'float under a plain key' );
+  is_deeply( $value_of->( 'custom.key', 0.1 + 0.2 ), { stringValue => '0.3' }, '15 significant digits' );
+  is_deeply( $value_of->( 'custom.key', 1 / 3 ), { stringValue => '0.333333333333333' },
+    'no more than 15 digits (a long-double perl prints 18)' );
+  is_deeply( $value_of->( 'custom.key', [ 1e20 ] ), { arrayValue => { values => [ { stringValue => '1e+20' } ] } },
+    'float array element' );
+  is_deeply( $value_of->( 'custom.key', { intValue => 1e20 } ), { stringValue => '1e+20' },
+    'caller intValue float out of range' );
+  is_deeply( $value_of->( 'gen_ai.usage.input_tokens', '1e20' ), { stringValue => '1e20' },
+    'a string keeps its spelling' );
+  is_deeply( $value_of->( 'custom.key', 18446744073709551615 ), { stringValue => '18446744073709551615' },
+    'an unsigned integer keeps all its digits' );
+};
+
+# The same for a float under an integer attribute: the digit-string check ran
+# on the float's text, so a long-double or quadmath perl sent 1e17 as
+# intValue "100000000000000000" and a double perl as stringValue "1e+17"
+# (k418). A float is an intValue only below 2**53; a Perl integer and a digit
+# string keep all their digits.
+subtest 'float under an integer attribute does not depend on the NV width' => sub {
+  my $value_of = sub {
+    my ( $key, $value ) = @_;
+    my $p = payload_of( [ rec( attributes => { $key => $value } ) ] );
+    return attrs_of( spans_of($p)->[0] )->{$key};
+  };
+  my $key = 'gen_ai.usage.input_tokens';
+  is_deeply( $value_of->( $key, 1e17 ), { stringValue => '1e+17' }, 'float 1e17 is a string' );
+  is_deeply( $value_of->( $key, -1e17 ), { stringValue => '-1e+17' }, 'float -1e17 is a string' );
+  is_deeply( $value_of->( 'custom.key', { intValue => 1e17 } ), { stringValue => '1e+17' },
+    'caller intValue float 1e17 is a string' );
+  is_deeply( $value_of->( $key, 4503599627370496.0 ), { intValue => '4503599627370496' },
+    'float below 2**53 is an intValue' );
+  is_deeply( $value_of->( $key, 9007199254740993 ), { intValue => '9007199254740993' },
+    'Perl integer above 2**53 keeps all its digits' );
+  is_deeply( $value_of->( $key, '100000000000000000' ), { intValue => '100000000000000000' },
+    'digit string is an intValue' );
+};
+
 done_testing;
