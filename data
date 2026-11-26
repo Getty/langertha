@@ -1,0 +1,20 @@
+---
+class: standard
+completed: 2026-11-26T18:42:34Z
+created: 2026-11-06T04:58:34Z
+id: 400
+priority: medium
+started: 2026-11-26T18:42:34Z
+status: done
+tags:
+- llm
+- risk
+- replicate
+title: 'Replicate: meta/llama-4-maverick weg, OpenAPI ohne /chat/completions'
+updated: 2026-11-26T18:42:34Z
+---
+
+meta/llama-4-maverick gibt 404 auf replicate.com. Das OpenAPI von Replicate zeigt keinen /chat/completions-Endpoint; prüfen, ob Engine::Replicate noch einen funktionierenden Chat-Pfad hat. Live-Pin t/80:247 entsprechend.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
+
+Duplikat von k243 (Endpoint-Frage, kein Key). Slug-Austausch (meta/meta-llama-3-70b-instruct statt llama-4-maverick, Replicate.pm Beispiele + t/80 Fallback) als Notiz an k243.
