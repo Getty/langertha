@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-26T20:13:20Z
+id: 428
+priority: low
+status: backlog
+tags:
+- docs
+- cerebras
+title: 'Cerebras: image_input-Allowlist nennt kimi-k2.7-code ohne Angabe, wo es bedient
+  wird'
+updated: 2026-11-26T20:13:20Z
+---
+
+Aus Review k399. Cerebras.pm:~29-32 (DESCRIPTION, Shared Inference: gpt-oss-120b, qwen-3.8-27b) gegen image_input-Allowlist :~104 mit kimi-k2.7-code. Fuer gemma-4-31b steht jetzt ein Kommentar (Dedicated), fuer kimi nicht. Halbsatz ergaenzen oder llm-advisor fragen.
