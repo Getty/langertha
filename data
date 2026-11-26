@@ -1,0 +1,28 @@
+---
+class: standard
+completed: 2026-11-26T20:26:13Z
+created: 2026-11-06T04:58:03Z
+id: 394
+priority: medium
+started: 2026-11-26T19:10:52Z
+status: done
+tags:
+- llm
+- risk
+- perplexity
+title: 'Perplexity: Agent-API-Feld preset→effort umbenannt, sonar-Mapping gedriftet'
+updated: 2026-11-26T20:26:13Z
+---
+
+preset ist nur noch deprecated Alias für effort. Die Doku-Zuordnung hat sich verschoben (sonar-pro→fast, sonar-reasoning-pro→low), %MODEL_TO_PRESET hat noch die alte.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
+
+Analyse 2026-11-26: Request-Schema kennt nur noch effort, preset ist deprecated Alias. Diese Karte = nur Teil A (Feldname preset -> effort, Perplexity.pm:207, ResponsesCompatible-Kommentare, Tests t/10:450, t/78:275, t/68). Teil B (sonar-pro->fast, sonar-reasoning-pro->low) als eigene Karte.
+
+2026-11-26 19:12 Teil A red: t/10, t/78, t/68 (assert + capture_req maps preset->effort, captures verbatim), t/47 golden only Perplexity rows (22) renamed; all red on preset. Fixing Perplexity.pm next.
+
+2026-11-26 19:13 Teil A done (uncommitted). Perplexity.pm _responses_model_kwargs emits effort=>... (was preset), %MODEL_TO_PRESET renamed %MODEL_TO_EFFORT, mapping unchanged (k420). POD/comments in Perplexity.pm + ResponsesCompatible.pm. ADR 0020 hook table cell + Update (k394) appended. Tests: t/10 (effort + no preset), t/78 golden, t/68 asserts + capture_req maps preset->effort (k232 captures stay verbatim), t/47 golden only the 22 Perplexity rows. Red then green: prove -l t/10 t/78_content_image_wires t/68 t/47 t/78_image_input_capability PASS; t/85_live_perplexity skipped (no TEST_LANGERTHA_LIVE). perlcritic clean. Response parsing never read preset (comment only). Open: effort not live-verified (docs only).
+
+2026-11-26 20:08 t/68_perplexity_agent.t subtest 'model -> preset selection' was still expecting body->{preset} (5 failures, confirmed red). Now asserts body->{effort} (mapping unchanged) + no deprecated preset key; unknown id: neither effort nor preset. Grep t/ lib/: no other stale Perplexity preset expectations (t/68_perplexity_function_tools.t + t/10 already on effort; t/data/*.request.json captures keep verbatim preset, normalized in-test by design). 69 files mentioning Perplexity/preset/effort: PASS, 7002 tests; 6 live t/8x skipped (no TEST_LANGERTHA_LIVE).
+
+2026-11-26 20:26 Committed in a8bd5f7.
