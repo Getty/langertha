@@ -1,0 +1,25 @@
+---
+class: standard
+completed: 2026-11-26T20:26:21Z
+created: 2026-11-06T04:58:19Z
+id: 397
+priority: medium
+started: 2026-11-26T19:10:56Z
+status: done
+tags:
+- llm
+- gemini
+title: 'Gemini: Default gemini-3-flash-preview → gemini-3.8-flash'
+updated: 2026-11-26T20:26:21Z
+---
+
+Preview-IDs fallen kurzfristig weg. gemini-3.8-flash ist stabil; die 3.[78]-flash-Zeile lässt minimal schon weg. Preis 0.75/3.75 bis 2026-12-31, danach 1.50/7.50.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
+
+Entscheid 2026-11-26: Default gemini-3.6-flash (Googles genannter Nachfolger, gleicher Preis wie 3.8, kennt minimal/none). Nicht 3.8-flash.
+
+2026-11-26 19:12 Gemini default_model -> gemini-3.6-flash (Gemini.pm sub + SYNOPSIS + DESCRIPTION). Falls into Profile row qr/\Agemini-3/ (minimal..high). Tests: t/46 default assert + new 'effort none -> minimal on default' guard (plan 60), t/10 default+endpoint, comments t/78_engine_capabilities, t/78_image_input_capability. Fixture: only the 4 Gemini|default budget/control_budget croak rows change (model name in message), via LANGERTHA_REGEN_REASONING_GOLDEN regen; the Perplexity rows in the working-tree fixture belong to k394. Red->green verified.
+
+2026-11-26 19:19 Done: Gemini default_model gemini-3.6-flash (Gemini.pm sub + SYNOPSIS + DESCRIPTION; resolves to the full minimal..high Profile row qr/\Agemini-3/). Tests t/46 (default + new 'effort none -> minimal on default' guard, plan 60), t/10 default+endpoint, comments in t/78_engine_capabilities and t/78_image_input_capability. Fixture: only the 4 Gemini|default budget/control_budget croak rows (model name in message), via LANGERTHA_REGEN_REASONING_GOLDEN; the Perplexity rows in the working-tree fixture are k394's. Red seen (default-model asserts), then green: prove -l t/46 t/47 t/48 t/78_* t/10 in a clean env.
+
+2026-11-26 20:26 Committed in e87f92b.
