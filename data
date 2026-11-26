@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-11-26T20:13:16Z
+id: 427
+priority: low
+status: backlog
+tags:
+- llm
+- gemini
+- reasoning
+title: Reasoning::Profile ordnet Gemini-2.5 TTS/Image-IDs weiter der Budget-Zeile
+  zu
+updated: 2026-11-26T20:13:16Z
+---
+
+Aus Review k422. Profile.pm:~809: Reasoning->new(model => gemini-2.5-flash-preview-tts, thinking_enabled => 0) direkt (ohne Engine) ergibt Budget 0. Auf dem Engine-Pfad greift die Capability-Sperre (k422), nichts geht raus. Vorschlag: TTS/Image-IDs im Profil auf can_disable/kein-Budget setzen oder eigene Zeile; nicht blockierend.
