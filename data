@@ -1,0 +1,19 @@
+---
+class: standard
+completed: 2026-11-26T18:42:21Z
+created: 2026-11-06T04:58:40Z
+id: 401
+priority: low
+started: 2026-11-26T18:42:21Z
+status: done
+tags:
+- llm
+- deepseek
+title: 'DeepSeek: none vs thinking:{type:disabled} prüfen'
+updated: 2026-11-26T18:42:21Z
+---
+
+DeepSeek.pm sagt, none wird akzeptiert; der DeepSeek-Thinking-Guide sagt, aus = thinking:{type:disabled}.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
+
+Kein Bug (Analyse 2026-11-26): reasoning_effort none ist in der DeepSeek-API-Referenz dokumentiert, beide Aus-Formen gueltig. Aufgegangen in k386; Aus-Form bleibt bei effort none.
