@@ -1,0 +1,19 @@
+---
+class: standard
+created: 2026-11-04T21:49:38Z
+id: 383
+priority: low
+status: backlog
+tags:
+- llm
+- risk
+- reasoning
+- llamacpp
+title: 'llama.cpp: reasoning_effort per Modell über /props reasoning_effort_levels
+  clampen'
+updated: 2026-11-26T18:43:43Z
+---
+
+Folge von k382 / ADR 0040: chat_template_kwargs-Wire sendet reasoning_effort ungeclampt. llama-server meldet unter /props chat_template_caps.reasoning_effort_levels die Stufen, die das Template unterscheidet (Kolibri-1: [low, medium]). Clamp über den expliziten Learned-Capability-Probe (ADR 0032, model_metadata_format llamacpp liest /props schon). Nie implizit.
+
+Analyse 2026-11-26: Clamp auf reasoning_effort_levels ist falsch (Aliasse werden zum hoechsten Namen zusammengefasst, high faellt bei Qwen3.8 raus). Richtiges Kriterium: reasoning_effort_rejected (llama.cpp seit 2026-11-16, Server antwortet bei Ablehnung mit sauberer 400 statt 500). Braucht ADR-Update (0032/0040: Probe darf bisher nur image_input). Zurueckgestellt.
