@@ -1,0 +1,24 @@
+---
+class: standard
+completed: 2026-11-26T20:25:34Z
+created: 2026-11-06T04:58:14Z
+id: 396
+priority: medium
+started: 2026-11-26T18:44:28Z
+status: done
+tags:
+- llm
+- risk
+- aki
+title: 'AKI native: Default minimax_m3 fehlt in der öffentlichen Endpoint-Liste'
+updated: 2026-11-26T20:25:34Z
+---
+
+aki.io/docs available-models listet minimax_m3 nicht. Default prüfen (AKI ist live-testbar, stehende Ausnahme).
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
+
+2026-11-26 18:46 Done: Engine/AKI.pm default_model minimax_m3 -> gpt_oss_chat; comment + =method POD rewritten (aki.io/api/endpoints lists no minimax*, per the 2026-11-26 analysis; in line with gpt-oss-120b on AKIOpenAI/AKIAnthropic; live t/80, t/81 already prefer gpt_oss_chat). SYNOPSIS model llama3_8b_chat (EOL) -> gpt_oss_chat too. Tests t/25_aki_requests.t + t/10_engine_hierarchy.t updated; red against old AKI.pm (2 failures), green after. Not live-verified here (no live calls in this run). Also found: CLAUDE.md AKI-family paragraph quotes 'Client not authorized for endpoint minimax_m3!' as example -- prose for the orchestrator.
+
+2026-11-26 18:46 AKI native default -> gpt_oss_chat; comment/POD/SYNOPSIS; t/25 + t/10 red->green. Not live-verified (AKI live check optional, standing exception).
+
+2026-11-26 20:25 Committed in 3843f6c.
