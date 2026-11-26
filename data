@@ -1,0 +1,16 @@
+---
+class: standard
+created: 2026-11-26T18:44:06Z
+id: 423
+priority: low
+status: backlog
+tags:
+- llm
+- risk
+- llamacpp
+title: 'llama.cpp: effort none zusaetzlich als reasoning_effort none senden (Inkling
+  2)'
+updated: 2026-11-26T18:44:06Z
+---
+
+Aus Analyse k383. Inkling 2 ignoriert enable_thinking und reagiert nur auf reasoning_effort none; Server reicht none seit PR 32763 (2026-11-21) nur bei Template-Support weiter. ADR 0040 Entscheidung 1 sendet bei none bewusst kein reasoning_effort, weil aeltere Templates daran scheitern. Braucht Versionsweiche oder Maintainer-Entscheid.
