@@ -1,0 +1,26 @@
+---
+class: standard
+completed: 2026-11-26T20:25:42Z
+created: 2026-11-06T04:58:24Z
+id: 398
+priority: medium
+started: 2026-11-26T18:44:32Z
+status: done
+tags:
+- llm
+- openai
+- image
+title: 'OpenAI: default_image_model gpt-image-2 → gpt-image-2.6-flare'
+updated: 2026-11-26T20:25:42Z
+---
+
+gpt-image-2 ist aktuell, wird im Image-Guide aber nicht mehr genannt. 2.6-flare kostet gleich (30 USD/1M Bild-Output), hat neu complexity mit Default high.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
+
+Analyse 2026-11-26: OpenAI hat gpt-image-2 am 2026-11-10 abgekuendigt, Abschaltung 2027-02-10; Ersatz gpt-image-2.6-flare. Prio auf medium.
+
+2026-11-26 18:48 Done: Role/OpenAICompatible.pm default_image_model gpt-image-2 -> gpt-image-2.6-flare (comment: deprecated 2026-11-10, shutdown 2027-02-10); POD image_request, Engine/OpenAI.pm model list, ImageGen.pm SYNOPSIS. Applies to every OpenAIBase engine that does not override it (as before); XAI overrides (grok-imagine-image-2.0), t/23 XAI green. Tests that encode the default went red after the lib change (t/95_imagegen 3 subtests, t/45_call_result_f 1, t/45_call_result_transport 3 backends) and were moved to the new id; tests that pass gpt-image-2 explicitly (t/94, t/45_embed_transcribe_image_f, t/95_image_cli, mock in t/95_imagegen) stay. response_format drop matches /\Agpt-image/, covers 2.6-flare. Not live-verified (image live test needs all four switches; not armed). Not done: the new 'complexity' param of 2.6-flare (default high) is not exposed -- out of scope.
+
+2026-11-26 18:48 default_image_model -> gpt-image-2.6-flare; comment/POD; default-encoding tests updated (red after lib change, green after). Not live-verified.
+
+2026-11-26 20:25 Committed in c79bbe9.
