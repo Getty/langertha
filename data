@@ -1,0 +1,19 @@
+---
+class: standard
+completed: 2026-11-26T18:43:39Z
+created: 2026-11-04T21:49:46Z
+id: 385
+priority: low
+started: 2026-11-26T18:43:39Z
+status: done
+tags:
+- llm
+- risk
+- reasoning
+title: Prüfen, ob Skeid-Gateways und tensorfold chat_template_kwargs durchreichen
+updated: 2026-11-26T18:43:39Z
+---
+
+Folge von k382: Opt-in reasoning_wire_format => 'chat_template_kwargs' für generische OpenAI-kompatible Basis-URLs. tensorfold laut cai-admin-Messung ok, Skeid ungeprüft (langertha-skeid/lib/Langertha/Skeid/Protocol.pm listet nur Capabilities). Skeid-Hälfte gehört aufs langertha-skeid-Board.
+
+Fuer Langertha nichts zu bauen (Analyse 2026-11-26). Offene Punkte als Karte auf dem langertha-skeid-Board; hier geschlossen.
