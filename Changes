@@ -11,6 +11,14 @@ Revision history for Langertha
       whether a request carries a JSON body depends only on whether it
       has arguments.
 
+    - A URL image that an engine must inline and that fails to fetch on a
+      _f path (a 404, a refused redirect, a size cap) fails the Future
+      with that error again on perl 5.24 and 5.26: there it failed with
+      'Bizarre copy of CODE in list assignment' instead, because Carp
+      before 1.50 read the freed arguments the resumed fetch still held
+      in @_. Requires Carp 1.50, the first release whose stack trace
+      survives such a freed argument anywhere in the call stack.
+
     - The Langfuse endTime and completionStartTime taken from a call's
       timing no longer lose a millisecond to floating-point noise (as on
       long-double perls): the delta is rounded to the whole microsecond.

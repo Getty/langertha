@@ -280,8 +280,18 @@ sub ensure_base64 {
 # _async_http on the _f paths, so a URL image never blocks the event loop on
 # LWP. A transport failure and an error status fail the Future with the text
 # ensure_base64 croaks.
+# Both async subs here empty @_ once unpacked (karr k418). From perl 5.24 on,
+# Future::AsyncAwait saves @_ at an await and restores it on resume (before
+# 5.24 it does not, see its POD, RT 130683); the restored @_ still aliases the
+# caller's argument temporaries, freed by the time the fetch resumes. A croak
+# below the resumed frame reads that @_ through caller(), and Carp before 1.50
+# (core up to perl 5.26) dies on the freed values ("Bizarre copy of CODE in
+# list assignment"), which replaced the fetch error, e.g. the 404, on perl
+# 5.24. Carp 1.50 guards that copy (cpanfile pin); clearing @_ keeps the
+# frames clean for any other caller() reader.
 async sub ensure_base64_f {
   my ( $self, $http, %opt ) = @_;
+  @_ = ();
   return $self->base64 if $self->has_base64;
   croak "ensure_base64_f: no url to fetch" unless $self->has_url;
   return $self->_inline_data_url if _is_data_url($self->url);
@@ -346,6 +356,9 @@ sub _fetch_one_f {
 # is refused by the flag instead.
 async sub _fetch_net_async_f {
   my ( $self, $http, $limit ) = @_;
+  # Preventive, not reproduced: t/47 scans this frame and finds no freed value
+  # in its @_ even without the line; cleared like ensure_base64_f's (k418).
+  @_ = ();
   require URI;
   my $max = $limit->{max_bytes};
   my $uri = URI->new( $self->url );

@@ -1,5 +1,6 @@
 
 requires 'perl', '5.024';
+requires 'Carp', '1.50';   # first release that guards the @DB::args copy in caller_info (RT 131046)
 requires 'Compress::Raw::Bzip2';
 requires 'Compress::Raw::Zlib';
 requires 'File::ShareDir::ProjectDistDir';

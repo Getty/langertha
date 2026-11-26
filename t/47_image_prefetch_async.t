@@ -63,6 +63,7 @@ my $server = Test::LocalHTTPDaemon->start( sub {
           message => { role => 'assistant', content => join( ' ', @urls ) } } ],
       } ) );
   }
+  return HTTP::Response->new( 302, 'Found', [ Location => '/b.png' ], '' ) if $path eq '/to-b.png';
   return HTTP::Response->new( 404, 'Not Found', [ 'Content-Type' => 'text/plain' ], 'nope' );
 } );
 my $base = $server->url;
@@ -159,6 +160,70 @@ my $openai_reply = $json->encode( { id => 'x', object => 'chat.completion', crea
     Langertha::Content::Image->from_url('http://img/a.png') ] } ] );
   like scalar $f2->failure, qr/could not be inlined \(ensure_base64: failed to fetch http:\/\/img\/a\.png: connection refused\)/,
     'a transport failure fails the Future naming the URL and the cause';
+}
+
+# --- The resumed fetch frames carry no stale @_ (karr k418) ---
+# From perl 5.24 on, Future::AsyncAwait restores an async sub's @_ after an
+# await, still aliasing the caller's argument temporaries, which are freed by
+# the time the fetch resumes. croak reads that @_ through caller()'s @DB::args; Carp before
+# 1.50 (core up to perl 5.26) copies it unguarded and dies with "Bizarre copy
+# of CODE in list assignment", which then replaced the 404 in the error above
+# on perl 5.24. stale_fetch_frames runs $code with that unguarded copy
+# emulated on every hasargs Content::Image frame below each die, and returns
+# the frames seen and the ones whose @_ could not be copied.
+sub stale_fetch_frames {
+  my ($code) = @_;
+  my ( %seen, @stale );
+  local $SIG{__DIE__} = sub {
+    for my $level ( 1 .. 100 ) {
+      my ( @frame, $ok );
+      {
+        package DB;
+        @frame = caller($level);
+        $ok = eval { my @copy = @DB::args; 1 } if @frame && $frame[4];
+      }
+      last unless @frame;
+      next unless $frame[4] && $frame[3] =~ /\ALangertha::Content::Image::/;
+      $seen{ $frame[3] }++;
+      push @stale, $frame[3] unless $ok;
+    }
+  };
+  $code->();
+  return ( \%seen, \@stale );
+}
+
+{
+  my $http = My::RecordingHTTP->new($openai_reply);
+  my $e = Langertha::Engine::OllamaOpenAI->new( url => 'http://h/v1', model => 'm', _async_http => $http );
+  my $f = $e->chat_f( messages => [ { role => 'user', content => [
+    Langertha::Content::Image->from_url('http://img/missing.png') ] } ] );
+  my ( $seen, $stale ) = stale_fetch_frames( sub { $http->resolve_all } );
+  ok $seen->{'Langertha::Content::Image::ensure_base64_f'}, 'the 404 croak ran below the resumed ensure_base64_f';
+  is_deeply $stale, [], "... and no fetch frame holds a freed argument in its \@_" or diag "stale: @$stale";
+  like scalar $f->failure, qr/404 Not Found/, '... so the 404 reaches the error';
+}
+
+# The same on the real Net::Async::HTTP path, through the redirect walk: the
+# url filter refuses the second hop, croaking below the resumed
+# _fetch_net_async_f and ensure_base64_f. Only ensure_base64_f's @_ was ever
+# found stale (red without its @_ = (), host and perl 5.24); the
+# _fetch_net_async_f frame stays clean even without its own @_ = (), so that
+# line is preventive and this block does not pin it.
+SKIP: {
+  skip 'Net::Async::HTTP not installed', 3 unless eval { require Net::Async::HTTP; 1 };
+  my $e = Langertha::Engine::OllamaOpenAI->new( url => "$base/v1", model => 'm',
+    inline_image_url_filter => sub { $_[0]->path ne '/b.png' } );
+  my $f;
+  my ( $seen, $stale ) = stale_fetch_frames( sub {
+    $f = $e->chat_f( messages => [ { role => 'user', content => [
+      Langertha::Content::Image->from_url("$base/to-b.png") ] } ] );
+    $f->await;
+  } );
+  ok $seen->{'Langertha::Content::Image::_fetch_net_async_f'},
+    'the url-filter croak ran below the resumed _fetch_net_async_f';
+  is_deeply $stale, [], "... and no fetch frame holds a freed argument in its \@_" or diag "stale: @$stale";
+  like scalar $f->failure, qr{refuses to fetch image URL \Q$base\E/b\.png: rejected by inline_image_url_filter},
+    '... so the refusal reaches the error';
 }
 
 # --- Gemini: Content objects and image_url hash parts both prefetched ---
