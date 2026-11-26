@@ -1,0 +1,80 @@
+---
+claimed_at: 2026-11-26T04:52:27Z
+claimed_by: ct-1124
+class: standard
+completed: 2026-11-26T04:52:27Z
+created: 2026-11-24T18:48:10Z
+id: 418
+priority: critical
+started: 2026-11-26T04:52:27Z
+status: done
+tags:
+- cpantesters
+- tests
+- bug
+title: 'CPAN Testers: fix the 141 FAIL reports of 0.505'
+updated: 2026-11-26T04:52:27Z
+---
+
+Langertha 0.505 on CPAN Testers (2026-11-24): 141 FAIL, 28 PASS. Every cause is still on main.
+Causes, by number of reports:
+
+1. t/72_virtual_server.t (120 reports, every OS): `use Net::Async::HTTP;` at line 13 runs at
+   compile time, before the skip in the BEGIN block at line 20, so the file dies with
+   "Can't locate Net/Async/HTTP.pm" wherever only the requires are installed.
+   (k388, the -j4 flake of the same file, is a separate card and stays out.)
+2. lib/Langertha/Role/HTTP.pm line 169 (18 reports, perl 5.20-5.24, all OS): a numeric
+   comparison on a hash in scalar context. Before perl 5.26 `scalar(%h)` is the bucket
+   ratio ("1/8"), so it warns `Argument "1/8" isn't numeric in numeric gt (>)`; about 16
+   test files that assert "no warning" fail with it (t/22, t/21, t/23, t/24, t/46, t/47,
+   t/48, t/60, t/66, t/69, t/76, t/77, t/78, t/95 ...). This is a lib bug.
+3. t/72_langfuse.t (45 reports, long double / quadmath perls: x86_64-linux-ld,
+   -quadmath, amd64-freebsd-ld): subtest "_langfuse_iso_after: sub-second positive delta
+   adds milliseconds", test "1ms delta renders correctly".
+4. t/64_tool_calling_ollama_mock.t (25 reports): all 13 subtests pass, then the test dies at
+   line 116 with "JSON text must be an object or array (... use allow_nonref ...)".
+5. Windows only (3 reports, MSWin32 5.40/5.42): t/95_image_cli.t, t/95_whisper_cli.t,
+   t/48_async_require_inc_hook.t, t/47_image_url_scheme.t, t/47_image_fetch_limits.t,
+   t/78_model_capability_probe.t, t/78_content_image_wires.t, t/70_transcription_response.t,
+   t/44_response_decode_limits.t and ~20 files with one report each.
+6. Single reports: t/45_connect_address.t, t/45_local_http_daemon.t (Haiku),
+   t/45_async_http_loop_lifecycle.t, t/45_langfuse_flush_nonblocking.t,
+   t/45_async_http_stream_die.t, t/47_image_prefetch_timeout.t (aarch64, -ld),
+   t/89_langertha_sugar.t, t/91_plugin_config.t.
+
+Sample reports (GUID): 84e306a0-e7de-11f1-a3bc-a055f9c4ba34 (1+3),
+9ee8df0c-d83e-11f1-a2e6-a8ed6d8775ea.
+
+Done: causes 1-4 fixed with a test that is red before, 5 and 6 fixed or skipped with a
+stated reason where the platform cannot do it, full suite green, Changes entry for the lib
+fix (cause 2).
+
+ct-1124 Zwischenstand, Branch ct-1124: Ursache 1 670128a (t/72_virtual_server ohne use vor dem Skip; HideSoft-Lauf rot vorher, skip nachher). Ursache 2 2652b77 (lib: %args statt scalar %args > 0; neuer t/20_http_request_body_no_warning.t rot auf perl 5.22 gegen alte lib, gruen nachher; Changes). Ursache 3 6f1d88d (lib: _langfuse_iso_after rundet auf ganze Mikrosekunde; Test mit Eingabe 0.0009999999999999998 = 0.001*1e6 auf long double, rot vorher; Changes; Entscheidung: runden statt truncaten, Aufloesung von gettimeofday). Ursache 4 4f29b31 (t/64 vergleicht den Text 22 statt JSON-decode; rot vorher mit allow_nonref(0)-Emulation von Cpanel::JSON::XS < 4.42). Volle Suite auf 4f29b31 laeuft.
+
+ct-1124: Volle Suite auf 4f29b31 grün (Files=257, Tests=11484; übersprungen nur die Live-Tests t/80–t/88 und t/89_runtime_metrics_live, TEST_LANGERTHA_LIVE nicht gesetzt). Ursache 5 571a0a1: Fork-HTTP::Daemon-Tests auf MSWin32 übersprungen, mit Grund im Skip-Text (47_image_fetch_limits/_prefetch_async/_prefetch_timeout, 78_model_capability_probe, 95_whisper_cli, 45_async_http_connect_modules; als SKIP-Block nur der Daemon-Teil in 44, 47_image_url_scheme, 78_content_image_wires, 70, 95_image_cli). 95_image_cli: die -x-Prüfung nur auf MSWin32 übersprungen (kein Dateimodus). 48: Kindprogramm aus Datei statt -e, weil Win32 die Anführungszeichen in argv nicht maskiert; das ist ein Fix, kein Skip. 22: der Byte-Dateiname-Teil wird nur auf MSWin32 übersprungen (ANSI-Codepage). cpanfile: JSON::MaybeXS >= 1.004000, die erste Version mit true/false (Strawberry-5.24-Report: Undefined subroutine &JSON::MaybeXS::true); Changes.
+
+ct-1124: Ursache 6 266ef75. 45_connect_address: lib-Fix in Langertha::HTTP::UserAgent. LWP::Protocol::https 6.10 hat ein eigenes _check_sock ohne SUPER und umging damit die Pin-Prüfung; jetzt wird auch der https-_check_sock umhüllt. Mit dem echten 6.10 in docker: rot vorher, grün nachher; Changes. Der Haiku-Report (kein CA) war ein Testproblem: PERL_LWP_SSL_CA_FILE wird lokal gesetzt, rot/grün mit einem default_ca-losen Mozilla::CA. 45_local_http_daemon (Haiku): die Probe verbindet blockierend ohne Timeout, weil der zeitgesteuerte connect auf Haiku bei einem geschlossenen Port Erfolg meldet; aus dem IO::Socket-Code begründet. 89_langertha_sugar/91_plugin_config: Skip nur, wenn das installierte Langertha::Raider älter als die Plugin-API ist (<=0.202 aus Core); rot/grün mit dem echten 0.202-Raider.pm. 45_async_http_loop_lifecycle und 45_langfuse_flush_nonblocking (perl 5.22) behebt Ursache 2 (in docker geprüft). OFFEN: 45_async_http_stream_die und 47_image_prefetch_timeout auf perl < 5.24. Future::AsyncAwait gibt ein cancel laut eigener POD erst ab perl 5.24 an das erwartete Future weiter (Minimal-Repro: 5.22 mit FAA 0.69 und 0.71, Future 0.54), also läuft der Transfer nach einem cancel weiter. Das lib-Verhalten ist dort falsch, darum kein Skip. Ein Fix braucht explizite CANCEL { $inner->cancel } entlang der Cancel-Ketten (92 async subs in 22 Dateien) oder eine Entscheidung zur Mindest-Perl-Version. Das ist Arbeit für die Async-Lane (langertha-async-worker).
+
+Also found (nicht behoben, außerhalb von k418): (a) use Langertha qw(Raider) mit einem veralteten Raider.pm vor 0.300 baut stillschweigend eine Klasse ohne Plugins; ein croak mit dem Hinweis, langertha-raider zu installieren, wäre klarer. (b) In Role/Langfuse.pm _langfuse_iso_after steht der Kommentar "Perl's % preserves sign on negatives"; das stimmt für Perl nicht, denn das Ergebnis von % hat das Vorzeichen des rechten Operanden. (c) t/lib/Test/LocalHTTPDaemon.pm hat keinen eigenen MSWin32-Guard; jeder Aufrufer muss selbst skippen.
+
+ct-1124: Volle Suite auf HEAD 266ef75 grün: Files=257, Tests=11486, PASS. Übersprungen sind nur die 14 Live-Dateien t/80–t/88 und t/89_runtime_metrics_live, weil TEST_LANGERTHA_LIVE nicht gesetzt war. Branch ct-1124 (6 Commits, nicht gepusht), main unverändert (Merge-Base 88d5064). Ursachen 1–5 erledigt. Bei Ursache 6 ist alles erledigt außer dem Cancel-Punkt.
+
+ct-1124: Entscheidung des Koordinators zum Cancel-Punkt: Es gibt keinen lib-Nachbau der Cancel-Weitergabe, Langertha verlangt ab jetzt perl 5.024. Grund: Future::AsyncAwait 0.71 dokumentiert die Cancel-Weitergabe erst ab 5.24 (TODO, RT 129202) und vor 5.24 kein gesichertes @_ über await (RT 130683). Umgesetzt in b7a272e. cpanfile hat requires 'perl', '5.024' als erste Zeile. Neuer t/00_minimum_perl.t prüft die Untergrenze in cpanfile, META.json und Makefile.PL (MIN_PERL_VERSION). Er war rot vorher: im Checkout 1 von 1, im dzil-Build 3 von 3. Nachher ist er grün; der dzil-Build schreibt "MIN_PERL_VERSION" => "5.024". Ein Changes-Eintrag ist dabei. t/45_async_http_stream_die und t/47_image_prefetch_timeout sind unverändert, ohne Skip. Volle Suite auf b7a272e grün: Files=258, Tests=11489, PASS. Übersprungen sind nur die 14 Live-Dateien t/80–t/88 und t/89_runtime_metrics_live, weil TEST_LANGERTHA_LIVE nicht gesetzt war. Im Checkout überspringt t/00_minimum_perl.t die zwei META- und Makefile.PL-Prüfungen, weil dort kein META.json liegt; im dzil-Build laufen sie. Damit sind alle sechs Ursachen erledigt.
+
+2026-11-24 22:19 Rebased onto origin/main (two skill commits of 2026-11-20), merged to main (670128a..a0121e0, 7 commits) and pushed. Full suite on the rebased branch: Files=258, Tests=11489, PASS. bin/smoke on main: perl 5.40 and ld PASS; two causes still open: (1) perl 5.24: t/47_image_prefetch_async.t test 12 gets 'Bizarre copy of CODE in list assignment' instead of the 404 in the inline-image error -- also in 12 of the 0.505 reports (all 5.24.4), so it is a cause of its own, not the bucket-ratio one; it hits the new 5.024 floor. (2) quadmath: t/94_trace_otlp.t 'gen_ai.usage.input_tokens' writes 1e20 as stringValue '100000000000000000000', the test expects '1e+20' (not in the 0.505 reports). Logs: hub .smoke/logs/20261124-224808.
+
+2026-11-26 CPAN-Testers-Stand 0.505 (aus der Skeid-Session, nur gelesen): 144 FAIL. Die fuenf Reports seit 2026-11-24 (f213a128, 84e306a0, b864f836, 18d7c7a8, 68e9e3f4) fallen alle unter Ursache 1 (t/72_virtual_server.t: use Net::Async::HTTP vor dem Skip) und Ursache 3 (t/72_langfuse.t _langfuse_iso_after auf quadmath) - beide auf main behoben. Keine neue Ursache. Vor dem Release 0.506 offen bleiben nur die zwei Punkte aus bin/smoke: perl 5.24 t/47_image_prefetch_async.t Test 12 'Bizarre copy of CODE' und quadmath t/94_trace_otlp.t 1e20 als stringValue.
+
+2026-11-26 03:28 quadmath t/94 1e20: lib side wrong. Trace::OTLP stringValue fallback used Perl's NV stringification ("$value"), whose precision follows NV width (%.15g double, %.18g ld, %.33g quadmath), so out-of-int64 token counts like 1e20 came out '100000000000000000000' on quadmath. Fix: private _text() in OTLP.pm formats pure floats (NOK, no IOK/POK) with %.15g (same as a double perl), strings and integers keep their text; used at the 3 stringValue fallbacks. t/94 gets a subtest for the other call sites. Host t/94 green; docker quadmath/ld red/green running.
+
+2026-11-26 03:49 quadmath t/94: lib fix confirmed (OTLP payload must not depend on NV width; double perls unchanged, %.15g is their own NV spelling). Flag check holds: on perl 5.24 and 5.40 (double/ld/quadmath) stringifying an NV sets no POK, so a once-printed float still formats as a float; a string used as a number keeps POK and its spelling. Added a 1/3 case so long double goes red too. Docker red/green: quadmath HEAD lib 4 fails in subtest 12 + 1 in 11, ld HEAD lib 1 fail (0.333333333333333333); new lib green on both. Quadmath full suite PASS (Files=258, Tests=11287; image lacks IO::Async/Net::Async::HTTP so the async transport tests skip there; 14 live skips). Host full suite PASS Files=258 Tests=11493, 14 live skips; perlcritic lib clean. Changes entry added. Tree commit-ready for OTLP.pm, t/94, Changes.
+
+2026-11-26 03:57 k418 perl 5.24 t/47_image_prefetch_async 'Bizarre copy of CODE': cause is a stale @_ in the resumed async subs Content::Image::ensure_base64_f and _fetch_net_async_f. Future::AsyncAwait keeps @_ across await (RT 130683), still aliasing the caller's freed argument temporaries. The 404 croak in _inline_fetched lands Carp shortmess on the resumed ensure_base64_f frame; Carp 1.40 (core 5.24) copies @DB::args unguarded and dies, Carp 1.50+ guards it. The stale @_ exists on 5.40 too. Fix: @_ = () right after unpacking in both subs. New t/47 block emulates the unguarded copy: red before on host and 5.24, green after; on 5.24 tests 5 and 12 red before, green after. t/45_* + t/47_* on 5.24: 32 files PASS. Host full suite PASS (258 files, 11493 tests, 14 live files skipped). Also found: the same stale @_ sits in every async sub called with temporaries (chat_f too); fatal only where a croak lands on such a frame under Carp < 1.50. Options: requires Carp 1.50 in cpanfile as a general guard, or clear @_ in the other async subs.
+
+2026-11-26 04:36 k418 Carp follow-ups (async-worker): cpanfile requires Carp 1.50 (first release guarding the @DB::args copy, perl RT 131046); dzil build -> META.json runtime Carp 1.50, Makefile.PL Carp 1.50. Evidence perl 5.24 image: HEAD lib + Carp 1.40 -> t/47 tests 5,12,16,17 fail (Bizarre copy of CODE); HEAD lib + Carp 1.50 (cpanm in throwaway container) -> 5 and 12 pass, only 16 (the @DB::args emulation) red as intended; working-tree lib PASS. Both @_ = () lines stay. The one in _fetch_net_async_f is NOT reproducible (no stale frame on host or 5.24 without it, even with a temp hashref arg) -> comment marks it preventive; new t/47 block runs the url-filter redirect refusal through real Net::Async::HTTP (red on HEAD via ensure_base64_f, does not pin the inner line). RT 130683 per the FAA POD is the pre-5.24 case (@_ not saved across await); Image.pm comment corrected: from 5.24 on FAA restores @_, which keeps the stale alias. Checks: 5.24 prove t/45_* t/47_* 32 files PASS (Carp 1.40); host full suite 258 files / 11497 tests, 1 fail t/72_virtual_server.t test 6 (race: -d /proc/PID then slurp of stat after the reap; 5/5 reruns PASS, unrelated); 14 live files skipped; perlcritic Image.pm OK. Also found: that t/72_virtual_server.t line 185 race, for this board.
+
+2026-11-26 04:37 OTLP follow-up: _int_string no longer runs the digit-string check on a float (new _is_float, shared with _text), so 1e17 under an int attribute is stringValue 1e+17 on double, long-double and quadmath perls (was intValue on ld/quadmath). Flag-gated, not POK-gated: a POK-only gate would turn Perl integers above 2**53 into strings (verified, new test). POD narrowed: only-ever-a-float values, stringValue/intValue fallbacks; arithmetic or numeric comparison gives an IOK on ld/quadmath; doubleValue unchanged. t/94 red on HEAD lib on ld+quadmath, green after; quadmath and host full suites pass; perlcritic OK.
+
+Committed: 636962e (perl 5.24 Bizarre copy of CODE, Carp 1.50), a2b8371 (OTLP floats). Smoke pending; not done yet.
+
+2026-11-26 Abschluss: beide Punkte committet auf main (nicht gepusht): 636962e (perl 5.24 Bizarre copy: @_ = () nach dem Entpacken in ensure_base64_f/_fetch_net_async_f + requires Carp 1.50; t/47 Tests 5/12/16/17 rot auf 5.24.4/Carp 1.40 mit HEAD-lib, gruen nachher) und a2b8371 (quadmath OTLP: Floats als stringValue mit %.15g, Float unter Integer-Attribut nur < 2**53 intValue; t/94 rot auf quadmath/ld mit HEAD-lib, gruen nachher). Reviewer: commit-ready. Volle Suiten gruen: Host perl 5.40 Files=258 Tests=11497; perl 5.24.4 docker Files=258 Tests=11499; quadmath docker Files=258 Tests=11294 (dort ohne IO::Async/Net::Async::HTTP, Async-Dateien skippen). Live t/80-t/88 + t/89_runtime_metrics_live jeweils geskippt (TEST_LANGERTHA_LIVE nicht gesetzt). bin/smoke nicht lauffaehig: fleet im perl-developer-Hub kennt kein Repo langertha; Ersatz = die drei Docker-Suiten oben. Nebenfund als eigene Karte: t/72_virtual_server Race.
