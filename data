@@ -1,0 +1,24 @@
+---
+class: standard
+completed: 2026-11-26T20:25:26Z
+created: 2026-11-04T21:49:50Z
+id: 386
+priority: low
+started: 2026-11-26T18:44:24Z
+status: done
+tags:
+- llm
+- reasoning
+- deepseek
+title: 'DeepSeek V4: bloßes thinking_enabled => 1 als thinking {type: enabled} senden
+  statt verwerfen'
+updated: 2026-11-26T20:25:26Z
+---
+
+Folge von k382: api-docs.deepseek.com/api/create-chat-completion listet thinking {type: enabled|disabled} auch für V4. Aktuell: V4 + thinking_enabled=>1 ohne Effort → carp + nichts. Prüfen und ggf. senden.
+
+2026-11-26 18:45 Done in Engine/DeepSeek.pm reasoning_kwargs_for: bare thinking_enabled => 1 (no effort) now returns thinking {type: enabled} on V3 and V4 alike (branch merged before the V3 split), no carp. Off form unchanged (V4 reasoning_effort none, V3 thinking disabled); t/47 fixtures untouched. t/48 section 4 flipped (engine + per-request), red first (4 failures: thinking undef, 1 carp), green after. POD in DeepSeek.pm and Role/ReasoningEffort.pm (thinking_enabled =attr) updated. Drift for the orchestrator: ADR 0040 decision text (line ~91-97, 'On without a level ... DeepSeek V3.x') still says V3.x only -- needs an Update note (ADR lane, not touched).
+
+2026-11-26 18:45 DeepSeek bare thinking_enabled=>1 sends thinking{type:enabled} on V4 too (no carp); t/48 sec.4 red->green; POD DeepSeek.pm + Role/ReasoningEffort.pm. Open: ADR 0040 Update note (orchestrator).
+
+2026-11-26 20:25 Committed in 42c5d8c.
