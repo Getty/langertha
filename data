@@ -1,0 +1,18 @@
+---
+class: standard
+completed: 2026-11-26T18:43:21Z
+created: 2026-11-26T04:52:17Z
+id: 419
+priority: low
+started: 2026-11-26T18:43:21Z
+status: done
+tags:
+- tests
+- flaky
+title: 't/72_virtual_server.t test 6: race between -d /proc/$pid and reading /proc/$pid/stat'
+updated: 2026-11-26T18:43:21Z
+---
+
+Found during k418 (host full suite, 1 of 6 runs): t/72_virtual_server.t line ~185 checks -d /proc/$pid and then reads /proc/$pid/stat; if the process exits in between: "Error open (<) on /proc/<pid>/stat: No such file or directory". Reading stat should tolerate a vanished process (open failure = process gone).
+
+Duplikat von k402 (selber Flake, t/72 Zeile 185); Fix dort.
