@@ -1,0 +1,27 @@
+---
+class: standard
+completed: 2026-11-26T20:26:28Z
+created: 2026-11-04T21:49:42Z
+id: 384
+priority: low
+started: 2026-11-26T19:11:00Z
+status: done
+tags:
+- llm
+- risk
+- reasoning
+- gemini
+title: 'Gemini 2.5: thinking_enabled => 0 auf thinkingBudget 0 abbilden, wo das Modell
+  abschalten kann'
+updated: 2026-11-26T20:26:28Z
+---
+
+Folge von k382 / ADR 0040: auf Budget-Profilen (Gemini 2.5) wird der Aus-Schalter derzeit mit carp verworfen. Provider-Wahrheit klären (welche 2.5-Modelle nehmen thinkingBudget 0 an — Flash ja?, Pro nein?), dann abbilden; Pro weiter carp-drop.
+
+Entscheid 2026-11-26: Aus-Schalter im Request ersetzt auch thinking_budget der Engine (ein Concern, ADR 0040 wird nachgezogen). Muss mit k422 (TTS/Image-Ausnahme) landen.
+
+2026-11-26 19:19 Done: Reasoning::normalize_off_switch maps thinking_enabled 0 (no effort, no budget in the layer) to thinking_budget = profile off_value on budget profiles that have one (2.5 Flash / Flash-Lite -> 0, not the 512 floor); Pro (no off_value) stays bare and is dropped with a carp. assert_switch_agrees takes a 3rd arg budget (off + budget != 0, on + budget 0 croak in one layer, -1 counts as on); new helper budget_agrees_with_switch. Role::_reasoning_controls_for: a per-request thinking_enabled replaces a contradicting engine thinking_budget, a per-request thinking_budget replaces a contradicting engine thinking_enabled (an agreeing one stays); takes effort + thinking_budget from the normalized args; engine BUILDARGS passes the budget. drops_thinking_enabled_on: 0 on gemini whenever a budget carries the switch. Choice of mine: on-switch + engine budget 512 keeps 512 (only a contradicting budget is replaced); Pro budget 1024 + request off -> nothing sent + carp (consistent with ADR 0040 effort replacement). Not done (proposal only): bare thinking_enabled 1 -> dynamic_value -1. Tests t/48 sections 1, 2, 9 turned, new 2b/2c/2d/2e; t/47 golden unchanged by k384 (no thinking_enabled settings). Red seen, then green in a clean env. ADR 0040 decision 4 + Future work need the orchestrator's amendment.
+
+2026-11-26 20:18 Review fixes done. (1) Profile catch-all row qr/\Agemini-2\.5(?!\d)/ no longer claims off_value: now can_disable 0, disable_form absent, bounds 512..24576 (my choice: intersection of the documented 2.5 rows so a BudgetPolicy clamp never lands on 0). Probed with for_model: computer-use-preview-10-2025 and invented gemini-2.5-nova fall into the catch-all; flash-native-audio / flash-live / flash-latest / flash-tts / flash-image hit the Flash row (TTS/image stay guarded by k422's capability row). thinking_enabled 0 there: no thinkingBudget, one carp. (2) Role::ReasoningEffort drop carp adds 'and cannot switch thinking off' only when !Profile->for_model(model)->has_off_value (Flash on the openai wire no longer claims it). Tests: t/48 new sections 2f/2g (red 5/143 before the fix, then green). The t/48_reasoning_profile_single_digit_pin golden: only the four gemini-2.5 profile.* values changed, the wire output did not; header comment notes the deliberate edit. POD in Reasoning.pm / Role::ReasoningEffort / Profile off_value: Pro + other 2.5 ids. Targeted prove (t/46,47,48*,78*,79*,10) green in a clean env; live t/86, t/88 skipped. ADR 0040 / 0023 amendment for the catch-all is the orchestrator's job.
+
+2026-11-26 20:26 Committed in 829fcf2.
