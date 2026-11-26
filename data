@@ -1,0 +1,14 @@
+---
+class: standard
+created: 2026-11-26T18:44:17Z
+id: 426
+priority: low
+status: backlog
+tags:
+- test
+- docs
+title: t/80-Kommentar behauptet, Perplexity koenne kein Tool-Calling
+updated: 2026-11-26T18:44:17Z
+---
+
+Aus Analyse k394. t/80_live_tool_calling.t:201-202 sagt Perplexity does not support tool calling as of Feb 2026; seit k213 falsch (Client-Function-Tools). Damit fehlt ein Live-Pfad fuer Tool-Calling.
