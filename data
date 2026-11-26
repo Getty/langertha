@@ -1,0 +1,22 @@
+---
+class: standard
+completed: 2026-11-26T20:26:36Z
+created: 2026-11-26T18:44:02Z
+id: 422
+priority: low
+started: 2026-11-26T19:11:04Z
+status: done
+tags:
+- llm
+- risk
+- gemini
+title: 'Gemini 2.5 TTS/Image-IDs: thinking_budget per Model-Correction loeschen, bevor
+  k384 thinkingBudget 0 sendet'
+updated: 2026-11-26T20:26:36Z
+---
+
+Aus Analyse k384. /\Agemini-2\.5/ (Gemini.pm:58) und Profil qr/\Agemini-2\.5-flash/ treffen auch gemini-2.5-flash-preview-tts und gemini-2.5-flash-image. TTS kennt laut Firebase-Doku kein Thinking (Fehler bei thinkingConfig); fuer Image-Modelle nur abgeleitet, kurzer Live-Check wuenschenswert. Muss vor/mit k384 landen.
+
+2026-11-26 19:19 Done: layer 3 now grants thinking_budget for qr/\Agemini-2\.5/ and clears it for qr/\Agemini-2\.5-.*-(?:tts|image)(?![a-z0-9])/ (Gemini.pm model_capability_corrections). The 2.5 branch of the layer-2 around no longer sets it: layer 2 runs after layer 3 and would have overwritten the clear. With reasoning_effort and thinking_budget both off, Role::ReasoningEffort's capability gate sends no reasoning field, so no thinkingConfig, also for an explicit thinking_budget. Evidence: TTS from the Firebase docs (k384 analysis), image ids DERIVED only (comment says so); a short live check on gemini-2.5-flash-image is still open. Tests: t/48 2d (4 ids: no caps, nothing sent for off / budget 512), t/78_engine_capabilities. Open: Reasoning::Profile still resolves these ids to the 2.5-flash budget row (only reached when Reasoning is used directly, outside the engine).
+
+2026-11-26 20:26 Committed in 829fcf2.
