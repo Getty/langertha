@@ -1,0 +1,22 @@
+---
+class: standard
+completed: 2026-11-26T20:26:05Z
+created: 2026-11-08T06:31:58Z
+id: 416
+priority: low
+started: 2026-11-26T18:44:43Z
+status: done
+tags:
+- docs
+- skills
+title: 'langertha-adr skill: add plugin-hook / OTel rows to the ADR ownership table'
+updated: 2026-11-26T20:26:05Z
+---
+
+The "Which ADR owns which area" table in .claude/skills/langertha-adr/SKILL.md has no row for the plugin hook surface or OTel traces. Suggested row: "Plugin hooks (failed / streamed calls, $call arg), Usage reported-predicates -> 0028, 0041". Skill text: route via the skill library workflow.
+
+2026-11-26 19:06 Done: .claude/skills/langertha-adr/SKILL.md (repo-owned, tracked, no skilletor .gitignore -> edited in place per getty-skill-library) ownership table gains rows: model-scoped tool_wire_format -> 0033; stream_usage -> 0038; CallResult -> 0034; plugin hooks / sibling hook surface / Usage reported-predicates -> 0028, 0041; OTLP traces -> 0041; provider manifest -> 0029. Check: every ADR 0001-0041 now appears in the skill.
+
+2026-11-26 19:06 ADR ownership table: rows for 0028/0041, 0041, 0029, 0033, 0034, 0038; all ADRs 0001-0041 now mapped.
+
+2026-11-26 20:26 Committed in aa02aca.
