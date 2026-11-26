@@ -1,0 +1,24 @@
+---
+class: standard
+completed: 2026-11-26T20:25:57Z
+created: 2026-11-06T05:43:03Z
+id: 402
+priority: low
+started: 2026-11-26T18:44:40Z
+status: done
+tags:
+- tests
+- flaky
+title: 'Flake: t/72_virtual_server.t Subtest 6 stirbt am /proc-Poll'
+updated: 2026-11-26T20:25:57Z
+---
+
+Subtest "a spawned server ends when its parent is gone" stirbt sporadisch: `Error open (<) on /proc/<pid>/stat: No such file or directory at t/72_virtual_server.t line 186`. Der /proc-Poll des Tests liest stat eines Prozesses, der gerade endet. Ein voller clean-env-Lauf am 2026-11-06 (k391-Worktree, lib/ und t/72 identisch mit main 46f12d0) schlug fehl; einzeln 8/8 grün. Fix: fehlende /proc-Datei als "Prozess weg" werten statt zu sterben.
+
+Analyse 2026-11-26: Root-Cause t/72_virtual_server.t:185 — Server-Enkel wird an init uebergeben und von init abgeraeumt zwischen -d /proc/$pid und slurp von /proc/$pid/stat; Path::Tiny wirft statt 'weg' zu melden. Repro 1/48 bei -j12. Fix: eval { slurp } // '' ; $gone = $stat eq '' || $stat =~ /\) Z/ (0/96 in Scratch-Kopie). Behalten; k388 und k419 sind Duplikate.
+
+2026-11-26 19:05 Done: t/72_virtual_server.t poll now reads stat in eval (my $stat = eval { path(...)->slurp } // ''; gone = empty or zombie), comment names k402. A live process still reads non-empty, non-Z stat, so the test still fails if the orphan never exits. Repro: could NOT reproduce standalone today (unpatched 0/96 at -P12, 0/192 at -P32); failure mode shown deterministically instead: slurp of a reaped pid's /proc/<pid>/stat throws exactly 'Error open (<) on /proc/<pid>/stat: No such file or directory', the patched expression yields gone=1. Patched: 0/192 at -P32 (subtest 6 ok in all 192), prove -j12 -lv green.
+
+2026-11-26 19:05 Flake fix in t/72 /proc poll (eval slurp). Not reproduced standalone (0/288 unpatched); failure mode shown deterministically; patched 0/192 at -P32.
+
+2026-11-26 20:25 Committed in ef81059.
