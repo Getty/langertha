@@ -1,0 +1,14 @@
+---
+class: standard
+created: 2026-11-26T18:43:54Z
+id: 420
+priority: low
+status: backlog
+tags:
+- llm
+- perplexity
+title: 'Perplexity: sonar-Zuordnung auf Agent-effort der Migrationsdoku angleichen?'
+updated: 2026-11-26T18:43:54Z
+---
+
+Aus k394 Teil B. Doku (Migrate-from-Sonar): sonar-pro -> fast, sonar-reasoning-pro -> low, deep-research -> high/xhigh. Heute: sonar-reasoning-pro -> medium. Laut Code-Kommentar sind fast/low Presets ohne Reasoning: Doku folgen heisst, dass sonar-reasoning-pro-Nutzer das Reasoning verlieren (stille Verhaltensaenderung). Maintainer-Entscheid: Doku folgen oder bewusst bei medium bleiben und das dokumentieren.
