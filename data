@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-26T18:44:13Z
+id: 425
+priority: low
+status: backlog
+tags:
+- llm
+- docs
+- gemini
+title: Gemini-POD nennt abgeschaltete Bild-Previews und nicht mehr gelistete Modelle
+updated: 2026-11-26T18:44:13Z
+---
+
+Aus Analyse k397. Gemini.pm:171 nennt gemini-3.1-flash-image-preview und gemini-3-pro-image-preview (laut Deprecations-Seite seit 2026-06-25 abgeschaltet; Nachfolger gemini-nano-banana-2.1 bzw. gemini-3-pro-image). gemini-3.7-flash (:167) und gemini-3.1-pro-preview (:169) tauchen in der aktuellen Modellliste nicht auf.
