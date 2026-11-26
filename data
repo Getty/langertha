@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-26T18:44:09Z
+id: 424
+priority: low
+status: backlog
+tags:
+- llm
+- risk
+- gemini
+title: 'Gemini 2.0-flash: effort none sendet thinkingLevel (Fehler vor Gemini 3)'
+updated: 2026-11-26T18:44:09Z
+---
+
+Aus Analyse k384. Fixture t/47 (Gemini 2.0-flash effort_none) sendet thinkingLevel; laut generateContent-Referenz ein Fehler vor Gemini 3, thinkingConfig auf Nicht-Thinking-Modellen ebenfalls. Vorbestehend. Ob 2.0 noch ausgeliefert wird, nicht geprueft.
