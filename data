@@ -1,0 +1,23 @@
+---
+class: standard
+completed: 2026-11-26T20:25:50Z
+created: 2026-11-06T04:58:28Z
+id: 399
+priority: low
+started: 2026-11-26T18:44:36Z
+status: done
+tags:
+- llm
+- cerebras
+title: Cerebras.pm nennt zurückgezogene Modelle (zai-glm-4.7, gemma-4-31b)
+updated: 2026-11-26T20:25:50Z
+---
+
+Laut inference-docs.cerebras.ai models/deprecation zurückgezogen; Doku und Listen bereinigen.
+Quelle: langertha-llm-advisor, Provider-Dokus gelesen 2026-11-06 (im Zuge von k391).
+
+2026-11-26 18:49 Done (POD/comments only, no logic): Cerebras.pm DESCRIPTION now says Shared Inference serves gpt-oss-120b (default) + qwen-3.8-27b, zai-glm-4.7 deprecated 2026-08-17, gemma-4-31b left Shared 2026-09-03 (Dedicated keeps it). Exclusion comment no longer claims zai-glm-4.7 as currently served; notes qwen-3.8-27b is not separately checked for the tools+response_format 400, qr// rule kept. image_input allowlist unchanged (gemma-4-31b stays for Dedicated), comment says why. Cerebras-related offline tests green (13 files).
+
+2026-11-26 18:49 Cerebras POD/comments refreshed (no logic change); allowlist kept incl. gemma-4-31b for Dedicated.
+
+2026-11-26 20:25 Committed in 50143fb.
