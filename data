@@ -1,0 +1,15 @@
+---
+class: standard
+created: 2026-11-26T18:43:58Z
+id: 421
+priority: low
+status: backlog
+tags:
+- llm
+- risk
+title: 'DeepSeek: minimal/medium/xhigh werden laut Referenz serverseitig gemappt,
+  Langertha verwirft sie still'
+updated: 2026-11-26T18:43:58Z
+---
+
+Aus Analyse k386. API-Referenz akzeptiert minimal (->low), medium/xhigh (->high) aus Kompatibilitaet; DeepSeek.pm:168 verwirft diese Werte ohne Meldung. Durchreichen oder selbst mappen.
